@@ -8,12 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@hugeicons/core-free-icons':
-        specifier: ^4.2.2
-        version: 4.2.2
-      '@hugeicons/react':
-        specifier: ^1.1.9
-        version: 1.1.9(react@19.2.4)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -395,14 +389,6 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
-
-  '@hugeicons/core-free-icons@4.2.2':
-    resolution: {integrity: sha512-fjQW3p6cwoJmwK3oCnV8Z3PC5sHihDvr2jkAHax8cxqp62GaV/D7B/Rnao+JwicW8fmLZUQ6QrzWfoyMFOEQlQ==}
-
-  '@hugeicons/react@1.1.9':
-    resolution: {integrity: sha512-O+lWSWjbijoAvMCxn4K2bQWCGN5+mP1y5j+X99j23mXMj+s0X25fs71T6t9YJLaBodwmZdaewD27dzS/PiboQw==}
-    peerDependencies:
-      react: '>=16.0.0'
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4936,12 +4922,6 @@ snapshots:
   '@hono/node-server@1.19.14(hono@4.12.31)':
     dependencies:
       hono: 4.12.31
-
-  '@hugeicons/core-free-icons@4.2.2': {}
-
-  '@hugeicons/react@1.1.9(react@19.2.4)':
-    dependencies:
-      react: 19.2.4
 
   '@humanfs/core@0.19.2':
     dependencies:
