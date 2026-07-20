@@ -81,6 +81,16 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* severity — drives finding badges */
+  --severity-critical: 0 72% 51%; /* red    */
+  --severity-high: 25 95% 53%; /* orange */
+  --severity-medium: 38 92% 50%; /* amber  */
+  --severity-low: 215 16% 47%; /* slate  */
+  /* health heat map — tree tint from bad → good */
+  --health-bad: 0 72% 51%;
+  --health-mid: 38 92% 50%;
+  --health-good: 142 71% 45%;
 }
 
 .dark {
@@ -116,6 +126,7 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
+
 
 @layer base {
   * {
