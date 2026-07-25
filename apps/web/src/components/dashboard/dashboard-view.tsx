@@ -11,6 +11,7 @@ import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBranches } from "@/hooks/use-branches"
 import { useHealthReport } from "@/hooks/use-health-report"
+import { useScan } from "@/hooks/use-scan"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
 
@@ -29,6 +30,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     ""
 
   const { data: report, loading, error } = useHealthReport(repoId, activeBranch)
+
+  // The Scan button's state machine (start → poll progress → done/stop + toast).
+  const { status: scanStatus, scan: runScan, stop: stopScan } = useScan(repoId)
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -71,7 +75,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         onBranchChange={setPickedBranch}
         lastCommitSha={report.commitSha}
         scannedAt={report.scannedAt}
-        scan={{ phase: "idle", progress: 0 }}
+        scan={{
+          phase: scanStatus.phase,
+          progress: scanStatus.progress,
+          onScan: () => runScan(activeBranch),
+          onStop: stopScan,
+        }}
       />
 
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2">
