@@ -1,0 +1,29 @@
+# ── apps/ml/.gitignore ──────────────────────────────────────────────────────
+# Datasets and trained models are NOT committed to git.
+#   (1) size:    git keeps every version forever → bloated clones for everyone.
+#   (2) license: some sets (e.g. the Technical Debt Dataset, CC BY-NC-SA 4.0)
+#                restrict redistribution.
+# Keep only the folder structure (.gitkeep) + data/README.md; download locally.
+# A tiny SAMPLE for automated tests may be committed — add an explicit `!` rule.
+
+# all dataset contents (raw / interim / processed / external + any loose files)
+data/**
+!data/**/
+!data/README.md
+
+# trained model artifacts
+models/**
+!models/**/
+*.pkl
+*.joblib
+
+# keep folder placeholders everywhere
+!**/.gitkeep
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+.env
