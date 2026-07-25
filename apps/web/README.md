@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Code Sage AI — Web (frontend)
 
-## Getting Started
+The Next.js (App Router) dashboard for Code Sage AI. Runs today against a **mock
+backend (MSW)** — no FastAPI, no database required. When the real backend ships,
+one env flag flips it over with no component or test changes.
 
-First, run the development server:
+## Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Node.js** v20+ (LTS)
+- **pnpm** (via `corepack enable`, or `npm i -g pnpm`)
+
+## Setup
+
+```powershell
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### ⚠️ Required: create `.env.local`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The mock backend is turned on by an env flag that is **gitignored** (so it is not
+in a fresh clone). Create `apps/web/.env.local` with:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+NEXT_PUBLIC_API_MOCKING=enabled
+```
 
-## Learn More
+Without it, the app has no data source and the screens render empty.
 
-To learn more about Next.js, take a look at the following resources:
+## Run
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```powershell
+pnpm dev            # dev server at http://localhost:3000 (Fast Refresh)
+pnpm build          # production build (also the strongest gate — renders every route)
+pnpm start          # serve the production build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Test & quality gates
 
-## Deploy on Vercel
+```powershell
+pnpm test:run              # component + hook tests (Vitest), once
+pnpm test                  # same, watch mode
+pnpm test:e2e              # Playwright end-to-end (Phase 10)
+pnpm exec tsc --noEmit     # type-check
+pnpm exec eslint src       # lint
+pnpm format                # Prettier write
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## How the data layer works (the mock backend)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+component → hook (src/hooks) → client (src/lib/api/client.ts) → fetch("/api/…")
+                                                                     │
+                                              intercepted by MSW (src/lib/mocks)
+                                                                     │
+                                                       fixtures (src/lib/mocks/fixtures.ts)
+```
+
+- **`src/lib/types`** — the data **contract**. One source of truth for every shape
+  that flows between the frontend, the mock, and the future real backend.
+- **`src/lib/mocks/handlers.ts`** — the fake API endpoints. The **same handlers**
+  power the dev app (browser worker), the tests (Node server), and E2E.
+- **`src/lib/api/client.ts`** — thin `fetch` functions. Final code; unaware the
+  backend is mocked. Points at `NEXT_PUBLIC_API_BASE_URL` (empty in dev).
+- **`src/hooks`** — `useProjects`, `useBranches`, `useHealthReport`, all built on a
+  shared `useQuery` that returns `{ data, loading, error }`.
+
+**Going live (Phase 12):** set `NEXT_PUBLIC_API_MOCKING=disabled`, point
+`NEXT_PUBLIC_API_BASE_URL` at the real API — the components and tests don't change.
+
+## Layout
+
+```
+src/
+├── app/                 # routes (App Router). (auth) = login, (app) = the shell
+├── components/          # dashboard/ projects/ layout/ + ui/ (shadcn)
+├── hooks/               # data hooks over useQuery
+├── lib/
+│   ├── api/client.ts    # network calls
+│   ├── mocks/           # MSW handlers + fixtures (deleted at go-live)
+│   ├── types/           # THE CONTRACT
+│   └── utils.ts         # colour helpers (grade/severity/health), cn, shortSha
+└── test/setup.ts        # jsdom polyfills + MSW node server for tests
+```
+
+Build guide and architecture live in [`docs/Project Management & Planning/`](../../docs/Project%20Management%20%26%20Planning/).
