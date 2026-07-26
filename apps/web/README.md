@@ -45,6 +45,21 @@ pnpm exec eslint src       # lint
 pnpm format                # Prettier write
 ```
 
+### Watching the E2E tests run
+
+`pnpm test:e2e` runs Playwright headless. To watch a real browser drive the app:
+
+```powershell
+pnpm exec playwright test --headed                  # run in a visible browser
+pnpm exec playwright test --ui                      # UI mode: pick tests, step, time-travel (DOM snapshots)
+pnpm exec playwright test e2e/scan.spec.ts --debug  # step through one spec in the Inspector
+pnpm exec playwright show-report                    # open the HTML report from the last run
+```
+
+Runs are slowed for visibility via `launchOptions.slowMo` in `playwright.config.ts`;
+note that applies to **every** run, including the headless `pnpm test:e2e` gate. In
+VS Code, the **Playwright Test for VSCode** extension adds ▶ buttons next to each `test(...)`.
+
 ## How the data layer works (the mock backend)
 
 ```
