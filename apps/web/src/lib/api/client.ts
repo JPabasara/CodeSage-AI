@@ -27,6 +27,15 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// ── auth (mocked in the prototype; real GitHub OAuth is Phase 12) ─────────────
+
+/** Mocked "Sign in with GitHub": pretends OAuth succeeded, hands back the user's repos. */
+export function signInWithGitHub(): Promise<{ user: string; repos: Repo[] }> {
+  return fetch(`${API_BASE}/api/auth/github`, { method: "POST" }).then(
+    json<{ user: string; repos: Repo[] }>,
+  )
+}
+
 // ── reads ────────────────────────────────────────────────────────────────────
 
 export function getProjects(): Promise<Repo[]> {

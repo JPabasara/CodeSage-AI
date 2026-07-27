@@ -11,6 +11,7 @@ import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBranches } from "@/hooks/use-branches"
 import { useHealthReport } from "@/hooks/use-health-report"
+import { useScan } from "@/hooks/use-scan"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
 
@@ -30,9 +31,18 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
   const { data: report, loading, error } = useHealthReport(repoId, activeBranch)
 
+  // The Scan button's state machine (start → poll progress → done/stop + toast).
+  const { status: scanStatus, scan: runScan, stop: stopScan } = useScan(repoId)
+
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
-  // hovered node is captured now; Card B re-scopes to it later (v2). Only the setter is needed today.
+  // The file tree writes the hovered node here (FileTree → onHoverNode). In v1
+  // Card B always shows repo health and ignores this, so only the setter is used
+  // today (the value is intentionally discarded — no consumer, no unused var).
+  // v2 flip (plan §2.3 / roadmap) is two edits, no rewrite:
+  //   1. keep the value: const [hoveredNode, setHoveredNode] = useState<TreeNode | null>(null)
+  //   2. feed Card B:    <HealthGraphCard history={hoveredNode?.history ?? report.history} />
+  // …which also needs a per-node HealthPoint[] added to TreeNode (a v2 contract change).
   const [, setHoveredNode] = useState<TreeNode | null>(null)
 
   const openFinding = (finding: Finding) => {
@@ -71,7 +81,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         onBranchChange={setPickedBranch}
         lastCommitSha={report.commitSha}
         scannedAt={report.scannedAt}
-        scan={{ phase: "idle", progress: 0 }}
+        scan={{
+          phase: scanStatus.phase,
+          progress: scanStatus.progress,
+          onScan: () => runScan(activeBranch),
+          onStop: stopScan,
+        }}
       />
 
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2">
