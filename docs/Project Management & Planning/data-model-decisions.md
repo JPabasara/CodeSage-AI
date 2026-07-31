@@ -32,7 +32,11 @@ The known conflict: the contract says **`code-design`**, the SATD dataset label 
 - Pick one exact spelling for every enum value, on both sides, in one sitting.
 - Changing it afterwards = data migration **+** frontend change **+** re-running every fixture.
 
-> ✍️ **TEAM TODO:** confirm the `Category` values against the SATD dataset CSV, then mark the contract frozen.
+**`Severity` and `Category` are written once, by the detector.** Both are set at detection from the rule register (SRS Appendix C) — SATD rows get `category` from ML-1 and `severity` from the comment-marker table (SRS FR-9.2, Appendix C.2); ML-2 writes no finding row. No later process updates these columns: scoring reads `severity` as a lookup into base points, the client reads it to draw a badge, and neither writes. **No user setting writes them either** — `SCORE_PROFILE` carries weights only (D-4). So these two enums are **backend-authored, frontend-rendered** — which is exactly why their spellings must be frozen before the first migration. Normative in SRS **FR-8.1**.
+
+**`Source` is now two values — `rule | satd`** ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) D-CR3). The former `security` value duplicated `category` exactly — security patterns run inside the rule engine, so such a finding was always `source = security` **and** `category = security` — and `ml-risk` was unreachable, because the risk model writes `FILE_SCORE.risk_score` and never a `FINDING` row. Constrain the column to the two values in the first migration: a `CHECK` that still permits four will silently admit rows the frontend can no longer explain. Normative in SRS **FR-8.2**.
+
+> ✍️ **TEAM TODO:** confirm the `Category` values against the SATD dataset CSV, then mark the contract frozen. **Still open — this is the last item blocking the first migration.**
 
 ### D-2 · `SCAN` rows are **append-only** (immutable snapshots)
 
@@ -66,6 +70,30 @@ This is a data decision, not just a scoring one: it is baked into every `FILE_SC
 
 ---
 
+### D-4 · `SCORE_PROFILE` holds weights, never severities — **decided**
+
+Shape, frozen by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) D-CR4:
+
+```
+SCORE_PROFILE {
+  weights   jsonb    -- keyed by the five CATEGORY values:
+                     -- security · code-design · requirement · documentation · test
+                     -- each clamped 0.1 – 3.0
+  trust_s   numeric  -- 0.0 – 1.0, default 0.5 — the rules ←→ model slider
+  is_preset bool
+}
+```
+
+Three things the backend must honour:
+
+- **`weights` is keyed by `category`, and by nothing else.** The previous vector mixed axes — it carried `satd` (a *source*) and `duplication` (a *rule*) while omitting `requirement`, `documentation` and `test` entirely, so a documentation-category SATD finding had no defined weight. Since v1.0 exposes these as user-facing sliders, a key that does not correspond to a category is a control the user can drag with no effect.
+- **`w_ml` is gone**, replaced by `trust_s`. If a migration or seed script still writes `w_ml`, scoring will silently read a default.
+- **No severity column, ever.** Severity is detector-authored (D-1). A profile that could write severity would defeat the visibility floor (SRS FR-24).
+
+Seed the three presets as rows with `is_preset = true`; they are the values the sliders reset to, and **Balanced** is the default profile for every new workspace.
+
+---
+
 ## 3. RLS — the one rule for the first migration
 
 **Put `workspace_id` on every tenant-scoped table in the very first migration**, even while the policies are still off and every row holds the same value.
@@ -92,4 +120,4 @@ No workspace picker, and **nothing that sends `workspace_id` from the browser**.
 
 ---
 
-*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27. Any change to D-1, D-2 or D-3 is a PR both sides review — the contract is the agreement.*
+*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md))**. Any change to D-1 through D-4 is a PR both sides review — the contract is the agreement.*

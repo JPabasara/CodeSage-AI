@@ -13,6 +13,7 @@
 | Date | Version | Description | Author |
 |---|---|---|---|
 | 22/Jul/2026 | 0.1 (draft) | Initial SRS: v1.0 functional + non-functional requirements, interfaces, DB, constraints. | Group 16 |
+| 30/Jul/2026 | 0.2 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** — severity register (FR-8.1), `source` reduced to `rule \| satd` (FR-8.2), SATD marker-based severity (FR-9.2), risk as a bounded multiplier (FR-10/FR-11), scoring profile = 5 category weights + trust slider (FR-11/FR-20), in-place finding detail (FR-17/FR-18), three-mechanism visibility floor (FR-24). | Group 16 |
 | ✍️ | | | |
 
 ---
@@ -61,7 +62,7 @@ The intended audience is: the development team (frontend, backend, and ML member
 **This SRS covers the v1.0 release scope** (per [release-roadmap.md](../Project%20Management%20%26%20Planning/release-roadmap.md)):
 
 - **In scope (v1.0):** GitHub sign-in; connecting **one public repository by URL** (1 repo = 1 project); a Projects list with selection; per-branch, **on-demand** scanning with progress and cancel; the full analysis pipeline (Lizard metrics, PyDriller history, rule engine, SATD classifier, risk model); weighted scoring with selectable preset profiles and a critical-security visibility floor; the dashboard outputs (health card + category pie, health trend chart, Refactor-First list with filter-by-debt-type, finding-detail panel, hotspot file-tree heat map); scan history; persistence of every scan as an immutable snapshot; a single-member workspace built on a multi-tenant foundation.
-- **In scope but later ([v1.1]/[v2]):** private repositories via GitHub App; custom scoring sliders; finding actions (accept/resolve/false-positive); standalone category-breakdown view; multi-repository workspaces; **Team / RBAC**; silent checks (auto-scan on push/PR); cross-repository dependency analytics; GitLab.
+- **In scope but later ([v1.1]/[v2]):** private repositories via GitHub App; finding actions (accept/resolve/false-positive); code snippet on demand; standalone category-breakdown view; multi-repository workspaces; **Team / RBAC**; silent checks (auto-scan on push/PR); cross-repository dependency analytics; GitLab. *(Custom scoring sliders moved **into v1.0** by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) — see FR-20.)*
 - **Not detection inputs in v1.0** (see **FR-7.1**): **commit-message text** as a SATD input (history is consumed only as the four numeric process metrics); **pull requests and issues** in any form; previously stored snapshots as model or scoring input.
 - **Out of scope (whole product):** fully automatic code refactoring; on-premise/proprietary VCS beyond GitHub/GitLab; integration with project-management tools (Jira/Trello); full vulnerability scanning (SAST/DAST, CVE/dependency auditing, penetration testing).
 
@@ -72,8 +73,9 @@ The intended audience is: the development team (frontend, backend, and ML member
 | **Technical Debt (TD)** | The implied future cost of shortcuts, bad smells, or shortcuts taken in code. |
 | **SATD** | Self-Admitted Technical Debt — debt a developer admits in natural language (e.g. `// TODO: temporary hack`). The literature recognises four sources (comments, commit messages, issues, pull requests); **v1.0 detects SATD in source-code comments only** — see FR-9 and §3.1.9.1. |
 | **Finding** | The atomic unit of output: one detected issue at a `file:line:symbol`, with a `source`, a `category`, a `severity`, and a one-line reason. |
-| **`source`** | *Which detector* produced a finding: `rule` \| `satd` \| `security` \| `ml-risk`. |
+| **`source`** | *Which detector* produced a finding: `rule` \| `satd` — the only two producers of findings (FR-8.1). Security patterns run **inside** the rule engine, so a security finding is a `rule` finding whose `category` is `security`; the risk model produces no findings at all. |
 | **`category`** | *What type of debt* a finding is: `code-design` \| `requirement` \| `documentation` \| `test` \| `security`. |
+| **`severity`** | *How bad* a finding is: `critical` \| `high` \| `medium` \| `low`. **Assigned at detection** — from the rule register for `rule` findings, from the comment-marker table for `satd` findings (FR-9.2) — and never by scoring, by the UI, by an ML model, or by a user (FR-8.1). Stored on the finding, then read by exactly two consumers: scoring (→ base points, FR-11) and the Refactor-First badge (FR-15). |
 | **Rule engine** | Deterministic thresholds over static metrics + pattern-based security rules. |
 | **Risk model (ML-2)** | Supervised classifier estimating a file's bug-proneness (0–1). |
 | **SATD classifier (ML-1)** | Supervised NLP model classifying a **source-code comment** as debt and, if so, its category. |
@@ -84,7 +86,8 @@ The intended audience is: the development team (frontend, backend, and ML member
 | **Snapshot-scoped** | Derived solely from the working tree at the scanned commit SHA. Comments are snapshot-scoped; commit messages are not. |
 | **Health score / grade** | 0–100 score and A–E grade summarising a repo's (or subtree's) debt. |
 | **Snapshot** | The immutable stored result of one scan, keyed by branch + commit SHA. |
-| **Scoring profile** | The weight vector (per-category weights + ML weight) that turns findings into scores. |
+| **Scoring profile** | The user-owned settings that turn findings into scores: **five per-category weights** plus one **trust slider** `s` that trades rule-engine confidence against machine-learning confidence (FR-20). It never contains a severity. |
+| **Trust slider (`s`)** | A single control, `s ∈ [0,1]`, default `0.5`, expressing *how much this team trusts the deterministic rules versus the machine-learning detectors*. Yields `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s`; the `security` category is excluded and always uses 1.0 (FR-11, FR-24). |
 | **Visibility floor** | A rule that critical security findings are never suppressed or down-weighted below visibility. |
 | **Workspace / tenant** | The top-level data owner in the multi-tenant model; a project belongs to a workspace, not a person. |
 | **RBAC** | Role-Based Access Control (org-admin / manager / developer / viewer). |
@@ -185,10 +188,49 @@ The following boundary is **normative** and governs every extractor:
 **Consequence — a scan is a pure function.** `Scan(commit SHA)` is determined by the repository at that SHA (its tree *and* the history reachable from it), a fixed model version, and the active profile. It never reads a prior scan row. This is what makes FR-6's skip-if-unchanged optimization sound and FR-21's snapshots reproducible.
 
 ### 3.1.8 FR-8 [v1.0] Detection — rule engine
-The system shall run a deterministic **rule engine** producing findings with a hard-coded `category`: **code-design** rules (`CCN > 15` complex function; `> 80 NLOC` long method; nesting `> 4`; duplicated block; file `> 800 NLOC`) and **security** patterns (**hardcoded secret** via regex + entropy on high-entropy values assigned to key/token/secret names; **SQL string concatenation**; dangerous **`eval`/`exec`**). Each rule finding records `file`, `line`, `symbol`, the measured `metricValue`, its `threshold`, and a `ruleId`. The rule engine is fully explainable and can ship standalone if ML slips (risk R3).
+The system shall run a deterministic **rule engine** producing findings with a hard-coded `category`: **code-design** rules (`CCN > 15` complex function; `> 80 NLOC` long method; nesting `> 4`; duplicated block; file `> 800 NLOC`) and **security** patterns (**hardcoded secret** via regex + entropy on high-entropy values assigned to key/token/secret names; **SQL string concatenation**; dangerous **`eval`/`exec`**). Each rule finding records `file`, `line`, `symbol`, `category`, `severity`, the measured `metricValue`, its `threshold`, and a `ruleId`. The rule engine is fully explainable and can ship standalone if ML slips (risk R3).
+
+#### 3.1.8.1 FR-8.1 [v1.0] Severity and category are assigned at detection *(normative)*
+
+Every **rule definition** shall carry a fixed `category` **and** a fixed `severity`, together with its message template (FR-16). The rule knows what it detected, so it knows how bad it is; the values are written onto the finding at detection time and are **never recomputed** by scoring, by a profile change, or by the client.
+
+| `ruleId` | Trigger | `category` | `severity` |
+|---|---|---|---|
+| `complex-function` | `CCN > 15` | `code-design` | Medium |
+| `long-method` | function `> 80 NLOC` | `code-design` | Medium |
+| `deep-nesting` | nesting `> 4` | `code-design` | Medium |
+| `duplicate-block` | duplicated block detected | `code-design` | Low |
+| `large-file` | file `> 800 NLOC` | `code-design` | Low |
+| `hardcoded-secret` | regex + entropy on a high-entropy value assigned to a key/token/secret name | `security` | **Critical** |
+| `sql-concat` | SQL string concatenation | `security` | High |
+| `dangerous-eval` | `eval` / `exec` usage | `security` | High |
+
+**Assignment by producer.**
+
+| Producer | Assigns `category` | Assigns `severity` |
+|---|---|---|
+| **Rule engine** (metric rules **and** security patterns) | From the register above | From the register above |
+| **SATD classifier (ML-1)** — FR-9 | **Predicted** from the comment text | **Not the model.** From the comment-marker table — **FR-9.2** |
+| **Risk model (ML-2)** — FR-10 | Neither — it produces no findings | Neither |
+| **The user** (scoring profile) | Never | **Never** — the profile carries weights only (FR-20) |
+
+Consequently **no machine-learning model and no user assigns a severity**: severity is fully deterministic and system-owned, which is what makes the critical-security visibility floor (FR-24) and configurable prioritization (FR-20) safe to defend. `severity` answers *how bad is this kind of problem* — the same answer for every team; `category_weight` answers *how much does this team care about that type* — different per team. Merging the two would make the profile non-identifiable and would allow a user to defeat FR-24.
+
+**Severity is flat per rule in v1.0** — `complex-function` emits `medium` whether the measured CCN is 16 or 45; a worse file simply accumulates more findings. Graduating severity by how far a value exceeds its threshold is a **[v1.1]** refinement that changes no architecture: the rule still decides, still at detection time.
+
+#### 3.1.8.2 FR-8.2 [v1.0] `source` has exactly two values *(normative)*
+
+`source` shall be `rule` or `satd` — the only two producers of findings. Specifically:
+
+- **Security patterns are rule findings.** They run inside the rule engine (FR-8), in the same pass and the same code path; only the *mechanism* differs (regex/entropy over text rather than a threshold over a metric). A security finding is therefore `source = rule`, `category = security`. There is **no** `security` value on the `source` axis, because it would duplicate `category` exactly and the two axes must remain orthogonal.
+- **The risk model produces no findings** (FR-10), so no finding can carry an `ml-risk` source. The risk score is stored per file, not per finding.
+
+The question *"is this a security issue?"* is answered by `category`; *"how bug-prone is this file?"* by the per-file risk score; *"which rule fired?"* by `ruleId`.
+
+The complete `ruleId → severity → category → message template` register is **Appendix C**; it is the single source of truth for this requirement and for FR-16.
 
 ### 3.1.9 FR-9 [v1.0] Detection — SATD classifier (ML-1)
-The system shall classify each **source-code comment extracted from the scanned snapshot** (FR-7) as **debt or not**, and if debt, assign a `category` ∈ {`code-design`, `requirement`, `documentation`, `test`} using a supervised NLP model (**TF-IDF → Linear SVM / Logistic Regression** baseline; CodeBERT a stretch), trained on the Li et al. SATD dataset. The debt-category set **must equal the dataset's labels** (else the model is untrainable). Each SATD finding is anchored to the comment's `file:line` and quotes the actual comment text plus the predicted category in its reason.
+The system shall classify each **source-code comment extracted from the scanned snapshot** (FR-7) as **debt or not**, and if debt, assign a `category` ∈ {`code-design`, `requirement`, `documentation`, `test`} using a supervised NLP model (**TF-IDF → Linear SVM / Logistic Regression** baseline; CodeBERT a stretch), trained on the Li et al. SATD dataset. The debt-category set **must equal the dataset's labels** (else the model is untrainable). Each SATD finding is anchored to the comment's `file:line` and quotes the actual comment text plus the predicted category in its reason. The model predicts **`category` only**; the finding's `severity` is assigned deterministically per **FR-9.2**.
 
 #### 3.1.9.1 FR-9.1 [v1.0] SATD inference scope — comments only *(design rationale)*
 
@@ -206,11 +248,61 @@ By contrast, comment-based SATD is **self-healing**: delete the `# TODO`, and th
 
 > ✍️ **TEAM TODO (D5):** confirm the exact category label strings against the Li SATD dataset CSV and lock the `Category` enum accordingly (currently `code-design | requirement | documentation | test | security`).
 
+#### 3.1.9.2 FR-9.2 [v1.0] SATD severity — the comment-marker table *(normative)*
+
+After the classifier has determined that a comment is debt and assigned its `category`, the system shall assign that finding's `severity` by matching the comment text against the following table:
+
+| `severity` | Pattern (case-insensitive, word-boundary) | base points |
+|---|---|---|
+| `high` | `\b(FIXME\|BUG\|XXX\|BROKEN\|DO\s*NOT\s*(SHIP\|MERGE))\b` | 5 |
+| `medium` | `\b(TODO\|HACK\|TEMP\|TEMPORARY\|WORKAROUND\|KLUDGE\|REFACTOR)\b` | 3 |
+| `low` | `\b(NOTE\|REVIEW\|NIT\|IDEA\|QUESTION\|MAYBE)\b` | 1 |
+| `medium` *(default)* | no marker matched | 3 |
+
+Application rules: patterns shall be evaluated **high → medium → low** and the **highest match wins**, so `# FIXME: TODO later` is `high`; patterns shall match **anywhere** in the comment, not only at its start; and a comment with **no recognised marker is still a finding** — the classifier detecting debt in prose alone is precisely why ML-1 exists rather than a plain regex scan — and defaults to `medium`.
+
+*Rationale.* A supervised model can predict only what its training data labels, and the Li et al. dataset labels **categories, not severities**; there is no answer key for severity, so it cannot be learned and must be assigned deterministically. A single flat value was rejected because `# FIXME: auth check is bypassed` and `# TODO: rename this variable` are not equally bad. The three tiers encode a real distinction — *something is wrong* / *it works but it is ugly* / *for your information* — and use the same hand-written-table mechanism as the rule register, so each row is defensible individually. The division of labour is: the **probabilistic** component decides *is this debt and of what type*; the **deterministic** component decides *how bad*.
+
+The patterns and their message templates are listed in **Appendix C.2**.
+
 ### 3.1.10 FR-10 [v1.0] Detection — risk model (ML-2)
-The system shall compute a per-file **bug-proneness risk score (0–1)** with a supervised classifier (**Random Forest / Gradient Boosting**) over a **numeric feature vector per file** — Lizard product metrics (CCN, NLOC, nesting, params, comment ratio) from the scanned tree **plus the four PyDriller process metrics** (churn, author count, file age, recency) aggregated from the history reachable from the scanned SHA — trained on labelled defect data (**GHPR** primary; SZZ-derived labels; NASA PROMISE only as a legacy baseline). ML-2 is therefore the one component that legitimately depends on history, and it consumes that history strictly as numbers (FR-7.1), never as text; process metrics are retained because they are empirically stronger defect predictors than static metrics alone. The risk score **does not assign a debt category** and is **not** a line-item; it colours the hotspot tree, boosts ranking, and appears as a per-file **risk badge** (e.g. "risk 0.78"). Because defective files are rare, the model is evaluated with precision/recall/F1/AUC (never accuracy), and the output is presented as a risk/health indicator, never a "bug oracle."
+The system shall compute a per-file **bug-proneness risk score (0–1)** with a supervised classifier (**Random Forest / Gradient Boosting**) over a **numeric feature vector per file** — Lizard product metrics (CCN, NLOC, nesting, params, comment ratio) from the scanned tree **plus the four PyDriller process metrics** (churn, author count, file age, recency) aggregated from the history reachable from the scanned SHA — trained on labelled defect data (**GHPR** primary; SZZ-derived labels; NASA PROMISE only as a legacy baseline). ML-2 is therefore the one component that legitimately depends on history, and it consumes that history strictly as numbers (FR-7.1), never as text; process metrics are retained because they are empirically stronger defect predictors than static metrics alone. The risk score **assigns neither a debt `category` nor a `severity`** (FR-8.1), produces **no findings** (FR-8.2), and is **not** a line-item. It has exactly two effects: it **boosts the priority of the findings in that file**, through the bounded `risk_factor` multiplier defined in FR-11, and it appears as a per-file **risk badge** (e.g. "risk 0.78") on the file row and in the hotspot tree. Because defective files are rare, the model is evaluated with precision/recall/F1/AUC (never accuracy), and the output is presented as a risk/health indicator, never a "bug oracle."
+
+**The risk score does not by itself create debt.** A file with a high risk score but **no findings** contributes no debt and is not tinted as unhealthy; the badge still reports its risk. This keeps every point of debt traceable to a finding the user can open — a file tinted red that opens to an empty detail panel would be exactly the un-actionable noise this product exists to remove. Risk and debt therefore remain two honest signals rather than one blended number.
 
 ### 3.1.11 FR-11 [v1.0] Scoring & prioritization
-The system shall fuse findings into scores with a **pure function** that reads the active **scoring profile** (per-category weights + ML weight) and any accepted-debt suppressions — applied **only at scoring**, so changing a profile or accepting a finding **never requires a re-scan**. It shall compute: `finding_priority = base_points(severity) × category_weight × churn_factor`; `file_debt = Σ open finding_priority + w_ml × (risk_score × 10)`; `repo_health = 100 × (1 − min(1, Σ file_debt / (k·KLOC)))`; and a grade (A ≥ 85, B ≥ 70, C ≥ 55, D ≥ 40, E < 40). Severity base points: Critical 8, High 5, Medium 3, Low 1.
+The system shall fuse findings into scores with a **pure function** that reads the active **scoring profile** (five per-category weights + the trust slider `s` — FR-20) and any accepted-debt suppressions — applied **only at scoring**, so changing a profile or accepting a finding **never requires a re-scan**. It shall compute:
+
+```
+churn_factor(file) = 1 + min(commits_90d, 20) / 20        # 1.0 – 2.0
+risk_factor(file)  = 1 + ml_trust × risk_score            # 1.0 – 2.5
+
+rule_trust = 0.5 + s                                      # 0.5 – 1.5
+ml_trust   = 1.5 − s                                      # 1.5 – 0.5
+source_trust(finding) = 1.0         if category = security     ← FR-24
+                      = rule_trust  if source   = rule
+                      = ml_trust    if source   = satd
+
+finding_priority = base_points(severity)
+                 × category_weight[category]
+                 × source_trust(finding)
+                 × churn_factor(file)
+                 × risk_factor(file)
+
+file_debt   = Σ finding_priority (open findings only)
+repo_health = 100 × (1 − min(1, Σ file_debt / (k · KLOC)))
+grade       = A ≥ 85 · B ≥ 70 · C ≥ 55 · D ≥ 40 · E < 40
+```
+
+Severity base points: **Critical 8, High 5, Medium 3, Low 1**. Each factor answers exactly one question and has exactly one owner: *how bad is it* (the system, FR-8.1/FR-9.2) · *what type is it* (FR-8.1/FR-9) · *who found it* (the user's trust slider) · *how hot is the file* (measured) · *how fragile is the file* (FR-10).
+
+**`base_points` is a lookup, not a judgement.** It is a four-entry map over the `severity` the detector already assigned and stored (FR-8.1). Scoring never decides *how bad* a finding is — only how much that badness is worth under the active profile. This is why the badge shown in FR-15 and the ranking computed here can never disagree: both read the same stored value.
+
+**Risk multiplies; it does not add.** The risk score enters scoring **only** through `risk_factor`, in the same shape as `churn_factor` — a bounded per-file multiplier applied to every finding in that file. It contributes no additive term to `file_debt`, so it is never counted twice, and a file with no findings accrues no debt from risk alone (FR-10). A multiplier is also the correct shape: it scales proportionally, so a Critical finding in a fragile file gains more than a Low one, whereas an additive term would shift both equally.
+
+**The bound is normative.** The maximum combined boost is `churn 2.0 × risk 2.5 = 5×`, which is strictly less than the 8× spread between Low (1) and Critical (8). Within a category, therefore, the machine-learning and churn signals may re-order findings but **shall never raise a `low` finding above a `critical` one**. The deterministic severity ranking cannot be inverted by a model.
+
+> ✍️ **TEAM TODO:** `k` shall be **recalibrated** on the golden repositories. `file_debt` changed scale under [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) — an additive term was removed and a multiplier of up to 2.5× introduced — so any previously chosen value is invalid.
 
 **Churn window anchoring.** `churn_factor(file) = 1 + min(commits_90d, 20) / 20` (range 1.0–2.0). The 90-day window shall be measured **backwards from the committer date of the scanned commit** — the branch's last commit, the same SHA the snapshot is keyed on:
 
@@ -230,22 +322,59 @@ The Health card shall include a small **pie chart** showing the percentage of te
 The system shall present a **trend chart** of health per scan/commit over time for the selected branch (repo scope), read from stored snapshots. *(Re-scoping Card B to a hovered file/folder's history = **FR-14b [v2]**; the hover event and per-node data seam exist from v1.0.)*
 
 ### 3.1.15 FR-15 [v1.0] Refactor-First list + filter by debt type
-The system shall present a **prioritized list** of the top rule/SATD findings, sorted by `priority`, each row showing **debt category**, **severity** (badge), **`file:line`**, and the **one-line reason**. The user shall **filter the list by debt type** (`category`) so a security lead can view only `security`, a docs pass only `documentation`, etc. The per-file risk score is not a row (it is file-level); it lifts risky files up the ranking and shows as a badge.
+The system shall present a **prioritized list** of the top rule/SATD findings, sorted by `priority`, each row showing a **debt-category chip**, a **severity chip**, **`file:line`**, and the **one-line reason**. The severity chip renders the `severity` value **stored on the finding** (FR-8.1); the client performs no severity judgement of its own and only maps the stored string to its colour token.
+
+**Source chip.** A row whose `source` is `satd` shall additionally carry a **`SATD` chip**, so the user can see that a developer already admitted this debt. Rows whose `source` is `rule` carry no source chip: `rule` is the default, and a chip present on every row carries no information. The source is shown as **its own chip and never inside the severity chip**, because severity is an ordinal scale (`critical > high > medium > low`) on which a source value is not comparable and would leave `base_points` undefined.
+
+The user shall **filter the list by debt type** (`category`) so a security lead can view only `security`, a docs pass only `documentation`, etc. The per-file risk score is not a row (it is file-level); it lifts risky files up the ranking (FR-11) and shows as a badge.
 
 ### 3.1.16 FR-16 [v1.0] One-line reason (deterministic templates)
 Every finding shall carry a **one-line, plain-English reason** generated by **string templates** (no NLP generation): one template per rule with the finding's own values interpolated (e.g. *"charge() has cyclomatic complexity 18, over the limit of 15 — split it into smaller functions"*); SATD quotes the extracted comment + predicted category; risk surfaces the salient signals. Reasons are reliable, explainable, instant, and never hallucinate. *(An AI **fix suggestion** that rewrites code is a separate, later feature.)*
 
-### 3.1.17 FR-17 [v1.0] Finding-detail panel
-Clicking a Refactor-First row (or a file in the tree) shall open a **slide-over detail panel** showing the finding's **evidence** (rule id, measured value vs threshold, or the quoted comment), the **one-line reason**, and its `file:line:symbol`. *(The offending **code snippet on demand** = **FR-17b [v1.1]**; **actions** Accept-debt / Resolve / False-positive = **FR-17c [v1.1]**. v1.0 is view-only.)*
+### 3.1.17 FR-17 [v1.0] Finding detail — in-place detail mode
+Selecting a Refactor-First row (or a file in the tree) shall switch the dashboard into **detail mode**, rendered **in place rather than as an overlay**:
+
+| Region | Dashboard mode | Detail mode |
+|---|---|---|
+| Main | Overall Health card (FR-12) + health trend chart (FR-14) | **Finding detail** — evidence (rule id, measured value vs threshold, or the quoted comment), the one-line reason, and `file:line:symbol` |
+| Right | Hotspot file tree (FR-18) | Hotspot file tree, **auto-expanded and highlighting the finding's file** |
+| Bottom | *(the Refactor-First list in its full position)* | **Refactor-First list, condensed** — the user can move between findings without leaving detail mode |
+
+Closing the finding shall restore the health card and trend chart and return the list to its full position. The selected finding shall be reflected in the URL so that reload and browser navigation behave correctly.
+
+*Rationale.* This is the master–detail pattern used for reading many items in sequence, which is what triage is. An overlay covers the file tree, costs a close-and-reopen for every finding, and is too narrow to render a code snippet without wrapping; rendering in place keeps the tree visible and interactive, adds the spatial context of *where* the finding lives, and provides the width that FR-17b needs.
+
+*(The offending **code snippet on demand** = **FR-17b [v1.1]** — v1.0 builds the region for it; **actions** Accept-debt / Resolve / False-positive = **FR-17c [v1.1]**. v1.0 is view-only.)*
 
 ### 3.1.18 FR-18 [v1.0] Hotspot file-tree heat map
-The system shall present an **interactive file tree** on the right of the dashboard, each file/folder **tinted red → amber → green** by its health/debt score. Folders aggregate their children. The user can **expand/collapse** and **drill in** (folder health re-aggregates from stored file scores, no re-scan). Hovering a node emits an event (wired for FR-14b) and selecting a file can open its finding detail.
+The system shall present an **interactive file tree** on the right of the dashboard, each file/folder **tinted red → amber → green** by its health/debt score, with the per-file **risk badge** (FR-10) shown on the node. Folders aggregate their children. The user can **expand/collapse** and **drill in** (folder health re-aggregates from stored file scores, no re-scan). Hovering a node emits an event (wired for FR-14b) and selecting a file can open its finding detail.
+
+**Reveal-and-highlight.** When the dashboard enters detail mode (FR-17), the tree shall **automatically expand the ancestors of the selected finding's file, scroll it into view, and highlight it**, so the user always sees where the finding they are reading lives. The tree remains fully interactive throughout detail mode.
 
 ### 3.1.19 FR-19 [v1.0] Scan history
 The system shall provide a **Scan-History** view listing past snapshots for the active project/branch (each: date, commit SHA, health score, grade, delta, finding count). Selecting a past scan **loads that snapshot into the dashboard** (read-only view of history). This is possible because every scan is persisted (FR-21).
 
-### 3.1.20 FR-20 [v1.0] Scoring profiles — select a preset
-The system shall let the user **select a preset scoring profile** — **Balanced** (default), **Security-first**, **Delivery-speed** — which re-scores the stored findings instantly (no re-scan) and re-orders the Refactor-First list. *(Custom weight **sliders** + reset = **FR-20b [v1.1]**.)* Regardless of profile, the **critical-security visibility floor** (FR-24) holds.
+### 3.1.20 FR-20 [v1.0] Scoring profiles — presets and custom weights
+The system shall let the user shape prioritization through a **scoring profile** consisting of **five per-category weights** and **one trust slider**. Any change re-scores the stored findings instantly (no re-scan) and re-orders the Refactor-First list.
+
+**Controls.**
+
+| Control | Range | Meaning |
+|---|---|---|
+| `category_weight` × 5 — `security`, `code-design`, `requirement`, `documentation`, `test` | 0.1 – 3.0 | *How much does this team care about this type of debt?* |
+| Trust slider `s` | 0 – 1, default 0.5 | *How much does this team trust the deterministic rules versus the machine-learning detectors?* (FR-11) |
+
+**Presets seed the sliders.** The system shall provide three presets — **Balanced** (the default for every new workspace), **Security-first** and **Delivery-speed** — which populate the sliders in one click, plus a **Reset to preset** action. Selecting a preset is therefore a single interaction; adjusting from it is optional.
+
+| Preset | security | code-design | requirement | documentation | test | `s` |
+|---|---|---|---|---|---|---|
+| **Balanced** (default) | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 0.5 |
+| **Security-first** | 3.0 | 1.0 | 0.8 | 0.5 | 1.0 | 0.5 |
+| **Delivery-speed** | 1.5 | 1.2 | 0.8 | 0.5 | 0.5 | 0.7 |
+
+**Constraints.** Weights shall be **clamped** to the ranges above, because `repo_health` is calibrated against `k` (FR-11) and unbounded weights would drive every repository to grade E and make the health score meaningless. The profile shall **never contain a severity** (FR-8.1). Regardless of profile, the **critical-security visibility floor** (FR-24) holds.
+
+*Rationale for retaining presets alongside sliders.* A default profile must exist for every new workspace; a one-click preset change is what demonstrates *"same findings, different lens, no re-scan"*; and opening a configuration screen with six raw numeric controls and no guidance would work directly against U-1 and U-2, reproducing the very experience this product differentiates against.
 
 ### 3.1.21 FR-21 [v1.0] Snapshot persistence (stateful storage, stateless services)
 The system shall store the result of every scan as an **immutable snapshot** keyed by (repo, branch, commit SHA, timestamp): the health score, per-file scores, tree, findings, and category breakdown. All dashboard reads (health, trend, history, delta) are pure reads of these snapshots. Application services remain stateless; persistence lives in PostgreSQL. This enables the trend chart, scan history, delta, and skip-if-unchanged.
@@ -258,6 +387,14 @@ The system shall support multi-user workspaces with roles **org-admin / manager 
 
 ### 3.1.24 FR-24 [v1.0] Critical-security visibility floor
 The system shall guarantee that **critical security findings are never suppressed or down-weighted below visibility**, regardless of the active profile or accepted-debt suppressions. A delivery-speed profile may de-prioritize a long method; it must never hide a leaked credential. *(This rule is what makes configurable prioritization safe.)*
+
+The floor is enforced by **three independent mechanisms**, so that no single setting can defeat it:
+
+1. **Severity is not user-settable.** `hardcoded-secret = critical` is fixed in the rule register (FR-8.1); no profile control can change it.
+2. **The `security` category is excluded from the trust slider.** `source_trust` is always 1.0 for security findings (FR-11), so no position of `s` can de-weight them. Without this exclusion the "trust the model" end of the slider would halve every security finding, since all security detection is deterministic.
+3. **Critical security findings are pinned into the visible list** regardless of computed priority, even at the minimum permitted `security` weight of 0.1 (FR-20).
+
+> **Implementation note.** While profiles were preset-only, this requirement held by construction — no preset set the security weight low enough to matter. Now that FR-20 exposes weight sliders, mechanism 3 shall be **implemented as code**, not assumed. A statement in this document is no longer sufficient on its own.
 
 ### 3.1.25 FR-25 [supporting / Objective 5] ML evaluation vs rule baseline
 The system's ML components shall be **evaluated and documented**: SATD classifier and risk model reported with **precision/recall/F1** (and AUC for risk), compared against the deterministic **rule baseline**, on held-out data and on real repositories. *(This satisfies Objective 5; produced during the testing phase, not a runtime feature.)*
@@ -341,9 +478,10 @@ The system's ML components shall be **evaluated and documented**: SATD classifie
 The GUI is a persistent **left rail** (Projects · Dashboard · Scan History · Team [v2] · Profiles · Account) with a swapping content area.
 - **Login page:** a prominent **"Sign in with GitHub"** button.
 - **Projects page:** a **Connect** control (public-URL input; private-repo picker [v1.1]); a **vertical project list** (name, owner, visibility, health hint, **Select**).
-- **Dashboard page:** a **top nav** (project name, **branch dropdown**, **Scan** button with progress + Stop, **last-analyzed time + commit SHA**); a **left half** (Overall Health card with category pie; Health trend chart; below them the **Refactor-First list** with a **debt-type filter**); a **right half** (**hotspot file-tree heat map**); a **finding-detail slide-over**.
+- **Dashboard page — dashboard mode:** a **top nav** (project name, **branch dropdown**, **Scan** button with progress + Stop, **last-analyzed time + commit SHA**); a **left half** (Overall Health card with category pie; Health trend chart; below them the **Refactor-First list** with a **debt-type filter**, each row carrying a category chip, a severity chip, `file:line`, the one-line reason, and — for SATD rows only — a **SATD source chip**); a **right half** (**hotspot file-tree heat map** with per-file risk badges).
+- **Dashboard page — detail mode (FR-17):** selecting a finding replaces the health card and trend chart **in place** with the **finding detail** (evidence, one-line reason, `file:line:symbol`, and the region reserved for the [v1.1] snippet); the file tree **auto-expands and highlights** that finding's file; the Refactor-First list **condenses to a strip** so the user can move between findings. Closing restores dashboard mode. No overlay and no blurred background.
 - **Scan-History page:** a list of past snapshots; selecting one loads it into the dashboard.
-- **Profiles page:** preset profile selector ([v1.1] sliders + reset).
+- **Profiles page:** three **preset buttons** (Balanced / Security-first / Delivery-speed) that seed the controls, **five category weight sliders**, one **rules ↔ model trust slider**, and a **Reset to preset** action; changes re-score instantly with no re-scan.
 - **Account menu:** sign out, settings/billing (stubbed).
 
 > ✍️ **TEAM TODO:** include a **block diagram** of the main UI interfaces (rail → pages → panels) per the template. Screenshots are not required at SRS stage.
@@ -392,7 +530,40 @@ The GUI is a persistent **left rail** (Projects · Dashboard · Scan History · 
 
 - **Appendix A — Traceability:** each FR traces to a proposal Objective / scope item and to a release (roadmap). *(✍️ TEAM TODO: add a traceability matrix FR → Objective → Test case.)*
 - **Appendix B — Dashboard-output definitions:** the six outputs (health card, hotspot tree, Refactor-First list, finding detail, category breakdown, trend) with their exact data shapes are defined by the **data contract** (`apps/web/src/lib/types/index.ts`).
-- **Appendix C — Reason-template table:** the rule → severity → category → message templates (FR-16) — *✍️ TEAM TODO: draft the full ~30–50 template table (backend doc §8).*
 - **Reference format:** IEEE style; tools cited by web page with "(Accessed on <date>)".
 
-*End of SRS v0.1 draft. Freeze the `Category` enum (D5) and the FR set with the whole team before promoting to v1.0.*
+## Appendix C — Rule register
+
+The normative source for **FR-8.1** (severity/category assignment), **FR-9.2** (SATD severity) and **FR-16** (one-line reasons). One row per rule; `severity` is column 3, which is the complete answer to *"where does severity come from?"*
+
+**C.1 — Rule-engine rules** (`source = rule`)
+
+| `ruleId` | `category` | `severity` | base | Reason template |
+|---|---|---|---|---|
+| `hardcoded-secret` | security | **Critical** | 8 | `A credential-like value is assigned to {symbol} — move it to an environment variable and rotate the key.` |
+| `sql-concat` | security | High | 5 | `SQL is built by string concatenation in {symbol}() — use a parameterised query.` |
+| `dangerous-eval` | security | High | 5 | `{symbol}() calls {construct} on runtime input — replace it with an explicit parser or dispatch table.` |
+| `complex-function` | code-design | Medium | 3 | `{symbol}() has cyclomatic complexity {value}, over the limit of {threshold} — split it into smaller functions.` |
+| `long-method` | code-design | Medium | 3 | `{symbol}() is {value} lines long, over the limit of {threshold} — extract cohesive blocks into helpers.` |
+| `deep-nesting` | code-design | Medium | 3 | `{symbol}() nests {value} levels deep, over the limit of {threshold} — use early returns to flatten it.` |
+| `duplicate-block` | code-design | Low | 1 | `This block is duplicated {value} times across the file — extract it into a shared helper.` |
+| `large-file` | code-design | Low | 1 | `{file} is {value} lines long, over the limit of {threshold} — consider splitting it by responsibility.` |
+
+**C.2 — SATD marker patterns** (`source = satd`; `category` is predicted by ML-1, `severity` comes from the marker — FR-9.2)
+
+| Marker pattern | `severity` | base | Reason template |
+|---|---|---|---|
+| `\b(FIXME\|BUG\|XXX\|BROKEN\|DO\s*NOT\s*(SHIP\|MERGE))\b` | High | 5 | `Self-admitted defect: '{comment_text}' — classified as {predicted_category}.` |
+| `\b(TODO\|HACK\|TEMP\|TEMPORARY\|WORKAROUND\|KLUDGE\|REFACTOR)\b` | Medium | 3 | `Self-admitted debt: '{comment_text}' — classified as {predicted_category}.` |
+| `\b(NOTE\|REVIEW\|NIT\|IDEA\|QUESTION\|MAYBE)\b` | Low | 1 | `Self-admitted note: '{comment_text}' — classified as {predicted_category}.` |
+| *(no marker matched)* | Medium | 3 | `Self-admitted debt: '{comment_text}' — classified as {predicted_category}.` |
+
+**C.3 — File-level risk message** (not a finding; the badge/tooltip text for FR-10)
+
+| Trigger | Template |
+|---|---|
+| `risk_score` shown on a file | `High-risk file ({risk}): {salient_signals}.` → e.g. *"High-risk file (0.78): high complexity (CCN 18) and frequent change (14 commits/90d)."* |
+
+> ✍️ **TEAM TODO:** expand C.1 as further rules are added (target ~30–50 rows as language coverage grows); confirm the `{construct}` and `{salient_signals}` interpolation fields with the backend.
+
+*End of SRS v0.2 draft. Freeze the `Category` enum (D5) and the FR set with the whole team before promoting to v1.0. Recalibrate `k` (FR-11) before quoting any health score.*

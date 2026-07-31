@@ -12,6 +12,7 @@
 | Date | Version | Description | Author |
 |---|---|---|---|
 | 22/Jul/2026 | 0.1 (draft) | Initial architecture: 4+1 views, data model, quality attributes for v1.0. | Group 16 |
+| 30/Jul/2026 | 0.2 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** — domain model and data view updated for the two-value `source`, the write-once severity invariant, the five-weight + trust-slider `ScoreProfile` (`w_ml` removed), risk as a scoring multiplier, and the in-place finding-detail interaction. | Group 16 |
 | ✍️ | | | |
 
 ---
@@ -216,9 +217,9 @@ classDiagram
     class Repo { id; name; owner; visibility; url; source; defaultBranch }
     class Branch { name; isDefault; lastCommitSha; lastCommitAt }
     class Scan { scanId; branch; commitSha; scannedAt; phase; healthScore; grade; delta }
-    class Finding { fingerprint; source; category; severity; file; line; symbol; reason; status; priority }
+    class Finding { fingerprint; source: rule|satd; category; severity; file; line; symbol; reason; status; priority }
     class FileScore { file; debtScore; riskScore }
-    class ScoreProfile { id; name; weights; wMl; isPreset }
+    class ScoreProfile { id; name; weights: 5 categories; trust s; isPreset }
     class Suppression { findingFingerprint; reason }
 
     Workspace "1" --> "*" Membership
@@ -232,6 +233,12 @@ classDiagram
     Workspace "1" --> "*" Suppression
 ```
 *Figure 3. Core domain model.* Responsibilities: **Scan** is the immutable snapshot aggregate root; **Finding**/**FileScore** are its parts; **ScoreProfile**/**Suppression** are read only at scoring time (never mutate stored findings).
+
+**Finding invariant — `category` and `severity` are write-once, set by the detector.** Both are assigned by the component that produced the finding (the rule definition; or ML-1 for `category` plus the comment-marker table for `severity`) and are never recomputed downstream. `ScoringEngine` reads `severity` as a lookup into base points; the client reads it to draw a badge. Neither writes it, and **no user setting can change it** — the profile carries weights only. This keeps *"the dashboard computes nothing"* true for severity as well as for scores, and it is why a profile switch re-ranks findings without altering a single stored field. Normative in **SRS FR-8.1 / FR-9.2**; rule register in SRS Appendix C.
+
+**`source` has two values — `rule | satd`.** These are the only two components that emit findings. Security patterns execute inside the rule engine, so a security finding is a `rule` finding whose `category` is `security`; a `security` source value would duplicate the category axis exactly and destroy the orthogonality this model depends on. `RiskModel` emits **no** `Finding` — it writes `FileScore.riskScore` — so no finding can carry an `ml-risk` source. Normative in **SRS FR-8.2**.
+
+**`ScoreProfile` holds weights, never severities.** Five `category_weight` values plus one trust scalar `s` (the rules ↔ model slider); `w_ml` has been folded into `s`. The profile is read exclusively by `ScoringEngine`, at scoring time. Normative in **SRS FR-20**.
 
 ---
 
@@ -414,10 +421,14 @@ erDiagram
     SCAN { uuid scan_id PK; uuid repo_id FK; text branch; text commit_sha; timestamptz scanned_at; text phase; int health_score; text grade; int delta; text profile }
     FINDING { uuid id PK; uuid scan_id FK; text fingerprint; text source; text category; text severity; text file; int line; text symbol; text reason; text status; numeric priority; text rule_id; numeric metric_value; numeric threshold }
     FILE_SCORE { uuid id PK; uuid scan_id FK; text file; numeric debt_score; numeric risk_score }
-    SCORE_PROFILE { uuid id PK; uuid workspace_id FK; text name; jsonb weights; numeric w_ml; bool is_preset }
+    SCORE_PROFILE { uuid id PK; uuid workspace_id FK; text name; jsonb weights; numeric trust_s; bool is_preset }
     SUPPRESSION { uuid id PK; uuid workspace_id FK; text finding_fingerprint; text reason }
 ```
 *Figure 8. Multi-tenant data model.* **RLS** policies key every tenant-scoped table on `workspace_id`. **SCAN** rows are **append-only** (immutable snapshots); trend/history/delta are queries over them. These tables must satisfy the **data contract** (`lib/types`).
+
+`FINDING.severity` and `FINDING.category` are written once, at detection, from the rule register (SRS Appendix C); for SATD rows ML-1 supplies `category` while `severity` comes from the comment-marker table (SRS FR-9.2, Appendix C.2); ML-2 produces no `FINDING` row at all — it writes `FILE_SCORE.risk_score`. No later process updates these columns, so a stored finding always renders and ranks identically (SRS FR-8.1).
+
+`FINDING.source` is constrained to `rule | satd` (SRS FR-8.2). `SCORE_PROFILE.weights` is a JSON object keyed by the five `category` values; `trust_s` is the scalar rules ↔ model slider that replaced `w_ml`. Both are read only by the scoring pass and never written back onto a finding.
 
 > ✍️ **TEAM TODO:** finalize column types, indexes (e.g. on `repo_id, branch, scanned_at`), and the exact RLS policies; confirm `category` values against the SATD dataset (SRS D5).
 
@@ -442,7 +453,7 @@ erDiagram
 | **Reliability** | Immutable snapshots (a failed scan never corrupts the last good one); deterministic rule engine; rule-engine-only degraded mode if ML is down. |
 | **Scalability** | Stateless services + independently scalable Docker containers; queue-based workers. |
 | **Maintainability / Extensibility** | Single shared contract; layered monorepo; charts via one wrapper; tree library behind one boundary; models are swappable artifacts; scoring is a pure function. |
-| **Usability** | Low-noise prioritized output; one-line reasons; clear health/grade for non-technical viewers. |
+| **Usability** | Low-noise prioritized output; one-line reasons; clear health/grade for non-technical viewers; finding detail rendered **in place** (master–detail) so the file tree stays visible and triage does not require closing and reopening a panel per finding (SRS FR-17). |
 | **Portability** | Language-agnostic extraction/scoring; containerized deployment; new languages via per-language rules + recalibration. |
 | **Testability** | Frontend against MSW mocks (same handlers in dev/tests/E2E); deterministic detection; documented ML metrics (precision/recall/F1). |
 
@@ -451,4 +462,6 @@ erDiagram
 # 12. References
 IEEE style; tools cited by web page with "(Accessed on <date>)". Core references as in **§1.4** and the SRS §1.4. Diagram tool: ✍️ **TEAM TODO**.
 
-*End of SAD v0.1 draft. Redraw diagrams per the figure guidelines and expand the use-case realizations before promoting to v1.0.*
+*End of SAD v0.2 draft. Redraw diagrams per the figure guidelines and expand the use-case realizations before promoting to v1.0.*
+
+*Revision note (30 Jul 2026) — **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)**: §5.2 and §9 amended for the two-value `source` enum, the write-once `severity` invariant (now including its SATD marker source and its immunity to user settings), and the `SCORE_PROFILE` shape (five category weights + `trust_s`; `w_ml` removed). §11 notes the in-place finding-detail interaction. Architecturally the scan pipeline, the extraction boundary (§6.1) and the append-only snapshot store are **unchanged** — CR-001 alters what is stored in three columns and how the scoring pure-function combines them, not how the system is decomposed or deployed.*
