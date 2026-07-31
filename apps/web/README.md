@@ -82,6 +82,28 @@ component → hook (src/hooks) → client (src/lib/api/client.ts) → fetch("/ap
 **Going live (Phase 12):** set `NEXT_PUBLIC_API_MOCKING=disabled`, point
 `NEXT_PUBLIC_API_BASE_URL` at the real API — the components and tests don't change.
 
+### Pending contract change — CR-001 (Phase 10.5)
+
+Two shapes in `src/lib/types` change before Phase 11. Details and rationale:
+[CR-001](../../docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md);
+step-by-step in Phase 10.5 of the
+[build guide](../../docs/Project%20Management%20&%20Planning/frontend_build_stepbystep.md).
+
+| Type | From | To |
+|---|---|---|
+| `Source` | `"rule" \| "satd" \| "security" \| "ml-risk"` | `"rule" \| "satd"` |
+| `ScoreProfile` | `weights { security, codeDesign, satd, duplication }` + `wMl` | `weights` keyed by the five **categories** + `trust` (`s`, 0–1) |
+
+`security` duplicated `category` exactly (security patterns run inside the rule
+engine, so such a finding was always both) and `ml-risk` was unreachable — the risk
+model writes `FileScore.riskScore`, never a `Finding`. The old weight vector mixed
+axes: `satd` is a *source*, `duplication` is a *rule*, and three real categories had
+no weight at all — which becomes a slider the user can drag with no effect once
+Phase 10.5 ships the Profiles page.
+
+Until that phase lands, the fixtures still use the old values; `pnpm tsc` will
+locate every site once the types are edited.
+
 ## Layout
 
 ```
