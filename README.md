@@ -8,7 +8,8 @@ shows it all on a heat-map dashboard.
 
 ```
 apps/
-└── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
+├── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
+└── ml/      # SATD classifier (ML-1), risk model (ML-2), feature extraction, calibration
 docs/
 ├── Deliverables/               # SRS, SAD (formal documents)
 ├── Change Requests/            # accepted changes to the deliverables, with rationale
@@ -48,10 +49,59 @@ interactive scan flow and the **Playwright end-to-end tests** are in place
 
 Next up is **Phase 10.5**, which lands
 [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md):
-the `Source` enum narrows to `rule | satd`, the scoring profile becomes five
-category weights plus a rules-versus-model trust slider, and the finding detail
-moves from a slide-over into the dashboard itself. Phase 11 (polish and
+the `Source` enum narrows to `rule | satd`, the scoring profile becomes six
+category weights plus a rules-versus-model trust slider (applied with an explicit
+**Apply** button — one `PUT /api/profiles/active`, no re-scan), and the finding
+detail moves from a slide-over into the dashboard itself. Phase 11 (polish and
 Definition of Done) follows.
+
+## How the health score works
+
+Every finding gets a priority; a file's debt is the sum of its findings; the repo's
+0–100 health is that debt measured against the repo's size:
+
+```
+finding_priority = base_points × category_weight × source_trust × churn_factor × risk_factor
+file_debt        = Σ finding_priority
+repo_health      = 100 × (1 − min(1, Σ file_debt / (k × KLOC)))
+grade            = A ≥ 85 · B ≥ 70 · C ≥ 55 · D ≥ 40 · E < 40
+```
+
+Every term above is either **measured** from the code (base points, churn, risk) or
+**set by the user** (the six category weights and the trust slider on the Profiles
+page) — except **`k`**, which is chosen by us. It is worth understanding, because it
+is the one number that can quietly make every grade meaningless.
+
+**What `k` is.** Debt points have no natural meaning — is `847` good? Nothing in the
+formula knows. Dividing by **KLOC** first removes repo size from the picture, so you
+are comparing debt *density* rather than totals; `k` then converts that density into a
+0–100 score. Read it as:
+
+> **`k` = how much debt per 1000 lines counts as "completely rotten" (health 0).**
+
+With `k = 100`, a repo carrying 12 debt points per KLOC scores 88 (an A) and one
+carrying 95 scores 5 (an E).
+
+**Why it has to be calibrated.** Nothing measures `k` — it is a judgement about where
+the grade boundaries should fall, so someone has to pick it, and a bad pick fails
+*silently*:
+
+| If `k` is… | The ratio… | Result |
+|---|---|---|
+| too small | is huge and clamps at 1 | **every repo grades E** |
+| too large | is tiny | **every repo grades A** |
+
+Neither case looks broken. You still get confident, precise, completely uninformative
+grades. So `k` is fixed by running the scanner over a few **golden repositories** —
+repos we already have an opinion about before measuring (a clean library, a typical
+app, a known legacy mess) — and choosing the `k` that puts them where that judgement
+says they belong. It is a sanity check against human judgement, not a fit.
+
+⚠️ **`k` is currently uncalibrated.** [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)
+changed the scale of `file_debt` (an additive risk term was removed and a multiplier
+of up to 2.5× added), so any earlier value is invalid. Method and worked example:
+**[apps/ml/README.md](apps/ml/README.md)**; formula in
+[the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md).
 
 ## Planned stack
 
