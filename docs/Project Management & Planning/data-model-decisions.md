@@ -27,7 +27,22 @@ None of these blocks frontend work. Each is ~15 minutes now, or a data migration
 
 `Severity`, `Source`, `Category`, `Grade` and `FindingStatus` become PostgreSQL `CHECK` constraints (or enum types). Whatever strings the backend bakes in are what the frontend must render forever.
 
-The known conflict: the contract says **`code-design`**, the SATD dataset label is **`code/design`**. This is already flagged at [`types/index.ts:11-13`](../../apps/web/src/lib/types/index.ts#L11-L13).
+**`Category` is now frozen at six values** ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) D-CR12, 31 Jul 2026 — this closes **D5**). Read off `satd-dataset-code_comments.csv`, the only file v1.0 uses:
+
+| `Category` (store this) | Dataset label (train on this) | Assigned by |
+|---|---|---|
+| `code-design` | `code/design_debt` | ML-1 + rule engine |
+| `requirement` | `requirement_debt` | ML-1 |
+| **`defect`** | **`defect_debt`** | ML-1 |
+| `documentation` | `documentation_debt` | ML-1 |
+| `test` | `test_debt` | ML-1 |
+| `security` | *(not in the dataset)* | rule engine only |
+
+Three things the backend must honour:
+
+- **Store the normalised value, not the dataset label.** The mapping above is applied once, in the ML service's post-processing. `code/design_debt` must never reach the database — a `/` in a value that has to survive URLs, CSS class names and filter parameters is a problem you only get to fix once.
+- **`non_debt` is not a category.** It is the negative class of the debt/not-debt decision. It must not appear in the enum, in a `CHECK` constraint, or as a slider.
+- **`defect` is new** — it was absent from every earlier draft. Any `CHECK` constraint or seed written before 31 Jul is missing it.
 
 - Pick one exact spelling for every enum value, on both sides, in one sitting.
 - Changing it afterwards = data migration **+** frontend change **+** re-running every fixture.
@@ -36,7 +51,7 @@ The known conflict: the contract says **`code-design`**, the SATD dataset label 
 
 **`Source` is now two values — `rule | satd`** ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) D-CR3). The former `security` value duplicated `category` exactly — security patterns run inside the rule engine, so such a finding was always `source = security` **and** `category = security` — and `ml-risk` was unreachable, because the risk model writes `FILE_SCORE.risk_score` and never a `FINDING` row. Constrain the column to the two values in the first migration: a `CHECK` that still permits four will silently admit rows the frontend can no longer explain. Normative in SRS **FR-8.2**.
 
-> ✍️ **TEAM TODO:** confirm the `Category` values against the SATD dataset CSV, then mark the contract frozen. **Still open — this is the last item blocking the first migration.**
+> ✅ **Confirmed against the CSV on 31 Jul 2026 — the contract is frozen and nothing now blocks the first migration.**
 
 ### D-2 · `SCAN` rows are **append-only** (immutable snapshots)
 
@@ -76,8 +91,8 @@ Shape, frozen by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-a
 
 ```
 SCORE_PROFILE {
-  weights   jsonb    -- keyed by the five CATEGORY values:
-                     -- security · code-design · requirement · documentation · test
+  weights   jsonb    -- keyed by the six CATEGORY values (D-1):
+                     -- security · code-design · defect · requirement · documentation · test
                      -- each clamped 0.1 – 3.0
   trust_s   numeric  -- 0.0 – 1.0, default 0.5 — the rules ←→ model slider
   is_preset bool
@@ -86,7 +101,7 @@ SCORE_PROFILE {
 
 Three things the backend must honour:
 
-- **`weights` is keyed by `category`, and by nothing else.** The previous vector mixed axes — it carried `satd` (a *source*) and `duplication` (a *rule*) while omitting `requirement`, `documentation` and `test` entirely, so a documentation-category SATD finding had no defined weight. Since v1.0 exposes these as user-facing sliders, a key that does not correspond to a category is a control the user can drag with no effect.
+- **`weights` is keyed by `category`, and by all six of them.** The `defect` key was added by D-CR12; a profile seeded before 31 Jul 2026 is missing it. The previous vector mixed axes — it carried `satd` (a *source*) and `duplication` (a *rule*) while omitting `requirement`, `documentation` and `test` entirely, so a documentation-category SATD finding had no defined weight. Since v1.0 exposes these as user-facing sliders, a key that does not correspond to a category is a control the user can drag with no effect.
 - **`w_ml` is gone**, replaced by `trust_s`. If a migration or seed script still writes `w_ml`, scoring will silently read a default.
 - **No severity column, ever.** Severity is detector-authored (D-1). A profile that could write severity would defeat the visibility floor (SRS FR-24).
 
@@ -107,6 +122,30 @@ That is exactly what "secure multi-tenant foundation in v1.0" ([release-roadmap.
 
 No workspace picker, and **nothing that sends `workspace_id` from the browser**. Under RLS the tenant is derived from the session/token **server-side** and is never trusted from the client. This is precisely why `Repo.workspaceId` is optional and unused in v1 — that is correct as-is and should stay that way until v2 collaboration lands.
 
+### D-5 · The schema stores **facts**, never scores — *decided 2026-07-31*
+
+Since [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) made the profile editable at any moment, **a stored score is a bug waiting to happen**: it is stale the instant a weight moves, and "just update it" would break the append-only property D-2 depends on.
+
+**The rule for the first migration:**
+
+| Column | Verdict |
+|---|---|
+| `FINDING.*` — file, line, symbol, source, category, severity, evidence, reason | ✅ **store** — facts about the code at that SHA |
+| `FILE_SCORE.risk_score`, `FILE_SCORE.churn_factor` | ✅ **store** — model output and measured churn, both fixed at that SHA |
+| `SCAN.commit_sha`, `scanned_at`, `finding_count`, `model_version` | ✅ **store** |
+| `FINDING.priority`, `FILE_SCORE.debt_score`, `SCAN.health_score`, `grade`, `delta` | ❌ **do not store as truth** — derive under the active profile |
+
+If a denormalised score column is kept for speed (the Projects-list hint), it is a **cache**: stamp it with `cached_under_profile` and recompute whenever the active profile differs. Never read it without checking that column.
+
+**Two consequences the backend must honour:**
+
+1. **A profile change writes nothing.** No `SCAN` insert, no `FINDING` update. It is a read-path recomputation only.
+2. **The trend chart is one lens.** Every point on a trend line is scored under the *same, currently active* profile. Never mix.
+
+**Optional accelerator** (add only if the read path gets slow): per scan, store `Σ base×churn` and `Σ base×churn×risk` for each `(category, source)` group — at most 10 groups. Because the profile factors are constant within a group and `risk_factor = 1 + ml_trust × risk` splits linearly, this re-derives a whole history **exactly** in a few hundred operations. Rebuildable from `FINDING`, so still a cache.
+
+Full rationale in [CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md); normative in SRS FR-21 and DB-8.
+
 ---
 
 ## 4. When database work actually starts
@@ -120,4 +159,4 @@ No workspace picker, and **nothing that sends `workspace_id` from the browser**.
 
 ---
 
-*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md))**. Any change to D-1 through D-4 is a PR both sides review — the contract is the agreement.*
+*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); D-5 added 2026-07-31 ([CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md))**. Any change to D-1 through D-5 is a PR both sides review — the contract is the agreement.*

@@ -51,7 +51,7 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 - **Extraction:** Lizard metrics + PyDriller process metrics + **source comments at the scanned SHA**.
 - **Detection:** rule engine (code/design rules **+ security patterns**: hardcoded secrets, SQL concat, `eval`/`exec`) + **SATD classifier (ML-1)** + **risk model (ML-2)**. Every finding carries a `source` (`rule | satd` — the only two producers), a `category`, and a **`severity` assigned at detection**: from the rule register for rule findings, from the comment-marker table for SATD findings. No model and no user ever sets a severity.
 - **Scoring:** weighted-sum over `base_points × category_weight × source_trust × churn_factor × risk_factor`, with the **critical-security visibility floor**. The risk score enters as a bounded multiplier on the findings in that file — it adds no separate term and creates no debt on its own.
-- **Profiles:** three **presets** (Balanced default / Security-first / Delivery-speed) **plus custom sliders** — five category weights and one rules ↔ model trust slider, with reset-to-preset. *(Sliders pulled forward from v1.1 by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
+- **Profiles:** three **presets** (Balanced default / Security-first / Delivery-speed) **plus custom sliders** — six category weights and one rules ↔ model trust slider, with reset-to-preset. *(Sliders pulled forward from v1.1 by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
 - **Extraction boundary (normative):** *git history enters the pipeline as aggregated numbers, never as text.* SATD runs on comments only; commit-message text, pull requests and issues are **not** scan inputs; stored snapshots are never model or scoring input. Full rationale in [backend engine §2.1 + §3.2.1](./code-sage_backend-analysis-engine.md) and SRS FR-7.1 / FR-9.1.
 
 **Dashboard — outputs** (all read from stored snapshots — the dashboard *computes nothing*)
@@ -66,7 +66,7 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 - **Scan history tab:** list past snapshots; click one to load it into the dashboard.
 
 **Scoring profiles**
-- **Select a preset** (Balanced / Security-first / Delivery-speed) **and adjust it**: five category weight sliders (clamped 0.1–3.0) + one rules ↔ model trust slider + reset-to-preset. Presets seed the sliders; every change re-scores instantly with no re-scan.
+- **Select a preset** (Balanced / Security-first / Delivery-speed) **and adjust it**: six category weight sliders (clamped 0.1–3.0) + one rules ↔ model trust slider + reset-to-preset. Presets seed the sliders; every change re-scores instantly with no re-scan.
 
 **Non-functional (v1 floor)**
 - Responsive to laptop width, keyboard-navigable, readable severity/heat-map contrast; HTTPS; least-privilege repo read.
@@ -136,9 +136,13 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 - **D2 — Version split / RBAC timing.** Is Team/RBAC + private repos + multi-repo + silent checks in **v2.0** correct, or pull RBAC into v1? (Schedule has an Aug 4–9 RBAC phase — that can be the *DB/architecture seam* rather than full UI.)
 - **D3 — Finding actions in v1.0.** ✅ **CLOSED 2026-07-30 (CR-001 D-CR7): view-only.** The detail region is built in v1.0; Accept-debt / Resolve / False-positive stay [v1.1].
 - **D4 — Doc locations.** SRS/SDD in `docs/Deliverables/` (next to the PDFs) vs `docs/Project Management & Planning/`.
-- **D5 — SATD category enum.** *(still open)* Confirm the debt-category values against the **Li SATD dataset** label column (backend §3.2: SRS categories **must equal** the dataset labels) — needs a peek at the CSV.
 
 ### 7.1 Closed decisions
+
+- **D5 — SATD category enum.** ✅ **CLOSED 2026-07-31** (CR-001 **D-CR12**).
+  The taxonomy is fixed by `satd-dataset-code_comments.csv` — the only file v1.0 uses. Six product categories: `code-design`, `requirement`, **`defect`**, `documentation`, `test` (mapped 1:1 from the dataset's `*_debt` labels) plus `security`, which the rule engine emits and no model ever predicts. `non_debt` is the **negative class**, not a category.
+  *Three things this settled:* **`defect` is a sixth category** (472 labelled comments — more than `test` and `documentation` combined), so the profile has **six** weight sliders, not five; the four sources use **different taxonomies**, so v1.0 trains *and* infers on the comments file alone; and the dataset licence is **MIT**, not a non-commercial one.
+  Normative in **SRS FR-9.3**; see [backend engine §3.2.0](./code-sage_backend-analysis-engine.md) and [data-model-decisions D-1](./data-model-decisions.md).
 
 - **D6 — Churn window anchoring.** ✅ **DECIDED 2026-07-27: anchor to the last commit, not to `now()`.**
   The 90-day churn window runs **backwards from the committer date of the scanned commit** (the branch's last commit — the same SHA shown in the top nav), i.e. the window is `[commit_date − 90d, commit_date]`. Wall-clock `now()` is **not** used anywhere in scoring.

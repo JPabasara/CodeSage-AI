@@ -12,7 +12,8 @@
 | Date | Version | Description | Author |
 |---|---|---|---|
 | 22/Jul/2026 | 0.1 (draft) | Initial architecture: 4+1 views, data model, quality attributes for v1.0. | Group 16 |
-| 30/Jul/2026 | 0.2 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** — domain model and data view updated for the two-value `source`, the write-once severity invariant, the five-weight + trust-slider `ScoreProfile` (`w_ml` removed), risk as a scoring multiplier, and the in-place finding-detail interaction. | Group 16 |
+| 30/Jul/2026 | 0.2 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** (D-CR1 – D-CR7) — domain model and data view updated for the two-value `source`, the write-once severity invariant, the five-weight + trust-slider `ScoreProfile` (`w_ml` removed), risk as a scoring multiplier, and the in-place finding-detail interaction. | Group 16 |
+| 31/Jul/2026 | 0.3 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** (D-CR8 – D-CR12) — §9 data view: `SCAN` and `FILE_SCORE` now hold facts only, with every score derived on read under the active profile and the `*_cache` columns marked as a profile-stamped cache. **D-CR12** closes D5: the `Category` enum is fixed at six values against the SATD dataset, so `SCORE_PROFILE.weights` carries six keys. | Group 16 |
 | ✍️ | | | |
 
 ---
@@ -418,9 +419,9 @@ erDiagram
     MEMBERSHIP { uuid id PK; uuid workspace_id FK; uuid user_id FK; text role }
     REPO { uuid id PK; uuid workspace_id FK; text name; text owner; text visibility; text url; text source; text default_branch; timestamptz connected_at }
     BRANCH { uuid id PK; uuid repo_id FK; text name; bool is_default; text last_commit_sha; timestamptz last_commit_at }
-    SCAN { uuid scan_id PK; uuid repo_id FK; text branch; text commit_sha; timestamptz scanned_at; text phase; int health_score; text grade; int delta; text profile }
-    FINDING { uuid id PK; uuid scan_id FK; text fingerprint; text source; text category; text severity; text file; int line; text symbol; text reason; text status; numeric priority; text rule_id; numeric metric_value; numeric threshold }
-    FILE_SCORE { uuid id PK; uuid scan_id FK; text file; numeric debt_score; numeric risk_score }
+    SCAN { uuid scan_id PK; uuid repo_id FK; text branch; text commit_sha; timestamptz scanned_at; text phase; int finding_count; text model_version; int health_score_cache; text grade_cache; uuid cached_under_profile FK }
+    FINDING { uuid id PK; uuid scan_id FK; text fingerprint; text source; text category; text severity; text file; int line; text symbol; text reason; text status; text rule_id; numeric metric_value; numeric threshold }
+    FILE_SCORE { uuid id PK; uuid scan_id FK; text file; numeric risk_score; numeric churn_factor }
     SCORE_PROFILE { uuid id PK; uuid workspace_id FK; text name; jsonb weights; numeric trust_s; bool is_preset }
     SUPPRESSION { uuid id PK; uuid workspace_id FK; text finding_fingerprint; text reason }
 ```
@@ -428,9 +429,13 @@ erDiagram
 
 `FINDING.severity` and `FINDING.category` are written once, at detection, from the rule register (SRS Appendix C); for SATD rows ML-1 supplies `category` while `severity` comes from the comment-marker table (SRS FR-9.2, Appendix C.2); ML-2 produces no `FINDING` row at all — it writes `FILE_SCORE.risk_score`. No later process updates these columns, so a stored finding always renders and ranks identically (SRS FR-8.1).
 
-`FINDING.source` is constrained to `rule | satd` (SRS FR-8.2). `SCORE_PROFILE.weights` is a JSON object keyed by the five `category` values; `trust_s` is the scalar rules ↔ model slider that replaced `w_ml`. Both are read only by the scoring pass and never written back onto a finding.
+`FINDING.source` is constrained to `rule | satd` (SRS FR-8.2). `SCORE_PROFILE.weights` is a JSON object keyed by the **six** `category` values (SRS FR-9.3); `trust_s` is the scalar rules ↔ model slider that replaced `w_ml`. Both are read only by the scoring pass and never written back onto a finding.
 
-> ✍️ **TEAM TODO:** finalize column types, indexes (e.g. on `repo_id, branch, scanned_at`), and the exact RLS policies; confirm `category` values against the SATD dataset (SRS D5).
+**The schema stores facts, not scores** (SRS FR-21, DB-8). `FINDING` keeps the evidence and `FILE_SCORE` keeps the two per-file inputs — `risk_score` from ML-2 and the `churn_factor` computed from the commit-anchored window — because all three are properties of the code at that SHA. **`priority`, `debt_score`, `health_score`, `grade`, `delta` and the category breakdown are functions of the active profile and are therefore derived at read time, not columns.** The `*_cache` columns on `SCAN` exist only to make the Projects-list hint fast; `cached_under_profile` records which profile produced them, and a read under any other profile recomputes rather than trusting the cache. Without this rule an editable profile (SRS FR-20) would leave every stored score stale, or force an update that would break the append-only property this table depends on. *(See [CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
+
+**Optional accelerator.** Because `category_weight` and `source_trust` are constant within a `(category, source)` group and `risk_factor = 1 + ml_trust × risk_score` splits linearly, storing two sums per group per scan — `Σ base×churn` and `Σ base×churn×risk` — lets the scoring pass re-derive an entire trend line exactly, in a few hundred operations. At most 5 × 2 = 10 groups. These aggregates are rebuildable from `FINDING`, so they remain a cache and not a second source of truth.
+
+> ✍️ **TEAM TODO:** finalize column types, indexes (e.g. on `repo_id, branch, scanned_at`) and the exact RLS policies. *(The `category` values are confirmed against the SATD dataset — **D5 closed**, SRS FR-9.3.)*
 
 ---
 
@@ -464,4 +469,4 @@ IEEE style; tools cited by web page with "(Accessed on <date>)". Core references
 
 *End of SAD v0.2 draft. Redraw diagrams per the figure guidelines and expand the use-case realizations before promoting to v1.0.*
 
-*Revision note (30 Jul 2026) — **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)**: §5.2 and §9 amended for the two-value `source` enum, the write-once `severity` invariant (now including its SATD marker source and its immunity to user settings), and the `SCORE_PROFILE` shape (five category weights + `trust_s`; `w_ml` removed). §11 notes the in-place finding-detail interaction. Architecturally the scan pipeline, the extraction boundary (§6.1) and the append-only snapshot store are **unchanged** — CR-001 alters what is stored in three columns and how the scoring pure-function combines them, not how the system is decomposed or deployed.*
+*Revision note (30 Jul 2026) — **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)**: §5.2 and §9 amended for the two-value `source` enum, the write-once `severity` invariant (now including its SATD marker source and its immunity to user settings), and the `SCORE_PROFILE` shape (category weights + `trust_s`; `w_ml` removed — the weight count was fixed at **six** on 31 Jul by D-CR12). §11 notes the in-place finding-detail interaction. Architecturally the scan pipeline, the extraction boundary (§6.1) and the append-only snapshot store are **unchanged** — CR-001 alters what is stored in three columns and how the scoring pure-function combines them, not how the system is decomposed or deployed.*

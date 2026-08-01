@@ -74,7 +74,7 @@ The intended audience is: the development team (frontend, backend, and ML member
 | **SATD** | Self-Admitted Technical Debt — debt a developer admits in natural language (e.g. `// TODO: temporary hack`). The literature recognises four sources (comments, commit messages, issues, pull requests); **v1.0 detects SATD in source-code comments only** — see FR-9 and §3.1.9.1. |
 | **Finding** | The atomic unit of output: one detected issue at a `file:line:symbol`, with a `source`, a `category`, a `severity`, and a one-line reason. |
 | **`source`** | *Which detector* produced a finding: `rule` \| `satd` — the only two producers of findings (FR-8.1). Security patterns run **inside** the rule engine, so a security finding is a `rule` finding whose `category` is `security`; the risk model produces no findings at all. |
-| **`category`** | *What type of debt* a finding is: `code-design` \| `requirement` \| `documentation` \| `test` \| `security`. |
+| **`category`** | *What type of debt* a finding is: `code-design` \| `requirement` \| `defect` \| `documentation` \| `test` \| `security`. Five are predicted by ML-1 and map 1:1 onto the SATD dataset's comment labels; `security` is emitted only by the rule engine and is never predicted (FR-9.3). |
 | **`severity`** | *How bad* a finding is: `critical` \| `high` \| `medium` \| `low`. **Assigned at detection** — from the rule register for `rule` findings, from the comment-marker table for `satd` findings (FR-9.2) — and never by scoring, by the UI, by an ML model, or by a user (FR-8.1). Stored on the finding, then read by exactly two consumers: scoring (→ base points, FR-11) and the Refactor-First badge (FR-15). |
 | **Rule engine** | Deterministic thresholds over static metrics + pattern-based security rules. |
 | **Risk model (ML-2)** | Supervised classifier estimating a file's bug-proneness (0–1). |
@@ -86,7 +86,7 @@ The intended audience is: the development team (frontend, backend, and ML member
 | **Snapshot-scoped** | Derived solely from the working tree at the scanned commit SHA. Comments are snapshot-scoped; commit messages are not. |
 | **Health score / grade** | 0–100 score and A–E grade summarising a repo's (or subtree's) debt. |
 | **Snapshot** | The immutable stored result of one scan, keyed by branch + commit SHA. |
-| **Scoring profile** | The user-owned settings that turn findings into scores: **five per-category weights** plus one **trust slider** `s` that trades rule-engine confidence against machine-learning confidence (FR-20). It never contains a severity. |
+| **Scoring profile** | The user-owned settings that turn findings into scores: **six per-category weights** plus one **trust slider** `s` that trades rule-engine confidence against machine-learning confidence (FR-20). It never contains a severity. |
 | **Trust slider (`s`)** | A single control, `s ∈ [0,1]`, default `0.5`, expressing *how much this team trusts the deterministic rules versus the machine-learning detectors*. Yields `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s`; the `security` category is excluded and always uses 1.0 (FR-11, FR-24). |
 | **Visibility floor** | A rule that critical security findings are never suppressed or down-weighted below visibility. |
 | **Workspace / tenant** | The top-level data owner in the multi-tenant model; a project belongs to a workspace, not a person. |
@@ -230,11 +230,39 @@ The question *"is this a security issue?"* is answered by `category`; *"how bug-
 The complete `ruleId → severity → category → message template` register is **Appendix C**; it is the single source of truth for this requirement and for FR-16.
 
 ### 3.1.9 FR-9 [v1.0] Detection — SATD classifier (ML-1)
-The system shall classify each **source-code comment extracted from the scanned snapshot** (FR-7) as **debt or not**, and if debt, assign a `category` ∈ {`code-design`, `requirement`, `documentation`, `test`} using a supervised NLP model (**TF-IDF → Linear SVM / Logistic Regression** baseline; CodeBERT a stretch), trained on the Li et al. SATD dataset. The debt-category set **must equal the dataset's labels** (else the model is untrainable). Each SATD finding is anchored to the comment's `file:line` and quotes the actual comment text plus the predicted category in its reason. The model predicts **`category` only**; the finding's `severity` is assigned deterministically per **FR-9.2**.
+The system shall classify each **source-code comment extracted from the scanned snapshot** (FR-7) as **debt or not**, and if debt, assign a `category` ∈ {`code-design`, `requirement`, `defect`, `documentation`, `test`} using a supervised NLP model (**TF-IDF → Linear SVM / Logistic Regression** baseline; CodeBERT a stretch), trained on the Li et al. SATD dataset. The debt-category set shall stand in a documented **1:1 correspondence** with the dataset's comment labels (**FR-9.3**). Each SATD finding is anchored to the comment's `file:line` and quotes the actual comment text plus the predicted category in its reason. The model predicts **`category` only**; the finding's `severity` is assigned deterministically per **FR-9.2**.
+
+Classification is two decisions in sequence: first **debt or not** — the dataset's `non_debt` class, which is **not** a category and shall never appear in the `Category` enum — and then, only for debt, **which of the five categories**.
+
+#### 3.1.9.3 FR-9.3 [v1.0] Debt-category taxonomy and label mapping *(normative — closes D5)*
+
+The taxonomy is fixed by the labels present in the dataset's **code-comments** file (`satd-dataset-code_comments.csv`, 62,275 labelled comments), which is the only source v1.0 infers on (FR-9.1):
+
+| `Category` (product value) | Dataset label | Comments in dataset | Assigned by |
+|---|---|---|---|
+| `code-design` | `code/design_debt` | 2,703 | ML-1 **and** the rule engine |
+| `requirement` | `requirement_debt` | 757 | ML-1 |
+| `defect` | `defect_debt` | 472 | ML-1 |
+| `test` | `test_debt` | 85 | ML-1 |
+| `documentation` | `documentation_debt` | 54 | ML-1 |
+| `security` | *(not present in the dataset)* | — | Rule engine only — never predicted |
+| *(not a category)* | `non_debt` | 58,204 | The negative class of the debt/not-debt decision |
+
+**`defect` debt** — a developer admitting a **known bug** (the dataset's own example: `// FIXME formatters are not thread-safe`). It is distinct from the risk model: ML-2 predicts **future** bug-proneness from numeric metrics, whereas `defect` debt is a **current, admitted** defect stated in prose. It is included because it is the third-largest debt class in the comment data — larger than `test` and `documentation` combined — so excluding it would discard 472 labelled examples and leave real defect admissions unclassifiable.
+
+**Mapping, not identity.** The product values are normalised forms of the dataset labels, related by the table above. A deterministic rename cannot affect trainability, because the model trains on the CSV's own strings and the mapping is applied to its output. Verbatim labels were rejected because `code/design_debt` embeds a `/` in a value that must survive URLs, CSS class names and filter parameters, the `_debt` suffix is redundant on a debt category, and `security` would be the only value not following the pattern. The mapping shall live in the ML service's post-processing step and shall be the single conversion point.
+
+**Class imbalance shall be reported, never averaged away.** Only **6.54 %** of comments are debt; `documentation` (0.09 %) and `test` (0.14 %) are severely under-represented. Per-class precision, recall and F1 are therefore mandatory under FR-25, and the published F1 of **0.611** from the source paper is **not** a like-for-like baseline: it covers a four-type task across four sources, not a six-category comments-only classifier.
+
+> **D5 is closed** (31 Jul 2026). The `Category` enum may be frozen and the first migration may proceed.
 
 #### 3.1.9.1 FR-9.1 [v1.0] SATD inference scope — comments only *(design rationale)*
 
-**Training corpus ≠ inference input.** The Li et al. corpus is titled *"SATD from four different sources"* (comments, commit messages, issues, pull requests); that describes the **labelled training data**. The model may be trained on the full corpus, but it **shall be evaluated on held-out *comments***, because comments are the only inference distribution in v1.0.
+**Training corpus ≠ inference input.** The Li et al. corpus is titled *"SATD from four different sources"* (comments, commit messages, issues, pull requests); that describes the **labelled training data available**, not what the running system consumes.
+
+**v1.0 uses one file: `satd-dataset-code_comments.csv`.** The model shall be **trained, validated and evaluated on code comments only**; `satd-dataset-commit_messages.csv`, `satd-dataset-issues.csv` and `satd-dataset-pull_requests.csv` are **not used in v1.0**. Training and inference therefore share one distribution, so there is no train/serve skew, and held-out comments are a genuine test set rather than a proxy. The three unused files remain in the repository for future work.
+
+**A fourth, decisive reason — the four sources do not share a taxonomy.** Inspection of the dataset shows the label sets differ by source: code comments use `code/design_debt` as a single merged label, while commit messages, issues and pull requests **split** it into `code_debt` and `design_debt` and add `architecture_debt` and `build_debt`, which comments never use. Training across all four sources is therefore not a simple matter of extra volume — it would require reconciling three different taxonomies onto one output space before a single label could be predicted. *(See FR-9.3.)*
 
 Commit-message SATD is **excluded from v1.0 detection** for three independent reasons, each of which alone is disqualifying:
 
@@ -246,7 +274,6 @@ By contrast, comment-based SATD is **self-healing**: delete the `# TODO`, and th
 
 *(Commit-message SATD as a **file-level, time-windowed signal** — analogous to churn rather than a list row — is a candidate for a later release, not v1.0.)*
 
-> ✍️ **TEAM TODO (D5):** confirm the exact category label strings against the Li SATD dataset CSV and lock the `Category` enum accordingly (currently `code-design | requirement | documentation | test | security`).
 
 #### 3.1.9.2 FR-9.2 [v1.0] SATD severity — the comment-marker table *(normative)*
 
@@ -271,7 +298,7 @@ The system shall compute a per-file **bug-proneness risk score (0–1)** with a 
 **The risk score does not by itself create debt.** A file with a high risk score but **no findings** contributes no debt and is not tinted as unhealthy; the badge still reports its risk. This keeps every point of debt traceable to a finding the user can open — a file tinted red that opens to an empty detail panel would be exactly the un-actionable noise this product exists to remove. Risk and debt therefore remain two honest signals rather than one blended number.
 
 ### 3.1.11 FR-11 [v1.0] Scoring & prioritization
-The system shall fuse findings into scores with a **pure function** that reads the active **scoring profile** (five per-category weights + the trust slider `s` — FR-20) and any accepted-debt suppressions — applied **only at scoring**, so changing a profile or accepting a finding **never requires a re-scan**. It shall compute:
+The system shall fuse findings into scores with a **pure function** that reads the active **scoring profile** (six per-category weights + the trust slider `s` — FR-20) and any accepted-debt suppressions — applied **only at scoring**, so changing a profile or accepting a finding **never requires a re-scan**. It shall compute:
 
 ```
 churn_factor(file) = 1 + min(commits_90d, 20) / 20        # 1.0 – 2.0
@@ -313,13 +340,17 @@ window = [ commit_date(scanned_sha) − 90 days , commit_date(scanned_sha) ]
 **Wall-clock `now()` shall not be used in scoring.** This makes `Scan(SHA)` reproducible (FR-21) and makes FR-6's skip-if-unchanged optimization sound (same SHA ⇒ same snapshot). It also means scanning an older commit yields the churn that was true *at that commit*, and an untouched repository does not drift in score merely with the passage of time. *(Decision D6, closed 2026-07-27 — release-roadmap §7.1.)*
 
 ### 3.1.12 FR-12 [v1.0] Overall Health card (Card A)
-The system shall present the repo's **health score (0–100)**, **grade (A–E)**, **delta vs the previous snapshot**, and a **count of red (critical/high) issues**, for the selected branch. A folder or the repo root shows the aggregate of the stored file scores beneath it (drill-in re-aggregates without re-scanning).
+The system shall present the repo's **health score (0–100)**, **grade (A–E)**, **delta vs the previous snapshot**, and a **count of red (critical/high) issues**, for the selected branch. A folder or the repo root shows the aggregate of the file scores beneath it (drill-in re-aggregates without re-scanning). All four values are **derived under the active profile** from the stored findings (FR-21); `delta` compares the two most recent snapshots **scored under that same profile**, so it always reflects a change in the code rather than a change in settings.
 
 ### 3.1.13 FR-13 [v1.0] Category breakdown pie
 The Health card shall include a small **pie chart** showing the percentage of technical debt **by category**, computed from the stored findings (count and/or debt-weighted). *(A standalone, filterable category-breakdown view = **FR-13b [v1.1]**.)*
 
 ### 3.1.14 FR-14 [v1.0] Health trend chart (Card B)
-The system shall present a **trend chart** of health per scan/commit over time for the selected branch (repo scope), read from stored snapshots. *(Re-scoping Card B to a hovered file/folder's history = **FR-14b [v2]**; the hover event and per-node data seam exist from v1.0.)*
+The system shall present a **trend chart** of health per scan/commit over time for the selected branch (repo scope), derived from the stored snapshots. *(Re-scoping Card B to a hovered file/folder's history = **FR-14b [v2]**; the hover event and per-node data seam exist from v1.0.)*
+
+**One lens per line *(normative)*.** Every point on the chart shall be computed under the **currently active scoring profile**. Selecting a different profile shall redraw the **entire** history under that profile, so the line always reads *"under this lens, this is how our health has moved"* and every point is comparable with every other point. A line whose points were computed under **different** profiles is prohibited: a reader could not tell whether a movement was a code change or a settings change.
+
+The chart shall be **labelled with the active profile name** (e.g. *"Health trend · Security-first"*). Without the label, the shape changing after a profile switch reads as a defect; with it, the cause is visible. The same label shall accompany any exported figure.
 
 ### 3.1.15 FR-15 [v1.0] Refactor-First list + filter by debt type
 The system shall present a **prioritized list** of the top rule/SATD findings, sorted by `priority`, each row showing a **debt-category chip**, a **severity chip**, **`file:line`**, and the **one-line reason**. The severity chip renders the `severity` value **stored on the finding** (FR-8.1); the client performs no severity judgement of its own and only maps the stored string to its colour token.
@@ -355,29 +386,45 @@ The system shall present an **interactive file tree** on the right of the dashbo
 The system shall provide a **Scan-History** view listing past snapshots for the active project/branch (each: date, commit SHA, health score, grade, delta, finding count). Selecting a past scan **loads that snapshot into the dashboard** (read-only view of history). This is possible because every scan is persisted (FR-21).
 
 ### 3.1.20 FR-20 [v1.0] Scoring profiles — presets and custom weights
-The system shall let the user shape prioritization through a **scoring profile** consisting of **five per-category weights** and **one trust slider**. Any change re-scores the stored findings instantly (no re-scan) and re-orders the Refactor-First list.
+The system shall let the user shape prioritization through a **scoring profile** consisting of **six per-category weights** and **one trust slider**. Any change re-scores the stored findings instantly (no re-scan) and re-orders the Refactor-First list.
 
 **Controls.**
 
 | Control | Range | Meaning |
 |---|---|---|
-| `category_weight` × 5 — `security`, `code-design`, `requirement`, `documentation`, `test` | 0.1 – 3.0 | *How much does this team care about this type of debt?* |
+| `category_weight` × 6 — `security`, `code-design`, `defect`, `requirement`, `documentation`, `test` | 0.1 – 3.0 | *How much does this team care about this type of debt?* |
 | Trust slider `s` | 0 – 1, default 0.5 | *How much does this team trust the deterministic rules versus the machine-learning detectors?* (FR-11) |
 
 **Presets seed the sliders.** The system shall provide three presets — **Balanced** (the default for every new workspace), **Security-first** and **Delivery-speed** — which populate the sliders in one click, plus a **Reset to preset** action. Selecting a preset is therefore a single interaction; adjusting from it is optional.
 
-| Preset | security | code-design | requirement | documentation | test | `s` |
-|---|---|---|---|---|---|---|
-| **Balanced** (default) | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 0.5 |
-| **Security-first** | 3.0 | 1.0 | 0.8 | 0.5 | 1.0 | 0.5 |
-| **Delivery-speed** | 1.5 | 1.2 | 0.8 | 0.5 | 0.5 | 0.7 |
+| Preset | security | code-design | defect | requirement | documentation | test | `s` |
+|---|---|---|---|---|---|---|---|
+| **Balanced** (default) | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 0.5 |
+| **Security-first** | 3.0 | 1.0 | 1.2 | 0.8 | 0.5 | 1.0 | 0.5 |
+| **Delivery-speed** | 1.5 | 1.2 | 1.5 | 0.8 | 0.5 | 0.5 | 0.7 |
 
 **Constraints.** Weights shall be **clamped** to the ranges above, because `repo_health` is calibrated against `k` (FR-11) and unbounded weights would drive every repository to grade E and make the health score meaningless. The profile shall **never contain a severity** (FR-8.1). Regardless of profile, the **critical-security visibility floor** (FR-24) holds.
 
+**A profile change is not a scan *(normative)*.** Changing a weight, moving the trust slider, or selecting a preset shall **re-score the stored findings in place**. It shall **not** run the analysis pipeline, shall **not** require the user to activate the Scan control (FR-6), and shall **not** write a new snapshot (FR-21). A snapshot is keyed by commit SHA and records what the code was at that commit; a profile is not a commit. Were a profile change to write a snapshot, the trend chart would show a step on a day when nobody changed the code — the line would appear to say *"the codebase got worse"* when it means *"we changed our mind about what matters"* — which would invalidate both `delta` (FR-12) and the trend (FR-14).
+
+The visible effects of a profile change are therefore: the Refactor-First order, the health score and grade, the file-tree tint, the category breakdown, and the whole trend line (FR-14) — all re-derived, none re-detected. The **findings themselves never change**, because detection is profile-independent (FR-8, FR-9, FR-11).
+
 *Rationale for retaining presets alongside sliders.* A default profile must exist for every new workspace; a one-click preset change is what demonstrates *"same findings, different lens, no re-scan"*; and opening a configuration screen with six raw numeric controls and no guidance would work directly against U-1 and U-2, reproducing the very experience this product differentiates against.
 
-### 3.1.21 FR-21 [v1.0] Snapshot persistence (stateful storage, stateless services)
-The system shall store the result of every scan as an **immutable snapshot** keyed by (repo, branch, commit SHA, timestamp): the health score, per-file scores, tree, findings, and category breakdown. All dashboard reads (health, trend, history, delta) are pure reads of these snapshots. Application services remain stateless; persistence lives in PostgreSQL. This enables the trend chart, scan history, delta, and skip-if-unchanged.
+### 3.1.21 FR-21 [v1.0] Snapshot persistence — facts are stored, scores are derived
+The system shall store the result of every scan as an **immutable snapshot** keyed by (repo, branch, commit SHA, timestamp). A snapshot stores **facts about the code at that commit**; every **score is derived from those facts under the profile active at the moment of the request**:
+
+| Stored (facts — written once, never updated) | Derived on read (opinions — recomputed per request) |
+|---|---|
+| Findings: `file`, `line`, `symbol`, `source`, `category`, `severity`, evidence, reason | `priority` of each finding |
+| Per-file `risk_score` (ML-2's output for fixed inputs) | Per-file `debt_score` and the tree tint |
+| The file tree structure, `commit_sha`, `scanned_at`, `finding_count`, `model_version` | `health_score`, `grade`, `delta`, the category breakdown |
+
+**Why scores are not stored.** A score is a function of the **profile**, and the profile is editable at any time (FR-20). A stored score would therefore be either stale the moment a weight changed, or would have to be **updated** — which would break the append-only immutability that DB-3 and the trend chart depend on. Deriving it removes both failure modes and is the reason FR-20 can promise re-scoring with no re-scan. *(This is the same principle as FR-8.1 one level up: `severity` is a system-owned fact, `category_weight` is a user-owned opinion — never store an opinion as if it were a fact.)*
+
+Derivation is a weighted sum over already-stored rows, **not** re-analysis, so it does not conflict with **P-2**; a full 20-scan history is a few thousand multiply-adds. Denormalised score columns **may** be kept as a **cache** to make list hints fast, provided each is stamped with the profile that produced it and is recomputed whenever the active profile differs.
+
+Application services remain stateless; persistence lives in PostgreSQL. This enables the trend chart, scan history, delta, and skip-if-unchanged.
 
 ### 3.1.22 FR-22 [v1.0] Account menu
 The system shall provide an **Account** control at the bottom of the left rail exposing **sign out** and (stubbed in v1.0) **settings** and **billing**.
@@ -398,6 +445,10 @@ The floor is enforced by **three independent mechanisms**, so that no single set
 
 ### 3.1.25 FR-25 [supporting / Objective 5] ML evaluation vs rule baseline
 The system's ML components shall be **evaluated and documented**: SATD classifier and risk model reported with **precision/recall/F1** (and AUC for risk), compared against the deterministic **rule baseline**, on held-out data and on real repositories. *(This satisfies Objective 5; produced during the testing phase, not a runtime feature.)*
+
+**Per-class reporting is mandatory for the SATD classifier.** Both classes of imbalance shall be reported separately rather than averaged: the debt/not-debt split (**6.54 %** debt in the comment corpus) and the per-category split, where `documentation` (54 instances, 0.09 %) and `test` (85, 0.14 %) are two orders of magnitude rarer than `code-design` (2,703). A single macro- or weighted-average figure would conceal near-total failure on the two smallest categories, so the report shall carry a **per-class precision / recall / F1 table** and state the support count for each class. Accuracy shall not be quoted for either model.
+
+**Comparability caveat.** The source paper reports **F1 = 0.611** for a four-type task across four sources. FR-9.3 specifies a **six-category, comments-only** classifier, which is a different problem; the paper's figure is context, not a baseline. The like-for-like baseline required by Objective 5 remains the **deterministic rule engine**.
 
 > ✍️ **TEAM TODO:** add any v1.0 FRs the team wants that aren't captured (e.g. error/empty-state behaviour per screen, "dogfood scan of Code Sage AI itself"), and assign each a stable FR-id.
 
@@ -481,7 +532,7 @@ The GUI is a persistent **left rail** (Projects · Dashboard · Scan History · 
 - **Dashboard page — dashboard mode:** a **top nav** (project name, **branch dropdown**, **Scan** button with progress + Stop, **last-analyzed time + commit SHA**); a **left half** (Overall Health card with category pie; Health trend chart; below them the **Refactor-First list** with a **debt-type filter**, each row carrying a category chip, a severity chip, `file:line`, the one-line reason, and — for SATD rows only — a **SATD source chip**); a **right half** (**hotspot file-tree heat map** with per-file risk badges).
 - **Dashboard page — detail mode (FR-17):** selecting a finding replaces the health card and trend chart **in place** with the **finding detail** (evidence, one-line reason, `file:line:symbol`, and the region reserved for the [v1.1] snippet); the file tree **auto-expands and highlights** that finding's file; the Refactor-First list **condenses to a strip** so the user can move between findings. Closing restores dashboard mode. No overlay and no blurred background.
 - **Scan-History page:** a list of past snapshots; selecting one loads it into the dashboard.
-- **Profiles page:** three **preset buttons** (Balanced / Security-first / Delivery-speed) that seed the controls, **five category weight sliders**, one **rules ↔ model trust slider**, and a **Reset to preset** action; changes re-score instantly with no re-scan.
+- **Profiles page:** three **preset buttons** (Balanced / Security-first / Delivery-speed) that seed the controls, **six category weight sliders**, one **rules ↔ model trust slider**, and a **Reset to preset** action; changes re-score instantly with no re-scan.
 - **Account menu:** sign out, settings/billing (stubbed).
 
 > ✍️ **TEAM TODO:** include a **block diagram** of the main UI interfaces (rail → pages → panels) per the template. Screenshots are not required at SRS stage.
@@ -503,9 +554,10 @@ The GUI is a persistent **left rail** (Projects · Dashboard · Scan History · 
 
 *Template guidance: database requirements for the system.*
 
-- **DB-1** **PostgreSQL** stores tenants/workspaces, users & roles, repository/project metadata, branches, **immutable scan snapshots**, per-file scores, findings, scoring profiles, and accepted-debt suppressions.
+- **DB-1** **PostgreSQL** stores tenants/workspaces, users & roles, repository/project metadata, branches, **immutable scan snapshots**, findings, per-file **risk** scores, scoring profiles, and accepted-debt suppressions.
 - **DB-2** **Multi-tenant isolation** via **Row-Level Security** keyed on `workspace_id`.
-- **DB-3** Snapshots are **append-only** and keyed by (repo, branch, commit SHA, timestamp) to support trend, history, delta, and skip-if-unchanged.
+- **DB-3** Snapshots are **append-only** and keyed by (repo, branch, commit SHA, timestamp) to support trend, history, delta, and skip-if-unchanged. A **profile change never inserts a snapshot row** (FR-20).
+- **DB-8** The database stores **facts, not scores** (FR-21). Findings, per-file `risk_score`, `commit_sha`, `scanned_at`, `finding_count` and `model_version` are persisted; `priority`, `debt_score`, `health_score`, `grade`, `delta` and the category breakdown are **derived on read** under the active profile. Any denormalised score column is a **cache**: it shall be stamped with the profile that produced it and recomputed when the active profile differs. *(Optional accelerator: per snapshot, two sums per `(category, source)` group — `Σ base×churn` and `Σ base×churn×risk` — allow an exact re-score of an entire history in a few hundred operations, because the profile factors are constant within a group.)*
 - **DB-4** The stored shapes must satisfy the **data contract** (see SDD data view / `lib/types`).
 
 > ✍️ **TEAM TODO:** the full ER diagram / table schema belongs in the **SAD/SDD Data View**; reference it here.
@@ -514,7 +566,7 @@ The GUI is a persistent **left rail** (Projects · Dashboard · Scan History · 
 
 - **L-1** All development tools/libraries are used under their **open-source licenses**; no copyright violations.
 - **L-2** Repository data is processed under **least-privilege, user-granted** access; handled per privacy/data-protection norms; no unauthorized data sharing (Feasibility §2.5).
-- **L-3** Public datasets are used under their research licenses (e.g. the Technical Debt Dataset is **CC BY-NC-SA 4.0** — research/non-commercial; verify compatibility before any commercial use).
+- **L-3** Public datasets are used under their stated licenses. The **Li et al. SATD dataset** used by v1.0 is **MIT-licensed** (© 2022 Yikun Li) — permissive, commercial use permitted, attribution required. *(The separate Technical Debt Dataset is CC BY-NC-SA 4.0 and therefore research/non-commercial; v1.0 does not use it. Confirm the GHPR license before ML-2 training.)*
 
 > ✍️ **TEAM TODO:** confirm each dataset's license permits your intended use, and add a privacy-policy reference for the hosted service.
 
@@ -566,4 +618,4 @@ The normative source for **FR-8.1** (severity/category assignment), **FR-9.2** (
 
 > ✍️ **TEAM TODO:** expand C.1 as further rules are added (target ~30–50 rows as language coverage grows); confirm the `{construct}` and `{salient_signals}` interpolation fields with the backend.
 
-*End of SRS v0.2 draft. Freeze the `Category` enum (D5) and the FR set with the whole team before promoting to v1.0. Recalibrate `k` (FR-11) before quoting any health score.*
+*End of SRS v0.4 draft. The `Category` enum is frozen against the dataset (D5 closed — FR-9.3). Agree the FR set with the whole team before promoting to v1.0, and recalibrate `k` (FR-11) before quoting any health score.*

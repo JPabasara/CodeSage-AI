@@ -1144,7 +1144,7 @@ export interface ScoreProfile {
 | File | Change |
 |---|---|
 | `src/lib/mocks/fixtures.ts` | the finding with `source: "security"` → `source: "rule"` (its `category` is already `"security"`, which is now the only thing that marks it) |
-| `src/lib/mocks/fixtures.ts` | re-key the three `mockProfiles` to the five category weights + `trust` (values in CR-001 D-CR6) |
+| `src/lib/mocks/fixtures.ts` | re-key the three `mockProfiles` to the **six** category weights + `trust` (values in CR-001 D-CR6, updated by D-CR12) |
 | `src/components/dashboard/refactor-first-list.test.tsx` | two fixture rows use `source: "security"` |
 
 `pnpm tsc` will find every remaining site for you — that is the contract doing its job.

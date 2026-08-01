@@ -92,7 +92,8 @@ step-by-step in Phase 10.5 of the
 | Type | From | To |
 |---|---|---|
 | `Source` | `"rule" \| "satd" \| "security" \| "ml-risk"` | `"rule" \| "satd"` |
-| `ScoreProfile` | `weights { security, codeDesign, satd, duplication }` + `wMl` | `weights` keyed by the five **categories** + `trust` (`s`, 0–1) |
+| `Category` | 5 values | **6 values** — `defect` added (`"code-design" \| "requirement" \| "defect" \| "documentation" \| "test" \| "security"`) |
+| `ScoreProfile` | `weights { security, codeDesign, satd, duplication }` + `wMl` | `weights` keyed by the six **categories** + `trust` (`s`, 0–1) |
 
 `security` duplicated `category` exactly (security patterns run inside the rule
 engine, so such a finding was always both) and `ml-risk` was unreachable — the risk
@@ -100,6 +101,12 @@ model writes `FileScore.riskScore`, never a `Finding`. The old weight vector mix
 axes: `satd` is a *source*, `duplication` is a *rule*, and three real categories had
 no weight at all — which becomes a slider the user can drag with no effect once
 Phase 10.5 ships the Profiles page.
+
+`defect` is a **new sixth category**, confirmed against the SATD dataset on 31 Jul
+(472 labelled comments — more than `test` and `documentation` combined). It closes
+decision **D5**, so the enum is now frozen. `non_debt` in the dataset is the
+negative class of the debt/not-debt decision and is **not** a category — it must
+never appear in `Category`.
 
 Until that phase lands, the fixtures still use the old values; `pnpm tsc` will
 locate every site once the types are edited.

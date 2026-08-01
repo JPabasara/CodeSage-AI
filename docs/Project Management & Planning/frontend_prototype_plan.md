@@ -283,7 +283,11 @@ Extended from v1.0 to cover the flow in §2 (projects, branches, scan status, tr
 
 ```typescript
 export type Severity = "critical" | "high" | "medium" | "low";
-export type Category = "code-design" | "requirement" | "documentation" | "test" | "security";
+export type Category =
+  | "code-design" | "requirement" | "defect"        // ML-1 (SATD)
+  | "documentation" | "test"                       // ML-1 (SATD)
+  | "security";                                    // rule engine only
+// Six values, frozen against satd-dataset-code_comments.csv (SRS FR-9.3, CR-001 D-CR12).
 export type FindingStatus = "open" | "acknowledged" | "accepted" | "resolved" | "false-positive";
 export type Grade = "A" | "B" | "C" | "D" | "E";
 
