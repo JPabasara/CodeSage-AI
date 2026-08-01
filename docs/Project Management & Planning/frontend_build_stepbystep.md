@@ -1157,13 +1157,56 @@ export interface ScoreProfile {
 
 *Why not put "SATD" in the severity chip:* severity is an ordinal scale (`critical > high > medium > low`). "SATD" is not comparable to any of those, so it breaks sorting and leaves `base_points` undefined. **SRS FR-15.**
 
-### 10.5.4 — Profiles page: presets + six sliders
+### 10.5.4 — Profiles page: presets + six sliders + Apply
 
 - Three **preset buttons** (Balanced / Security-first / Delivery-speed) that **seed** the sliders, plus **Reset to preset**.
-- **Five category sliders** clamped `0.1–3.0`, and one **trust slider** `s` (`0–1`, default `0.5`) labelled at its ends — *"trust the rules" ←→ "trust the model"*.
-- Changing anything re-scores from stored findings; **never** triggers a scan.
+- **Six category sliders** clamped `0.1–3.0` — `security`, `code-design`, `defect`, `requirement`, `documentation`, `test` — and one **trust slider** `s` (`0–1`, default `0.5`) labelled at its ends — *"trust the rules" ←→ "trust the model"*. *(Six, not five: `defect` was added by CR-001 **D-CR12**.)*
+- Applying re-scores from stored findings; **never** triggers a scan.
+
+**Dragging sends nothing — an explicit Apply does the write.** The sliders are local `useState`; the page is *dirty* until Apply, which fires one mutation and then invalidates the health query:
+
+```ts
+// lib/api/client.ts — the one new endpoint (SRS FR-20, SAD §6.2)
+export function setActiveProfile(p: ProfileInput): Promise<ScoreProfile> {
+  return fetch(`${API_BASE}/api/profiles/active`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(p),            // the whole profile, not a delta
+  }).then(json<ScoreProfile>)
+}
+```
+
+```ts
+// the page: write, then re-read
+const apply = useMutation({
+  mutationFn: setActiveProfile,
+  onSuccess: (saved) => {
+    setDraft(saved)                                       // trust the server's clamp
+    qc.invalidateQueries({ queryKey: ["health"] })        // ← this is what re-scores the UI
+  },
+})
+```
+
+Three things to get right:
+
+- **`PUT`, whole body, no delta.** Re-sending the same profile is a no-op, so a retry after a dropped response can't half-apply. The client fires a dependent read straight after — that read must not race a partially-written profile.
+- **The health request does not change.** `GET /api/repos/:id/health?branch=…` carries **no** profile parameter; the backend resolves the active profile itself (`WORKSPACE.active_profile_id`). If you find yourself adding `?profile=` to a read, stop — that is the design the SAD §6.2 rejected.
+- **Seed the draft from `setDraft(saved)`, not from your own state.** The server clamps; rendering your pre-clamp value would show the user a number that isn't stored.
+
+Add the MSW handler alongside the existing `*/api/profiles` read:
+
+```ts
+http.put("*/api/profiles/active", async ({ request }) => {
+  const body = await request.json()
+  return HttpResponse.json(setMockActiveProfile(body))   // clamps + keeps it in the in-memory backend
+}),
+```
+
+Keep it in the same in-memory state as the scan machine so `resetMockBackend()` clears it between tests.
 
 *Why keep presets:* something must be the default for a new workspace, one click is what demonstrates *"same findings, different lens, no rescan"*, and six naked sliders is the SonarQube experience this product differentiates against (U-1, U-2).
+
+*Why an explicit Apply rather than auto-save on drag:* one drag crosses dozens of values — auto-saving writes and re-derives for each — and there would be no way to abandon an experiment. The dirty→applied transition is also what makes "same findings, different lens" *visible* rather than merely true. Label the button **Apply**, not Save: "Save" reads as "and now go do the work", which is exactly what this does not do.
 
 ### 10.5.5 — In-place finding detail (the layout change)
 
@@ -1188,13 +1231,14 @@ Also:
 - `refactor-first-list.test.tsx` — the two `source` fixtures, plus a new case asserting the SATD chip appears **only** for SATD rows.
 - `finding-detail-panel.test.tsx` — still valid (the component is unchanged); add a container test for entering/leaving detail mode.
 - `e2e/dashboard.spec.ts` — the detail assertion changes from "slide-over opens" to "health card is replaced by finding detail, and the tree highlights the file".
-- New: a profiles E2E — pick a preset, drag a slider, assert the list re-orders **and no scan is triggered**.
+- New: a profiles E2E — pick a preset, drag a slider, press **Apply**, assert the list re-orders **and no scan is triggered** (route-assert that `**/api/repos/*/scan` is never hit, and that exactly one `PUT **/api/profiles/active` fired).
+- New: a profiles unit test — dragging alone issues **no** request; Apply issues one; an out-of-range value returned by the server overwrites the local draft.
 
 ### Done when
 
 - [ ] `pnpm tsc` clean — no reference to `"security"`/`"ml-risk"` as a `Source`, none to `wMl`
 - [ ] A SATD row shows three chips; a rule row shows two
-- [ ] Profiles page: preset click seeds six sliders; reset works; re-scoring is instant
+- [ ] Profiles page: preset click seeds six sliders; reset works; dragging fires no request; **Apply** fires one `PUT /api/profiles/active` and the dashboard re-scores instantly
 - [ ] Selecting a finding swaps the region in place, highlights the file in the tree, and the list stays usable
 - [ ] Reload with `?finding=…` restores detail mode
 - [ ] All unit + E2E gates green

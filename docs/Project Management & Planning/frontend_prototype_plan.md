@@ -394,10 +394,19 @@ export async function stopScan(repoId: string, scanId: string): Promise<ScanStat
   return json(await fetch(`/api/repos/${repoId}/scan/${scanId}/stop`, { method: "POST" }));
 }
 
+// the only non-scan write in v1.0 — see "Applying a profile" below
+export async function setActiveProfile(p: ProfileInput): Promise<ScoreProfile> {
+  return json(await fetch("/api/profiles/active", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+  }));
+}
+
 async function json(res: Response) { if (!res.ok) throw new Error(res.statusText); return res.json(); }
 ```
 
 Note: this code is **final**. It does not know or care that there's no backend. It just calls `/api/...`.
+
+**Applying a profile — a write, then an ordinary read.** The scoring profile is the one place users change what the numbers *mean*, and it is worth seeing why it is only one function. The six sliders and the trust slider are local component state; nothing is sent while they move. Pressing **Apply** issues a single `PUT` carrying the *whole* profile — idempotent, so a retry cannot half-apply it — and the server clamps, stores it against the workspace, and returns what it stored. The client then simply invalidates its health query, and `getHealthReport` above re-runs **unchanged**: it carries no profile parameter, because the active profile is server-side workspace state (SAD §6.2, §9). That is the point of this shape — the read surface does not grow when the profile shape does, and a reload or a second tab sees the same lens. No scan is triggered and no snapshot is written (SRS FR-20).
 
 ### 6.3 The mock layer — MSW answers those calls with fixtures
 
@@ -424,6 +433,11 @@ export const handlers = [
   http.post("/api/repos/:repoId/scan", ({ params }) => HttpResponse.json(advanceScan(params.repoId as string, "start"))),
   http.get("/api/repos/:repoId/scan/:scanId", ({ params }) => HttpResponse.json(advanceScan(params.repoId as string, "tick"))),
   http.post("/api/repos/:repoId/scan/:scanId/stop", ({ params }) => HttpResponse.json(advanceScan(params.repoId as string, "stop"))),
+
+  // profiles: a read, plus the one write that is not a scan
+  http.get("/api/profiles", () => HttpResponse.json(mockProfiles)),
+  http.put("/api/profiles/active", async ({ request }) =>
+    HttpResponse.json(setMockActiveProfile(await request.json()))),   // clamps, keeps it in memory
 ];
 ```
 

@@ -476,6 +476,30 @@ This is the same fact/opinion line as `severity` versus `category_weight` (§3.1
 
 **Cost:** a weighted sum over rows already in PostgreSQL — a few thousand multiply-adds for a 20-scan history. If that ever matters, store two sums per `(category, source)` group per scan (`Σ base×churn` and `Σ base×churn×risk`); since the profile factors are constant within a group and `risk_factor` splits linearly, an exact re-score of the full history becomes a few hundred operations over at most 10 groups. *(See [CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
 
+#### 7.3.1 The endpoint — one small write, then an ordinary read
+
+Dragging a slider sends **nothing**. The six weights and `s` live in the browser until the user presses **Apply**, which issues exactly one request:
+
+```
+PUT /api/profiles/active
+{ "weights": { "security": 3.0, "code-design": 1.0, "defect": 1.2,
+               "requirement": 0.8, "documentation": 0.5, "test": 1.0 },
+  "s": 0.5 }
+→ 200 ScoreProfile   (the values as stored, after clamping)
+```
+
+What the handler does, in full:
+
+1. **Clamp** every weight to `0.1–3.0` and `s` to `0–1`. Do this server-side even though the sliders already cannot exceed it — the sliders are a UI affordance, the clamp is the invariant, and `repo_health` is calibrated against `k` (§6). Reject nothing; clamp silently and return what was stored, so the client can render the corrected value rather than believe its own.
+2. **Write** the workspace's `SCORE_PROFILE` row and point `WORKSPACE.active_profile_id` at it (SAD §9). Seven numbers. No queue, no worker, no clone, no `SCAN` row.
+3. **Return the stored profile.** The client then re-issues its normal reads — `GET /api/repos/{id}/health?branch=…` — and the scoring pass above runs under the new profile.
+
+**Why `PUT` and not `PATCH`.** The body is the *complete* profile, not a delta, so applying it twice is applying it once — which matters because the client fires a dependent read immediately after, and a retry on a dropped response must not leave three weights updated and three not.
+
+**Why the profile is not a query parameter on the reads.** It would work — `?profile=security-first` — and it is tempting because it needs no write at all. Two things kill it for v1.0: a *custom* slider setting has no name, so it would have to travel as seven query parameters on every read, putting the scoring formula's shape into every URL in the product; and nothing would persist, so a reload, a second tab, or a teammate would each see a different lens while the trend chart claims to be labelled with "the" active profile (§7.3, one lens at a time). Storing it once, server-side, keeps the read surface stable and the lens shared.
+
+**No cache invalidation problem, by construction** — because nothing derived is stored as truth (D-5). The one exception is the denormalised Projects-list hint, which carries `cached_under_profile`; the apply handler does **not** need to recompute it, because the read path already recomputes any row whose stamp differs from the active profile.
+
 ### 7.2 Surfacing a critical security issue (the API key)
 
 Four mechanisms stack, **none involving ML**:

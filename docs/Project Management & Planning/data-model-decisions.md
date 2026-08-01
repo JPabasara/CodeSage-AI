@@ -107,6 +107,19 @@ Three things the backend must honour:
 
 Seed the three presets as rows with `is_preset = true`; they are the values the sliders reset to, and **Balanced** is the default profile for every new workspace.
 
+**Which profile is active lives on `WORKSPACE`, not on `SCORE_PROFILE`** — added 01 Aug 2026:
+
+```
+WORKSPACE {
+  active_profile_id  uuid FK -> SCORE_PROFILE   -- nullable; NULL means Balanced
+}
+```
+
+- **Not an `is_active` flag on `SCORE_PROFILE`.** "Exactly one active profile per workspace" is then a partial-unique-index someone has to remember to write, and two active rows is a silent corruption the read path cannot resolve. An FK makes it structural — there is nowhere to *put* a second answer.
+- **The active profile is workspace state, not session state.** It is deliberately shared: a reload, a second tab and a second team member resolve the same lens, which is what makes the trend chart's profile label (D-CR10) honest.
+- **`PUT /api/profiles/active` is the only writer** (SRS FR-20, SAD §6.2). It clamps, updates the `SCORE_PROFILE` row, sets this FK, and returns the stored profile. It writes nothing else — in particular **no `SCAN` row** (D-2, D-5).
+- **Clamp in the API, not only in the browser.** The sliders cannot exceed `0.1–3.0` / `0–1`, but the sliders are not the constraint; `repo_health` is calibrated against `k` and an out-of-range weight from any client makes every stored grade incomparable.
+
 ---
 
 ## 3. RLS — the one rule for the first migration
@@ -159,4 +172,4 @@ Full rationale in [CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-
 
 ---
 
-*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); D-5 added 2026-07-31 ([CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md))**. Any change to D-1 through D-5 is a PR both sides review — the contract is the agreement.*
+*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); D-5 added 2026-07-31 ([CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); `WORKSPACE.active_profile_id` added to D-4 on 2026-08-01** (SRS FR-20 apply semantics — a schema addition, not a decision change). Any change to D-1 through D-5 is a PR both sides review — the contract is the agreement.*

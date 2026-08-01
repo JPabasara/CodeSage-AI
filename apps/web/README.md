@@ -82,6 +82,25 @@ component → hook (src/hooks) → client (src/lib/api/client.ts) → fetch("/ap
 **Going live (Phase 12):** set `NEXT_PUBLIC_API_MOCKING=disabled`, point
 `NEXT_PUBLIC_API_BASE_URL` at the real API — the components and tests don't change.
 
+### The frontend never computes a score
+
+`healthScore`, `grade`, `delta`, per-file debt and finding order all arrive
+**already derived** in the `HealthReport`. The web app formats and colours them; it
+never runs the scoring formula. Two things follow:
+
+- **The scores in `fixtures.ts` are illustrative, not calibrated.** They were chosen to
+  give the heat map red, amber and green nodes to render — they are not the output of
+  any formula, so don't reason about the scoring model from them.
+- **Real scores depend on a constant called `k`** that converts internal debt points
+  into the 0–100 scale, and it is **not yet calibrated** (CR-001 changed the scale of
+  `file_debt`). Expect real grades to move once it is. Background in the
+  [root README](../../README.md#how-the-health-score-works); method in
+  [apps/ml/README.md](../ml/README.md).
+
+Changing a **scoring profile** doesn't change this: the Profiles page `PUT`s the
+profile, then re-reads `HealthReport` — the numbers are re-derived server-side and no
+scan runs. See Phase 10.5 in the build guide.
+
 ### Pending contract change — CR-001 (Phase 10.5)
 
 Two shapes in `src/lib/types` change before Phase 11. Details and rationale:

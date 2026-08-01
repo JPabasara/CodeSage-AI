@@ -14,6 +14,7 @@
 |---|---|---|---|
 | 22/Jul/2026 | 0.1 (draft) | Initial SRS: v1.0 functional + non-functional requirements, interfaces, DB, constraints. | Group 16 |
 | 30/Jul/2026 | 0.2 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** — severity register (FR-8.1), `source` reduced to `rule \| satd` (FR-8.2), SATD marker-based severity (FR-9.2), risk as a bounded multiplier (FR-10/FR-11), scoring profile = 5 category weights + trust slider (FR-11/FR-20), in-place finding detail (FR-17/FR-18), three-mechanism visibility floor (FR-24). | Group 16 |
+| 01/Aug/2026 | 0.3 (draft) | **FR-20** — the profile *apply* semantics made normative: sliders change client state only, an explicit **Apply** issues one idempotent `PUT /api/profiles/active` carrying the whole profile, clamping is enforced server-side, and the active profile is workspace-scoped server state so the read endpoints stay unparameterized. Implements D-CR6/D-CR8; no decision changed. | Group 16 |
 | ✍️ | | | |
 
 ---
@@ -403,7 +404,17 @@ The system shall let the user shape prioritization through a **scoring profile**
 | **Security-first** | 3.0 | 1.0 | 1.2 | 0.8 | 0.5 | 1.0 | 0.5 |
 | **Delivery-speed** | 1.5 | 1.2 | 1.5 | 0.8 | 0.5 | 0.5 | 0.7 |
 
-**Constraints.** Weights shall be **clamped** to the ranges above, because `repo_health` is calibrated against `k` (FR-11) and unbounded weights would drive every repository to grade E and make the health score meaningless. The profile shall **never contain a severity** (FR-8.1). Regardless of profile, the **critical-security visibility floor** (FR-24) holds.
+**Constraints.** Weights shall be **clamped** to the ranges above, because `repo_health` is calibrated against `k` (FR-11) and unbounded weights would drive every repository to grade E and make the health score meaningless. Clamping shall be enforced **server-side** on write; the client-side clamp is a usability affordance and is not the rule. The profile shall **never contain a severity** (FR-8.1). Regardless of profile, the **critical-security visibility floor** (FR-24) holds.
+
+**Applying a profile *(normative)*.** Adjusting a control shall change **client state only**; no request shall be issued while a slider is being dragged. The user shall confirm the change with an explicit **Apply** action, at which point the system shall:
+
+1. **Persist the profile in one idempotent write** — `PUT /api/profiles/active`, whose request body carries the complete profile (six weights + `s`). The endpoint replaces the workspace's active profile with exactly the submitted values, so re-sending an identical body is a no-op and a retried request is safe.
+2. **Clamp and store** the submitted values server-side, and return the stored profile so the client confirms what was saved rather than assuming its own values were accepted.
+3. **Re-derive the scores on the next read.** The active profile is **server-side state scoped to the workspace**, so the existing read endpoints are unchanged — `GET /api/repos/{repoId}/health?branch=…` carries no profile parameter and resolves the active profile itself (FR-21).
+
+The profile is therefore **written once and read implicitly**, not passed as a parameter on every request. Three consequences follow: a page reload, a second browser tab, and a teammate in the same workspace all observe the same lens; the trend chart's profile label (FR-14) is always truthful because there is exactly one active profile to name; and no read endpoint has to be re-shaped when the profile shape changes. A **Reset to preset** action is the same request with the preset's values as its body.
+
+*Why an explicit Apply rather than saving on every slider movement.* A single drag crosses many intermediate values; auto-saving would issue a write and a full re-derivation for each, and would leave the user no way to abandon an experiment. The Apply action also makes the *dirty → applied* transition visible, which is what makes "same findings, different lens, no re-scan" legible rather than merely true.
 
 **A profile change is not a scan *(normative)*.** Changing a weight, moving the trust slider, or selecting a preset shall **re-score the stored findings in place**. It shall **not** run the analysis pipeline, shall **not** require the user to activate the Scan control (FR-6), and shall **not** write a new snapshot (FR-21). A snapshot is keyed by commit SHA and records what the code was at that commit; a profile is not a commit. Were a profile change to write a snapshot, the trend chart would show a step on a day when nobody changed the code — the line would appear to say *"the codebase got worse"* when it means *"we changed our mind about what matters"* — which would invalidate both `delta` (FR-12) and the trend (FR-14).
 

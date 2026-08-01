@@ -14,6 +14,7 @@
 | 22/Jul/2026 | 0.1 (draft) | Initial architecture: 4+1 views, data model, quality attributes for v1.0. | Group 16 |
 | 30/Jul/2026 | 0.2 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** (D-CR1 – D-CR7) — domain model and data view updated for the two-value `source`, the write-once severity invariant, the five-weight + trust-slider `ScoreProfile` (`w_ml` removed), risk as a scoring multiplier, and the in-place finding-detail interaction. | Group 16 |
 | 31/Jul/2026 | 0.3 (draft) | **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** (D-CR8 – D-CR12) — §9 data view: `SCAN` and `FILE_SCORE` now hold facts only, with every score derived on read under the active profile and the `*_cache` columns marked as a profile-stamped cache. **D-CR12** closes D5: the `Category` enum is fixed at six values against the SATD dataset, so `SCORE_PROFILE.weights` carries six keys. | Group 16 |
+| 01/Aug/2026 | 0.4 (draft) | New **§6.2** — the apply-profile write path (`PUT /api/profiles/active`) and Figure 5b, contrasted with the scan path; **§9** gains `WORKSPACE.active_profile_id` so the active profile is workspace state and the read endpoints stay unparameterized. Implements SRS FR-20; no decision changed. | Group 16 |
 | ✍️ | | | |
 
 ---
@@ -24,7 +25,7 @@
 3. Architectural Goals and Constraints
 4. Use-Case View (4.1 Use-Case Realizations)
 5. Logical View (5.1 Overview · 5.2 Architecturally Significant Design Packages)
-6. Process View (6.1 Extraction boundary)
+6. Process View (6.1 Extraction boundary · 6.2 Applying a scoring profile)
 7. Deployment View
 8. Implementation View (8.1 Overview · 8.2 Layers)
 9. Data View (optional)
@@ -330,6 +331,52 @@ sequenceDiagram
 ```
 *Figure 5. Run-scan sequence.*
 
+### 6.2 Applying a scoring profile (the other write path)
+
+A profile change is the **only** other user-initiated write in v1.0, and it is deliberately the opposite of a scan in every respect. Nothing is enqueued, no worker wakes, and no snapshot row is written (SRS FR-20, FR-21).
+
+| | Run a scan | Apply a profile |
+|---|---|---|
+| Request | `POST /api/repos/{repoId}/scan` | `PUT /api/profiles/active` |
+| Handled by | API → Redis → Celery worker | API process alone |
+| Writes | a new immutable `SCAN` + its `FINDING` / `FILE_SCORE` rows | seven numbers on one `SCORE_PROFILE` row |
+| Duration | seconds to minutes, polled | one round trip |
+| Findings | created | untouched |
+
+**Sequence — Apply a profile:**
+```mermaid
+sequenceDiagram
+    actor Dev as Developer
+    participant UI as :ProfilesUI
+    participant API as api:FastAPI
+    participant SS as :ScoringEngine
+    participant DB as db:PostgreSQL
+
+    Dev->>UI: drag sliders
+    Note over UI: client state only — no request
+    Dev->>UI: click Apply
+    UI->>API: PUT /profiles/active { weights, s }
+    API->>API: clamp weights 0.1–3.0, s 0–1
+    API->>DB: update SCORE_PROFILE + set WORKSPACE.active_profile_id
+    DB-->>API: stored profile
+    API-->>UI: ScoreProfile (as stored)
+    UI->>API: GET /repos/{id}/health?branch
+    API->>DB: read stored findings + risk/churn facts
+    API->>SS: score(findings, active profile)
+    SS-->>API: priorities, fileScores, health, grade, trend
+    API-->>UI: HealthReport
+    UI-->>Dev: re-ordered list, new grade, same findings
+```
+*Figure 5b. Apply-profile sequence — a write of seven numbers followed by an ordinary read.*
+
+**Three architectural properties this shape buys:**
+
+1. **The read endpoints stay unparameterized.** The active profile is server-side state keyed to the workspace, so `GET /repos/{id}/health?branch=…` is byte-identical before and after a profile change — the API surface does not grow when the profile shape does. This is what keeps the scoring engine a pure function *behind* a stable interface rather than a set of query parameters leaking the formula into every URL.
+2. **`PUT` is idempotent by construction.** The body is the complete profile, not a delta, so a retry after a dropped response cannot produce a half-applied profile — which matters because the client fires a dependent read immediately afterwards.
+3. **The lens is shared, not per-tab.** A reload, a second tab and a second team member all resolve the same active profile, so the profile label required on the trend chart (SRS FR-14, CR-001 D-CR10) always names something real.
+
+**Clamping is a server-side invariant** (SRS FR-20). The client clamps for usability; the API clamps because `repo_health` is calibrated against `k` and an unclamped weight arriving from any client would make every stored grade incomparable.
+
 ---
 
 # 7. Deployment View
@@ -414,7 +461,7 @@ erDiagram
     WORKSPACE ||--o{ SCORE_PROFILE : defines
     WORKSPACE ||--o{ SUPPRESSION : records
 
-    WORKSPACE { uuid id PK; text name }
+    WORKSPACE { uuid id PK; text name; uuid active_profile_id FK }
     USER { uuid id PK; text name; text email }
     MEMBERSHIP { uuid id PK; uuid workspace_id FK; uuid user_id FK; text role }
     REPO { uuid id PK; uuid workspace_id FK; text name; text owner; text visibility; text url; text source; text default_branch; timestamptz connected_at }
@@ -430,6 +477,8 @@ erDiagram
 `FINDING.severity` and `FINDING.category` are written once, at detection, from the rule register (SRS Appendix C); for SATD rows ML-1 supplies `category` while `severity` comes from the comment-marker table (SRS FR-9.2, Appendix C.2); ML-2 produces no `FINDING` row at all — it writes `FILE_SCORE.risk_score`. No later process updates these columns, so a stored finding always renders and ranks identically (SRS FR-8.1).
 
 `FINDING.source` is constrained to `rule | satd` (SRS FR-8.2). `SCORE_PROFILE.weights` is a JSON object keyed by the **six** `category` values (SRS FR-9.3); `trust_s` is the scalar rules ↔ model slider that replaced `w_ml`. Both are read only by the scoring pass and never written back onto a finding.
+
+**Which profile is active is a property of the workspace, not of the session.** `WORKSPACE.active_profile_id` is a nullable FK to `SCORE_PROFILE`, and it is the *only* thing `PUT /api/profiles/active` (§6.2) moves besides the weights themselves. Holding it on `WORKSPACE` rather than as an `is_active` flag on `SCORE_PROFILE` makes "exactly one active profile per workspace" a structural guarantee instead of a constraint someone has to remember to enforce; it also means the read path resolves the active profile with a join it is already making for RLS. Every derived score in the right-hand column above is computed under whichever profile this column points to at the moment of the request.
 
 **The schema stores facts, not scores** (SRS FR-21, DB-8). `FINDING` keeps the evidence and `FILE_SCORE` keeps the two per-file inputs — `risk_score` from ML-2 and the `churn_factor` computed from the commit-anchored window — because all three are properties of the code at that SHA. **`priority`, `debt_score`, `health_score`, `grade`, `delta` and the category breakdown are functions of the active profile and are therefore derived at read time, not columns.** The `*_cache` columns on `SCAN` exist only to make the Projects-list hint fast; `cached_under_profile` records which profile produced them, and a read under any other profile recomputes rather than trusting the cache. Without this rule an editable profile (SRS FR-20) would leave every stored score stale, or force an update that would break the append-only property this table depends on. *(See [CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
 

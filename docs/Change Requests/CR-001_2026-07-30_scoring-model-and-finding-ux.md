@@ -467,7 +467,9 @@ These are specified here and scheduled as **Phase 10.5** in the frontend build g
 | `apps/web/src/components/dashboard/finding-detail-panel.tsx` | Source chip rendered only when `source === "satd"` |
 | `apps/web/src/components/dashboard/dashboard-view.tsx` | Detail mode replaces the health/chart region (D-CR7) |
 | `apps/web/src/components/dashboard/file-tree/file-tree.tsx` | Auto-expand and highlight the selected finding's file |
-| `apps/web/src/app/(app)/profiles/page.tsx` | Six sliders + preset seeds + reset |
+| `apps/web/src/app/(app)/profiles/page.tsx` | Six sliders + preset seeds + reset + **Apply** (dragging is local state; Apply is the only request) |
+| `apps/web/src/lib/api/client.ts` | New `setActiveProfile()` — `PUT /api/profiles/active`, whole profile in the body. The read functions are **unchanged**: the active profile is server-side workspace state, not a query parameter |
+| `apps/web/src/lib/mocks/handlers.ts` | New `PUT */api/profiles/active` handler, clamping and holding the active profile in the same in-memory backend as the scan machine (so `resetMockBackend()` clears it) |
 
 ---
 
@@ -477,5 +479,7 @@ These are specified here and scheduled as **Phase 10.5** in the frontend build g
 - **Splitting the trust slider.** One dial currently governs both ML-1 (SATD findings) and ML-2 (risk). The two models have different accuracies, so separate dials are a reasonable **[v1.1]** option if users ask for it. Not built now — one dial suits the low-configuration positioning.
 
 ---
+
+> **Implementation note added 01 Aug 2026 — not a new decision.** D-CR6 listed "a save action, one endpoint" among the missing pieces without specifying either. They are now specified, in **SRS FR-20** (normative), **SAD §6.2 + §9**, and **backend engine §7.3.1**: sliders change client state only; an explicit **Apply** issues one idempotent `PUT /api/profiles/active` carrying the whole profile; clamping is enforced server-side; and the active profile is workspace state (`WORKSPACE.active_profile_id`) so the read endpoints stay unparameterized. This changes no decision in this CR — it is what D-CR6 and D-CR8 already imply, written down.
 
 *CR-001 accepted 30 Jul 2026 (D-CR1 – D-CR7); extended 31 Jul 2026 (D-CR8 – D-CR12). Any reversal of D-CR1 through D-CR12 should be recorded as a new CR rather than by editing this file.*
