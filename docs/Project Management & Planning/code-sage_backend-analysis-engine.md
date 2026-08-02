@@ -498,6 +498,8 @@ What the handler does, in full:
 
 **Why the profile is not a query parameter on the reads.** It would work — `?profile=security-first` — and it is tempting because it needs no write at all. Two things kill it for v1.0: a *custom* slider setting has no name, so it would have to travel as seven query parameters on every read, putting the scoring formula's shape into every URL in the product; and nothing would persist, so a reload, a second tab, or a teammate would each see a different lens while the trend chart claims to be labelled with "the" active profile (§7.3, one lens at a time). Storing it once, server-side, keeps the read surface stable and the lens shared.
 
+**Do the summation in SQL.** This is the one implementation choice that decides whether derive-on-read is fast: `SUM(...) GROUP BY file` in PostgreSQL is single-digit milliseconds, while loading ~40k finding rows into Python objects and looping is the same arithmetic 100× slower. The multiply-adds are free either way — the I/O and object overhead are not.
+
 **No cache invalidation problem, by construction** — because nothing derived is stored as truth (D-5). The one exception is the denormalised Projects-list hint, which carries `cached_under_profile`; the apply handler does **not** need to recompute it, because the read path already recomputes any row whose stamp differs from the active profile.
 
 ### 7.2 Surfacing a critical security issue (the API key)

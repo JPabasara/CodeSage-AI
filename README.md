@@ -72,6 +72,13 @@ Every term above is either **measured** from the code (base points, churn, risk)
 page) — except **`k`**, which is chosen by us. It is worth understanding, because it
 is the one number that can quietly make every grade meaningless.
 
+**Scores are computed on every read, never stored.** The database keeps the findings;
+the scores are re-derived under the active profile each request (~10–50 ms for a full
+20-scan history — the detection work was already paid for at scan time). One backend
+rule keeps it that way: **do the summation in SQL, not in Python.** `SUM(...) GROUP BY`
+is single-digit milliseconds; loading 40,000 finding objects into Python and looping is
+the same formula 100× slower.
+
 **What `k` is.** Debt points have no natural meaning — is `847` good? Nothing in the
 formula knows. Dividing by **KLOC** first removes repo size from the picture, so you
 are comparing debt *density* rather than totals; `k` then converts that density into a
