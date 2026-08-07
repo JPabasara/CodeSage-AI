@@ -15,7 +15,11 @@
 | 30/Jul/2026 | 0.2 (draft) | CR-001 (D-CR1 – D-CR7): domain model and data view updated for the two-value `source`, the write-once severity rule, the category weights plus trust slider profile (`w_ml` removed), risk as a scoring multiplier, and the in-place finding detail. | Group 16 |
 | 31/Jul/2026 | 0.3 (draft) | CR-001 (D-CR8 – D-CR12): §9 data view — `SCAN` and `FILE_SCORE` hold facts only, every score derived on read. D-CR12 fixes the `Category` enum at six values, so `SCORE_PROFILE.weights` carries six keys. | Group 16 |
 | 01/Aug/2026 | 0.4 (draft) | New §6.2 — the apply-profile write path (`PUT /api/profiles/active`), contrasted with the scan path. §9 gains `WORKSPACE.active_profile_id`. Implements SRS FR-20. | Group 16 |
-| 03/Aug/2026 | 0.5 (draft) | Aligned with SRS v1.0. Three decisions recorded: repository access in v1.0 is **public URL paste only** (GitHub App moved to v1.1/v2); **scoring is a pure Python function**, never computed in the database; **no webhooks and no RBAC in v1.0**. `SCORE_PROFILE` weight count corrected to six throughout. `SUPPRESSION` removed from the v1.0 schema (SRS FR-17c makes finding actions v1.1). Figures renumbered 1–10 to match the `.docx`. | Group 16 |
+| 03/Aug/2026 | 0.5 (draft) | Aligned with SRS v1.0. Three decisions recorded: repository access in v1.0 is **public URL paste only** (GitHub App moved to v1.1/v2); **scoring is a pure Python function**, never computed in the database; **no webhooks and no RBAC in v1.0**. `SCORE_PROFILE` weight count corrected to six throughout. `SUPPRESSION` removed from the v1.0 schema (SRS FR-17b makes finding actions v1.1). Figures renumbered 1–10 to match the `.docx`. | Group 16 |
+| 05/Aug/2026 | 0.6 (draft) | §6.2 gains the step-by-step apply-profile workflow and the reason for `PUT` over `PATCH`. §9 adds the rule separating a cache from a source of truth, with the cache key defined on the inputs rather than the session. §10 adds the read-cost arithmetic, the exact per-group aggregate that makes the trend chart cheap, and the four-stage caching ladder with ETag at stage 1. No architectural decision changed — these record how the existing decisions perform. | Group 16 |
+| 07/Aug/2026 | 0.7 (draft) | §6 completed and verified against the normative SRS `.docx`. Figure 4 redrawn as a swimlane activity diagram, one lane per process, so every lane crossing names its mode of communication and the FR-6 scan phase is visible; skip-if-unchanged, the error path and the ML bypass documented as decisions. Figure 5 corrected: the worker writes its phase to the database instead of calling the API (which contradicted Figure 7), and the poll loop is now concurrent with the pipeline rather than preceding it. All endpoint paths in §6 aligned with SRS Table 3.96. §10 capacity corrected to 50 registered users per SRS PERF-06 (was 250) and PERF-07 concurrency added. Citations fixed: FR-17b (was FR-17c), Table 3.97 (was 3-24), FR-9.3 (was Table 4-4), and the SRS filename in §1.4. Figure 10 rewritten with newline-separated attributes — the semicolon form was invalid Mermaid, so the ER diagram had never rendered. All nine Mermaid blocks now verified against the Mermaid 11 parser. | Group 16 |
+| 07/Aug/2026 | 0.8 (draft) | Re-aligned with the revised SRS of 05/Aug 22:21. SRS Table 3.96 now carries `GET` and `PUT /api/profiles/active`, and FR-20 now states the idempotent-complete-write, no-request-while-dragging, clamp-and-return and unparameterised-read rules directly. §6.2 therefore cites them as normative instead of introducing the endpoint itself, and gains step 0 — the Profiles screen seeds from `GET /api/profiles/active` on load. Table citations renumbered for the SRS's new sequence (3.96 endpoints, 3.97 communications, 3.95 internal interfaces). No architectural decision changed: the SRS moved to match the architecture. | Group 16 |
+| 08/Aug/2026 | 0.9 (draft) | Figure 4 corrected: ML-1 and ML-2 were drawn as a chain, which asserted a data dependency that does not exist. They are now parallel branches off extraction — comments to ML-1, product and process metrics to ML-2 — landing on `FINDING` and `FILE_SCORE` respectively (SRS FR-9, FR-10). The degraded-path edge now leaves the worker rather than ML-2, since the worker is where the call is attempted, and names the `risk_factor = 1.0` fallback. §6 gains a paragraph on model independence and on `category` coming from ML-1 while severity comes from the FR-9.2 marker table. | Group 16 |
 
 ---
 
@@ -29,7 +33,7 @@
 7. Deployment View
 8. Implementation View (8.1 Overview · 8.2 Layers)
 9. Data View
-10. Size and Performance
+10. Size and Performance (10.1 What a dashboard read costs · 10.2 The trend chart · 10.3 Caching)
 11. Quality
 12. References
 
@@ -75,7 +79,7 @@ The project keeps a single glossary in **SRS §1.3**, and that glossary is the a
 
 ## 1.4 References
 
-1. **Software Requirements Specification**, Code Sage AI v1.0 — `docs/Deliverables/Software_Requirements_Specification.docx`. The normative source for every FR, NFR and appendix referenced here.
+1. **Software Requirements Specification**, Code Sage AI v1.0 — `docs/Deliverables/SRS(Tentative)_Group_16_Technical_Debt_Dashboard.docx`. The normative source for every FR, NFR and appendix referenced here. *(The `.md` copy in the same folder is a superseded working draft and is not normative.)*
 2. **Change Request CR-001** — `docs/Change Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md`. The scoring-model and finding-UX decisions (D-CR1 – D-CR12).
 3. **Backend Analysis Engine design note** — `docs/Project Management & Planning/code-sage_backend-analysis-engine.md`.
 4. **Release Roadmap** and **Frontend Prototype Plan** — `docs/Project Management & Planning/`.
@@ -319,22 +323,99 @@ Three rules in this model are worth spelling out, because most of the architectu
 | ML inference | Long-running, request/response | Called by workers | Comment batches in, labels out; feature vectors in, risk scores out |
 | PostgreSQL | Stateful | API and workers | All persistent state |
 
+Figure 4 is drawn with one swimlane per process, so that every arrow crossing a lane boundary is one of the four modes of communication named in the table above. The scan phase (SRS FR-6, U-10) is annotated on the activities that change it.
+
 ```mermaid
-flowchart TD
-    A[User clicks Scan] --> B{Head SHA equals last scanned SHA?}
-    B -- yes --> R[Reuse the stored snapshot] --> Z[Render dashboard]
-    B -- no --> C[Enqueue Celery job, return scanId]
-    C --> D[Clone the branch at that SHA]
-    D --> E["Extract: Lizard metrics, PyDriller process metrics,<br/>comments from the tree at that SHA"]
-    E --> F[Detect: rule engine, SATD classifier, risk model]
-    F --> H[(Persist the immutable snapshot: findings, risk, churn)]
-    H --> I[Mark the scan done]
-    I --> Y[Read path: score under the active profile]
-    Y --> Z
-    C -.Stop.-> X[Cancel the job, return to idle]
+flowchart TB
+
+    subgraph U["USER — browser (Next.js client)"]
+        direction LR
+        U1["Click Scan<br/>phase = idle"]
+        U2["Poll status every 1 s<br/>phase = running NN%"]
+        U3["Click Stop<br/>(optional)"]
+        U4["Dashboard renders<br/>phase = done"]
+    end
+
+    subgraph A["API PROCESS — FastAPI (stateless, replicable)"]
+        direction LR
+        A1["Read branch head SHA"]
+        A2{"head SHA =<br/>last scanned SHA?"}
+        A3["INSERT SCAN<br/>phase = queued"]
+        A4["Return scanId"]
+        A5["Serve phase + progress"]
+        A6["Revoke job<br/>phase = idle"]
+        A7["ScoringEngine.score<br/>findings x active profile"]
+    end
+
+    subgraph Q["BROKER — Redis (private network)"]
+        direction LR
+        Q1(["Job queue + progress state"])
+    end
+
+    subgraph W["WORKER PROCESS — Celery (1..n, scaled horizontally)"]
+        direction LR
+        W1["git clone at SHA<br/>phase = running"]
+        W2["Extract: Lizard, PyDriller,<br/>comments at that SHA"]
+        W3["Rule engine:<br/>rule + security findings"]
+        W4["Persist snapshot"]
+        W5["phase = done"]
+        WE["phase = error"]
+    end
+
+    subgraph M["ML PROCESS — inference service"]
+        direction LR
+        M1["ML-1 SATD classify"]
+        M2["ML-2 per-file risk"]
+    end
+
+    subgraph D["DATABASE — PostgreSQL (RLS)"]
+        direction LR
+        D1[("SCAN")]
+        D2[("FINDING + FILE_SCORE")]
+    end
+
+    U1 -->|HTTPS POST /api/repos/repoId/scan| A1
+    A1 --> A2
+    A2 -->|yes: skip re-scan| A7
+    A2 -->|no| A3
+    A3 -->|SQL over TLS| D1
+    A3 -->|Redis message: enqueue scanId| Q1
+    A3 --> A4
+    A4 -->|HTTPS scanId + phase| U2
+    Q1 -->|Redis message: deliver scanId| W1
+    W1 --> W2
+    W2 --> W3
+    W2 -->|HTTP: comments at that SHA| M1
+    W2 -->|HTTP: product + process metrics| M2
+    M1 -->|SATD findings, category only| W4
+    M2 -->|risk_score 0-1 per file| W4
+    W3 --> W4
+    W4 -->|SQL over TLS: append-only INSERT| D2
+    W4 --> W5
+    W5 -->|SQL over TLS: UPDATE phase| D1
+    W1 -->|Redis: publish NN%| Q1
+    U2 -->|HTTPS GET .../scan/scanId| A5
+    A5 -->|Redis: read progress| Q1
+    U3 -.->|HTTPS POST .../scan/scanId/stop| A6
+    A6 -.->|Redis: revoke| Q1
+    W2 -.->|clone or extract fails| WE
+    W2 -.->|ML unreachable: rule findings only, risk_factor = 1.0| W4
+    U4 -->|HTTPS GET /api/repos/repoId/health| A7
+    A7 -->|SQL over TLS: read stored facts| D2
+    A7 -->|HealthReport| U4
 ```
 
-*Figure 4. Scan activity, including skip-if-unchanged and cancel.* Figure 4 shows something important about where scoring happens. The write path ends at "persist the snapshot". Scoring is not a pipeline stage — it happens later, on the read path, every time the dashboard is requested.
+*Figure 4. Scan activity across the four processes, with the scan phase annotated.* Figure 4 shows something important about where scoring happens. The write path ends in the worker lane at "persist snapshot"; **`ScoringEngine` never appears in that lane.** Scoring is not a pipeline stage — it sits in the API lane and runs on the read path, every time the dashboard is requested.
+
+Three details in the figure are architectural decisions rather than drawing conventions.
+
+**Skip-if-unchanged is decided in the API lane, before the enqueue.** The check costs one conditional GitHub REST call for the branch head SHA (ETag-conditional, so it usually costs no quota) against one indexed database read. Deciding it in the API means an unchanged branch never reaches Redis and never occupies a worker, and the user gets the dashboard back inside the PERF-03 one-second budget instead of watching a scan that has nothing to do.
+
+**The error path terminates in the worker lane, not the API lane.** A failed scan is recorded by the worker as `phase = error` on the existing `SCAN` row, which is what makes SRS SP-13 work: a user-reported failure is diagnosable from the database without reading logs. The previous snapshot is untouched, because nothing was written to `FINDING` or `FILE_SCORE`.
+
+**The two models are independent, and the figure must not chain them.** ML-1 and ML-2 take different inputs, produce different outputs and never exchange data. ML-1 reads the comments and emits SATD findings, predicting `category` only — one of the five dataset categories, never `security`, which the rule engine alone produces (SRS FR-9.3). Severity for those findings comes from the deterministic marker table in SRS Appendix C.2, not from the model (SRS FR-9.2). ML-2 reads the Lizard product metrics and the four PyDriller process metrics and emits one `risk_score` per file; it produces **no findings at all** (SRS FR-10), which is why its arrow lands on `FILE_SCORE` while ML-1's lands on `FINDING`. Drawing one model feeding the other would assert a dependency that does not exist and would serialise two calls that can run at the same time.
+
+**The ML lane is bypassable.** The dashed edge that skips the ML lane carries the degraded case, and it leaves from the worker rather than from a model — the worker is where the call is attempted, so it is where the failure is observed. Because both models are hosted in one inference container (§7), they are reachable or unreachable together. When they are unreachable the worker still persists a valid snapshot: rule and security findings are all present, no SATD findings appear, and every `risk_factor` falls back to 1.0, so no finding receives a risk boost. A failed model costs a feature, never the scan.
 
 ## 6.1 The extraction boundary
 
@@ -373,36 +454,72 @@ sequenceDiagram
 
     Dev->>UI: click Scan
     UI->>SC: start(repoId, branch)
-    SC->>API: POST /repos/{id}/scan
-    API->>DB: insert Scan(queued)
+    SC->>API: POST /api/repos/{repoId}/scan
+    API->>DB: INSERT SCAN (phase = queued)
     API->>Q: enqueue(scanId)
-    API-->>SC: { scanId, phase: queued }
-    loop poll every 1s
-        SC->>API: GET /scan/{scanId}
-        API-->>SC: { phase, progress }
-    end
+    API-->>SC: 202 { scanId, phase: queued }
+
     Q->>W: deliver(scanId)
-    W->>EX: extract(clone at SHA)
-    EX-->>W: static metrics, process metrics, comments
-    W->>RE: detect(metrics)
-    RE-->>W: rule and security findings
-    W->>ML: classify(comments), risk(feature vectors)
-    ML-->>W: SATD findings, per-file risk scores
-    W->>DB: write snapshot (findings, risk, churn) 
-    W->>API: mark done
-    SC->>API: GET /repos/{id}/health?branch
-    API->>DB: read findings and file facts
+    activate W
+    W->>DB: UPDATE SCAN (phase = running)
+
+    par worker runs the pipeline
+        W->>EX: extract(clone at SHA)
+        EX-->>W: static metrics, process metrics, comments
+        W->>RE: detect(metrics)
+        RE-->>W: rule and security findings
+        W->>ML: classify(comments), risk(feature vectors)
+        ML-->>W: SATD findings, per-file risk scores
+        W->>Q: publish progress NN%
+    and client polls independently
+        loop every 1 s until phase is done or error
+            SC->>API: GET /api/repos/{repoId}/scan/{scanId}
+            API->>Q: read progress
+            API-->>SC: { phase, progress }
+        end
+    end
+
+    W->>DB: INSERT FINDING, FILE_SCORE (append-only)
+    W->>DB: UPDATE SCAN (phase = done)
+    deactivate W
+
+    SC->>API: GET /api/repos/{repoId}/health?branch=...
+    API->>DB: read findings and per-file facts
     API->>SS: score(findings, active profile)
     SS-->>API: priorities, file debt, health, grade, breakdown
     API-->>UI: HealthReport
     UI-->>Dev: render dashboard
 ```
 
-*Figure 5. Run-a-scan sequence.* Figure 5 shows the full path through the internal objects. Notice that `:ScoringEngine` is invoked by the **API**, after the worker has finished and the client has asked for the dashboard — never by the worker.
+*Figure 5. Run-a-scan sequence.* Figure 5 shows the full path through the internal objects. Three things in it are worth reading carefully.
+
+`:ScoringEngine` is invoked by the **API**, after the worker has finished and the client has asked for the dashboard — never by the worker. The write path and the scoring path do not touch.
+
+**The worker never calls the API.** It reports its phase by writing to `SCAN` and its progress by publishing to Redis; the API serves the polling client from those two places. This keeps the dependency direction one-way and matches the deployment view in Figure 7, which has no worker-to-API edge.
+
+**The polling loop and the pipeline are concurrent, not sequential.** They are drawn in a `par` fragment because the client is polling *while* the worker works — that is the whole point of the asynchronous design (SRS PERF-05). Drawing the loop before the worker starts would say the opposite.
 
 ## 6.2 Applying a scoring profile
 
 A profile change is the only other user-initiated write in v1.0, and it is deliberately the opposite of a scan in every way. Nothing is queued, no worker wakes and no snapshot row is written (SRS FR-20, FR-21).
+
+**The full workflow, step by step.**
+
+0. On load, the Profiles screen seeds its controls from `GET /api/profiles/active`, so the sliders always open showing what is actually in force.
+1. The user picks one of the three presets — **Balanced** is the workspace default — or drags the six weight sliders and the trust slider directly. This is client-side state only — **no request is sent while dragging**.
+2. The user clicks **Apply**.
+3. The client sends `PUT /api/profiles/active` carrying the **complete** profile: the six weights and `trust_s`.
+4. The server validates and clamps — weights to 0.1–3.0, `trust_s` to 0–1.
+5. The server writes, in one transaction: `UPDATE score_profile SET weights, trust_s` and `UPDATE workspace SET active_profile_id`. Seven numbers. That is the entire write.
+6. The server returns the profile **as stored**, after clamping, so the interface shows what is really in force rather than what the client asked for.
+7. The client re-reads `GET /api/repos/{repoId}/health?branch=…`. **The URL is unchanged** — no profile appears in it.
+8. The server reads the stored findings and per-file facts, passes them to `ScoringEngine`, and returns the re-scored dashboard.
+
+**The two endpoints this uses are normative.** SRS Table 3.96 defines both halves: `GET /api/profiles/active` returns the workspace's active profile and seeds the Profiles screen on load, and `PUT /api/profiles/active` applies one. FR-20 states the contract they honour — a profile is applied in *"a single idempotent write carrying the complete profile"*, dragging a control *"changes client state only; no request is issued until the user confirms with Apply"*, and the server *"clamps every weight on write and returns the stored profile, so the client confirms what was saved rather than assuming its own values were accepted."* The workflow above implements that requirement rather than inventing it; the paragraphs that follow record *why* the shape is the right one.
+
+**Why `PUT` and not `PATCH`.** `PUT` means "make this resource look exactly like this". The body is the whole profile, not a change to it, so a retry after a dropped response cannot double-apply anything. That matters specifically because step 7 fires immediately after step 6: a half-applied profile would render a dashboard matching no profile that actually exists.
+
+**Why no profile in the URL of step 7.** FR-20 settles this: *"the active profile is server-side state scoped to the workspace, so the read endpoints are unchanged and carry no profile parameter."* The architectural reason is that if the profile travelled as a query parameter, every read endpoint would grow a parameter each time the profile shape changed, and the scoring formula would leak into the API surface. SRS Table 3.96 reflects it — `GET /api/repos/{repoId}/health?branch=` takes a branch and nothing else, and derives scores under the active profile.
 
 | | Run a scan | Apply a profile |
 |---|---|---|
@@ -420,15 +537,15 @@ sequenceDiagram
     participant SS as :ScoringEngine
     participant DB as db:PostgreSQL
 
-    Dev->>UI: drag sliders
+    Dev->>UI: pick preset or drag sliders
     Note over UI: client state only, no request sent
     Dev->>UI: click Apply
-    UI->>API: PUT /profiles/active { weights, s }
-    API->>API: clamp weights 0.1-3.0, s 0-1
-    API->>DB: update SCORE_PROFILE, set WORKSPACE.active_profile_id
+    UI->>API: PUT /api/profiles/active { weights, trust_s }
+    API->>API: clamp weights 0.1-3.0, trust_s 0-1
+    API->>DB: UPDATE SCORE_PROFILE, SET WORKSPACE.active_profile_id
     DB-->>API: stored profile
     API-->>UI: ScoreProfile (as stored)
-    UI->>API: GET /repos/{id}/health?branch
+    UI->>API: GET /api/repos/{repoId}/health?branch=...
     API->>DB: read stored findings, risk and churn facts
     API->>SS: score(findings, active profile)
     SS-->>API: priorities, file debt, health, grade, trend
@@ -440,7 +557,7 @@ sequenceDiagram
 
 **Three properties this shape buys.**
 
-1. **The read endpoints stay unparameterised.** The active profile is server-side state belonging to the workspace, so `GET /repos/{id}/health?branch=…` looks identical before and after a profile change. The API surface does not grow when the profile shape grows, and the scoring formula never leaks into URLs.
+1. **The read endpoints stay unparameterised.** The active profile is server-side state belonging to the workspace, so `GET /api/repos/{repoId}/health?branch=…` looks identical before and after a profile change. The API surface does not grow when the profile shape grows, and the scoring formula never leaks into URLs.
 2. **The `PUT` is idempotent by construction.** The body is the complete profile, not a change to it, so retrying after a dropped response cannot leave a half-applied profile. That matters because the client immediately fires a dependent read.
 3. **The profile is shared, not per-tab.** A reload, a second tab and a second team member all resolve the same active profile, so the profile name shown on the trend chart (SRS FR-14) always refers to something real.
 
@@ -562,15 +679,81 @@ erDiagram
     SCAN ||--o{ FILE_SCORE : produces
     WORKSPACE ||--o{ SCORE_PROFILE : defines
 
-    WORKSPACE { uuid id PK; text name; uuid active_profile_id FK }
-    USER { uuid id PK; text name; text email }
-    MEMBERSHIP { uuid id PK; uuid workspace_id FK; uuid user_id FK; text role }
-    REPO { uuid id PK; uuid workspace_id FK; text name; text owner; text visibility; text url; text default_branch; timestamptz connected_at }
-    BRANCH { uuid id PK; uuid repo_id FK; text name; bool is_default; text last_commit_sha; timestamptz last_commit_at }
-    SCAN { uuid scan_id PK; uuid repo_id FK; text branch; text commit_sha; timestamptz scanned_at; text phase; int finding_count; text model_version }
-    FINDING { uuid id PK; uuid scan_id FK; text fingerprint; text source; text category; text severity; text file; int line; text symbol; text reason; text status; text rule_id; numeric metric_value; numeric threshold }
-    FILE_SCORE { uuid id PK; uuid scan_id FK; text file; numeric risk_score; numeric churn_factor }
-    SCORE_PROFILE { uuid id PK; uuid workspace_id FK; text name; jsonb weights; numeric trust_s; bool is_preset }
+    WORKSPACE {
+        uuid id PK
+        text name
+        uuid active_profile_id FK
+    }
+    USER {
+        uuid id PK
+        text name
+        text email
+    }
+    MEMBERSHIP {
+        uuid id PK
+        uuid workspace_id FK
+        uuid user_id FK
+        text role
+    }
+    REPO {
+        uuid id PK
+        uuid workspace_id FK
+        text name
+        text owner
+        text visibility
+        text url
+        text default_branch
+        timestamptz connected_at
+    }
+    BRANCH {
+        uuid id PK
+        uuid repo_id FK
+        text name
+        bool is_default
+        text last_commit_sha
+        timestamptz last_commit_at
+    }
+    SCAN {
+        uuid scan_id PK
+        uuid repo_id FK
+        text branch
+        text commit_sha
+        timestamptz scanned_at
+        text phase
+        int finding_count
+        text model_version
+    }
+    FINDING {
+        uuid id PK
+        uuid scan_id FK
+        text fingerprint
+        text source
+        text category
+        text severity
+        text file
+        int line
+        text symbol
+        text reason
+        text status
+        text rule_id
+        numeric metric_value
+        numeric threshold
+    }
+    FILE_SCORE {
+        uuid id PK
+        uuid scan_id FK
+        text file
+        numeric risk_score
+        numeric churn_factor
+    }
+    SCORE_PROFILE {
+        uuid id PK
+        uuid workspace_id FK
+        text name
+        jsonb weights
+        numeric trust_s
+        bool is_preset
+    }
 ```
 
 *Figure 10. Multi-tenant data model.* In Figure 10, RLS policies key every tenant-owned table on `workspace_id`. `SCAN` rows are append-only, so trend, history and delta are all queries over existing rows rather than updates to them. Every table here must match the shared data contract.
@@ -587,7 +770,31 @@ erDiagram
 - SRS SP-11 requires the detection and scoring path to be deterministic and exactly testable. A Python function can be unit-tested against the worked-example fixture in SRS TC-11 with no database at all.
 - SRS SP-8 requires thresholds, base points and weights to live in configuration. A Python function reads that configuration naturally; a SQL view would embed the numbers in schema objects and turn recalibration into a migration.
 
-If read latency later becomes a real, measured problem, the fix is to have PostgreSQL pre-aggregate the per-`(category, source)` sums that the formula needs — at most 6 × 2 = 12 groups — and still apply the weights in Python. That keeps the formula in one testable place. **This is an optimisation to consider only if measurement shows it is needed; it is not part of the v1.0 design.**
+**A cache is not a source of truth, and the difference is the line this schema must not cross.**
+
+Deriving scores on every read raises an obvious question: is the system recomputing the same answer over and over? It may be, and caching that answer is allowed. What matters is *what kind of thing* gets stored.
+
+Because scoring is a pure function over immutable snapshot facts, the same inputs always produce the same output. That single property makes caching safe with no invalidation logic at all — there is nothing to check, because a stale answer is impossible. The cache key is simply the two things the output depends on:
+
+```
+cache_key = (scan_id, profile_fingerprint)
+
+  scan_id             identifies the immutable snapshot
+  profile_fingerprint hash of the six weights and trust_s
+```
+
+**The key is the inputs, never the session.** A session-keyed cache would put derived state in server memory, which SRS FR-1 and FR-21 both forbid, and would make two browser tabs or two teammates compute the same result twice. Keying on the inputs means every tab, every user and every reload share one entry automatically.
+
+The rule that keeps this honest:
+
+> A cached value may be deleted at any moment without losing information, because it can be rebuilt from stored facts. The moment a derived value would be *missed* if deleted, it has stopped being a cache and has become a second source of truth — and that is what SRS FR-21 forbids.
+
+Two things follow from this, and both are permitted:
+
+- **Response caching** — an ETag or a Redis entry holding a computed `HealthReport`. Pure derivation, discardable, rebuildable. The mechanisms are described in §10.
+- **Per-group aggregates** — two sums per `(category, source)` group per scan. These contain no weights and no profile values, only stored severity, churn and risk, so they are *facts* in exactly the same sense that `churn_factor` is a fact. Storing them is not storing a score. The arithmetic is in §10.
+
+What remains forbidden is unchanged: `priority`, `debt_score`, `health_score`, `grade`, `delta` and the category breakdown are never columns, because each of them is a function of a profile the user can change at any time.
 
 **Two columns deserve a note.**
 
@@ -595,7 +802,7 @@ If read latency later becomes a real, measured problem, the fix is to have Postg
 
 **The active profile belongs to the workspace, not to the session.** `WORKSPACE.active_profile_id` is a nullable foreign key to `SCORE_PROFILE`, and it is the only thing `PUT /api/profiles/active` moves besides the weights themselves. Holding it on `WORKSPACE` rather than as an `is_active` flag on `SCORE_PROFILE` makes "exactly one active profile per workspace" a structural guarantee instead of a constraint somebody has to remember to enforce. It also means the read path resolves the active profile through a join it is already making for RLS.
 
-**Not in the v1.0 schema.** There is no `SUPPRESSION` table and no finding-action history, because v1.0 is view-only (SRS FR-17c). `FINDING.status` exists and every v1.0 finding is `open`, which is what SRS FR-11 means by "the sum of open finding priorities". Accept-debt, resolve and false-positive actions arrive in v1.1 and will add rows, not change these ones. There is also no webhook-event table and no role or permission tables beyond `MEMBERSHIP.role`, since neither event-driven scanning nor RBAC is in v1.0.
+**Not in the v1.0 schema.** There is no `SUPPRESSION` table and no finding-action history, because v1.0 is view-only (SRS FR-17b). `FINDING.status` exists and every v1.0 finding is `open`, which is what SRS FR-11 means by "the sum of open finding priorities". Accept-debt, resolve and false-positive actions arrive in v1.1 and will add rows, not change these ones. There is also no webhook-event table and no role or permission tables beyond `MEMBERSHIP.role`, since neither event-driven scanning nor RBAC is in v1.0.
 
 **TEAM TODO:** finalise the column types, the indexes — at minimum on `(repo_id, branch, scanned_at)` for the trend query and on `(scan_id, category)` for the breakdown — and write out the exact RLS policies.
 
@@ -603,7 +810,9 @@ If read latency later becomes a real, measured problem, the fix is to have Postg
 
 # 10. Size and Performance
 
-**What the system is sized for.** The Feasibility Report and SRS PERF-06 set the v1.0 baseline at **50 teams of up to 5 users, so 250 registered users**, while still meeting the interactive response times in SRS §3.4.1.
+**What the system is sized for.** SRS PERF-06 sets the v1.0 baseline at **50 single-user workspaces, so 50 registered users**, while still meeting the interactive response times in SRS Table 3.41. This follows from SRS FR-2: in v1.0 a workspace has exactly one active user, and multi-user workspaces arrive in v2. The tenant column is in the schema from day one (§9), so raising this baseline later is a capacity question rather than a migration.
+
+SRS PERF-07 sets the concurrency baseline separately: **at least three repository analyses running at once**, with further requests queued rather than blocking the interface. That requirement, not the user count, is what sizes the worker fleet — three concurrent scans at ~2 GB of clone disk each is the figure to provision against.
 
 **How the architecture meets it.**
 
@@ -614,13 +823,69 @@ If read latency later becomes a real, measured problem, the fix is to have Postg
 
 | Characteristic | Target | Source |
 |---|---|---|
-| Registered users at baseline | 250 (50 teams × 5) | SRS PERF-06 |
+| Registered users at baseline | 50 (50 single-user workspaces) | SRS PERF-06 |
+| Concurrent analyses | At least 3, further requests queued | SRS PERF-07 |
 | Interaction feedback | Visible within 0.1 s | SRS PERF-01 |
 | Non-analysis interactions | Complete within 1 s | SRS PERF-02 |
 | Scan enqueue | Within 1 s of the user clicking Scan | SRS PERF-03 |
 | Progress reporting | For any operation over 10 s | SRS PERF-04 |
-| Scan progress polling | Once per second | SRS Table 3-24 |
+| Scan progress polling | Once per second | SRS Table 3.97 (Communications interfaces) |
 | Worker disk | ~2 GB per concurrent scan, released on completion | SRS Table 3-20 |
+
+## 10.1 What a dashboard read actually costs
+
+Deriving every score on read invites the question of whether the system is doing too much work per request. The operation count answers it.
+
+Per finding the formula is four multiplications and three lookups. The findings are then grouped and summed by file, and repo health is one division. So the work is linear in the number of findings in one snapshot.
+
+| Repo size | Findings, realistically | Scoring in Python |
+|---|---|---|
+| Typical target repo (~50 KLOC) | 500 – 1,000 | about 1 ms |
+| Large repo | 5,000 | about 5 ms |
+| Pessimistic upper bound | 10,000 | 10 – 50 ms |
+
+The middle column follows from the project's own figures: 6.54% of the 62,275 labelled comments are debt at all (SRS FR-9.3 and the reader's note in SRS §4), and rule findings land on a small percentage of functions. A 50 KLOC repository produces several hundred findings, not tens of thousands.
+
+**The important consequence:** reading 10,000 rows out of PostgreSQL and deserialising them costs roughly 20–80 ms, which is *more* than the arithmetic performed on them. The database read dominates, so optimising the multiplication would be optimising the wrong half. Against the one-second budget in SRS PERF-02, scoring uses a few percent.
+
+*These are order-of-magnitude estimates derived from operation counts, not measurements. They are among the numbers the team must measure.*
+
+## 10.2 The trend chart is the one real cost
+
+SRS FR-14 redraws every point of the trend under the active profile. Fifty snapshots of a thousand findings means **fifty thousand findings read** for one chart — again, the reading is what hurts.
+
+The fix is exact rather than approximate, and it falls out of the formula:
+
+```
+priority = base × cat_weight × src_trust × churn × (1 + ml_trust × risk)
+         = cat_weight × src_trust × [ (base × churn) + ml_trust × (base × churn × risk) ]
+                                        └──── A ────┘             └────── B ──────┘
+```
+
+Within one `(category, source)` group, `cat_weight` and `src_trust` are constant, and neither `A` nor `B` contains any profile value — only stored severity, stored churn and stored risk. So storing two sums per group per scan reproduces the total exactly under **any** profile:
+
+```
+6 categories × 2 sources = 12 groups × 2 sums = 24 numbers per snapshot
+
+total = Σ over groups [ cat_weight[g] × src_trust[g] × (A_g + ml_trust × B_g) ]
+```
+
+A fifty-point trend becomes 1,200 multiply-adds instead of fifty thousand row reads. As §9 explains, `A` and `B` are facts rather than scores, so storing them does not conflict with SRS FR-21.
+
+## 10.3 Caching, cheapest measure first
+
+| Stage | Measure | When to build it |
+|---|---|---|
+| 0 | Pure Python scoring on every read | **v1.0 baseline** — ships as described |
+| 1 | ETag and `304 Not Modified` on the health endpoint | **v1.0** — cheap, stateless, removes the cost of a refresh |
+| 2 | Redis entry keyed on `(scan_id, profile_fingerprint)` | Only if measurement shows it is needed |
+| 3 | Per-group aggregates for the trend | When the trend becomes slow, which it will do first |
+
+**Stage 1 is worth building in v1.0 because it costs almost nothing.** The server computes `ETag = hash(scan_id + profile_fingerprint)` from two small lookups, without reading a single finding. A browser sends `If-None-Match` automatically on refresh, so when neither the snapshot nor the profile has changed the server replies `304 Not Modified` with an empty body: no findings read, no scoring performed, no payload sent. It needs no new infrastructure and adds no server-side state.
+
+**Stage 2** reuses the Redis instance already present for Celery. On an ETag miss, a hit here means a result another user or tab already computed is reused rather than recalculated.
+
+All four stages remain consistent with SRS FR-21 and SP-7, because every one of them stores something rebuildable from the snapshot facts.
 
 **TEAM TODO:** measure and record four numbers before the final submission — scan time per KLOC, maximum concurrent scans per worker, p95 dashboard read latency, and database size per snapshot. These are the numbers that will be asked about, and they cannot be guessed.
 
@@ -651,4 +916,4 @@ The document-level references are listed in §1.4 above. The tool and library re
 
 ---
 
-*End of SAD v0.5 draft. Redraw all ten figures per the template's figure rules, add the UC-4 and UC-5 scenario tables, and fill in the four measured performance numbers before promoting this to v1.0.*
+*End of SAD v0.7 draft. Section 6 is complete. Redraw the remaining figures per the template's figure rules, draw Figure 9, add the UC-4 and UC-5 scenario tables, and fill in the four measured performance numbers before promoting this to v1.0.*
