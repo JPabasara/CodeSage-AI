@@ -20,6 +20,7 @@
 | 07/Aug/2026 | 0.7 (draft) | §6 completed and verified against the normative SRS `.docx`. Figure 4 redrawn as a swimlane activity diagram, one lane per process, so every lane crossing names its mode of communication and the FR-6 scan phase is visible; skip-if-unchanged, the error path and the ML bypass documented as decisions. Figure 5 corrected: the worker writes its phase to the database instead of calling the API (which contradicted Figure 7), and the poll loop is now concurrent with the pipeline rather than preceding it. All endpoint paths in §6 aligned with SRS Table 3.96. §10 capacity corrected to 50 registered users per SRS PERF-06 (was 250) and PERF-07 concurrency added. Citations fixed: FR-17b (was FR-17c), Table 3.97 (was 3-24), FR-9.3 (was Table 4-4), and the SRS filename in §1.4. Figure 10 rewritten with newline-separated attributes — the semicolon form was invalid Mermaid, so the ER diagram had never rendered. All nine Mermaid blocks now verified against the Mermaid 11 parser. | Group 16 |
 | 07/Aug/2026 | 0.8 (draft) | Re-aligned with the revised SRS of 05/Aug 22:21. SRS Table 3.96 now carries `GET` and `PUT /api/profiles/active`, and FR-20 now states the idempotent-complete-write, no-request-while-dragging, clamp-and-return and unparameterised-read rules directly. §6.2 therefore cites them as normative instead of introducing the endpoint itself, and gains step 0 — the Profiles screen seeds from `GET /api/profiles/active` on load. Table citations renumbered for the SRS's new sequence (3.96 endpoints, 3.97 communications, 3.95 internal interfaces). No architectural decision changed: the SRS moved to match the architecture. | Group 16 |
 | 08/Aug/2026 | 0.9 (draft) | Figure 4 corrected: ML-1 and ML-2 were drawn as a chain, which asserted a data dependency that does not exist. They are now parallel branches off extraction — comments to ML-1, product and process metrics to ML-2 — landing on `FINDING` and `FILE_SCORE` respectively (SRS FR-9, FR-10). The degraded-path edge now leaves the worker rather than ML-2, since the worker is where the call is attempted, and names the `risk_factor = 1.0` fallback. §6 gains a paragraph on model independence and on `category` coming from ML-1 while severity comes from the FR-9.2 marker table. | Group 16 |
+| 08/Aug/2026 | 0.10 (draft) | Figure 4 completed. The client lane was broken: the poll never returned, nothing connected polling to the dashboard, and the render node both issued and received its own request — so the main scan path never reached the dashboard and only the skip shortcut did. Added the poll response, a phase decision node, and separate request/render activities. `Stop` now branches from the polling state instead of floating unattached. The three non-`done` terminal phases now reach the database: `error` with its message, `idle` after the worker sees the cancel flag at a stage boundary and deletes its clone. Status reads resolve phase from PostgreSQL and progress from Redis. A GitHub lane was added, since `A1` (REST metadata, ETag-conditional) and `W1` (`git clone`) both call it and Figure 7 already showed it. `A2` now compares against the last **successful** scan SHA. | Group 16 |
 
 ---
 
@@ -331,25 +332,34 @@ flowchart TB
     subgraph U["USER — browser (Next.js client)"]
         direction LR
         U1["Click Scan<br/>phase = idle"]
-        U2["Poll status every 1 s<br/>phase = running NN%"]
+        U2["Poll status every 1 s"]
+        UD{"phase returned<br/>by the poll?"}
         U3["Click Stop<br/>(optional)"]
-        U4["Dashboard renders<br/>phase = done"]
+        U4["Request dashboard"]
+        U5["Dashboard renders<br/>phase = done"]
+        U6["Message shown,<br/>previous snapshot kept"]
     end
 
     subgraph A["API PROCESS — FastAPI (stateless, replicable)"]
         direction LR
         A1["Read branch head SHA"]
-        A2{"head SHA =<br/>last scanned SHA?"}
+        A2{"head SHA =<br/>last SUCCESSFUL scan SHA?"}
         A3["INSERT SCAN<br/>phase = queued"]
-        A4["Return scanId"]
+        A4["Return scanId + phase"]
         A5["Serve phase + progress"]
-        A6["Revoke job<br/>phase = idle"]
+        A6["Set cancel flag"]
         A7["ScoringEngine.score<br/>findings x active profile"]
+    end
+
+    subgraph G["GITHUB — external system"]
+        direction LR
+        G1["REST API<br/>repo and branch metadata"]
+        G2["Git remote<br/>clone over HTTPS"]
     end
 
     subgraph Q["BROKER — Redis (private network)"]
         direction LR
-        Q1(["Job queue + progress state"])
+        Q1(["Job queue + progress + cancel flag"])
     end
 
     subgraph W["WORKER PROCESS — Celery (1..n, scaled horizontally)"]
@@ -360,6 +370,7 @@ flowchart TB
         W4["Persist snapshot"]
         W5["phase = done"]
         WE["phase = error"]
+        WI["phase = idle<br/>clone deleted"]
     end
 
     subgraph M["ML PROCESS — inference service"]
@@ -375,15 +386,31 @@ flowchart TB
     end
 
     U1 -->|HTTPS POST /api/repos/repoId/scan| A1
-    A1 --> A2
+    A1 -->|HTTPS GET repo metadata, ETag conditional| G1
+    G1 -->|head commit SHA| A2
     A2 -->|yes: skip re-scan| A7
     A2 -->|no| A3
-    A3 -->|SQL over TLS| D1
+    A3 -->|SQL over TLS: INSERT| D1
     A3 -->|Redis message: enqueue scanId| Q1
     A3 --> A4
-    A4 -->|HTTPS scanId + phase| U2
+    A4 -->|HTTPS 202 scanId + phase| U2
+
+    U2 -->|HTTPS GET /api/repos/repoId/scan/scanId| A5
+    A5 -->|SQL over TLS: read phase| D1
+    A5 -->|Redis: read progress| Q1
+    A5 -->|HTTPS phase + progress| UD
+    UD -->|running: keep polling| U2
+    UD -->|done| U4
+    UD -->|error or idle| U6
+
+    U2 -.->|Stop offered while running| U3
+    U3 -.->|HTTPS POST /api/repos/repoId/scan/scanId/stop| A6
+    A6 -.->|Redis: set cancel flag| Q1
+
     Q1 -->|Redis message: deliver scanId| W1
-    W1 --> W2
+    W1 -->|git clone over HTTPS, no REST quota| G2
+    G2 -->|working tree + history at SHA| W2
+    W1 -->|Redis: publish NN%| Q1
     W2 --> W3
     W2 -->|HTTP: comments at that SHA| M1
     W2 -->|HTTP: product + process metrics| M2
@@ -392,17 +419,18 @@ flowchart TB
     W3 --> W4
     W4 -->|SQL over TLS: append-only INSERT| D2
     W4 --> W5
-    W5 -->|SQL over TLS: UPDATE phase| D1
-    W1 -->|Redis: publish NN%| Q1
-    U2 -->|HTTPS GET .../scan/scanId| A5
-    A5 -->|Redis: read progress| Q1
-    U3 -.->|HTTPS POST .../scan/scanId/stop| A6
-    A6 -.->|Redis: revoke| Q1
+    W5 -->|SQL over TLS: UPDATE phase = done| D1
+
     W2 -.->|clone or extract fails| WE
+    WE -->|SQL over TLS: UPDATE phase = error + message| D1
+    Q1 -.->|Redis: cancel flag| W2
+    W2 -.->|cancel flag seen at stage boundary| WI
+    WI -->|SQL over TLS: UPDATE phase = idle| D1
     W2 -.->|ML unreachable: rule findings only, risk_factor = 1.0| W4
+
     U4 -->|HTTPS GET /api/repos/repoId/health| A7
-    A7 -->|SQL over TLS: read stored facts| D2
-    A7 -->|HealthReport| U4
+    A7 -->|SQL over TLS: read facts where phase = done| D2
+    A7 -->|HealthReport| U5
 ```
 
 *Figure 4. Scan activity across the four processes, with the scan phase annotated.* Figure 4 shows something important about where scoring happens. The write path ends in the worker lane at "persist snapshot"; **`ScoringEngine` never appears in that lane.** Scoring is not a pipeline stage — it sits in the API lane and runs on the read path, every time the dashboard is requested.
@@ -410,6 +438,10 @@ flowchart TB
 Three details in the figure are architectural decisions rather than drawing conventions.
 
 **Skip-if-unchanged is decided in the API lane, before the enqueue.** The check costs one conditional GitHub REST call for the branch head SHA (ETag-conditional, so it usually costs no quota) against one indexed database read. Deciding it in the API means an unchanged branch never reaches Redis and never occupies a worker, and the user gets the dashboard back inside the PERF-03 one-second budget instead of watching a scan that has nothing to do.
+
+**PostgreSQL holds the phase; Redis holds only the percentage.** The status endpoint reads `SCAN.phase` from the database and the `NN%` from Redis, and this split is deliberate. Redis is a broker: if it restarts, losing a progress percentage costs nothing, because the next poll recomputes it. Losing *"this scan failed"* would cost a great deal — SRS SP-13 requires the final phase and its error message to be recoverable from the database alone. So every terminal phase (`done`, `error`, `idle`) is written to `SCAN` by the process that reaches it, and the client learns all three through the same polling channel. Cancellation needs no separate notification path for exactly this reason: the API only sets a flag, and the user finds out the scan really stopped when a later poll returns `idle`.
+
+**Only a `done` scan is ever read back.** A cancelled or failed scan leaves a `SCAN` row with no `FINDING` and no `FILE_SCORE` children, so both the dashboard read and the skip-if-unchanged comparison resolve against the last **successful** scan. Without that qualifier, cancelling a scan and immediately restarting it would match the head SHA against a snapshot that was never written, and the system would skip the work and serve stale data as current.
 
 **The error path terminates in the worker lane, not the API lane.** A failed scan is recorded by the worker as `phase = error` on the existing `SCAN` row, which is what makes SRS SP-13 work: a user-reported failure is diagnosable from the database without reading logs. The previous snapshot is untouched, because nothing was written to `FINDING` or `FILE_SCORE`.
 
