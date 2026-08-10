@@ -1,0 +1,24 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Datasets are downloaded, not committed — SATDAUG and the D'Ambros defect data
+# are large and licensed separately from this repository.
+data/raw/*
+data/interim/*
+data/processed/*
+data/external/*
+!data/**/.gitkeep
+
+# Trained artifacts. Track these with git-lfs or an object store, not plain git —
+# a .pkl per retraining would bloat the repository permanently.
+models/*.pkl
+models/*.joblib
+!models/.gitkeep

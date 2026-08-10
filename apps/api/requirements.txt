@@ -1,0 +1,28 @@
+# Flat mirror of the `dependencies` list in pyproject.toml, for `pip install -r`.
+# pyproject.toml is the source of truth — update it first, then mirror here.
+# Dev/test tooling lives in requirements-dev.txt.
+
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+sqlalchemy>=2.0
+alembic>=1.14
+psycopg[binary]>=3.2
+celery>=5.4
+redis>=5.2
+httpx>=0.28
+authlib>=1.3
+itsdangerous>=2.2
+pyyaml>=6.0
+
+# ── extraction toolchain (SRS FR-7) ────────────────────────────────────────
+# Tree-sitter extracts source comments for the SATD classifier. A grammar package
+# per language; v1.0 is Java only, matching the CK constraint.
+tree-sitter>=0.23
+tree-sitter-java>=0.23
+# PyDriller mines the four process metrics from git history.
+pydriller>=2.6
+
+# NOTE: CK is NOT here. It is a Java jar run as a subprocess, installed into the
+# image by the Dockerfile — see CODESAGE_CK_JAR. There is no pip package for it.

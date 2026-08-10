@@ -1,0 +1,47 @@
+# SATD SEVERITY MARKERS — SRS Appendix C.2 (Table 4.32), verbatim.
+#
+# ML-1 predicts the CATEGORY. It does not predict severity and it cannot: a
+# supervised model can only predict what its training data labels, and SATDAUG
+# labels categories, not severities. There is no answer key for severity, so it
+# must come from somewhere deterministic — this table (FR-9.2).
+#
+# The split encodes a real distinction. FIXME/BUG/BROKEN mean *something is
+# wrong*; TODO/HACK mean *it works but it is ugly*; NOTE/NIT mean *for your
+# information*. Every row is defensible line by line.
+#
+# Rules for applying it:
+#   * Evaluate high → medium → low by `precedence`; the HIGHEST match wins, so
+#     "// FIXME: TODO later" is high.
+#   * Match ANYWHERE in the comment, not only at the start — "this is a temporary
+#     workaround" must hit.
+#   * No marker matched is NOT the same as not debt. The classifier catching
+#     "this whole module is a mess, sorry" with no keyword at all is exactly why
+#     ML-1 exists instead of a plain regex scan. Those default to medium.
+#
+# The clean division of labour: the PROBABILISTIC half decides *is this debt, and
+# of what type*; the DETERMINISTIC half decides *how bad*.
+
+markers:
+  - precedence: 1
+    pattern: '\b(FIXME|BUG|XXX|BROKEN|DO\s*NOT\s*(SHIP|MERGE))\b'
+    severity: high
+    base_points: 5
+    message_template: "Self-admitted defect: '{comment_text}' - classified as {predicted_category}."
+
+  - precedence: 2
+    pattern: '\b(TODO|HACK|TEMP|TEMPORARY|WORKAROUND|KLUDGE|REFACTOR)\b'
+    severity: medium
+    base_points: 3
+    message_template: "Self-admitted debt: '{comment_text}' - classified as {predicted_category}."
+
+  - precedence: 3
+    pattern: '\b(NOTE|REVIEW|NIT|IDEA|QUESTION|MAYBE)\b'
+    severity: low
+    base_points: 1
+    message_template: "Self-admitted note: '{comment_text}' - classified as {predicted_category}."
+
+# Applied when the classifier detected debt in prose alone and no marker matched.
+default:
+  severity: medium
+  base_points: 3
+  message_template: "Self-admitted debt: '{comment_text}' - classified as {predicted_category}."

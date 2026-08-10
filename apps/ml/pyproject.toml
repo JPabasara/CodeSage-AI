@@ -1,0 +1,47 @@
+[project]
+name = "codesage-ml"
+version = "0.1.0"
+description = "Code Sage AI — ML inference service (ML-1 SATD, ML-2 bug-risk)"
+requires-python = ">=3.12"
+
+# Runtime = inference only. Training dependencies are in the `training` extra and
+# are NOT installed into the deployed image (SRS AI-05).
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "scikit-learn>=1.5",
+    "scipy>=1.14",
+    "numpy>=2.1",
+    "joblib>=1.4",
+]
+
+[project.optional-dependencies]
+training = [
+    "pandas>=2.2",
+    "matplotlib>=3.9",
+    "jupyter>=1.1",
+    # ML-2's labels come from mining bug-fixing commits out of repository history.
+    "pydriller>=2.6",
+]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codesage_ml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "training"]

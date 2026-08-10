@@ -1,0 +1,97 @@
+# Code Sage AI — local stack (SAD §7 deployment view).
+#
+# Six containers. `api` and `worker` are the SAME IMAGE with different commands.
+# Only `web` and `api` are published to the host; redis, postgres and ml stay on
+# the private network and are never publicly exposed.
+
+name: codesage
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: codesage
+      POSTGRES_USER: codesage_owner
+      POSTGRES_PASSWORD: devpassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the non-superuser application role. Required: a superuser or the
+      # table owner BYPASSES Row-Level Security silently, which would make tenant
+      # isolation appear to work in development and fail in review.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codesage_owner -d codesage"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published. Add a host port only when you need psql from outside.
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published — broker traffic never leaves the private network.
+
+  ml:
+    build:
+      context: ../apps/ml
+    volumes:
+      # Artifacts are mounted, not baked in, so swapping a model is a restart.
+      - ../apps/ml/models:/models:ro
+    # Not published. Workers call it by service name.
+
+  api:
+    build:
+      context: ../apps/api
+    environment:
+      CODESAGE_DATABASE_URL: postgresql+psycopg://codesage_app:devpassword@postgres:5432/codesage
+      CODESAGE_REDIS_URL: redis://redis:6379/0
+      CODESAGE_ML_SERVICE_URL: http://ml:8001
+      CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
+      CODESAGE_SECRET_KEY: dev-only-change-me
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../apps/api
+    command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1
+    environment:
+      CODESAGE_DATABASE_URL: postgresql+psycopg://codesage_app:devpassword@postgres:5432/codesage
+      CODESAGE_REDIS_URL: redis://redis:6379/0
+      CODESAGE_ML_SERVICE_URL: http://ml:8001
+      CODESAGE_CLONE_DIR: /var/tmp/codesage-clones
+    volumes:
+      # ~2 GB of scratch per concurrent scan. A named volume rather than the
+      # container's writable layer, so a large clone cannot bloat the image layer.
+      - clones:/var/tmp/codesage-clones
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Concurrency scales by replicas, not threads: each scan needs its own clone
+    # and its own ~2 GB. PERF-07 asks for at least three concurrent analyses.
+    # Run `docker compose up --scale worker=3` to meet it.
+
+  web:
+    build:
+      context: ../apps/web
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  clones:
