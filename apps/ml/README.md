@@ -18,3 +18,31 @@ apps/ml/
 ```
 
 **Raw data and model artifacts are git-ignored on purpose** (size + license). 
+
+## Setup & Running Tasks
+
+### 1. Start Redis
+Make sure Redis is running. You can easily start it via Docker Compose from the project root:
+```bash
+docker compose up -d
+```
+
+### 2. Install Dependencies
+Install the required packages in your virtual environment:
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Run Celery Worker
+Start the Celery worker (use `--pool=solo` on Windows):
+```bash
+cd src
+celery -A tasks worker --loglevel=info --pool=solo
+```
+
+### 4. Trigger the Task
+Run the trigger script to enqueue a job and monitor progress:
+```bash
+python trigger.py
+```
+
