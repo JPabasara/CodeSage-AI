@@ -22,7 +22,9 @@ class TestCeleryTasks(unittest.TestCase):
             self.assertEqual(result.status, "SUCCESS")
             self.assertEqual(result.result["status"], "completed")
             self.assertEqual(result.result["repo"], repo_url)
-            self.assertEqual(result.result["findings_count"], 42)
+            self.assertEqual(result.result["files_analyzed"], 87)
+            self.assertEqual(result.result["classes_found"], 24)
+            self.assertEqual(result.result["metrics"]["avg_wmc"], 14.5)
 
 if __name__ == "__main__":
     unittest.main()
