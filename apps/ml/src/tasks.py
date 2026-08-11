@@ -16,17 +16,39 @@ app = Celery(
 @app.task(bind=True)
 def run_analysis(self, repo_url: str):
     """
-    Simulates a heavy static analysis scan.
+    Simulates repository analysis using Tree-sitter, CK metrics, and PyDriller.
     """
     print(f"[*] Starting analysis for repository: {repo_url}")
     
-    # Simulate a step-by-step progress update
-    for i in range(1, 6):
-        time.sleep(2)  # Simulate 2 seconds of work (Lizard/PyDriller)
-        progress = i * 20
-        
-        # Update Celery's state so we can poll the progress from FastAPI
-        self.update_state(state="PROGRESS", meta={"current": progress, "total": 100})
-        print(f"[#] Scan progress: {progress}%")
+    stages = [
+        ("Tree-sitter: Parsing AST & comments", 25),
+        ("CK Metrics: Analyzing class couplings & cohesion (WMC, CBO, LCOM)", 50),
+        ("PyDriller: Traversing git commit logs & churn history", 75),
+        ("ML Models: Running SATD classification & bug-proneness estimator", 90)
+    ]
 
-    return {"status": "completed", "repo": repo_url, "findings_count": 42}
+    for step_name, progress in stages:
+        time.sleep(1.5)  # Simulate the processing time
+        self.update_state(
+            state="PROGRESS",
+            meta={"step": step_name, "current": progress, "total": 100}
+        )
+        print(f"[#] {step_name}: {progress}%")
+
+    time.sleep(1.0)
+    
+    return {
+        "status": "completed",
+        "repo": repo_url,
+        "files_analyzed": 87,
+        "classes_found": 24,
+        "metrics": {
+            "avg_wmc": 14.5,
+            "avg_cbo": 3.8,
+            "avg_lcom": 0.22,
+            "max_dit": 3
+        },
+        "satd_comments_found": 5,
+        "bug_risk_avg": 0.31,
+        "technical_debt_hours": 12.5
+    }
