@@ -1,9 +1,10 @@
+import os
 import time
 from celery import Celery
 
 # 1. Setup the Celery application
 # We point both the broker and backend to our local Redis server
-REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 
 app = Celery(
     "codesage_tasks",
