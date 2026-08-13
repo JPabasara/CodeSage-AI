@@ -12,6 +12,12 @@
 | Date | Version | Description | Author |
 |---|---|---|---|
 | 22/Jul/2026 | 0.1 (draft) | Initial architecture: 4+1 views, data model, quality attributes for v1.0. | Group 16 |
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+| ✍️ | | | |
+=======
+>>>>>>> Stashed changes
 | 30/Jul/2026 | 0.2 (draft) | CR-001 (D-CR1 – D-CR7): domain model and data view updated for the two-value `source`, the write-once severity rule, the category weights plus trust slider profile (`w_ml` removed), risk as a scoring multiplier, and the in-place finding detail. | Group 16 |
 | 31/Jul/2026 | 0.3 (draft) | CR-001 (D-CR8 – D-CR12): §9 data view — `SCAN` and `FILE_SCORE` hold facts only, every score derived on read. D-CR12 fixes the `Category` enum at six values, so `SCORE_PROFILE.weights` carries six keys. | Group 16 |
 | 01/Aug/2026 | 0.4 (draft) | New §6.2 — the apply-profile write path (`PUT /api/profiles/active`), contrasted with the scan path. §9 gains `WORKSPACE.active_profile_id`. Implements SRS FR-20. | Group 16 |
@@ -21,6 +27,15 @@
 | 07/Aug/2026 | 0.8 (draft) | Re-aligned with the revised SRS of 05/Aug 22:21. SRS Table 3.96 now carries `GET` and `PUT /api/profiles/active`, and FR-20 now states the idempotent-complete-write, no-request-while-dragging, clamp-and-return and unparameterised-read rules directly. §6.2 therefore cites them as normative instead of introducing the endpoint itself, and gains step 0 — the Profiles screen seeds from `GET /api/profiles/active` on load. Table citations renumbered for the SRS's new sequence (3.96 endpoints, 3.97 communications, 3.95 internal interfaces). No architectural decision changed: the SRS moved to match the architecture. | Group 16 |
 | 08/Aug/2026 | 0.9 (draft) | Figure 4 corrected: ML-1 and ML-2 were drawn as a chain, which asserted a data dependency that does not exist. They are now parallel branches off extraction — comments to ML-1, product and process metrics to ML-2 — landing on `FINDING` and `FILE_SCORE` respectively (SRS FR-9, FR-10). The degraded-path edge now leaves the worker rather than ML-2, since the worker is where the call is attempted, and names the `risk_factor = 1.0` fallback. §6 gains a paragraph on model independence and on `category` coming from ML-1 while severity comes from the FR-9.2 marker table. | Group 16 |
 | 08/Aug/2026 | 0.10 (draft) | Figure 4 completed. The client lane was broken: the poll never returned, nothing connected polling to the dashboard, and the render node both issued and received its own request — so the main scan path never reached the dashboard and only the skip shortcut did. Added the poll response, a phase decision node, and separate request/render activities. `Stop` now branches from the polling state instead of floating unattached. The three non-`done` terminal phases now reach the database: `error` with its message, `idle` after the worker sees the cancel flag at a stage boundary and deletes its clone. Status reads resolve phase from PostgreSQL and progress from Redis. A GitHub lane was added, since `A1` (REST metadata, ETag-conditional) and `W1` (`git clone`) both call it and Figure 7 already showed it. `A2` now compares against the last **successful** scan SHA. | Group 16 |
+<<<<<<< Updated upstream
+=======
+| 08/Aug/2026 | 0.11 (draft) | The cancel check is drawn from all three interruptible stages (`W1`, `W2`, `W3`) rather than from extraction alone, which had implied a scan could not be cancelled during the clone — the longest stage and the most likely moment a user presses Stop. `W4` stays outside the interruptible region because a partial snapshot write would breach SRS FR-6. The §6 narrative for Figure 4 was rewritten as eleven numbered architectural decisions, each stated with the requirement it serves and the consequence of choosing otherwise. | Group 16 |
+| 08/Aug/2026 | 0.12 (draft) | Figures 5 and 6 brought into line with Figure 4 and rewritten in Mermaid, replacing the hand-written draw.io XML sources. Figure 5 gains a `gh:GitHub` participant covering both the ETag-conditional metadata read and the clone, the last-successful-scan comparison before the enqueue, the status endpoint reading phase from PostgreSQL and progress from Redis, and the two model calls drawn as separate request/reply pairs with a note that neither reads the other's output. It states explicitly that it shows the successful path only, since Figure 4 carries cancellation and failure. Figure 6 gains the `GET /api/profiles/active` seeding read and notes marking the client-only drag, the single seven-number transaction and the unparameterised dependent read. Both narratives rewritten as numbered decisions. | Group 16 |
+| 08/Aug/2026 | 0.13 (draft) | Client responsibilities separated consistently across Figures 5 and 6. In Figure 5 the dashboard read is now issued by `:DashboardUI` after `:ScanControl` reports `phase = done`, so the reply returns to the object that made the request; previously `:ScanControl` asked and `:DashboardUI` received. Figure 6 gains a `:DashboardUI` participant on the same principle, an opening `Dev` trigger so the interaction no longer begins with the interface acting unprompted, and the closing `deactivate API` that was missing — its activation bar had run past the end of the diagram. | Group 16 |
+| 09/Aug/2026 | 0.15 (draft) | Figure 4 redrawn for legibility and aligned with the class model. Connectors are straight rather than curved (`curve: linear`), and edge labels were shortened from a maximum of 44 characters to 28 so that they no longer overlap the nodes they cross; the protocol prefix is retained on every label because it is the architectural content, while detail such as ETag conditioning and append-only insertion moved into the narrative. The terminal phase of a cancelled scan is now **`cancelled`** rather than `idle`, matching `AnalysisStatus` in the class diagram, and the cancel exits are drawn from all three interruptible stages. `idle` remains only as the resting state of the scan control before a scan starts. The UC-3 scenario table in §4 was corrected to match on both points. **This adds a phase FR-6 does not list, so a CR against the SRS is owed.** | Group 16 |
+| 08/Aug/2026 | 0.14 (draft) | §6 text audited against the figures and the SRS. The process list said four processes while the figure showed seven lanes; Redis is now listed as the fifth process it always was, and the text explains that the browser and GitHub are drawn as lanes without being processes this project deploys. The skip-if-unchanged paragraph said "the last scan" where the figure and the paragraph after it say "the last successful scan". PERF-03 was cited for the skip path, which queues no job; that path is now cited to PERF-02, and PERF-03 is cited where a job is actually enqueued. A reference to "branch B of Figure 4" survived from the flowchart the swimlane diagram replaced. The extraction-boundary table now distinguishes the API's pre-pipeline metadata read from the detection inputs it excludes. No figure changed. | Group 16 |
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ---
 
@@ -194,13 +209,31 @@ flowchart LR
 | | |
 |---|---|
 | **Use case name** | Run a scan |
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+| **Actor(s)** | Developer (triggers); GitHub, ML Service (participate) |
+| **Description** | Analyse the active project's selected branch and produce a stored snapshot that the dashboard renders. |
+| **Preconditions** | User signed in; a project is connected and selected; a branch is chosen. |
+| **Main flow** | 1. User clicks **Scan**. 2. Backend creates a scan record (`queued`) and enqueues a Celery job; returns a `scanId`. 3. UI shows progress and polls. 4. Worker `git clone`s the branch (or reuses the snapshot if the commit SHA is unchanged). 5. Worker runs **Lizard** metrics + **PyDriller** process metrics (churn, authors, age, recency) + **comment extraction from the tree at that SHA**. 6. Worker runs **rule engine**, **SATD classifier** (comments only), **risk model** → findings + per-file risk. 7. **Scoring engine** applies the active profile → file debt, health score, grade, category breakdown. 8. Results are written as an **immutable snapshot** in PostgreSQL. 9. Scan marked `done`; UI fetches the snapshot and renders. |
+| **Successful post-condition** | A new snapshot exists; dashboard shows updated health, tree, list, trend; last-analyzed time + SHA updated. |
+| **Fail post-condition** | On error/cancel the scan ends (`error`/`idle`); the previous snapshot is unchanged and still shown. |
+| **Extensions** | 3a. User clicks **Stop** → worker cancelled, scan `idle`. 4a. SHA unchanged → skip re-analysis, reuse snapshot. 6a. ML unavailable → rule-engine-only findings (degraded but valid). |
+=======
+>>>>>>> Stashed changes
 | **Actors** | Developer (starts it); GitHub and the ML Service take part |
 | **Description** | Analyse the selected branch of the active project and store the result as a snapshot that the dashboard can render. |
 | **Preconditions** | The user is signed in, a project is connected and selected, and a branch is chosen. |
 | **Main flow** | 1. The user clicks **Scan**. 2. The API creates a scan record with phase `queued`, puts a job on the Redis queue and returns a `scanId` straight away. 3. The UI shows progress and polls the status endpoint once a second. 4. A worker clones the branch at its head commit SHA. 5. The worker extracts static metrics with Lizard, process metrics with PyDriller, and source comments from the working tree at that SHA. 6. The rule engine produces rule and security findings; ML-1 classifies the comments into SATD findings; ML-2 produces a per-file risk score. 7. The worker stores the findings, the per-file risk scores and the churn factors as an immutable snapshot. 8. The scan is marked `done`. 9. The UI requests the dashboard payload, the API scores the stored findings under the active profile, and the dashboard renders. |
 | **Successful post-condition** | A new snapshot exists. The dashboard shows an updated health score, file tree, finding list and trend point, with the new last-analysed time and commit SHA. |
+<<<<<<< Updated upstream
 | **Fail post-condition** | The scan ends in `error` or `idle`. The previous snapshot is untouched and is still what the user sees. |
 | **Extensions** | 3a. The user clicks **Stop**, the job is cancelled and the scan returns to `idle`. 4a. The branch head SHA equals the last scanned SHA, so the system may skip the work and reuse the stored snapshot. 6a. The ML service is unavailable, so the scan completes with rule-engine findings only — degraded, but still a valid snapshot. |
+=======
+| **Fail post-condition** | The scan ends in `error` or `cancelled`. The previous snapshot is untouched and is still what the user sees. |
+| **Extensions** | 3a. The user clicks **Stop**, the worker stops at its next stage boundary and the scan ends in `cancelled`. 4a. The branch head SHA equals the SHA of the last successful scan, so the system may skip the work and reuse the stored snapshot. 6a. The ML service is unavailable, so the scan completes with rule-engine findings only — degraded, but still a valid snapshot. |
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ### UC-2 Connect a repository
 
@@ -315,33 +348,83 @@ Three rules in this model are worth spelling out, because most of the architectu
 
 # 6. Process View
 
+<<<<<<< Updated upstream
 **The processes.** Four kinds of process make up a running system: the **API process** (FastAPI, stateless, can be replicated); one or more **worker processes** (Celery, where the scan pipeline runs); the **ML inference process**, which loads the two model artifacts and answers classification and risk requests; and the **database process**. The API and the workers communicate through the **Redis** broker, which carries job messages and progress state. Everything persists to **PostgreSQL**.
 
+=======
+<<<<<<< Updated upstream
+*Template guidance: processes/threads and their communication; include activity + sequence diagrams (not a black box — show internal objects).*
+
+**Processes:** the **web/API process** (FastAPI, stateless), one or more **worker processes** (Celery), the **ML inference** process/service, and the **database** process. The API and workers communicate via the **Redis** broker (job enqueue + progress); all persist to **PostgreSQL**.
+=======
+**The processes.** Five processes make up a running system. The **API process** is stateless and can be replicated. One or more **worker processes** run the scan pipeline. The **ML inference process** loads the two model artifacts and answers classification and risk requests. The **Redis broker** carries job messages, progress and the cancel flag. The **database process** holds everything that persists.
+
+>>>>>>> Stashed changes
 | Process | Kind | Talks to | Carries |
 |---|---|---|---|
 | API (FastAPI) | Stateless, request/response | Redis, PostgreSQL, GitHub | HTTP requests, job enqueue, all read-path scoring |
 | Worker (Celery) | Long-running, background | Redis, PostgreSQL, ML service, GitHub | The clone → extract → detect → persist pipeline |
 | ML inference | Long-running, request/response | Called by workers | Comment batches in, labels out; feature vectors in, risk scores out |
+<<<<<<< Updated upstream
 | PostgreSQL | Stateful | API and workers | All persistent state |
 
 Figure 4 is drawn with one swimlane per process, so that every arrow crossing a lane boundary is one of the four modes of communication named in the table above. The scan phase (SRS FR-6, U-10) is annotated on the activities that change it.
+=======
+| Redis broker | Transient state, in-memory | API and workers | Job queue, progress percentage, cancel flag |
+| PostgreSQL | Stateful | API and workers | All persistent state |
+
+Figure 4 draws these five as swimlanes and adds two more. The browser appears because a scan is started and polled from there. GitHub appears because both the API and the worker call it. Neither is a process this project deploys, but messages cross to both, and omitting them would hide two of the system's interfaces.
+
+Figure 4 traces one scan from the user's click to the rendered dashboard. Each process has its own swimlane, so every arrow that crosses a lane boundary is a message between two processes, and the label on that arrow names the protocol it travels over. GitHub is drawn as a seventh lane because both the API and the worker call it, in two different ways. The scan phase is written on the activities that change it, so the state machine can be followed through the figure.
+
+The phases are those of SRS FR-6, with one addition. FR-6 defines `idle → queued → running NN% → done | error`, and it describes a cancelled scan as returning to `idle`. This document records the terminal phase of a cancelled scan as **`cancelled`** instead, because `idle` is the resting state of the scan control in the interface rather than an outcome, and a stored row reading `idle` would not distinguish a scan that was stopped from one that had never run. The class model uses `CANCELLED` for the same reason. **TEAM TODO:** raise a one-line CR adding `cancelled` to the FR-6 phase list, as was done for the profile endpoints in SRS Table 3.96.
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ```mermaid
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+flowchart TD
+    A[User clicks Scan] --> B{Latest SHA == last scanned SHA?}
+    B -- yes --> R[Reuse stored snapshot] --> Z[Render dashboard]
+    B -- no --> C[Enqueue Celery job, return scanId]
+    C --> D[Clone branch]
+    D --> E["Extract: Lizard metrics + PyDriller<br/>process metrics + comments at SHA"]
+    E --> F[Detect: rule engine + SATD + risk]
+    F --> G[Score with active profile + visibility floor]
+    G --> H[(Persist immutable snapshot)]
+    H --> I[Mark scan done]
+    I --> Z
+    C -.Stop.-> X[Cancel job -> idle] 
+=======
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+>>>>>>> Stashed changes
 flowchart TB
 
     subgraph U["USER — browser (Next.js client)"]
         direction LR
         U1["Click Scan<br/>phase = idle"]
+<<<<<<< Updated upstream
         U2["Poll status every 1 s"]
         UD{"phase returned<br/>by the poll?"}
         U3["Click Stop<br/>(optional)"]
         U4["Request dashboard"]
         U5["Dashboard renders<br/>phase = done"]
         U6["Message shown,<br/>previous snapshot kept"]
+=======
+        U2["Poll status<br/>every 1 s"]
+        UD{"phase from<br/>the poll?"}
+        U3["Click Stop"]
+        U4["Request dashboard"]
+        U5["Dashboard renders<br/>phase = done"]
+        U6["Message shown<br/>snapshot unchanged"]
+>>>>>>> Stashed changes
     end
 
     subgraph A["API PROCESS — FastAPI (stateless, replicable)"]
         direction LR
+<<<<<<< Updated upstream
         A1["Read branch head SHA"]
         A2{"head SHA =<br/>last SUCCESSFUL scan SHA?"}
         A3["INSERT SCAN<br/>phase = queued"]
@@ -349,16 +432,31 @@ flowchart TB
         A5["Serve phase + progress"]
         A6["Set cancel flag"]
         A7["ScoringEngine.score<br/>findings x active profile"]
+=======
+        A1["Read branch<br/>head SHA"]
+        A2{"head SHA =<br/>last done SHA?"}
+        A3["INSERT SCAN<br/>phase = queued"]
+        A4["Return scanId<br/>and phase"]
+        A5["Serve phase<br/>and progress"]
+        A6["Set cancel flag"]
+        A7["ScoringEngine.score<br/>findings x profile"]
+>>>>>>> Stashed changes
     end
 
     subgraph G["GITHUB — external system"]
         direction LR
+<<<<<<< Updated upstream
         G1["REST API<br/>repo and branch metadata"]
         G2["Git remote<br/>clone over HTTPS"]
+=======
+        G1["REST API<br/>branch metadata"]
+        G2["Git remote<br/>clone"]
+>>>>>>> Stashed changes
     end
 
     subgraph Q["BROKER — Redis (private network)"]
         direction LR
+<<<<<<< Updated upstream
         Q1(["Job queue + progress + cancel flag"])
     end
 
@@ -371,17 +469,37 @@ flowchart TB
         W5["phase = done"]
         WE["phase = error"]
         WI["phase = idle<br/>clone deleted"]
+=======
+        Q1(["Queue, progress,<br/>cancel flag"])
+    end
+
+    subgraph W["WORKER PROCESS — Celery (1..n)"]
+        direction LR
+        W1["Clone at SHA<br/>phase = running"]
+        W2["Extract metrics<br/>and comments"]
+        W3["Rule engine"]
+        W4["Persist snapshot"]
+        W5["phase = done"]
+        WE["phase = error"]
+        WC["phase = cancelled<br/>clone deleted"]
+>>>>>>> Stashed changes
     end
 
     subgraph M["ML PROCESS — inference service"]
         direction LR
+<<<<<<< Updated upstream
         M1["ML-1 SATD classify"]
         M2["ML-2 per-file risk"]
+=======
+        M1["ML-1 SATD"]
+        M2["ML-2 risk"]
+>>>>>>> Stashed changes
     end
 
     subgraph D["DATABASE — PostgreSQL (RLS)"]
         direction LR
         D1[("SCAN")]
+<<<<<<< Updated upstream
         D2[("FINDING + FILE_SCORE")]
     end
 
@@ -431,9 +549,68 @@ flowchart TB
     U4 -->|HTTPS GET /api/repos/repoId/health| A7
     A7 -->|SQL over TLS: read facts where phase = done| D2
     A7 -->|HealthReport| U5
+=======
+        D2[("FINDING<br/>FILE_SCORE")]
+    end
+
+    U1 -->|HTTPS POST scan| A1
+    A1 -->|HTTPS GET metadata| G1
+    G1 -->|head SHA| A2
+    A2 -->|yes| A7
+    A2 -->|no| A3
+    A3 -->|SQL INSERT| D1
+    A3 -->|Redis enqueue| Q1
+    A3 --> A4
+    A4 -->|HTTPS 202| U2
+
+    U2 -->|HTTPS GET status| A5
+    A5 -->|SQL read phase| D1
+    A5 -->|Redis read NN%| Q1
+    A5 -->|HTTPS phase, NN%| UD
+    UD -->|running NN%| U2
+    UD -->|done| U4
+    UD -->|error or cancelled| U6
+
+    U2 -.->|while running| U3
+    U3 -.->|HTTPS POST stop| A6
+    A6 -.->|Redis set flag| Q1
+
+    Q1 -->|Redis deliver| W1
+    W1 -->|git clone HTTPS| G2
+    G2 -->|tree and history| W2
+    W1 -->|Redis publish NN%| Q1
+    W2 --> W3
+    W2 -->|HTTP comments| M1
+    W2 -->|HTTP metrics| M2
+    M1 -->|SATD findings| W4
+    M2 -->|risk_score| W4
+    W3 --> W4
+    W4 -->|SQL INSERT| D2
+    W4 --> W5
+    W5 -->|SQL UPDATE phase| D1
+
+    W2 -.->|clone or extract fails| WE
+    WE -->|SQL UPDATE phase| D1
+    Q1 -.->|Redis cancel flag| W1
+    W1 -.->|flag set| WC
+    W2 -.->|flag set| WC
+    W3 -.->|flag set| WC
+    WC -->|SQL UPDATE phase| D1
+    W2 -.->|ML unreachable| W4
+
+    U4 -->|HTTPS GET health| A7
+    A7 -->|SQL read facts, phase = done| D2
+    A7 -->|HealthReport| U5
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 ```
 
+<<<<<<< Updated upstream
 *Figure 4. Scan activity across the four processes, with the scan phase annotated.* Figure 4 shows something important about where scoring happens. The write path ends in the worker lane at "persist snapshot"; **`ScoringEngine` never appears in that lane.** Scoring is not a pipeline stage — it sits in the API lane and runs on the read path, every time the dashboard is requested.
+=======
+<<<<<<< Updated upstream
+### 6.1 Extraction boundary (architecturally significant constraint)
+>>>>>>> Stashed changes
 
 Three details in the figure are architectural decisions rather than drawing conventions.
 
@@ -466,9 +643,64 @@ Text produces findings, and a finding must land on a `file:line` the user can op
 
 Two consequences follow, and the architecture leans on both.
 
+<<<<<<< Updated upstream
 **A scan is a pure function of the repository at one commit.** The result depends on the tree and reachable history at that SHA plus a fixed model version — never on a previous scan row. This is what makes skip-if-unchanged (branch B of Figure 4) safe, and what makes snapshots reproducible. The precision matters: a scan is independent of prior *scans*, not of git *history*, because ML-2 needs that history as numbers.
 
 **The churn window is anchored to the commit, not to the clock.** The 90 days are measured backwards from the scanned commit's committer date, never from `now()`. Wall-clock time is not an input to scoring at all. Without this, the same commit would score differently on different days and skip-if-unchanged would be unsound. *(Decision D6, closed 27 Jul 2026; normative in SRS FR-11.)*
+=======
+1. **A scan is a pure function.** `Scan(SHA)` is determined by the repository at that SHA (tree **and** reachable ancestry), a fixed model version, and the active profile — never by a prior scan row. This is what makes skip-if-unchanged (Figure 4, branch B) architecturally sound and snapshots reproducible. Note the precision: a scan is independent of prior **scans**, not of git **history** — ML-2 requires that history, as numbers.
+2. **The churn window is commit-anchored.** The 90 days are measured backwards from the **scanned commit's committer date** (the branch's last commit) — `[commit_date − 90d, commit_date]` — never from wall-clock `now()`, which is not used in scoring at all. Otherwise the same SHA would score differently over time and branch B of Figure 4 (skip-if-unchanged) would be unsound. *(Decision D6, closed 2026-07-27; normative in SRS FR-11.)*
+=======
+*Figure 4. Scan activity across the seven lanes, with the scan phase annotated.*
+
+The figure records the architectural decisions below. Each is stated with the requirement it serves and the consequence of deciding it differently.
+
+**Scoring is in the API lane, not the worker lane.** The write path ends in the worker lane at "persist snapshot". `ScoringEngine` appears only in the API lane, on the read path. This is the rule that lets a user change a scoring profile without running a new scan (SRS FR-20, FR-21). If scoring were a pipeline stage, every weight change would require a re-scan of every snapshot.
+
+**Skip-if-unchanged is decided in the API, before the job is queued.** The API reads the branch head SHA from GitHub and compares it with the SHA of the last successful scan of that branch. If they are equal, no job is queued and no worker is used. The check costs one conditional REST call and one indexed database read, so the user receives a dashboard within the one second SRS PERF-02 allows for an interaction that runs no analysis. Deciding this in the worker instead would mean queuing a job, occupying a worker, and cloning a repository only to discover that nothing had changed.
+
+**The comparison uses the last successful scan, not the last scan.** A cancelled or failed scan leaves a `SCAN` row that has no `FINDING` and no `FILE_SCORE` rows, because the worker stopped before the persist stage. If the head SHA were compared against such a row, the system would skip the work and serve a snapshot that was never written. The same qualifier applies to the dashboard read, which resolves the latest snapshot where `phase = done`.
+
+**GitHub is contacted in two different ways.** The API uses the GitHub REST API for repository and branch metadata, with ETag conditional requests so that repeated reads usually cost no rate-limit quota. The worker uses `git clone` over HTTPS to obtain the code, which consumes no REST quota at all. This is why §10 states that rate limits are avoided rather than managed. Reading the repository through the REST API instead would place the whole pipeline under a quota that a few concurrent scans could exhaust.
+
+**The API answers before the work begins.** `POST /api/repos/{repoId}/scan` inserts the `SCAN` row, enqueues the job and returns a scan identifier with `phase = queued`. SRS PERF-03 requires the job to reach the queue within one second, and this ordering meets it. The client then polls `GET /api/repos/{repoId}/scan/{scanId}` once per second (SRS Table 3.97). The interface stays usable while the scan runs, as SRS PERF-05 requires. Running the pipeline inside the request would block the connection for minutes and make both requirements impossible to meet.
+
+**PostgreSQL holds the phase and Redis holds only the percentage.** The status endpoint reads `SCAN.phase` from the database and the progress percentage from Redis. The split follows from what each store guarantees. Redis is a broker, so losing a percentage when it restarts costs nothing, because the next poll produces a new one. Losing the fact that a scan failed would breach SRS SP-13, which requires the final phase and its error message to be recoverable from the database alone. Every terminal phase is therefore written to `SCAN` by the process that reaches it.
+
+**A cancelled scan ends in its own phase.** The worker writes `cancelled` rather than returning the row to `idle`, so a stored scan that was stopped is distinguishable from one that never ran. This also keeps the phase column aligned with `AnalysisStatus` in the class model, and it means all three terminal phases carry information for SRS SP-13 rather than two of them doing so.
+
+**Cancellation is cooperative rather than forced.** The API does not stop the worker. It sets a flag in Redis and returns immediately. The worker reads that flag between stages and stops at the first boundary it reaches, deletes its clone and writes `phase = cancelled`. Persisting the snapshot is deliberately outside this region: once the worker begins writing findings it completes the write. Terminating the process during a write would leave a partial snapshot, and SRS FR-6 requires the previous snapshot to remain intact after a cancellation. The cost of this choice is response time, because a user who presses Stop waits until the current stage ends.
+
+**The cancel result reaches the user through the polling channel.** Because the worker writes `phase = cancelled` to the same row the status endpoint already reads, no separate notification path is needed. The user learns that the scan has really stopped when the next poll returns `cancelled`. The three terminal phases, `done`, `error` and `cancelled`, all arrive by the same route.
+
+**A failed scan is recorded in the database, not only in the logs.** The worker writes `phase = error` and the error message onto the existing `SCAN` row. This satisfies SRS SP-13: a failure reported by a user can be diagnosed from the database without reading server logs. Nothing was written to `FINDING` or `FILE_SCORE`, so the previous snapshot is unaffected and remains what the dashboard shows.
+
+**The two machine-learning models are independent and are not chained.** ML-1 and ML-2 take different inputs, produce different outputs and exchange no data. ML-1 reads the source comments and produces SATD findings, predicting `category` only. It can produce five of the six categories; `security` comes from the rule engine alone (SRS FR-9.3). Severity for a SATD finding comes from the deterministic marker table in SRS Appendix C.2, not from the model (SRS FR-9.2). ML-2 reads the Lizard product metrics and the four PyDriller process metrics and produces one `risk_score` per file. It produces no findings at all (SRS FR-10), which is why its arrow reaches `FILE_SCORE` while the arrow from ML-1 reaches `FINDING`. Drawing one model as the input of the other would assert a dependency that does not exist and would force two calls to run in sequence when they can run at the same time.
+
+**The machine-learning lane can be skipped.** Both models run in one inference container (§7), so they are reachable or unreachable together. The dashed edge that bypasses the lane leaves the worker, because the worker is where the call is attempted and therefore where the failure is observed. When the service is unreachable the worker still persists a valid snapshot: all rule and security findings are present, no SATD findings appear, and every `risk_factor` falls back to 1.0 so that no finding receives a risk boost. An unavailable model costs a feature; it does not cost the scan.
+
+## 6.1 The extraction boundary
+
+> **Git history enters the pipeline as numbers, never as text.**
+
+Text produces findings, and a finding must land on a `file:line` the user can open — so text is read from the checked-out tree at the scanned commit. History produces metrics, so it may look backwards, but only as a numeric feature vector. This is normative in SRS FR-7.1.
+
+| Input | Used at scan time? |
+|---|---|
+| Source comments at the scanned SHA | Yes — the SATD classifier reads these |
+| Source files at the scanned SHA | Yes — Lizard, then the rule engine and ML-2 |
+| Commit history reachable from that SHA | Yes, but only as four numbers: churn, author count, file age, recency |
+| Commit message text | No — it has no `file:line`, so a finding could not point anywhere |
+| Pull requests, issues, GitHub API metadata | No — none of these is a detection input. The API reads branch metadata before the pipeline starts (Figure 4), but the worker analyses a clone and spends no REST quota |
+| Previously stored snapshots | No — history is read only to draw trends and deltas, never to detect or score |
+
+Two consequences follow.
+
+**A scan is a pure function of the repository at one commit.** The result depends on the tree and reachable history at that SHA plus a fixed model version, never on a previous scan row. This is what makes the skip branch of decision `A2` in Figure 4 safe, and what makes snapshots reproducible. The distinction is exact: a scan is independent of prior *scans*, not of git *history*, because ML-2 reads that history as numbers.
+
+**The churn window is anchored to the commit, not to the clock.** The 90 days are measured backwards from the scanned commit's committer date, never from `now()`. Wall-clock time is not an input to scoring at all. Without this, the same commit would score differently on different days and skip-if-unchanged would be unsound. *(Decision D6, closed 27 Jul 2026; normative in SRS FR-11.)*
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ```mermaid
 sequenceDiagram
@@ -476,26 +708,66 @@ sequenceDiagram
     participant UI as :DashboardUI
     participant SC as :ScanControl
     participant API as api:FastAPI
+    participant GH as gh:GitHub
     participant Q as broker:Redis
     participant W as worker:CeleryTask
     participant EX as :Extractors(Lizard,PyDriller)
-    participant ML as ml:Service(SATD,Risk)
     participant RE as :RuleEngine
+    participant ML as ml:Service(ML-1,ML-2)
     participant SS as :ScoringEngine
     participant DB as db:PostgreSQL
 
     Dev->>UI: click Scan
     UI->>SC: start(repoId, branch)
+<<<<<<< Updated upstream
     SC->>API: POST /api/repos/{repoId}/scan
     API->>DB: INSERT SCAN (phase = queued)
+=======
+<<<<<<< Updated upstream
+    SC->>API: POST /repos/{id}/scan
+    API->>DB: insert Scan(queued)
+>>>>>>> Stashed changes
     API->>Q: enqueue(scanId)
     API-->>SC: 202 { scanId, phase: queued }
 
     Q->>W: deliver(scanId)
+<<<<<<< Updated upstream
+=======
+    W->>EX: extract(clone)
+    EX-->>W: static metrics + process metrics + comments
+    W->>RE: detect(metrics)
+    W->>ML: classify(comments), risk(feature vector)
+    ML-->>W: satd findings, risk scores
+    RE-->>W: rule/security findings
+    W->>SS: score(findings, profile)
+    SS-->>W: fileScores, health, grade, breakdown
+    W->>DB: write snapshot (findings, scores)
+    W->>API: mark done
+    SC->>API: GET /repos/{id}/health?branch
+    API->>DB: read snapshot
+    DB-->>API: HealthReport
+=======
+    SC->>API: POST /api/repos/{repoId}/scan
+    activate API
+
+    API->>GH: GET repo metadata (ETag conditional)
+    GH-->>API: head commit SHA
+    API->>DB: SELECT SHA of last scan where phase = done
+    DB-->>API: last successful SHA
+    Note over API: SHA differs, so a scan is needed
+
+    API->>DB: INSERT SCAN (phase = queued)
+    API->>Q: enqueue(scanId)
+    API-->>SC: 202 { scanId, phase: queued }
+    deactivate API
+
+    Q->>W: deliver(scanId)
+>>>>>>> Stashed changes
     activate W
     W->>DB: UPDATE SCAN (phase = running)
 
     par worker runs the pipeline
+<<<<<<< Updated upstream
         W->>EX: extract(clone at SHA)
         EX-->>W: static metrics, process metrics, comments
         W->>RE: detect(metrics)
@@ -506,6 +778,24 @@ sequenceDiagram
     and client polls independently
         loop every 1 s until phase is done or error
             SC->>API: GET /api/repos/{repoId}/scan/{scanId}
+=======
+        W->>GH: git clone at SHA (no REST quota)
+        GH-->>W: working tree and history
+        W->>EX: extract(tree at SHA)
+        EX-->>W: product metrics, process metrics, comments
+        W->>RE: detect(product metrics)
+        RE-->>W: rule and security findings
+        W->>ML: classify(comments)
+        ML-->>W: SATD findings (category only)
+        W->>ML: risk(product + process metrics)
+        ML-->>W: risk_score per file
+        Note over W,ML: the two calls are independent<br/>neither model reads the other's output
+        W->>Q: publish progress NN%
+    and client polls independently
+        loop every 1 s until the phase is terminal
+            SC->>API: GET /api/repos/{repoId}/scan/{scanId}
+            API->>DB: read phase
+>>>>>>> Stashed changes
             API->>Q: read progress
             API-->>SC: { phase, progress }
         end
@@ -515,13 +805,25 @@ sequenceDiagram
     W->>DB: UPDATE SCAN (phase = done)
     deactivate W
 
+<<<<<<< Updated upstream
     SC->>API: GET /api/repos/{repoId}/health?branch=...
     API->>DB: read findings and per-file facts
     API->>SS: score(findings, active profile)
     SS-->>API: priorities, file debt, health, grade, breakdown
+=======
+    SC-->>UI: phase = done
+    UI->>API: GET /api/repos/{repoId}/health?branch=...
+    activate API
+    API->>DB: read facts of latest scan where phase = done
+    API->>SS: score(findings, active profile)
+    SS-->>API: priorities, file debt, health, grade, breakdown
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
     API-->>UI: HealthReport
+    deactivate API
     UI-->>Dev: render dashboard
 ```
+<<<<<<< Updated upstream
 
 *Figure 5. Run-a-scan sequence.* Figure 5 shows the full path through the internal objects. Three things in it are worth reading carefully.
 
@@ -530,6 +832,35 @@ sequenceDiagram
 **The worker never calls the API.** It reports its phase by writing to `SCAN` and its progress by publishing to Redis; the API serves the polling client from those two places. This keeps the dependency direction one-way and matches the deployment view in Figure 7, which has no worker-to-API edge.
 
 **The polling loop and the pipeline are concurrent, not sequential.** They are drawn in a `par` fragment because the client is polling *while* the worker works — that is the whole point of the asynchronous design (SRS PERF-05). Drawing the loop before the worker starts would say the opposite.
+=======
+<<<<<<< Updated upstream
+*Figure 5. Run-scan sequence.*
+=======
+
+*Figure 5. Run-a-scan sequence, successful path.*
+
+Figure 5 shows the same scan as Figure 4, but as an ordered exchange between the objects that carry it out. Where Figure 4 answers "which process does what", Figure 5 answers "in what order, and who waits for whom". The two figures describe one scenario and must agree; where they overlap, the messages in Figure 5 are the same arrows shown in Figure 4.
+
+**The figure shows the successful path only.** Cancellation and failure are drawn in Figure 4 instead. A sequence diagram states one scenario well, and adding two mutually exclusive endings to it would make the main path harder to read rather than easier. Figure 4 is the right place for alternative flows because an activity diagram is built around branching.
+
+The ordering carries the decisions below.
+
+**The API consults GitHub and the database before it queues anything.** It reads the branch head SHA from GitHub, then reads the SHA of the last scan whose phase is `done`. Only when the two differ does it insert a `SCAN` row and enqueue a job. Comparing against the last *successful* scan is what stops a cancelled scan from being mistaken for a stored snapshot (§6, decision 3).
+
+**The API replies before the work starts.** The `202` carrying the scan identifier is returned as soon as the job is on the queue. The activation bar on the API ends there. Everything after that point happens without a client connection being held open, which is what SRS PERF-05 requires.
+
+**The worker never calls the API.** It records its phase by writing to `SCAN` and its progress by publishing to Redis. The API serves the polling client from those two sources. This keeps the dependency direction one-way and matches the deployment view in Figure 7, which contains no worker-to-API edge.
+
+**The polling loop and the pipeline are concurrent.** They are drawn in a `par` fragment because the client polls while the worker works. Placing the loop before the worker starts would describe a synchronous system and would contradict the design.
+
+**The status endpoint reads from two places.** The phase comes from PostgreSQL and the percentage from Redis, for the reason given in §6: a lost percentage can be recomputed by the next poll, whereas a lost failure would breach SRS SP-13.
+
+**The two model calls are independent.** They are drawn as two separate request-and-reply pairs, not as a chain. Neither model reads the other's output, so an implementation may issue them together. The note in the figure records this, because a reader who saw them stacked vertically might otherwise infer an ordering that does not exist.
+
+**The two client objects have separate responsibilities.** `:ScanControl` owns the scan lifecycle and stops when the poll returns `done`. It then hands over to `:DashboardUI`, which issues the dashboard read and renders the result. Keeping the request and the render on the same object means every reply returns to the object that asked for it.
+
+Finally, `:ScoringEngine` is invoked by the API, after the worker has finished and the client has asked for the dashboard. It is never invoked by the worker. The write path and the scoring path do not meet, which is the property that makes §6.2 possible.
+>>>>>>> Stashed changes
 
 ## 6.2 Applying a scoring profile
 
@@ -537,6 +868,7 @@ A profile change is the only other user-initiated write in v1.0, and it is delib
 
 **The full workflow, step by step.**
 
+<<<<<<< Updated upstream
 0. On load, the Profiles screen seeds its controls from `GET /api/profiles/active`, so the sliders always open showing what is actually in force.
 1. The user picks one of the three presets — **Balanced** is the workspace default — or drags the six weight sliders and the trust slider directly. This is client-side state only — **no request is sent while dragging**.
 2. The user clicks **Apply**.
@@ -552,6 +884,23 @@ A profile change is the only other user-initiated write in v1.0, and it is delib
 **Why `PUT` and not `PATCH`.** `PUT` means "make this resource look exactly like this". The body is the whole profile, not a change to it, so a retry after a dropped response cannot double-apply anything. That matters specifically because step 7 fires immediately after step 6: a half-applied profile would render a dashboard matching no profile that actually exists.
 
 **Why no profile in the URL of step 7.** FR-20 settles this: *"the active profile is server-side state scoped to the workspace, so the read endpoints are unchanged and carry no profile parameter."* The architectural reason is that if the profile travelled as a query parameter, every read endpoint would grow a parameter each time the profile shape changed, and the scoring formula would leak into the API surface. SRS Table 3.96 reflects it — `GET /api/repos/{repoId}/health?branch=` takes a branch and nothing else, and derives scores under the active profile.
+=======
+1. The Profiles screen loads. It reads `GET /api/profiles/active` and sets the sliders to the values that are currently in force.
+2. The user picks one of the three presets, or drags the six weight sliders and the trust slider directly. **Balanced** is the workspace default. **Nothing is sent to the server while the user drags.** The values live in the browser only.
+3. The user clicks **Apply**.
+4. The client sends `PUT /api/profiles/active`. The body carries the **complete** profile, which is the six weights and `trust_s`.
+5. The server validates the values and clamps them. Weights are clamped to the range 0.1 to 3.0, and `trust_s` to the range 0 to 1.
+6. The server writes both rows in one transaction. It updates `weights` and `trust_s` on `SCORE_PROFILE`, and sets `active_profile_id` on `WORKSPACE`. Seven numbers change. That is the whole write.
+7. The server returns the profile **as it was stored**, after clamping. The screen therefore shows the values that are really in force, not the values the client sent.
+8. The client re-reads `GET /api/repos/{repoId}/health?branch=…`. **This is the same URL it always uses.** No profile appears in it.
+9. The server reads the stored findings and the per-file facts, passes them to `ScoringEngine`, and returns the re-scored dashboard.
+
+**Both endpoints are normative.** SRS Table 3.96 defines them, so this section describes an agreed interface rather than proposing a new one. `GET /api/profiles/active` returns the workspace's active profile and seeds the screen when it loads, while `PUT /api/profiles/active` applies a profile the user has adjusted. FR-20 sets out the contract that both of them follow, requiring that a profile be applied in *"a single idempotent write carrying the complete profile"*, and that dragging a control *"changes client state only; no request is issued until the user confirms with Apply"*. The same requirement adds that the server *"clamps every weight on write and returns the stored profile"*, so that the client is able to confirm what was actually saved rather than assuming that the values it sent were accepted. The workflow set out above therefore implements a stated requirement instead of inventing one, and the paragraphs that follow record the reasoning behind the shape it takes.
+
+**Why `PUT` and not `PATCH`.** `PUT` carries the meaning "make this resource look exactly like this", so the body it takes is the complete profile rather than a description of what has changed within it. The practical benefit of that distinction is that retrying the request after a dropped response cannot apply the same adjustment twice, which matters here because the dependent read in step 8 follows the write immediately and would otherwise render a dashboard matching no profile the system actually holds.
+
+**Why the profile is not in the URL.** FR-20 settles the question directly, stating that *"the active profile is server-side state scoped to the workspace, so the read endpoints are unchanged and carry no profile parameter."* The architectural reasoning behind the requirement is straightforward, because were the profile to travel in the query string, every read endpoint would gain a parameter each time the profile changed shape, and the scoring formula would gradually leak into the API surface. SRS Table 3.96 shows the outcome of that decision, since `GET /api/repos/{repoId}/health?branch=` takes a branch and nothing further, deriving its scores under whichever profile is active at the moment the request is served.
+>>>>>>> Stashed changes
 
 | | Run a scan | Apply a profile |
 |---|---|---|
@@ -565,10 +914,15 @@ A profile change is the only other user-initiated write in v1.0, and it is delib
 sequenceDiagram
     actor Dev as Developer
     participant UI as :ProfilesUI
+<<<<<<< Updated upstream
+=======
+    participant DUI as :DashboardUI
+>>>>>>> Stashed changes
     participant API as api:FastAPI
     participant SS as :ScoringEngine
     participant DB as db:PostgreSQL
 
+<<<<<<< Updated upstream
     Dev->>UI: pick preset or drag sliders
     Note over UI: client state only, no request sent
     Dev->>UI: click Apply
@@ -604,6 +958,78 @@ SRS FR-24 requires that a critical security finding stays visible no matter how 
 3. **`ScoringEngine` pins critical security findings into the visible list** even when the security weight is at its 0.1 minimum, overriding the computed order.
 
 Mechanisms 1 and 2 are structural, so they cannot be forgotten. Mechanism 3 is an explicit step in the engine and must have its own test (SRS TC-24).
+=======
+    Dev->>UI: open Profiles screen
+    UI->>API: GET /api/profiles/active
+    activate API
+    API->>DB: read WORKSPACE.active_profile_id, SCORE_PROFILE
+    DB-->>API: six weights, trust_s
+    API-->>UI: ScoreProfile
+    deactivate API
+    Note over UI: sliders open showing what is in force
+
+    Dev->>UI: pick preset (Balanced default) or drag sliders
+    Note over Dev,UI: client state only<br/>no request is sent while dragging
+    Dev->>UI: click Apply
+
+    UI->>API: PUT /api/profiles/active { six weights, trust_s }
+    activate API
+    API->>API: clamp weights 0.1-3.0, trust_s 0-1
+    API->>DB: UPDATE SCORE_PROFILE, SET WORKSPACE.active_profile_id
+    Note over API,DB: one transaction, seven numbers
+    DB-->>API: stored profile
+    API-->>UI: ScoreProfile (as stored, after clamping)
+    deactivate API
+
+    UI-->>DUI: profile applied
+    DUI->>API: GET /api/repos/{repoId}/health?branch=...
+    activate API
+    Note over DUI,API: same URL as before<br/>no profile parameter
+    API->>DB: read facts of latest scan where phase = done
+    API->>SS: score(findings, active profile)
+    SS-->>API: priorities, file debt, health, grade, trend
+    API-->>DUI: HealthReport
+    deactivate API
+    DUI-->>Dev: re-ordered list, new grade, same findings
+```
+
+*Figure 6. Apply-a-profile sequence.*
+
+Figure 6 consists of a read that seeds the screen, a write of seven numbers, and an ordinary dashboard read. Reading it alongside Figure 5 makes visible the contrast on which the design depends, since the same dashboard is produced here in a single round trip and there in minutes, and the difference arises only because the findings already exist and nothing but the weights applied to them has changed.
+
+The decisions recorded in the figure are set out below.
+
+**Nothing is sent to the server while the user drags.** The slider positions remain client state until Apply is pressed, which is what SRS FR-20 requires. Issuing a request on every slider movement would place a write on the server for each pixel of travel, and each of those writes would in turn have to be validated, clamped, stored and read back before the interface could display a confirmed value.
+
+**The write is a single transaction covering seven numbers.** The six category weights and the trust slider are written to `SCORE_PROFILE` at the same moment that `active_profile_id` is set on `WORKSPACE`, so that no reader can ever observe one without the other. No `SCAN`, `FINDING` or `FILE_SCORE` row is touched anywhere in the exchange, which is precisely what SRS FR-21 means when it states that changing a profile creates no snapshot.
+
+**The server returns the profile as it was stored, after clamping.** The client is therefore able to display the values that genuinely govern the scores rather than the values it happened to send. Were the server to return nothing, or to echo the request body back unchanged, the interface could show a weight of 5.0 to the user while the value actually in force was 3.0.
+
+**The dependent read is issued against the same URL as before.** `GET /api/repos/{repoId}/health?branch=…` carries no profile parameter, for the reason given earlier in this section: the active profile is server-side state belonging to the workspace (SRS FR-20). Had the profile travelled in the query string instead, every read endpoint would have gained a parameter each time the profile changed shape, and the scoring formula would have leaked into the API surface.
+
+**`:ProfilesUI` performs the write and `:DashboardUI` performs the read.** The two objects are drawn separately for the same reason they are separated in Figure 5, namely that the object issuing a request should also be the object receiving the reply. `:ProfilesUI` signals that a profile has been applied, and `:DashboardUI` then carries out the read it already owns. Drawing the exchange in this way also demonstrates that a profile change reaches the dashboard along the ordinary read path rather than through any special mechanism built for the purpose.
+
+**Three properties follow from this shape.**
+
+1. **The read endpoints remain unparameterised**, so the API surface does not grow as the profile grows.
+2. **The `PUT` is idempotent by construction**, because its body carries the complete profile rather than a description of a change to it. Retrying the request after a dropped response therefore cannot leave a partially applied profile, which matters because the client issues a dependent read immediately afterwards.
+3. **The profile is shared rather than held per tab.** A reload, a second browser tab and a second member of the team all resolve to the same active profile, so the profile name displayed on the trend chart (SRS FR-14) always refers to something that genuinely exists on the server.
+
+**Clamping is a server-side rule rather than a client convenience** (SRS FR-20). The client clamps its sliders so that the controls behave sensibly under the user's hand, but the server clamps for a different and stronger reason: `repo_health` is calibrated against the constant `k`, so a single unclamped weight arriving from any client would render every stored grade incomparable with every other.
+
+## 6.3 The visibility floor
+
+SRS FR-24 requires that a critical security finding remains visible however the active profile is set. Meeting that requirement is a responsibility of `ScoringEngine`, and the SRS satisfies it through three mechanisms acting together rather than through any single check, because one check placed somewhere in the scoring path could later be removed or reordered without anything else in the system appearing to fail.
+
+| No. | Mechanism | Why it cannot be bypassed |
+|---|---|---|
+| 1 | Severity is assigned at detection and is not user-configurable | The rule register fixes a hardcoded secret at `Critical` (§5.2), and no profile control writes to `FINDING.severity`, so the value cannot be lowered from the interface at all. |
+| 2 | Security findings bypass the trust slider | `source_trust` is held at 1.0 for the `security` category (SRS FR-11), so moving the slider alters `rule_trust` and `ml_trust` while leaving security findings entirely unaffected by it. |
+| 3 | `ScoringEngine` pins critical security findings into the visible list | The pin overrides the computed order, so even the minimum security weight of 0.1 cannot push such a finding below the point at which the interface stops displaying it. |
+
+The first two mechanisms are structural, in the sense that they follow from where a value is written and from which multiplier applies to it, and they therefore cannot be forgotten by a developer who is unaware of the requirement. The third is an explicit step inside the engine, which means it can be removed or reordered by accident, and for that reason it carries a test case of its own in SRS TC-24.
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ---
 
