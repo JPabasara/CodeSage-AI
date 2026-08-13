@@ -1,23 +1,82 @@
-# apps/ml — Machine Learning & Analysis
+# apps/ml — the ML inference service
 
-The SATD classifier (**ML-1**) and the bug-proneness risk model (**ML-2**), plus the
-Lizard / PyDriller feature extraction that feeds them.
+Two models behind one small HTTP surface: the SATD comment classifier (**ML-1**) and
+the per-file bug-proneness model (**ML-2**).
+
+**This is a service, not a library.** It runs as its own container on `:8001`, holds no
+database, and is called **only by the Celery worker** over the private network — never
+by the API process. Both models live in this one container, which is why they are
+reachable or unreachable together.
+
+**Feature extraction does not live here.** CK, Tree-sitter and PyDriller run in the
+worker (`apps/api`). This service receives comments and metric vectors and returns
+labels and scores.
+
+| Endpoint | Model | In → out |
+|---|---|---|
+| `POST /classify` | ML-1 | a batch of comments → `is_debt` + one of four categories |
+| `POST /risk` | ML-2 | per-file metric vectors → `risk_score` 0–1 |
+| `GET /version` | — | the deployed model versions, recorded against every scan |
+| `GET /healthz` | — | liveness |
+
+`security` is **never predicted** — it is not in the training data and only the rule
+engine emits it. Neither model assigns **severity**; that comes from the rule register
+and the SATD marker table.
 
 ## Layout
 
 ```
 apps/ml/
-├── data/            # datasets — NOT committed (see data/README.md + .gitignore)
-│   ├── raw/         # original downloads, immutable  ← put dataset CSVs / .db here
-│   ├── interim/     # cleaned / intermediate transforms
-│   ├── processed/   # final train / test-ready tables
-│   └── external/    # third-party sources kept as-is
-├── models/          # trained artifacts (*.pkl) — NOT committed
-├── notebooks/       # exploration & training notebooks
-└── src/             # reusable pipeline code (extract, features, train, infer)
+├── src/codesage_ml/   # the inference service (FastAPI)
+│   ├── main.py        #   the four endpoints
+│   ├── registry.py    #   loads versioned artifacts at startup
+│   ├── schemas.py     #   request/response shapes
+│   ├── satd/          #   ML-1 label mapping
+│   └── risk/          #   ML-2 feature ordering — must match training exactly
+├── training/          # OFFLINE. Never deployed; the Dockerfile omits these deps.
+├── notebooks/         # exploration & training notebooks
+├── models/            # trained artifacts (*.pkl) — NOT committed, MOUNTED at runtime
+└── data/              # datasets — NOT committed (see data/README.md + .gitignore)
+    ├── raw/           #   original downloads, immutable
+    ├── interim/       #   cleaned / intermediate transforms
+    ├── processed/     #   final train / test-ready tables
+    └── external/      #   third-party sources kept as-is
 ```
 
+<<<<<<< Updated upstream
 **Raw data and model artifacts are git-ignored on purpose** (size + license).
+=======
+<<<<<<< Updated upstream
+**Raw data and model artifacts are git-ignored on purpose** (size + license). 
+=======
+**Raw data and model artifacts are git-ignored on purpose** (size + licence).
+
+**Artifacts are mounted, not baked in.** `infra/docker-compose.yml` mounts
+`./models` at `/models` read-only, so replacing a model is *drop the file, restart* —
+no rebuild and no application change.
+
+## Training data
+
+| Model | Dataset | Notes |
+|---|---|---|
+| ML-1 SATD | **SATDAUG** | 68,514 labelled comments. Four predictable categories: `code-design`, `requirement`, `documentation`, `test`. **No `defect` label** — that category was removed from the product because SATDAUG does not carry it. |
+| ML-2 risk | **D'Ambros** | Bug-prediction dataset. Features are CK product metrics + the four PyDriller process metrics. |
+
+Training runs offline and produces artifacts. The deployed service only ever infers —
+it cannot train, by construction.
+
+## Degraded mode
+
+If this container is down the scan **still completes and still stores a valid
+snapshot**: every rule and security finding is present, no SATD findings appear, and
+every `risk_score` is `0.0` — which makes `risk_factor = 1 + ml_trust × 0 = 1.0`, so no
+finding receives a risk boost. Less information, not a failure.
+
+That degradation is the reason this is a separate container at all: across a network
+boundary "unavailable" is a *mode* the pipeline handles, where in-process it would be
+an exception that takes the worker down with it.
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 
 ---
 

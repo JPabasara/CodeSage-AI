@@ -82,6 +82,11 @@ component → hook (src/hooks) → client (src/lib/api/client.ts) → fetch("/ap
 **Going live (Phase 12):** set `NEXT_PUBLIC_API_MOCKING=disabled`, point
 `NEXT_PUBLIC_API_BASE_URL` at the real API — the components and tests don't change.
 
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
 ### The frontend never computes a score
 
 `healthScore`, `grade`, `delta`, per-file debt and finding order all arrive
@@ -101,16 +106,21 @@ Changing a **scoring profile** doesn't change this: the Profiles page `PUT`s the
 profile, then re-reads `HealthReport` — the numbers are re-derived server-side and no
 scan runs. See Phase 10.5 in the build guide.
 
+<<<<<<< Updated upstream
 ### Pending contract change — CR-001 (Phase 10.5)
 
 Two shapes in `src/lib/types` change before Phase 11. Details and rationale:
 [CR-001](../../docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md);
 step-by-step in Phase 10.5 of the
 [build guide](../../docs/Project%20Management%20&%20Planning/frontend_build_stepbystep.md).
+=======
+### Contract change — CR-001 (Phase 10.5) ✅ landed
+>>>>>>> Stashed changes
 
 | Type | From | To |
 |---|---|---|
 | `Source` | `"rule" \| "satd" \| "security" \| "ml-risk"` | `"rule" \| "satd"` |
+<<<<<<< Updated upstream
 | `Category` | 5 values | **6 values** — `defect` added (`"code-design" \| "requirement" \| "defect" \| "documentation" \| "test" \| "security"`) |
 | `ScoreProfile` | `weights { security, codeDesign, satd, duplication }` + `wMl` | `weights` keyed by the six **categories** + `trust` (`s`, 0–1) |
 
@@ -130,6 +140,47 @@ never appear in `Category`.
 Until that phase lands, the fixtures still use the old values; `pnpm tsc` will
 locate every site once the types are edited.
 
+=======
+| `ScoreProfile` | `weights { security, codeDesign, satd, duplication }` + `wMl` | `weights` keyed by **category** + `trust` (`s`, 0–1) |
+
+`security` duplicated `category` exactly (security patterns run inside the rule
+engine, so such a finding was always both) and `ml-risk` was unreachable — the risk
+model writes a per-file risk score, never a `Finding`. The old weight vector mixed
+axes: `satd` is a *source*, `duplication` is a *rule*, and real categories had no
+weight at all.
+
+### ⚠️ Next contract change — CR-002 (Phase 10.6)
+
+**The contract stops being hand-written.** `src/lib/types` will be **generated** from
+`docs/api/openapi.yaml`, so a backend field change the frontend hasn't absorbed
+becomes a type error rather than a runtime surprise. Everything below follows from
+that. Step-by-step in Phase 10.6 of the
+[build guide](../../docs/Project%20Management%20&%20Planning/frontend_build_stepbystep.md);
+locked decisions in [docs/NEXT_STEPS.md](../../docs/NEXT_STEPS.md).
+
+| What | From | To |
+|---|---|---|
+| Field naming | camelCase (`riskScore`, `commitSha`) | **snake_case** (`risk_score`, `commit_sha`) — ~244 usages, 15 files |
+| `Category` | 5 values incl. `defect` | **5 values, `defect` removed** — `code-design`, `requirement`, `documentation`, `test`, `security` |
+| `ScoreProfile` | six weights | **five weights + `s`** = six numbers |
+| `ScanPhase` | ends at `error` | adds **`cancelled`** — `idle` is now only the pre-scan resting state |
+| Sign-in | mocked `POST /api/auth/github` | **Asgardeo redirect** — a real navigation, the one thing MSW cannot mock |
+| Errors | `Error("409 Conflict")` | `{ detail, code, errors[] }` — branch on `code`, never on the text |
+
+**`defect` is removed, reversing the 31 Jul decision.** The SATD corpus changed to
+**SATDAUG**, which carries no `defect_debt` label — so ML-1 cannot predict that
+category and it cannot exist in the product. `non_debt` remains the negative class of
+the debt/not-debt decision and is **not** a category.
+
+Two endpoints are also missing from `lib/api/client.ts` and land in the same phase:
+`POST /api/projects` (connect a repo — the form exists, the call does not) and
+`GET /api/profiles/active` (seeds the Profiles sliders).
+
+Until Phase 10.6 lands the fixtures still use the current values; run the type
+generation first and `pnpm tsc` will locate every site for you.
+
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 ## Layout
 
 ```
