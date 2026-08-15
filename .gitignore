@@ -1,2 +1,4 @@
 # Claude Code local config (per-machine permission approvals, etc.) — not shared.
 .claude/
+
+__pycache__/
