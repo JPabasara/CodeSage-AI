@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "@asgardeo/nextjs";
 import {
   FolderGit2,
   LayoutDashboard,
@@ -102,9 +103,11 @@ export function AppRail() {
         <SidebarMenu>
           <SidebarMenuItem>
             {/* stub for now — Phase 8+ turns this into a real menu (Sign out / Settings / Billing) */}
-            <SidebarMenuButton tooltip="Account">
-              <LogOut />
-              <span>Account</span>
+            <SidebarMenuButton asChild tooltip="Sign out">
+              <SignOutButton>
+                <LogOut />
+                <span>Sign out</span>
+              </SignOutButton>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

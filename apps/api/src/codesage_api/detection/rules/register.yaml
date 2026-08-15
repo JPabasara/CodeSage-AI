@@ -1,27 +1,3 @@
-# THE RULE REGISTER — SRS Appendix C.1 (Table 4.31), verbatim.
-#
-# This file is the single normative source for two requirements at once:
-#   FR-8.1  every rule carries a fixed category and a fixed severity
-#   FR-16   every rule carries a message template
-# One row per rule closes both. The `severity` field below is the answer to
-# "where does a finding's severity come from?".
-#
-# Nothing downstream recomputes category or severity, and no user control can
-# reach them (FR-24 mechanism 1). Scoring reads severity only to look up base
-# points; the UI reads it only to draw a badge.
-#
-# Severity is FLAT per rule in v1.0: complex-function emits Medium whether WMC is
-# 16 or 45. A file simply accumulates more findings the worse it gets. Graduating
-# severity by how far past the threshold a value sits is a later refinement that
-# changes nothing architectural — the rule still decides, still at detection time.
-#
-# Two mechanisms, one engine: `metric` rules compare a CK measurement against a
-# threshold, `pattern` rules match a regex or entropy test against source text.
-# Security patterns run INSIDE the rule engine, which is why a security finding is
-# source=rule with category=security and why `source` has no `security` value.
-#
-# Thresholds live here, not in code (MAINT-04): recalibration is a config change.
-
 rules:
   # ── security patterns ──────────────────────────────────────────────────────
   - rule_id: hardcoded-secret

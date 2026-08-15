@@ -1,10 +1,3 @@
-"""Engine and session factory.
-
-One engine per process. The API process creates a session per request; a Celery
-task creates one per task — a worker holding a session for the length of a scan
-would pin a connection for minutes while cloning and running inference.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterator

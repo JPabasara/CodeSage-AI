@@ -10,5 +10,5 @@ class BranchOut(CamelModel):
     is_default: bool
     # Full SHA; the UI shows the first 7. Sent whole because the client also uses it
     # to tell whether the displayed snapshot is current with the branch head.
-    head_commit_sha: str | None = None
-    head_commit_at: str | None = None
+    last_commit_sha: str
+    last_commit_at: str | None = None

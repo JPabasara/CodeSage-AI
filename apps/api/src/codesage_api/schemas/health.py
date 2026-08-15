@@ -6,6 +6,8 @@ None of them is read from a column.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from codesage_api.schemas.base import CamelModel
 from codesage_api.schemas.finding import FindingOut
 from codesage_api.scoring.enums import Category, Grade
@@ -27,12 +29,12 @@ class TreeNodeOut(CamelModel):
 
     path: str
     name: str
-    type: str  # file | folder
+    type: Literal["file", "folder"]
     health_score: float
     grade: Grade
     debt_score: float
     risk_score: float
-    children: list["TreeNodeOut"] | None = None
+    children: list[TreeNodeOut] | None = None
 
 
 class HealthPointOut(CamelModel):
@@ -59,7 +61,7 @@ class CategoryBreakdownItemOut(CamelModel):
 class HealthReportOut(CamelModel):
     """The complete dashboard payload for one branch snapshot."""
 
-    snapshot_id: str
+    scan_id: str
     repo_id: str
     branch: str
     commit_sha: str

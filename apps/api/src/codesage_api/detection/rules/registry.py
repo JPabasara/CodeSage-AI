@@ -15,12 +15,6 @@ _REGISTER = Path(__file__).parent / "register.yaml"
 
 @dataclass(frozen=True, slots=True)
 class RuleDefinition:
-    """The four things every rule hard-codes, plus how it fires.
-
-    The rule knows what it found, so it knows how bad it is — nothing downstream
-    decides this, and nothing the user can touch reaches `category` or `severity`.
-    """
-
     rule_id: str
     category: Category
     severity: Severity

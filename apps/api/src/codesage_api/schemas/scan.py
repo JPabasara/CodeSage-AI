@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from codesage_api.schemas.base import CamelModel
 from codesage_api.scoring.enums import Grade, ScanPhase
 
@@ -19,7 +21,7 @@ class ScanStatusOut(CamelModel):
 
     scan_id: str
     phase: ScanPhase
-    progress: int  # 0–100, meaningful while phase is RUNNING
+    progress: int = Field(ge=0, le=100)
     branch: str | None = None
     commit_sha: str | None = None
     started_at: str | None = None

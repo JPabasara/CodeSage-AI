@@ -66,6 +66,20 @@ pytest tests/integration   # real PostgreSQL via testcontainers
 lint-imports               # the architecture contracts
 ```
 
+The database suite follows a red-green-refactor workflow:
+
+1. Add or change a schema-contract test under `tests/unit/db` and run it to see
+   the expected failure (red).
+2. Add the migration and ORM change, then run `pytest tests/unit/db` (green).
+3. Add a PostgreSQL behavior test under `tests/integration` for constraints,
+   indexes, transactions, or RLS that cannot be proven from ORM metadata.
+4. Refactor only while both suites remain green. Commit the failing test and the
+   implementation separately when the project assessment requires auditable TDD
+   evidence.
+
+The unit tests prove the declared schema contract without Docker. Integration
+tests use PostgreSQL 16 through Testcontainers and skip if Docker is unavailable.
+
 ## Things that are deliberately not here
 
 No suppression or finding-action tables — v1.0 is view-only (FR-17b). No webhook

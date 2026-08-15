@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import HttpUrl
 
 from codesage_api.schemas.base import CamelModel
@@ -24,8 +26,9 @@ class RepoOut(CamelModel):
     id: str
     name: str
     owner: str
-    visibility: str  # v1.0 is always "public"
+    visibility: Literal["public", "private"]
     url: str
+    source: Literal["public-url", "github"] = "public-url"
     default_branch: str
     connected_at: str
 

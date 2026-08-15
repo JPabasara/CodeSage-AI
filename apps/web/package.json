@@ -12,9 +12,9 @@
     "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
-
   },
   "dependencies": {
+    "@asgardeo/nextjs": "^0.3.29",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.25.0",

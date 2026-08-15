@@ -1,17 +1,3 @@
-"""Scoring-profile endpoints (SRS FR-20).
-
-The second write path in v1.0, and deliberately the opposite of a scan in every
-way: nothing is queued, no worker wakes, no snapshot row is written.
-
-    Run a scan                      Apply a profile
-    ────────────────────────────    ─────────────────────────────
-    POST /api/repos/{id}/scan       PUT /api/profiles/active
-    API → Redis → Celery worker     the API process alone
-    a new immutable Snapshot        six numbers on one row
-    seconds to minutes, polled      one round trip
-    creates findings                leaves findings untouched
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

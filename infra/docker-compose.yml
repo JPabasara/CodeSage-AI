@@ -15,17 +15,24 @@ services:
       POSTGRES_PASSWORD: devpassword
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Creates the non-superuser application role. Required: a superuser or the
-      # table owner BYPASSES Row-Level Security silently, which would make tenant
-      # isolation appear to work in development and fail in review.
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U codesage_owner -d codesage"]
       interval: 5s
       timeout: 3s
       retries: 10
-    # Not published. Add a host port only when you need psql from outside.
+    ports:
+      - "127.0.0.1:55432:5432"
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@codesage.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "127.0.0.1:5050:80"
+    depends_on:
+      - postgres
   redis:
     image: redis:7-alpine
     healthcheck:

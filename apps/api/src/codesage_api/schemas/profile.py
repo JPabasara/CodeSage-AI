@@ -18,11 +18,11 @@ class CategoryWeights(CamelModel):
     refused.
     """
 
-    security: float = Field(1.0)
-    code_design: float = Field(1.0)
-    requirement: float = Field(1.0)
-    documentation: float = Field(1.0)
-    test: float = Field(1.0)
+    security: float
+    code_design: float
+    requirement: float
+    documentation: float
+    test: float
 
 
 class ScoreProfileIn(CamelModel):
@@ -34,7 +34,7 @@ class ScoreProfileIn(CamelModel):
     """
 
     weights: CategoryWeights
-    s: float = Field(0.5, description="Trust slider: 0 = trust the model, 1 = trust the rules")
+    s: float = Field(description="Trust slider: 0 = trust the model, 1 = trust the rules")
 
 
 class ScoreProfileOut(CamelModel):

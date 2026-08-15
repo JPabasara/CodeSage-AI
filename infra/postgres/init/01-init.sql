@@ -32,10 +32,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE codesage_owner IN SCHEMA public
 --   ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
 --   ALTER TABLE <t> FORCE ROW LEVEL SECURITY;
 --   CREATE POLICY tenant_isolation ON <t>
---       USING (workspace_id = current_setting('app.workspace_id')::uuid);
+--       USING (workspace_id = app_current_workspace_id());
 --
 -- FORCE matters: without it the policy still does not apply to the table owner.
 -- The setting is bound per transaction by db/rls.py.
 --
--- Write a test that asserts a cross-tenant SELECT returns zero rows. A policy
--- nobody tested is a policy nobody has.
+-- Policies are installed by the initial Alembic migration.

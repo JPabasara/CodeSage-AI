@@ -1,9 +1,7 @@
-"""Shared Pydantic base.
+"""Shared Pydantic base for the final SRS/SAD REST contract.
 
-The data contract is TypeScript-first, so the wire is camelCase while the Python
-stays snake_case. Doing that conversion here — once — rather than with per-field
-aliases keeps the schema files readable and makes it impossible for one field to
-be forgotten.
+The documents are authoritative. Existing web types supply camelCase field names
+only where the documents leave the JSON naming unspecified.
 """
 
 from __future__ import annotations
@@ -17,4 +15,5 @@ class CamelModel(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
         from_attributes=True,
+        extra="forbid",
     )

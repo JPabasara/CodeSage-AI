@@ -75,7 +75,7 @@ def stop_scan(repo_id: str, scan_id: str) -> ScanStatusOut:
 
 
 @router.get("/scans", response_model=list[ScanSummaryOut])
-def list_scan_history(repo_id: str, branch: str) -> list[ScanSummaryOut]:
+def list_scan_history(repo_id: str, branch: str | None = None) -> list[ScanSummaryOut]:
     """Past snapshots for the active project and branch (FR-19).
 
     Each row: date, commit SHA, health score, grade, delta, finding count. The last

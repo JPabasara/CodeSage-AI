@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Must be a NON-superuser role, or Row-Level Security silently does nothing
     # (SRS DB-2). See infra/postgres/init/01-init.sql.
     database_url: str = "postgresql+psycopg://codesage_app:changeme@localhost:5432/codesage"
+    migration_database_url: str = (
+        "postgresql+psycopg://codesage_owner:changeme@localhost:5432/codesage"
+    )
 
     # ── Broker: API enqueues, workers consume (SAD §6) ──────────────────────
     redis_url: str = "redis://localhost:6379/0"
