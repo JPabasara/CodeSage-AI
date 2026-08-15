@@ -43,12 +43,6 @@ apps/ml/
     └── external/      #   third-party sources kept as-is
 ```
 
-<<<<<<< Updated upstream
-**Raw data and model artifacts are git-ignored on purpose** (size + license).
-=======
-<<<<<<< Updated upstream
-**Raw data and model artifacts are git-ignored on purpose** (size + license). 
-=======
 **Raw data and model artifacts are git-ignored on purpose** (size + licence).
 
 **Artifacts are mounted, not baked in.** `infra/docker-compose.yml` mounts
@@ -69,14 +63,18 @@ it cannot train, by construction.
 
 If this container is down the scan **still completes and still stores a valid
 snapshot**: every rule and security finding is present, no SATD findings appear, and
-every `risk_score` is `0.0` — which makes `risk_factor = 1 + ml_trust × 0 = 1.0`, so no
-finding receives a risk boost. Less information, not a failure.
+no `risk_score` is recorded for any file. Scoring then treats the missing score as
+`risk_factor = 1.0`, so no finding receives a risk boost. Less information, not a
+failure.
+
+**A missing score is `null`, never `0.0`.** The API contract makes `risk_score`
+nullable for exactly this reason: `null` means *this file was never assessed*, while
+`0.0` would mean *assessed and found safe*. Collapsing the two would let the dashboard
+paint an unassessed file with the same confidence as a measured one.
 
 That degradation is the reason this is a separate container at all: across a network
 boundary "unavailable" is a *mode* the pipeline handles, where in-process it would be
 an exception that takes the worker down with it.
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 
 ---
 
