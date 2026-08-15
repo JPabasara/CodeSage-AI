@@ -8,34 +8,19 @@ shows it all on a heat-map dashboard.
 
 ```
 apps/
-<<<<<<< Updated upstream
-├── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
-└── ml/      # SATD classifier (ML-1), risk model (ML-2), feature extraction, calibration
-=======
-<<<<<<< Updated upstream
-└── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
-=======
 ├── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
 ├── api/     # FastAPI + Celery — the API process and the scan worker (one image, two commands)
 └── ml/      # ML inference service (:8001) + offline training code for ML-1 and ML-2
 infra/
 └── docker-compose.yml          # the six-container local stack
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 docs/
 ├── NEXT_STEPS.md               # ← the current working plan and the locked decisions
-├── Deliverables/               # SRS, SAD (formal documents)
-<<<<<<< Updated upstream
+├── api/openapi.yaml            # the REST contract. Frontend types are generated from it
+├── Deliverables/               # SRS and SAD — .docx is the deliverable, .md is a generated mirror
+├── Diagrams/UMLs/              # draw.io sources for every figure in the SAD
 ├── Change Requests/            # accepted changes to the deliverables, with rationale
 │   └── CR-001_2026-07-30_scoring-model-and-finding-ux.md
-=======
-<<<<<<< Updated upstream
-=======
-├── Reviews/                    # PR reviews
-├── Change Requests/            # accepted changes to the deliverables, with rationale
-│   └── CR-001_2026-07-30_scoring-model-and-finding-ux.md
->>>>>>> Stashed changes
->>>>>>> Stashed changes
+├── Templates/                  # course templates + the scripts that build the deliverables
 └── Project Management & Planning/
     ├── frontend_build_stepbystep.md   # the execution recipe (phase by phase)
     ├── frontend_prototype_plan.md     # architecture & design decisions
@@ -44,17 +29,10 @@ docs/
     └── release-roadmap.md
 ```
 
-<<<<<<< Updated upstream
-> **Change Requests.** Once a deliverable is written, a decision that contradicts it is recorded as a **CR** rather than silently edited in. Each CR states the problem, the decision and the *why*, then lists every document it touches — so a reader six months later can tell the difference between a considered change and a drifting document.
-
-=======
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-> The backend (`apps/api` — FastAPI + Celery + Redis + PostgreSQL) is planned but
-> not yet in this repo. The frontend is built against a typed **data contract**
-> and a **mock backend (MSW)**, so it runs and is fully testable with no backend.
-=======
-> **Change Requests.** Once a deliverable is written, a decision that contradicts it is recorded as a **CR** rather than silently edited in. Each CR states the problem, the decision and the *why*, then lists every document it touches — so a reader six months later can tell the difference between a considered change and a drifting document.
+> **Change Requests.** Once a deliverable is written, a decision that contradicts it is
+> recorded rather than silently edited in — as a CR, or as a revision-history row in the
+> deliverable itself. Each records the problem, the decision and the *why*, so a reader
+> six months later can tell a considered change from a drifting document.
 
 > **Start here:** [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md) carries the decisions that are
 > locked and the order of work. Read it before changing anything — several decisions
@@ -96,7 +74,22 @@ model artifacts *mounted* rather than baked into the image so swapping a model i
 restart, not a rebuild. It is extracted so that "ML unavailable" is a **degraded mode**
 the scan can handle rather than an exception that kills it. Training lives in
 `apps/ml/training/` and is never deployed.
->>>>>>> Stashed changes
+
+## Security
+
+The API is the **Backend-for-Frontend**. Sign-in runs through
+[Asgardeo](https://wso2.com/asgardeo/), which federates GitHub, and the exchange
+happens server-side:
+
+- the authorization-code exchange (with PKCE) is performed by `apps/api`, never by the browser
+- identity tokens stay in the backend — the browser receives only an **httpOnly, Secure,
+  SameSite=Lax** cookie holding an opaque session id
+- sessions are **server-side rows**, so signing out revokes access on the next request
+- every endpoint requires a session except sign-in start, sign-in callback and `/healthz`
+
+Adding Google or a username-and-password login later is a setting in the Asgardeo
+console, not new code — which matters because v2 brings viewers and stakeholders who
+may not have GitHub accounts. Details: SRS §3.5 (SEC-17 to SEC-20) and SAD §6.4.
 
 ## Getting started (frontend)
 
@@ -110,97 +103,33 @@ pnpm dev            # http://localhost:3000
 See **[apps/web/README.md](apps/web/README.md)** for full setup (including the
 required `.env.local`), the test/quality gates, and how the mock data layer works.
 
+## Getting started (full stack)
+
+```powershell
+cd infra
+docker compose up -d              # postgres · redis · ml · api · worker · web
+docker compose up --scale worker=3   # three concurrent scans (PERF-07)
+```
+
 ## Status
 
-<<<<<<< Updated upstream
-Frontend build is progressing through the phased guide: the app shell, the typed
-<<<<<<< Updated upstream
-contract, the static screens, the **mock backend (MSW) with live data hooks**, the
-interactive scan flow and the **Playwright end-to-end tests** are in place
-(Phases 0–10 complete).
-
-Next up is **Phase 10.5**, which lands
-[CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md):
-the `Source` enum narrows to `rule | satd`, the scoring profile becomes six
-category weights plus a rules-versus-model trust slider (applied with an explicit
-**Apply** button — one `PUT /api/profiles/active`, no re-scan), and the finding
-detail moves from a slide-over into the dashboard itself. Phase 11 (polish and
-Definition of Done) follows.
-
-## How the health score works
-
-Every finding gets a priority; a file's debt is the sum of its findings; the repo's
-0–100 health is that debt measured against the repo's size:
-
-```
-finding_priority = base_points × category_weight × source_trust × churn_factor × risk_factor
-file_debt        = Σ finding_priority
-repo_health      = 100 × (1 − min(1, Σ file_debt / (k × KLOC)))
-grade            = A ≥ 85 · B ≥ 70 · C ≥ 55 · D ≥ 40 · E < 40
-```
-
-Every term above is either **measured** from the code (base points, churn, risk) or
-**set by the user** (the six category weights and the trust slider on the Profiles
-page) — except **`k`**, which is chosen by us. It is worth understanding, because it
-is the one number that can quietly make every grade meaningless.
-
-**Scores are computed on every read, never stored.** The database keeps the findings;
-the scores are re-derived under the active profile each request (~10–50 ms for a full
-20-scan history — the detection work was already paid for at scan time). One backend
-rule keeps it that way: **do the summation in SQL, not in Python.** `SUM(...) GROUP BY`
-is single-digit milliseconds; loading 40,000 finding objects into Python and looping is
-the same formula 100× slower.
-
-**What `k` is.** Debt points have no natural meaning — is `847` good? Nothing in the
-formula knows. Dividing by **KLOC** first removes repo size from the picture, so you
-are comparing debt *density* rather than totals; `k` then converts that density into a
-0–100 score. Read it as:
-
-> **`k` = how much debt per 1000 lines counts as "completely rotten" (health 0).**
-
-With `k = 100`, a repo carrying 12 debt points per KLOC scores 88 (an A) and one
-carrying 95 scores 5 (an E).
-
-**Why it has to be calibrated.** Nothing measures `k` — it is a judgement about where
-the grade boundaries should fall, so someone has to pick it, and a bad pick fails
-*silently*:
-
-| If `k` is… | The ratio… | Result |
-|---|---|---|
-| too small | is huge and clamps at 1 | **every repo grades E** |
-| too large | is tiny | **every repo grades A** |
-
-Neither case looks broken. You still get confident, precise, completely uninformative
-grades. So `k` is fixed by running the scanner over a few **golden repositories** —
-repos we already have an opinion about before measuring (a clean library, a typical
-app, a known legacy mess) — and choosing the `k` that puts them where that judgement
-says they belong. It is a sanity check against human judgement, not a fit.
-
-⚠️ **`k` is currently uncalibrated.** [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)
-changed the scale of `file_debt` (an additive risk term was removed and a multiplier
-of up to 2.5× added), so any earlier value is invalid. Method and worked example:
-**[apps/ml/README.md](apps/ml/README.md)**; formula in
-[the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md).
-=======
-contract, the static screens, and the **mock backend (MSW) with live data hooks**
-are in place. Next: wiring the interactive scan flow, then end-to-end tests.
-=======
 **Frontend** — Phases 0–10.5 complete: app shell, typed contract, static screens,
 **mock backend (MSW) with live data hooks**, the interactive scan flow, **Playwright
 end-to-end tests**, and the
 [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)
 migration (`Source` narrowed to `rule | satd`, in-place finding detail, the profile
 sliders with an explicit **Apply**).
->>>>>>> Stashed changes
 
-**Backend** — `apps/api` skeleton exists: routers, services, repositories, Alembic,
-RLS helper, Celery app and the scan pipeline are all laid out, with handler bodies
-still to come. `apps/ml` is the inference service. See
-[the PR review](docs/Reviews/PR-review_backend-skeleton.md).
+**Backend** — `apps/api` skeleton: routers, services, Alembic with the first migration,
+RLS policies and cross-tenant tests, the Celery app and the scan pipeline are laid out,
+with handler bodies still to come. `apps/ml` is the inference service.
 
-**Next** — the OpenAPI contract, then frontend Phase 10.6 (snake_case rename, five
-categories, Asgardeo sign-in). Order of work in
-[docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
+**Documents** — SRS and SAD are at **v1.1**. The `.docx` under
+`docs/Deliverables/{SRS,SAD}/v1.1/` is the deliverable; the `.md` alongside is a
+generated mirror for reading and diffing in the repository.
+
+**Next** — frontend Phase 10.6 (snake_case rename, five categories, Asgardeo sign-in).
+Order of work in [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
 
 ## How the health score works
 
@@ -256,7 +185,6 @@ changed the scale of `file_debt` (an additive risk term was removed and a multip
 of up to 2.5× added), so any earlier value is invalid. Method and worked example:
 **[apps/ml/README.md](apps/ml/README.md)**; formula in
 [the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md).
->>>>>>> Stashed changes
 
 ## Stack
 
