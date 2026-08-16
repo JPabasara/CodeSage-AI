@@ -1,5 +1,4 @@
-import { SignInButton, SignedIn, SignedOut } from "@asgardeo/nextjs"
-import { redirect } from "next/navigation"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export default function LoginPage() {
   return (
@@ -11,12 +10,18 @@ export default function LoginPage() {
             Sign in to analyse your repositories.
           </p>
         </div>
-        <SignedOut>
-          <SignInButton className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 w-full items-center justify-center rounded-md px-6 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50">
-            Sign in with GitHub
-          </SignInButton>
-        </SignedOut>
-        <SignedIn>{redirect("/projects")}</SignedIn>
+        {/*
+          A plain link, not a button with an onClick. The browser has to leave
+          this page entirely and go to Asgardeo — a fetch would stay here and
+          the sign-in could never complete. It is also the one request the mock
+          service worker cannot intercept.
+        */}
+        <a
+          href={`${API_BASE}/api/auth/login`}
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 w-full items-center justify-center rounded-md px-6 text-sm font-medium transition-colors"
+        >
+          Sign in
+        </a>
       </div>
     </main>
   )

@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono, Inter } from "next/font/google"
-import { AsgardeoProvider } from "@asgardeo/nextjs/server"
 import "./globals.css"
 import { cn } from "@/lib/utils"
 import { MswProvider } from "@/components/msw-provider"
@@ -44,10 +43,8 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        <AsgardeoProvider>
-          <MswProvider>{children}</MswProvider>
-          <Toaster richColors position="bottom-right" />
-        </AsgardeoProvider>
+        <MswProvider>{children}</MswProvider>
+        <Toaster richColors position="bottom-right" />
       </body>
     </html>
   )
