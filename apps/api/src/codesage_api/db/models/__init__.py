@@ -40,7 +40,7 @@ from codesage_api.db.models.source import (
     SourceLocation,
     StaticMetric,
 )
-from codesage_api.db.models.tenancy import Membership, SecurityAuditRecord, User, Workspace
+from codesage_api.db.models.tenancy import Membership, SecurityAuditRecord, User, UserSession, Workspace
 
 __all__ = [
     "AnalysisAttempt",
@@ -67,5 +67,6 @@ __all__ = [
     "ScoringProfile",
     "StaticMetric",
     "User",
+    "UserSession",
     "Workspace",
 ]
