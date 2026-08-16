@@ -1,16 +1,16 @@
 """Pydantic request/response models — the wire shapes.
 
-These MUST mirror `apps/web/src/lib/types/index.ts`, which SRS SP-1 makes the
-single source of truth for FE⇄BE shapes; changes go through a reviewed PR on both
-sides. Field names are camelCase on the wire (see `CamelModel`) because the
-contract is TypeScript-first.
+`docs/api/openapi.yaml` is the single source of truth for FE⇄BE shapes, and
+`apps/web/src/lib/types/api.ts` is generated from it. Changing a shape means
+changing the contract first, then both sides.
 
-⚠️ The contract file is currently at its pre-CR-001 state. Reconcile before wiring
-the frontend — see the note in `scoring/enums.py`.
+Field names are **snake_case on the wire** (see `ApiModel`), the same spelling
+used by the contract, the SRS and the database columns — so no one has to
+remember which side of the wire they are on.
 """
 
 from codesage_api.schemas.auth import SessionOut
-from codesage_api.schemas.base import CamelModel
+from codesage_api.schemas.base import ApiModel
 from codesage_api.schemas.branch import BranchOut
 from codesage_api.schemas.finding import FindingOut
 from codesage_api.schemas.health import (
@@ -26,7 +26,7 @@ from codesage_api.schemas.scan import ScanStatusOut, ScanSummaryOut, StartScanIn
 
 __all__ = [
     "BranchOut",
-    "CamelModel",
+    "ApiModel",
     "CategoryBreakdownItemOut",
     "ConnectRepoIn",
     "FileScoreOut",

@@ -8,18 +8,18 @@ from __future__ import annotations
 
 from typing import Literal
 
-from codesage_api.schemas.base import CamelModel
+from codesage_api.schemas.base import ApiModel
 from codesage_api.schemas.finding import FindingOut
 from codesage_api.scoring.enums import Category, Grade
 
 
-class FileScoreOut(CamelModel):
+class FileScoreOut(ApiModel):
     file: str
     debt_score: float  # derived: Σ finding priorities in this file
     risk_score: float  # stored fact: ML-2's output, 0–1
 
 
-class TreeNodeOut(CamelModel):
+class TreeNodeOut(ApiModel):
     """A node in the hotspot heat map (FR-18).
 
     Folder health is the aggregation of the stored file scores beneath it, so
@@ -37,7 +37,7 @@ class TreeNodeOut(CamelModel):
     children: list[TreeNodeOut] | None = None
 
 
-class HealthPointOut(CamelModel):
+class HealthPointOut(ApiModel):
     """One point on the trend chart (FR-14)."""
 
     t: str  # ISO timestamp
@@ -45,7 +45,7 @@ class HealthPointOut(CamelModel):
     commit_sha: str | None = None
 
 
-class CategoryBreakdownItemOut(CamelModel):
+class CategoryBreakdownItemOut(ApiModel):
     """One slice of the category pie (FR-13).
 
     `count` is a plain query over stored rows. `debt` is weighted by the active
@@ -58,10 +58,13 @@ class CategoryBreakdownItemOut(CamelModel):
     debt: float
 
 
-class HealthReportOut(CamelModel):
+class HealthReportOut(ApiModel):
     """The complete dashboard payload for one branch snapshot."""
 
-    scan_id: str
+    # The SNAPSHOT, not the attempt that made it. A cancelled or failed attempt
+    # has a scan id but no snapshot, so the dashboard is always keyed on the
+    # thing that actually exists (locked decision 9).
+    snapshot_id: str
     repo_id: str
     branch: str
     commit_sha: str
@@ -76,6 +79,11 @@ class HealthReportOut(CamelModel):
     # there is exactly one active profile per workspace to name; "custom" when the
     # user has adjusted away from a preset.
     profile: str
+
+    # Which ML model produced this snapshot (AI-03, DBR-18). Null when the scan
+    # ran in degraded mode with no ML available — which is a real state, not an
+    # error, so it has to be expressible.
+    model_version: str | None = None
 
     history: list[HealthPointOut]
     tree: list[TreeNodeOut]

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from codesage_api.schemas.base import CamelModel
+from codesage_api.schemas.base import ApiModel
 from codesage_api.scoring.enums import Grade, ScanPhase
 
 
-class StartScanIn(CamelModel):
+class StartScanIn(ApiModel):
     branch: str
 
 
-class ScanStatusOut(CamelModel):
+class ScanStatusOut(ApiModel):
     """What the client polls once per second.
 
     `phase` comes from PostgreSQL and `progress` from Redis — see the note in
@@ -32,14 +32,20 @@ class ScanStatusOut(CamelModel):
     error: str | None = None
 
 
-class ScanSummaryOut(CamelModel):
+class ScanSummaryOut(ApiModel):
     """One row in the Scan-History view (FR-19).
 
-    Only the first four fields are stored. Health, grade and delta are derived
-    under the active profile on every request, which is why switching profiles
-    redraws this list too.
+    Only the stored fields are stored. Health, grade and delta are derived under
+    the active profile on every request, which is why switching profiles redraws
+    this list too.
+
+    Two identifiers, deliberately (locked decision 9). `scan_id` is the attempt —
+    the thing that ran. `snapshot_id` is what it produced. Only attempts that
+    finished have one, so carrying both is what lets the client link a row to its
+    dashboard without guessing that the two ids are interchangeable.
     """
 
+    snapshot_id: str
     scan_id: str
     branch: str
     commit_sha: str

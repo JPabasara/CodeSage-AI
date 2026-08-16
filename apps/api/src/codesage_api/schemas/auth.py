@@ -5,10 +5,10 @@ Carries no token and no password. Those never leave this server (SEC-09).
 
 from __future__ import annotations
 
-from codesage_api.schemas.base import CamelModel
+from codesage_api.schemas.base import ApiModel
 
 
-class SessionOut(CamelModel):
+class SessionOut(ApiModel):
     user_id: str
     email: str
     name: str

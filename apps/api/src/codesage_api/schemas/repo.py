@@ -6,29 +6,32 @@ from typing import Literal
 
 from pydantic import HttpUrl
 
-from codesage_api.schemas.base import CamelModel
+from codesage_api.schemas.base import ApiModel
 from codesage_api.scoring.enums import Grade
 
 
-class ConnectRepoIn(CamelModel):
+class ConnectRepoIn(ApiModel):
     """`POST /api/projects` — connect by pasted public URL."""
 
     url: HttpUrl
 
 
-class LatestHealthOut(CamelModel):
+class LatestHealthOut(ApiModel):
     score: float
     grade: Grade
     delta: float
 
 
-class RepoOut(CamelModel):
+class RepoOut(ApiModel):
     id: str
     name: str
     owner: str
     visibility: Literal["public", "private"]
     url: str
-    source: Literal["public-url", "github"] = "public-url"
+    # No `source` field. v1.0 connects public repositories by pasted URL and that
+    # is the only way in, so a column recording which of one way it was tells the
+    # client nothing. It comes back when a second route exists (a GitHub App
+    # installation), and the contract adds it then.
     default_branch: str
     connected_at: str
 

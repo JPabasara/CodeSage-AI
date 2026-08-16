@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from codesage_api.schemas.base import CamelModel
+from codesage_api.schemas.base import ApiModel
 from codesage_api.scoring.enums import Category, FindingStatus, Severity, Source
 
 
-class FindingOut(CamelModel):
+class FindingOut(ApiModel):
     """One detected issue as the dashboard receives it.
 
     `severity` and `category` are the stored values, rendered as badges. The client
