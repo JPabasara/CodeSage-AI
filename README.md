@@ -9,8 +9,10 @@ shows it all on a heat-map dashboard.
 ```
 apps/
 ├── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
+├── api/     # FastAPI + Celery. One codebase, two entrypoints (API and worker).
 └── ml/      # SATD classifier (ML-1), risk model (ML-2), feature extraction, calibration
 docs/
+├── api/openapi.yaml            # ★ THE CONTRACT — normative for every wire shape
 ├── Deliverables/               # SRS, SAD (formal documents)
 ├── Change Requests/            # accepted changes to the deliverables, with rationale
 │   └── CR-001_2026-07-30_scoring-model-and-finding-ux.md
@@ -24,9 +26,16 @@ docs/
 
 > **Change Requests.** Once a deliverable is written, a decision that contradicts it is recorded as a **CR** rather than silently edited in. Each CR states the problem, the decision and the *why*, then lists every document it touches — so a reader six months later can tell the difference between a considered change and a drifting document.
 
-> The backend (`apps/api` — FastAPI + Celery + Redis + PostgreSQL) is planned but
-> not yet in this repo. The frontend is built against a typed **data contract**
-> and a **mock backend (MSW)**, so it runs and is fully testable with no backend.
+> **The contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml).** It is
+> normative for every shape crossing the browser/backend boundary — snake_case
+> throughout — and `apps/web/src/lib/types/api.ts` is generated from it by
+> `pnpm gen:types`. `pnpm gen:types:check` fails if the two drift apart.
+>
+> The backend (`apps/api` — FastAPI + Celery + Redis + PostgreSQL) **is in the repo**:
+> the database models, migration, RLS policies, scoring formula and Asgardeo sign-in
+> are real, while most route handlers are still `raise NotImplementedError`. The
+> frontend runs against a **mock backend (MSW)**, so it is fully testable with no
+> backend running; wiring it to the real API is frontend Phase 10.6.
 
 ## Getting started (frontend)
 
@@ -49,11 +58,18 @@ interactive scan flow and the **Playwright end-to-end tests** are in place
 
 Next up is **Phase 10.5**, which lands
 [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md):
-the `Source` enum narrows to `rule | satd`, the scoring profile becomes six
-category weights plus a rules-versus-model trust slider (applied with an explicit
-**Apply** button — one `PUT /api/profiles/active`, no re-scan), and the finding
-detail moves from a slide-over into the dashboard itself. Phase 11 (polish and
-Definition of Done) follows.
+the `Source` enum narrows to `rule | satd`, the scoring profile becomes **five**
+category weights plus a rules-versus-model trust slider — six numbers, applied with
+an explicit **Apply** button (one `PUT /api/profiles/active`, no re-scan) — and the
+finding detail moves from a slide-over into the dashboard itself.
+
+> CR-001 originally added a sixth category, `defect`. It was **dropped** by a later
+> decision: the corpus this project trains on is SATDAUG, which carries no
+> `defect_debt` label, so ML-1 cannot predict that category. Five categories —
+> `code-design`, `requirement`, `documentation`, `test`, `security`.
+
+Then **Phase 10.6**, which regenerates the types from the contract and points the
+frontend at the real API, and Phase 11 (polish and Definition of Done).
 
 ## How the health score works
 
@@ -68,8 +84,8 @@ grade            = A ≥ 85 · B ≥ 70 · C ≥ 55 · D ≥ 40 · E < 40
 ```
 
 Every term above is either **measured** from the code (base points, churn, risk) or
-**set by the user** (the six category weights and the trust slider on the Profiles
-page) — except **`k`**, which is chosen by us. It is worth understanding, because it
+**set by the user** (the **five** category weights and the trust slider on the
+Profiles page — six numbers in total) — except **`k`**, which is chosen by us. It is worth understanding, because it
 is the one number that can quietly make every grade meaningless.
 
 **Scores are computed on every read, never stored.** The database keeps the findings;
@@ -106,12 +122,16 @@ says they belong. It is a sanity check against human judgement, not a fit.
 
 ⚠️ **`k` is currently uncalibrated.** [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)
 changed the scale of `file_debt` (an additive risk term was removed and a multiplier
-of up to 2.5× added), so any earlier value is invalid. Method and worked example:
-**[apps/ml/README.md](apps/ml/README.md)**; formula in
-[the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md).
+of up to 2.5× added), so any earlier value is invalid. Formula and calibration
+method: [the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md);
+model training and evaluation rules: [apps/ml/training/README.md](apps/ml/training/README.md).
 
-## Planned stack
+## Stack
 
 Next.js / TypeScript / Tailwind + shadcn (frontend) · FastAPI / Celery / Redis
-(backend) · Python / scikit-learn + Lizard + PyDriller (analysis/ML) · PostgreSQL
-(data) · Docker.
+(backend) · Python / scikit-learn + **CK** + **Tree-sitter** + PyDriller
+(analysis/ML) · PostgreSQL (data) · Asgardeo (identity) · Docker.
+
+**CK, not Lizard.** CK is a Java jar the worker runs as a separate process, not a
+pip package — Java is the only language v1.0 analyses, and CK produces the
+class- and method-level metrics the risk model (ML-2) is trained on.

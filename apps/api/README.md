@@ -14,16 +14,24 @@ celery -A codesage_api.worker worker             # worker container
 
 ```
 src/codesage_api/
-├── routers/       HTTP edge — the 13 endpoints of SRS Table 3.106. No domain logic.
-├── schemas/       Pydantic wire shapes; camelCase on the wire (contract is TS-first)
+├── routers/       HTTP edge — the 16 operations of docs/api/openapi.yaml. No domain logic.
+├── schemas/       Pydantic wire shapes; snake_case on the wire (locked decision 1)
 ├── services/      domain layer — orchestrates db + scoring + queue. No FastAPI imports.
 ├── scoring/       ★ PURE. No db, no io, no web. The read path's whole output.
 ├── tasks/         Celery — the write path: clone → extract → detect → finalize
-├── extractors/    CK (Java metrics) · PyDriller (history) · Tree-sitter (comments)
+├── extractors/    dataclass SHAPES only so far (CK / history / comments output)
 ├── detection/     rule engine · SATD markers · ML clients · reason templates
-├── db/            models, repositories, session, RLS context
-└── integrations/  GitHub gateway · ML service client
+├── db/            models, session, RLS context
+└── integrations/  GitHub gateway (metadata + cloning only — never identity)
 ```
+
+> **The contract is `docs/api/openapi.yaml`, not the frontend's TypeScript.** Field
+> names are snake_case everywhere — one spelling from the PostgreSQL column to the
+> browser. `schemas/base.py` therefore sets no `alias_generator`.
+
+> **Most handlers are still `raise NotImplementedError`.** The database models, the
+> migration, the scoring formula, the enums, config, RLS helpers, error classes and
+> sign-in are real; the route bodies are not.
 
 ## Four rules the code is arranged around
 
@@ -39,8 +47,9 @@ instantly and never re-scan.
 
 **3. Scoring is pure, and the workers never call it.** The write path ends at
 "persist the snapshot"; scoring runs in the API process on the read path. Both
-halves are enforced in CI by import-linter contracts in `pyproject.toml` — run
-`lint-imports`.
+halves are enforced by import-linter contracts in `pyproject.toml` — run
+`lint-imports` (3 contracts). This repo has **no CI pipeline yet**, so that is a
+command someone has to run, not a gate that runs itself.
 
 **4. Severity is system-owned; weights are user-owned.** `severity` and `category`
 are written once at detection and no later process or user setting touches them.
@@ -50,13 +59,30 @@ visibility floor safe.
 ## Running it
 
 ```bash
-cp .env.example .env          # then fill in the GitHub OAuth values
+cp .env.example .env          # then fill in the Asgardeo values (see below)
 pip install -e ".[dev]"
 alembic upgrade head
 uvicorn codesage_api.main:app --reload
 ```
 
 Or the whole stack: `docker compose -f ../../infra/docker-compose.yml up`.
+
+### Signing in
+
+**Asgardeo is the only identity provider** (locked decision 4), and **FastAPI — not
+Next.js — completes the flow** (locked decision 5). GitHub is federated *inside*
+Asgardeo, so this service never runs a GitHub OAuth exchange and never holds a
+GitHub token.
+
+The browser is redirected to `/api/auth/login`, comes back to `/api/auth/callback`,
+and leaves with an httpOnly cookie holding a **session row id and nothing else**. No
+token ever reaches client JavaScript (SEC-08, SEC-09), and signing out deletes the
+row, so revocation is immediate.
+
+Fill `CODESAGE_ASGARDEO_CLIENT_ID` and `CODESAGE_ASGARDEO_CLIENT_SECRET` from the
+Asgardeo console; `.env.example` documents every value. `/api/auth/login`,
+`/api/auth/callback` and `/api/healthz` are the **only** unauthenticated routes —
+everything else returns `401` without a valid cookie.
 
 ## Tests
 
@@ -92,13 +118,21 @@ installation (FR-3).
 - **`k` is a placeholder.** FR-11 requires it to be calibrated against reference
   repositories before release, with the value and method recorded in the SAD.
   No grade is meaningful until that is done.
-- **RLS policies are not written yet.** `infra/postgres/init/01-init.sql` creates
-  the non-superuser role; the policies belong in the migration that creates the
-  tables.
+- ~~**RLS policies are not written yet.**~~ **Done** — the migration enables row-level
+  security and writes the policies. `session` is deliberately excluded: it is the
+  table that *tells us* which workspace the caller is in, so it cannot be filtered by
+  the workspace it has not yet reported. `app_workspace_for_user()` is the one
+  `SECURITY DEFINER` function in the system, and it exists for the same reason.
 - **Preset weights are not normative.** FR-20 names the three presets but no longer
   publishes their weight table — see the note in `scoring/config/presets.yaml`.
 - **The CK jar version is unpinned.** Pin it and record it on
   `AnalysisEngineVersion.ck_version`, or REL-10's consistency claim is unverifiable.
-- **The shared data contract is stale.** `apps/web/src/lib/types/index.ts` still
-  has the pre-CR-001 enums and disagrees with `scoring/enums.py` on `Source`,
-  `Category` and the profile shape.
+- **The frontend's hand-written types are stale.** `docs/api/openapi.yaml` is the
+  contract and `apps/web/src/lib/types/api.ts` is generated from it
+  (`pnpm gen:types`) — both agree with `scoring/enums.py`. But the components still
+  import the hand-written `apps/web/src/lib/types/index.ts`, which has the
+  pre-CR-001 enums and camelCase field names. Phase 10.6 switches them over.
+- **Nothing checks the API against the contract.** `pnpm gen:types:check` keeps the
+  *frontend* honest, but no job yet diffs FastAPI's generated `/openapi.json`
+  against `docs/api/openapi.yaml`. That only becomes meaningful once the handlers
+  have bodies — and there is no CI pipeline to run it in yet.
