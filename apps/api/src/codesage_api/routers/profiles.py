@@ -34,8 +34,11 @@ def apply_profile(body: ScoreProfileIn) -> ScoreProfileOut:
        clamp is the invariant. `repo_health` is calibrated against `k`, so one
        unclamped weight from any client would make every stored grade incomparable
        with every other. Clamp silently rather than rejecting.
-    2. **Write** SCORING_PROFILE and point WORKSPACE.active_profile_id at it, in
-       one transaction. Six numbers. No queue, no worker, no clone, no Snapshot.
+    2. **Write** SCORING_PROFILE and mark it the active one, in a single
+       transaction. Six numbers. No queue, no worker, no clone, no Snapshot.
+       "Exactly one active profile per workspace" is held by a partial unique
+       index on the table, so it is a fact the database enforces rather than a
+       rule this handler has to remember (locked decision 11).
     3. **Return the stored profile**, so the client renders what was really saved
        instead of believing its own values — a client that sent 5.0 must display
        the 3.0 that is actually in force.

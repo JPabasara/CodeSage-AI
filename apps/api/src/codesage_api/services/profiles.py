@@ -36,9 +36,11 @@ def apply(
     out-of-range value, because FR-20 requires the client to be able to render the
     corrected value instead of believing its own.
 
-    Writes SCORING_PROFILE and WORKSPACE.active_profile_id together so no reader
-    can observe one without the other, and records the actor and modification time
-    per DBR-19.
+    Writes the new SCORING_PROFILE and clears the previous active flag in one
+    transaction, so no reader can ever see two active profiles or none. The
+    partial unique index on the table makes that a guarantee rather than a
+    convention (locked decision 11). Records the actor and modification time per
+    DBR-19.
 
     **What this function must never do:** enqueue anything, touch a Snapshot,
     Finding or SourceFile row, or trigger a scan. A snapshot is keyed by commit
