@@ -41,7 +41,8 @@ Install tools ─► Scaffold app ─► Configure ─► Theme ─► Types (th
 | 8 | **The mock backend (MSW)** — make data flow | Build |
 | 9 | Wire the interactions (scan, branch, tree→graph, detail) | Build |
 | 10 | End-to-end tests (Playwright) | **Test** |
-| 11 | Polish & Definition of Done | Build |
+| **10.5** | **CR-001 migration — contract, chips, profile sliders, in-place finding detail** | **Build/Test** |
+| 11 | Polish — states, a11y, contrast, responsive + Definition of Done | Build/**Test** |
 | 12 | (Later) Swap mock → real backend | Build |
 
 ---
@@ -1098,25 +1099,833 @@ git commit -m "feat(web): wire mocked GitHub sign-in"   # if 9.7 done
 > - **Vitest exclude (the load-bearing one)** — `vitest.config.ts` now sets `exclude: [...configDefaults.exclude, "e2e/**"]`. Without it, Vitest's default `include` also matches `*.spec.ts`, so `pnpm test:run` would try to run the Playwright specs (which `import "@playwright/test"`) and crash. Verified: `test:run` stays **25 tests / 11 files**.
 > - **Config style** — `vitest.config.ts` / `playwright.config.ts` were rewritten semicolon-free to satisfy the repo's `.prettierrc` (`semi: false`); the scaffolder had left them with semicolons.
 > - **Scan-spec robustness** — matches `/scanning/i` (no trailing-ellipsis char to get wrong) and the anchored `/^scan$/i` so the idle Scan button is never confused with the "Scanning…" label.
-> - Gates green alongside E2E: `tsc` 0 · `eslint src e2e --max-warnings 0` 0 · `prettier --check` clean · `build` 8 routes.
+> - Gates green alongside E2E: `tsc` 0 · `eslint src e2e --max-warnings 0` 0 · `prettier --check` clean **on the files this phase touched** · `build` 8 routes. *(Repo-wide, 44 older files from Phases 6–7 still use semicolons and fail `prettier --check src` — the one-shot sweep is **Phase 11.1a**.)*
+
+---
+
+## Phase 10.5 — CR-001 migration (contract · chips · sliders · in-place detail)
+
+**Goal:** land the seven decisions in **[CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)** in the prototype, so that Phase 11 polishes the *final* screens rather than screens that are about to change.
+**Why this phase exists, and why here:** the decisions were taken on 30 Jul 2026, after Phase 10 shipped. Two of them (the `Source` enum, the profile weight vector) change the **contract**, and one (in-place finding detail) changes the **dashboard layout**. Doing this before Phase 11 is deliberate: polishing a slide-over you are about to delete is wasted work, and the contract change is 4 lines now versus a data migration later. Phases 0–10 are complete and are **not** revisited — everything below is additive or a contained replacement.
+
+**Read first:** CR-001 in full. Every "why" below is one sentence from it.
+
+### 10.5.1 — The contract (do this first; everything else follows from it)
+
+In `src/lib/types/index.ts`:
+
+```ts
+// was: "rule" | "satd" | "security" | "ml-risk"
+export type Source = "rule" | "satd"
+```
+
+*Why:* `security` duplicated `category` exactly (security patterns run inside the rule engine, so such a finding was always both), and `ml-risk` was unreachable — the risk model writes `FileScore.riskScore`, never a `Finding`. **SRS FR-8.2.**
+
+```ts
+export interface ScoreProfile {
+  id: string
+  name: string
+  weights: {              // keyed by CATEGORY — matches the scoring formula
+    security: number
+    codeDesign: number
+    requirement: number   // new
+    documentation: number // new
+    test: number          // new
+  }                       // `satd` and `duplication` removed — wrong axis
+  trust: number           // `s` ∈ 0–1, default 0.5. Replaces `wMl`
+  isPreset: boolean
+}
+```
+
+*Why:* the old vector mixed axes — `satd` is a *source*, `duplication` is a *rule* — and omitted three real categories, so a `documentation` SATD finding had no weight. That was invisible while profiles were presets; it becomes a slider the user drags with no effect. **SRS FR-20.**
+
+### 10.5.2 — Fixtures and tests that reference the old enum
+
+| File | Change |
+|---|---|
+| `src/lib/mocks/fixtures.ts` | the finding with `source: "security"` → `source: "rule"` (its `category` is already `"security"`, which is now the only thing that marks it) |
+| `src/lib/mocks/fixtures.ts` | re-key the three `mockProfiles` to the **six** category weights + `trust` (values in CR-001 D-CR6, updated by D-CR12) |
+| `src/components/dashboard/refactor-first-list.test.tsx` | two fixture rows use `source: "security"` |
+
+`pnpm tsc` will find every remaining site for you — that is the contract doing its job.
+
+### 10.5.3 — Chips on the finding row
+
+- Row renders **category chip + severity chip**, and a **`SATD` chip only when `source === "satd"`**.
+- Rule rows get **no** source chip — `rule` is the default, and a chip on every row carries no information.
+- The severity chip renders the **stored** `finding.severity` through the existing colour token; the client makes no severity judgement of its own.
+
+*Why not put "SATD" in the severity chip:* severity is an ordinal scale (`critical > high > medium > low`). "SATD" is not comparable to any of those, so it breaks sorting and leaves `base_points` undefined. **SRS FR-15.**
+
+### 10.5.4 — Profiles page: presets + six sliders + Apply
+
+- Three **preset buttons** (Balanced / Security-first / Delivery-speed) that **seed** the sliders, plus **Reset to preset**.
+- **Six category sliders** clamped `0.1–3.0` — `security`, `code-design`, `defect`, `requirement`, `documentation`, `test` — and one **trust slider** `s` (`0–1`, default `0.5`) labelled at its ends — *"trust the rules" ←→ "trust the model"*. *(Six, not five: `defect` was added by CR-001 **D-CR12**.)*
+- Applying re-scores from stored findings; **never** triggers a scan.
+
+**Dragging sends nothing — an explicit Apply does the write.** The sliders are local `useState`; the page is *dirty* until Apply, which fires one mutation and then invalidates the health query:
+
+```ts
+// lib/api/client.ts — the one new endpoint (SRS FR-20, SAD §6.2)
+export function setActiveProfile(p: ProfileInput): Promise<ScoreProfile> {
+  return fetch(`${API_BASE}/api/profiles/active`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(p),            // the whole profile, not a delta
+  }).then(json<ScoreProfile>)
+}
+```
+
+```ts
+// the page: write, then re-read
+const apply = useMutation({
+  mutationFn: setActiveProfile,
+  onSuccess: (saved) => {
+    setDraft(saved)                                       // trust the server's clamp
+    qc.invalidateQueries({ queryKey: ["health"] })        // ← this is what re-scores the UI
+  },
+})
+```
+
+Three things to get right:
+
+- **`PUT`, whole body, no delta.** Re-sending the same profile is a no-op, so a retry after a dropped response can't half-apply. The client fires a dependent read straight after — that read must not race a partially-written profile.
+- **The health request does not change.** `GET /api/repos/:id/health?branch=…` carries **no** profile parameter; the backend resolves the active profile itself (`WORKSPACE.active_profile_id`). If you find yourself adding `?profile=` to a read, stop — that is the design the SAD §6.2 rejected.
+- **Seed the draft from `setDraft(saved)`, not from your own state.** The server clamps; rendering your pre-clamp value would show the user a number that isn't stored.
+
+Add the MSW handler alongside the existing `*/api/profiles` read:
+
+```ts
+http.put("*/api/profiles/active", async ({ request }) => {
+  const body = await request.json()
+  return HttpResponse.json(setMockActiveProfile(body))   // clamps + keeps it in the in-memory backend
+}),
+```
+
+Keep it in the same in-memory state as the scan machine so `resetMockBackend()` clears it between tests.
+
+*Why keep presets:* something must be the default for a new workspace, one click is what demonstrates *"same findings, different lens, no rescan"*, and six naked sliders is the SonarQube experience this product differentiates against (U-1, U-2).
+
+*Why an explicit Apply rather than auto-save on drag:* one drag crosses dozens of values — auto-saving writes and re-derives for each — and there would be no way to abandon an experiment. The dirty→applied transition is also what makes "same findings, different lens" *visible* rather than merely true. Label the button **Apply**, not Save: "Save" reads as "and now go do the work", which is exactly what this does not do.
+
+### 10.5.5 — In-place finding detail (the layout change)
+
+Replace the slide-over with **detail mode** inside `DashboardView`:
+
+| Region | Dashboard mode | Detail mode |
+|---|---|---|
+| Main | Overall Health card + trend chart | **Finding detail** (reuse the existing `FindingDetailPanel` component — only its container changes) |
+| Right | File tree | File tree, **auto-expanded + highlighting the finding's file** |
+| Bottom | list in full position | **Refactor-First list, condensed** — swap between findings without closing |
+
+Also:
+
+- Put the selected finding in the URL (`?finding=<fingerprint>`) so reload and the back button behave.
+- The tree must **expand ancestors and scroll the file into view**, not just tint it.
+- Keep it **view-only** — no Accept / Resolve / False-positive (those stay [v1.1]), and no snippet yet (build the region, fill it in v1.1).
+
+*Why now rather than later:* the backend does not exist yet and the test suite is small, so this is the cheapest moment this change will ever have. `DashboardView` already owns `selectedFinding` / `detailOpen` and the panel is already a tested standalone component.
+
+### 10.5.6 — Tests to update
+
+- `refactor-first-list.test.tsx` — the two `source` fixtures, plus a new case asserting the SATD chip appears **only** for SATD rows.
+- `finding-detail-panel.test.tsx` — still valid (the component is unchanged); add a container test for entering/leaving detail mode.
+- `e2e/dashboard.spec.ts` — the detail assertion changes from "slide-over opens" to "health card is replaced by finding detail, and the tree highlights the file".
+- New: a profiles E2E — pick a preset, drag a slider, press **Apply**, assert the list re-orders **and no scan is triggered** (route-assert that `**/api/repos/*/scan` is never hit, and that exactly one `PUT **/api/profiles/active` fired).
+- New: a profiles unit test — dragging alone issues **no** request; Apply issues one; an out-of-range value returned by the server overwrites the local draft.
+
+### Done when
+
+- [ ] `pnpm tsc` clean — no reference to `"security"`/`"ml-risk"` as a `Source`, none to `wMl`
+- [ ] A SATD row shows three chips; a rule row shows two
+- [ ] Profiles page: preset click seeds six sliders; reset works; dragging fires no request; **Apply** fires one `PUT /api/profiles/active` and the dashboard re-scores instantly
+- [ ] Selecting a finding swaps the region in place, highlights the file in the tree, and the list stays usable
+- [ ] Reload with `?finding=…` restores detail mode
+- [ ] All unit + E2E gates green
+
+> ⚠️ **Backend note, not frontend work:** `k` must be recalibrated (CR-001 D-CR5) and the critical-security pin (FR-24) must be implemented server-side now that a user can drag the security weight to 0.1. Neither is in this phase — but neither should be forgotten.
+
+---
+
+## Phase 10.6 — CR-002 migration (five categories · snake_case · real sign-in)
+
+**Added 12 Aug 2026.** Everything above this line is already built and is not being
+revisited. This phase lands the decisions taken *after* Phase 10.5 shipped — see
+[docs/NEXT_STEPS.md](../NEXT_STEPS.md) for the locked list.
+
+**Goal:** make the frontend agree with the backend that now exists, and stop
+hand-maintaining the contract.
+
+### 10.6.1 — The contract stops being hand-written
+
+`lib/types/index.ts` becomes **generated** from `docs/api/openapi.yaml`:
+
+```powershell
+pnpm add -D openapi-typescript
+pnpm exec openapi-typescript ../../docs/api/openapi.yaml -o src/lib/types/api.ts
+```
+
+Add it as a `pnpm gen:types` script and run it in CI. From here, a backend field
+change that the frontend has not absorbed is a **type error**, not a runtime surprise.
+This is the phase's single most valuable change — everything else below is a
+consequence of it.
+
+### 10.6.2 — snake_case on the wire
+
+The decision reversed: the wire is **snake_case**, matching the SRS field names, the
+database columns and Pydantic's default. Roughly **244 usages across 15 files**.
+
+```
+riskScore → risk_score      commitSha  → commit_sha      scannedAt → scanned_at
+debtScore → debt_score      lastCommitSha → last_commit_sha
+healthScore → health_score  isDefault  → is_default      findingCount → finding_count
+scanId → scan_id            repoId → repo_id             isPreset → is_preset
+```
+
+Do it as a mechanical rename **after** 10.6.1, so the generated types tell you when
+you have missed one. Fixtures, component tests and the Playwright specs all move too.
+
+### 10.6.3 — Five categories, not six
+
+`defect` is gone — SATDAUG has no `defect_debt` label.
+
+```ts
+export type Category =
+  | "code-design" | "requirement" | "documentation" | "test" | "security";
+```
+
+- the debt-type filter loses a chip
+- `ScoreProfile.weights` becomes exactly those five keys
+- **the profile is six numbers**: five weights + one trust slider
+- the Profiles page shows **five sliders**, not six
+- check `mockHealthReport.categoryBreakdown` for a `defect` slice
+
+### 10.6.4 — The `cancelled` scan phase
+
+```ts
+export type ScanPhase = "idle" | "queued" | "running" | "done" | "error" | "cancelled";
+```
+
+`idle` is now only the resting state *before* a scan. Stopping a running scan ends in
+`cancelled`, so a stopped scan is distinguishable from one that never ran. The Scan
+control needs a state for it, and the MSW handler's `stop` action must return
+`cancelled` rather than `idle`.
+
+### 10.6.5 — Real sign-in through Asgardeo
+
+The mocked "Sign in with GitHub" button goes away. Real OAuth is a **browser
+redirect**, not a `fetch()` — this is the one change MSW cannot mock, because the
+browser leaves the page.
+
+```
+GET  /api/auth/login      → 302 to Asgardeo   (a link, not a fetch)
+GET  /api/auth/callback   → 302 back, sets the session cookie
+GET  /api/auth/session    → { user } or 401   ← this one the client does call
+POST /api/auth/logout     → clears the session
+```
+
+- the login button becomes `<a href="/api/auth/login">`, never `signInWithGitHub()`
+- every `fetch` needs `credentials: "include"` so the cookie travels
+- a 401 from any endpoint means *redirect to login*, handled once in `lib/api/client.ts`
+- keep MSW for everything else; stub `GET /api/auth/session` to return a signed-in user
+  so dev and tests never leave the app
+
+> #### ⚠️ Do **not** install `@asgardeo/nextjs`
+>
+> An earlier attempt on `chamodh/backend` added the Asgardeo Next.js SDK — a
+> `proxy.ts` route matcher, an `<AsgardeoProvider>` in the root layout, and
+> `<SignInButton>` / `<SignOutButton>` components. **It has to be removed.** Two
+> reasons, and the second is the one that matters:
+>
+> 1. It moves the Backend-for-Frontend into Next.js, which is the opposite of locked
+>    decision 5. FastAPI is the BFF.
+> 2. It protected the **pages** and left the **API** open. Next.js redirected an
+>    unauthenticated visitor away from `/dashboard`, while
+>    `curl http://localhost:8000/api/projects` still returned that workspace's data.
+>    The screens looked secure; the data was not.
+>
+> With FastAPI as the BFF the frontend needs no identity library at all: signing in is
+> an `<a>`, signing out is one `POST`, and "am I signed in?" is
+> `GET /api/auth/session`. Removing the SDK is step 3a of
+> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+>
+> Files to clean: delete `apps/web/proxy.ts`; drop `<AsgardeoProvider>` from
+> `src/app/layout.tsx`; replace the buttons in `(auth)/login/page.tsx` and
+> `components/layout/app-rail.tsx`; remove `@asgardeo/nextjs` from `package.json`.
+
+### 10.6.6 — The error envelope
+
+Errors are now `{ detail, code, errors[] }`. Switch on `code`, never on the English
+text in `detail`:
+
+```ts
+if (err.code === "SCAN_ALREADY_RUNNING") { /* show the running scan */ }
+```
+
+`json<T>()` in `lib/api/client.ts` currently throws `new Error("409 Conflict")` and
+discards the body. Parse the envelope and throw a typed error instead.
+
+### 10.6.7 — Two missing endpoints
+
+Neither exists in `lib/api/client.ts` yet:
+
+- `POST /api/projects` — connect a repository by URL (FR-3). `connect-repo.tsx` has
+  the form but no call behind it.
+- `GET /api/profiles/active` — seeds the Profiles screen so the sliders open at the
+  values actually in force, rather than at a client-side guess.
+
+### Done when
+
+- [ ] `lib/types` is generated, and `pnpm gen:types` runs in CI
+- [ ] No camelCase field name survives anywhere in `src/` or `e2e/`
+- [ ] `Category` has five values; the Profiles page has five sliders and one trust slider
+- [ ] `cancelled` is a reachable, rendered scan state
+- [ ] Sign-in is a real redirect; `credentials: "include"` on every request; one 401 handler
+- [ ] `@asgardeo/nextjs` and `proxy.ts` are gone — the frontend holds no identity SDK
+- [ ] Errors carry `code`, and at least one component branches on it
+- [ ] `POST /api/projects` and `GET /api/profiles/active` are wired
+- [ ] All unit + E2E gates green
+
+> **Order matters:** 10.6.1 first. Generating the types before the rename means the
+> compiler finds every site for you; doing it after means finding them by hand.
 
 ---
 
 ## Phase 11 — Polish & Definition of Done
 
-**Goal:** raise every screen to a real standard.
-**Why this phase:** the prototype *is* the product, and a polished, low-noise UI is your whole pitch. A screen isn't "done" until it survives real conditions.
+**Goal:** take the working v1.0 slice from *"it demos"* to *"it looks and feels like a product"* — **without adding a single feature**.
 
-For each view, confirm the **Definition of Done** (from the plan §13):
-1. **Loading / empty / error states** — *why:* real data is slow, missing, or fails. Use shadcn `Skeleton` for loading; write a friendly empty state ("No repositories yet — connect one to see its health").
-2. **Responsive to laptop width** and **keyboard-navigable** with visible focus — *why:* accessibility + it'll be demoed on a laptop.
-3. **Readable contrast** on severity/heat-map colors — *why:* those colors carry meaning; they must be legible.
-4. **Component tests** exist for any logic; the **happy-path E2E is green**.
-5. **Reviewed** by your teammate.
+> **Scope note (30 Jul 2026):** Phase 11 now polishes **both** dashboard states — dashboard mode and the Phase 10.5 detail mode. When working through the checklists below, treat detail mode as a first-class view: it needs its own loading/empty/error handling, its own keyboard path (enter detail, move between findings, leave detail), and its own responsive behaviour at the 1280 px floor, where detail + tree + condensed list is the tightest layout in the product.
+**Why this phase:** Phases 6–10 optimised for *movement* — get the screens up, get data flowing, get the interactions wired. That always leaves the same residue: placeholder copy, states nobody has hit yet, mouse-only interactions, and colours that carry meaning but can't actually be read. Every one of those is invisible to **you** (you know where to click) and glaring to an **evaluator** (they don't). Polish is where you buy that back, and it's the cheapest phase per unit of perceived quality: nothing here is hard, it's just never *urgent* — so it needs its own phase or it silently never happens.
 
-**✅ Test / verify:** temporarily point one hook at an empty/erroring response (Playwright `page.route()` or an empty fixture) and confirm the UI shows the empty/error state, not a crash.
+**The Definition of Done for a view** (plan §13) is the yardstick for everything below:
+1. Renders from **contract-shaped** data (not hardcoded JSX). ✅ *already true since Phase 8*
+2. Handles **loading, empty, and error**. → **11.2**
+3. **Component tests** for any logic. → **11.9**
+4. **Responsive** to laptop width and **keyboard-navigable** with visible focus. → **11.6 / 11.7**
+5. **Reviewed** by the other person. → **11.10**
 
-**💾 Commit:** `git add -A` then `git commit -m "polish(web): loading/empty/error states + a11y pass"` → open a PR for review.
+---
+
+### 11.0 — Read first: the fence, the gap, and the audit
+
+#### The fence — what "polish" means here
+
+| ✅ In scope (v1.0, already built) | ❌ Out of scope (say no on purpose) |
+|---|---|
+| Login · Projects · Dashboard (top nav, branch, scan, Card A, Card B, Refactor-First list, finding detail, heat-map tree) | New features, or any v1.1/v2 field (finding actions, per-node Card B, private repos) |
+| **States** (loading / empty / error), **affordances** (can I tell it's clickable?), **legibility** (contrast, chart labels), **keyboard**, **responsive**, **copy** | Redesigns, a different component library, a "real" tree/virtualisation lib |
+| Repo hygiene that affects a fresh clone or a screenshot | Animation for its own sake; anything that changes `@/lib/types` |
+
+> **The test for "is this polish?"** If the change touches the **contract** (`src/lib/types`), it isn't polish — it's Phase 12+ work. If it changes what the user *can do*, it's a feature. If it changes how well they can *do what they already can*, it's polish.
+
+#### The honest gap — two v1.0 features are still placeholder pages
+
+The roadmap tags **Scan history** and **Scoring profiles** as **v1.0**, their mock endpoints already exist (`*/api/repos/:repoId/scans`, `*/api/profiles` in [handlers.ts](../../apps/web/src/lib/mocks/handlers.ts)), their fixtures exist (`mockScanHistory`, `mockProfiles`), and their API-client functions exist (`getScanHistory`, `getProfiles`) — but both pages are still a heading plus the word *"(Placeholder.)"*, reachable from the left rail. **A rail item that leads to the word "Placeholder" is worse than no rail item**, so this can't be ignored by a polish phase even though building them isn't polish.
+
+Pick one, now, and write the choice here:
+
+| Option | What it costs | When it's right |
+|---|---|---|
+| **A — Build them** (recommended) | ~2–3 h total: Scan History = a `Table` of `ScanSummary` + a "Load" button; Profiles = a radio/`Select` of `ScoreProfile` presets. Both are read-only over hooks you already know how to write (`useQuery` one-liners). | You want the v1.0 claim to be true, and the demo to survive a click on every rail item. |
+| **B — Ship them as honest "Coming soon"** | ~15 min: a proper empty state (icon + one line + a disabled control), rail badge `soon`, same treatment as Team's `v2`. | The deadline is this week and the demo script never clicks them. |
+| **C — Hide the rail items** | ~5 min, but the roadmap now over-claims v1.0. | Never, unless you also amend the roadmap. |
+
+Everything from **11.1** onward assumes you've picked A or B. *(If A: build them first, then run them through 11.2–11.9 like every other view.)*
+
+#### The audit — what's actually wrong today
+
+Found by reading the shipped code, not by guessing. **★★★** = an evaluator will see it in the first 60 seconds · **★★** = noticeably unfinished · **★** = finish-line detail.
+
+| # | Finding | Where | Fix in |
+|---|---|---|---|
+| A1 | Browser tab still reads **"Create Next App"** (title + description untouched) | [layout.tsx](../../apps/web/src/app/layout.tsx) ★★★ | 11.1 |
+| A2 | **44 files fail `prettier --check`** — Phase 6/7 files use semicolons, `.prettierrc.json` says `semi: false` | `src/**` ★★ | 11.1 |
+| A3 | No **`.env.example`** — a fresh clone has no `NEXT_PUBLIC_API_MOCKING`, so the app renders **no data at all** (known trap, flagged in Phase 8) | `apps/web/` ★★★ | 11.1 |
+| A4 | Dashboard **loading skeleton doesn't match the layout** it replaces → content jumps on arrival | [dashboard-view.tsx](../../apps/web/src/components/dashboard/dashboard-view.tsx) ★★ | 11.2 |
+| A5 | **Error states print raw HTTP** — an unknown repo shows *"Couldn't load this dashboard: 404 Not Found"*, and there's **no Retry** | dashboard-view · projects/page ★★★ | 11.2 |
+| A6 | **No empty states** for: zero findings, zero branches, empty history, empty tree | dashboard components ★★ | 11.2 |
+| A7 | **No `SidebarTrigger` anywhere** → below `md` the rail becomes a Sheet that **cannot be opened**, and there's no collapse affordance on desktop | [app-rail.tsx](../../apps/web/src/components/layout/app-rail.tsx) / [(app)/layout.tsx](<../../apps/web/src/app/(app)/layout.tsx>) ★★★ | 11.3 |
+| A8 | Rail **hardcodes `/dashboard/demo-repo`** → "Dashboard" jumps to a *different* repo than the one you're viewing | app-rail.tsx ★★★ | 11.3 |
+| A9 | **Account** footer button is a dead stub (looks pressable, does nothing) | app-rail.tsx ★★ | 11.3 |
+| A10 | Top nav shows the **repo id** (`demo-repo`) while Projects showed **`acme/acme-payments`** — the app calls the same thing two names | [dashboard-topnav.tsx](../../apps/web/src/components/layout/dashboard-topnav.tsx) ★★★ | 11.4 |
+| A11 | "Last analyzed **7/22/2026, 6:35:00 PM**" — an absolute machine timestamp where humans want *"2 hours ago"* | dashboard-topnav.tsx ★★ | 11.4 |
+| A12 | **Refactor-First rows are mouse-only** — `<TableRow onClick>` with no `tabIndex`/key handler → the core triage flow is unreachable by keyboard | [refactor-first-list.tsx](../../apps/web/src/components/dashboard/refactor-first-list.tsx) ★★★ | 11.6 |
+| A13 | The list **never says it's ranked** (no priority column, no count) — "Refactor **first**" is the product's whole thesis and the UI doesn't show the ordering | refactor-first-list.tsx ★★★ | 11.4 |
+| A14 | Heat map is a **3px left border** — the "red→amber→green at a glance" feature is nearly invisible, has **no legend**, and shows **no score** | [file-tree.tsx](../../apps/web/src/components/dashboard/file-tree/file-tree.tsx) ★★★ | 11.4 |
+| A15 | Clicking a tree file **with no finding does nothing, silently** | file-tree / dashboard-view ★★ | 11.4 |
+| A16 | Pie slices are `--chart-1…5`, which in this theme are **five shades of grey** (`oklch(… 0 0)`, zero chroma) + one red — the category breakdown is unreadable, and it has **no legend** | [overall-health-card.tsx](../../apps/web/src/components/dashboard/overall-health-card.tsx) ★★★ | 11.5 |
+| A17 | The **grade letter fails contrast**: `--health-good` on white = **2.30:1**, `--health-mid` = **2.13:1** (measured). The biggest number on the dashboard is unreadable for grades A/B/C | globals.css + overall-health-card ★★★ | 11.5 |
+| A18 | **Severity badges fail contrast** in light mode: `high` **2.79:1**, `medium` **2.13:1** (need 4.5:1 for text) | globals.css + badges ★★★ | 11.5 |
+| A19 | Severity/health tokens exist **only in `:root`** — `.dark` never redefines them, and **nothing ever adds the `.dark` class** (no `ThemeProvider`), so dark mode is dead code that would also be under-contrast if switched on | [globals.css](../../apps/web/src/app/globals.css) ★★ | 11.5 |
+| A20 | **Delta is colourless** — `▲ +3` and `▼ -4` render in the same muted grey, so good and bad news look identical | overall-health-card.tsx ★★ | 11.4 |
+| A21 | Card B: **area chart with a Recharts-default axis** and raw `2026-07-22` tick labels | [health-graph-card.tsx](../../apps/web/src/components/dashboard/health-graph-card.tsx) ★★ | 11.5 |
+| A22 | Scan progress is **not announced** (no `aria-live`), and `queued` renders as *"Scanning… 0%"* | [scan-control.tsx](../../apps/web/src/components/layout/scan-control.tsx) ★ | 11.8 |
+| A23 | **No per-route page titles** — every tab says the same thing | `src/app/**` ★ | 11.3 |
+| A24 | **No responsive check has ever been run** below `lg`; the tree column has no max-height, the 4-column table squeezes | dashboard grid ★★ | 11.7 |
+
+**How to work it:** top to bottom (11.1 unblocks the diffs, 11.2 is the biggest win), **one commit per sub-phase**, gates green before each commit. If you run out of time, everything ★★★ is the real floor — ★★/★ can slip to v1.1 without embarrassment.
+
+---
+
+### 11.1 — Repo hygiene first (≈30 min, and it makes every later diff readable)
+
+- *Why first:* formatting 44 files **in the middle** of a polish PR turns a 12-line behaviour change into a 900-line diff nobody can review. Do it alone, first, as its own commit.
+
+**a) Format the whole repo (A2).** One command, one commit, zero behaviour change:
+```powershell
+pnpm exec prettier --write src e2e *.ts *.mjs *.json
+pnpm exec prettier --check src e2e   # must print "All matched files use Prettier code style!"
+```
+Then run `pnpm test:run` — formatting can't break tests, but prove it.
+
+**b) Commit a `.env.example` (A3).** *Why:* `.env.local` is gitignored, so a teammate or examiner cloning the repo gets a silent, dataless app — the single most likely way your demo fails on someone else's machine.
+```dotenv
+# apps/web/.env.example — copy to .env.local (`cp .env.example .env.local`)
+# Turns on the MSW mock backend. Phase 12 sets this to "disabled" and points at the real API.
+NEXT_PUBLIC_API_MOCKING=enabled
+# NEXT_PUBLIC_API_BASE_URL=          # empty in dev (same-origin); the real API URL at go-live
+```
+Add the two-line setup step to [apps/web/README.md](../../apps/web/README.md).
+
+**c) Fix the metadata (A1).** *Why:* it's on every screenshot and every browser tab in your demo video.
+```tsx
+export const metadata: Metadata = {
+  title: { default: "Code Sage AI", template: "%s · Code Sage AI" },
+  description: "Find the technical debt worth fixing first.",
+}
+```
+*(The `template` is what makes per-route titles in 11.3 read as "Dashboard · Code Sage AI".)*
+
+**d) Add a one-command gate.** *Why:* you'll run it a dozen times this phase, and it becomes the PR checklist.
+```json
+"verify": "tsc --noEmit && eslint src e2e --max-warnings 0 && prettier --check src e2e && vitest run && next build"
+```
+
+**✅ Micro-check:** `pnpm verify` is green · a fresh `git clone` + `cp .env.example .env.local` + `pnpm i && pnpm dev` shows data.
+**💾** `git commit -m "chore(web): format repo, .env.example, app metadata"`
+
+---
+
+### 11.2 — Loading, empty, error: the state trio (DoD #2) ← *the highest-value sub-phase*
+
+- *Why this one matters most:* your app currently has exactly **one** path that looks designed — the happy one. Every other path is a grey box, a raw HTTP string, or nothing at all. Users hit those paths constantly (slow network, a repo with no findings, a typo'd URL), and an unhandled state is what makes a prototype *feel* like a prototype.
+
+**The matrix — fill in every cell.** Current state as shipped:
+
+| View | Loading | Empty | Error |
+|---|---|---|---|
+| Projects | ✅ 2 skeleton bars | ✅ copy exists in `ProjectList` | ⚠️ raw `error.message`, no retry |
+| Dashboard | ⚠️ 3 blocks, wrong shape (A4) | ❌ none | ⚠️ raw `error.message`, no retry (A5) |
+| Refactor-First list | n/a (parent) | ⚠️ "No findings for this filter." — same copy for *filtered-to-nothing* and *clean repo* | n/a |
+| File tree | n/a (parent) | ❌ none | n/a |
+| Card B (history) | n/a | ❌ none — an empty `history[]` renders an empty plot area | n/a |
+| Branch `Select` | ⚠️ shows a blank trigger while branches load | ❌ none | ❌ silent |
+| Scan History / Profiles | — | — | — *(depends on 11.0's A/B choice)* |
+
+**a) Skeletons must be the *shape* of what's coming (A4).** *Why:* a skeleton's job is to reserve the layout so content doesn't jump when it lands. Three stacked bars replaced by a two-column grid is worse than no skeleton. Mirror the real grid:
+```tsx
+// dashboard-view.tsx — the loading branch
+<div className="flex h-full flex-col">
+  <Skeleton className="h-14 w-full rounded-none" />            {/* top nav */}
+  <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2">
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Skeleton className="h-40" /><Skeleton className="h-40" />   {/* Card A + Card B */}
+      </div>
+      <Skeleton className="h-64" />                             {/* the list */}
+    </div>
+    <Skeleton className="h-96" />                               {/* the tree */}
+  </div>
+</div>
+```
+Extract it as `dashboard-skeleton.tsx` so the shape lives next to the layout it mirrors and can't drift.
+
+**b) Empty states say what to *do*, and distinguish "none" from "none matching".** *Why:* "No findings" after filtering is a dead end; "No findings" on a clean repo is a **win** and should look like one. Copy to use:
+
+| Situation | Copy | Treatment |
+|---|---|---|
+| Repo has **zero findings** | **"Nothing to refactor first."** · "This snapshot found no debt above the profile's thresholds." | success tone — a check icon, not a sad grey box |
+| **Filter** matches nothing | "No `<category>` findings in this scan." + a **Clear filter** button | keep the filter visible; give the way out |
+| No branches yet | "No branches found for this repository." | disable the `Select`, don't render an empty popover |
+| Empty `history[]` | "Trend appears after your second scan." | inside Card B, in place of the plot |
+| Empty `tree[]` | "No files analysed in this snapshot." | inside the tree panel |
+| No projects | ✅ already good — but upgrade from bare text to a bordered empty card with the **Connect** field focused |
+
+**c) Errors: human copy + a Retry that actually refetches (A5).** *Why:* `404 Not Found` is a status line, not a message — and an error state with no way out forces a full page reload. Two edits:
+
+*First*, teach `useQuery` to retry. Keep the React-19 rule intact (**state is only ever set in a callback, never in the effect body** — Phase 8's `set-state-in-effect` lesson): add an attempt counter and fold it into the settle token so a retry correctly re-enters `loading`:
+```ts
+// hooks/use-query.ts
+const [attempt, setAttempt] = useState(0)
+const token = `${key}#${attempt}`                 // the settle token, not just the key
+
+useEffect(() => {
+  let alive = true
+  fetcher()
+    .then((data) => { if (alive) setResult({ key: token, data }) })
+    .catch((error: unknown) => { if (alive) setResult({ key: token, error: error instanceof Error ? error : new Error(String(error)) }) })
+  return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [token])
+
+const settled = result?.key === token
+const refetch = useCallback(() => setAttempt((n) => n + 1), [])
+return { data: settled ? result?.data : undefined, error: settled ? result?.error : undefined, loading: !settled, refetch }
+```
+⚠️ **Why the token, not the key:** retrying with the *same* key would leave `settled === true`, so the old error would stay on screen and `loading` would never flip. The attempt counter is what makes a retry a *new* request in the hook's eyes.
+
+*Second*, one shared error component so every view fails the same way:
+```tsx
+// components/ui/error-state.tsx — title + human message + Retry
+<ErrorState
+  title="Couldn’t load this dashboard"
+  message={humanError(error)}          // 404 → "We couldn’t find that repository."
+  onRetry={refetch}
+/>
+```
+Map the statuses you can actually produce (`404` → not found · `5xx` → "The analysis service isn't responding." · network → "You appear to be offline.") and keep `error.message` only in a `<details>` or a `console.error`, never as the headline.
+
+**✅ Micro-check:** in DevTools set the network to *Offline* and reload `/projects` → error card + **Retry**; go back Online, click Retry → data. Visit `/dashboard/nope` → "We couldn't find that repository," not `404 Not Found`.
+**💾** `git commit -m "polish(web): loading/empty/error states + retry"`
+
+---
+
+### 11.3 — The shell: make navigation trustworthy
+
+**a) Mount a `SidebarTrigger` (A7) — this is a functional bug, not a nicety.** *Why:* `SidebarProvider` swaps the rail for a `Sheet` under `md`, and a Sheet only opens from a trigger. Today there is none anywhere in `src/`, so **on a narrow window the app has no navigation at all**. Put one in the top-left of each screen's header (dashboard top nav + a shared page header for Projects/History/Profiles):
+```tsx
+<SidebarTrigger className="-ml-1" />
+<Separator orientation="vertical" className="mr-2 h-4" />
+```
+*(`Ctrl/⌘+B` already works from `SidebarProvider` — a keyboard shortcut nobody can discover is not an affordance.)*
+
+**b) Point the rail at the repo you're actually looking at (A8).** *Why:* clicking "Dashboard" while viewing `web-store` currently teleports you to `demo-repo` — the app contradicting itself. Derive the id from the URL, fall back to the last one you opened:
+```tsx
+// app-rail.tsx — usePathname() is already there
+const match = /^\/dashboard\/([^/]+)/.exec(pathname)
+const repoId = match?.[1] ?? lastRepoId ?? null       // lastRepoId: localStorage, written by Projects → Select
+```
+Then: when `repoId` is `null`, render **Dashboard** and **Scan History** as *disabled* items with the tooltip *"Select a project first"* — an honest disabled state beats a link to a fake repo. (Persisting `lastRepoId` is ~6 lines: write it in the Projects `onSelect`, read it in a tiny `useLastRepo()` hook. Guard `localStorage` behind `typeof window !== "undefined"`.)
+
+**c) Kill or wire the Account stub (A9).** *Why:* a control that looks pressable and does nothing teaches users not to trust the other controls. Cheapest honest version — `pnpm dlx shadcn@latest add dropdown-menu`, then a menu with the (mock) user name, a disabled "Settings (v1.1)", and a **Sign out** that clears `lastRepoId` and routes to `/login`. Sign-out is genuinely v1.0-appropriate: it's the mirror of the mocked sign-in you already shipped in 9.7.
+
+**d) Per-route titles (A23).** *Why:* browser tabs, history, and bookmarks all read the title; with the 11.1 `template` each page needs one line. Server pages get `export const metadata = { title: "Projects" }`. The two **client** pages (`projects`, and any client dashboard shell) can't export metadata — either move the `"use client"` boundary down into a child component (preferred) or leave the default title for those routes and note it.
+
+**✅ Micro-check:** resize to 700px wide → the trigger appears, opens the rail, links work · open `/dashboard/web-store` → the rail's Dashboard item stays on `web-store` · open `/projects` in a fresh profile → Dashboard/History are disabled with a tooltip.
+**💾** `git commit -m "polish(web): sidebar trigger, context-aware rail, account menu"`
+
+---
+
+### 11.4 — The dashboard: the screen your demo lives on
+
+- *Why the biggest section:* this is the screen in your slides, your report, and your viva. Everything here is small; together it's the difference between "student project" and "product".
+
+**a) One name for the repo (A10).** *Why:* Projects says `acme/acme-payments`, the dashboard says `demo-repo`. Same object, two identities — it reads as a bug even when it isn't. Add a two-line hook and pass the real name:
+```ts
+// hooks/use-repo.ts — Phase 12 swaps this for GET /api/repos/:id
+export function useRepo(repoId: string) {
+  const { data, loading, error } = useProjects()
+  return { data: data?.find((r) => r.id === repoId), loading, error }
+}
+```
+Then `repoName={repo ? `${repo.owner}/${repo.name}` : repoId}`, with the repo's GitHub `url` as an external link icon beside it. Keep `repoId` as the fallback so an unknown id still renders.
+
+**b) Time humans can read (A11).** *Why:* "3 hours ago" answers *is this fresh?* at a glance; the exact timestamp is the follow-up question, so it belongs in a tooltip.
+```ts
+// lib/utils.ts — pass an explicit locale so tests and SSR are deterministic
+export function relativeTime(iso: string, now = Date.now()) {
+  const mins = Math.round((new Date(iso).getTime() - now) / 60_000)
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
+  if (Math.abs(mins) < 60) return rtf.format(mins, "minute")
+  const hours = Math.round(mins / 60)
+  return Math.abs(hours) < 24 ? rtf.format(hours, "hour") : rtf.format(Math.round(hours / 24), "day")
+}
+```
+Render `<time dateTime={scannedAt} title={new Date(scannedAt).toLocaleString()}>Last analyzed {relativeTime(scannedAt)}</time>`, and make the short SHA a link to the commit (`repo.url + "/commit/" + sha`) with a copy-on-click.
+⚠️ Locale-dependent formatting is a classic hydration mismatch; this is safe **only because** the top nav renders after a client-side fetch. Keep it that way, or pin the locale as above.
+
+**c) Make the top nav sticky** (`sticky top-0 z-10 bg-background/95 backdrop-blur`). *Why:* the branch selector, Scan button and freshness stamp are the controls people reach for *after* scrolling the findings list.
+
+**d) Card A — the delta must have a direction (A20).** *Why:* +3 and −4 are opposite news rendered identically. Colour it with the health tokens (which 11.5 fixes for contrast) and swap the text glyphs for `TrendingUp`/`TrendingDown` icons:
+```tsx
+const up = delta >= 0
+<p className="mt-1 flex items-center gap-1 text-sm" style={{ color: up ? healthColor(100) : healthColor(0) }}>
+  {up ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}
+  {up ? `+${delta}` : delta} <span className="text-muted-foreground">vs. previous scan</span>
+</p>
+```
+Also: give the score a hierarchy — the **grade** is the headline (already `text-4xl`), `72/100` is support, and the "2 red issues" description should be **clickable**, filtering the list to critical+high. That one interaction turns a static number into a triage entry point and costs ~5 lines (lift the list's `category` filter into `dashboard-view`, or add a `severityFilter` prop).
+
+**e) The Refactor-First list must show that it's *ranked* (A13).** *Why:* "fix these first, in this order" is the entire product thesis, and the UI currently presents an unordered-looking table. Cheap, high-signal changes:
+- Heading → **"Refactor first"** + a count badge (`6`), and a subtitle: *"Ranked by severity × risk — start at the top."*
+- Add a leading **`#`** column (1, 2, 3…) — the rank is the point.
+- Add `title={f.reason}` to the truncated Reason cell so the full text is reachable on hover (the tooltip is the relief for truncation).
+- Show `f.source` (`rule` / `satd` / `security`) as a small muted chip — it's already in the contract and it's how you prove three detectors are live.
+- Cap the list (`slice(0, 10)`) with a **"Show all N"** toggle. *Why:* an infinite table buries the ranking; ten is a to-do list.
+- Keyboard access for rows is **11.6 (A12)** — do it there, it's an a11y fix, not a cosmetic one.
+
+**f) The heat-map tree has to actually look like a heat map (A14).** *Why:* a 3px left border is the entire visual payload of a headline feature. Three changes, in order of value:
+1. **Tint the row**, don't just edge it. Extend the helper to return a translucent step, keeping the 1-arg form byte-identical so the Phase 7 utils test stays green:
+   ```ts
+   export function healthColor(score: number, alpha?: number) {
+     const v = score < 40 ? "--health-bad" : score < 70 ? "--health-mid" : "--health-good"
+     return alpha === undefined ? `hsl(var(${v}))` : `hsl(var(${v}) / ${alpha})`
+   }
+   ```
+   Then `style={{ background: healthColor(node.healthScore, 0.12), borderLeft: `3px solid ${colorFor(node)}` }}`.
+2. **Show the number.** A right-aligned `tabular-nums` score (and the risk badge for files over the threshold) — *why:* colour alone is not an encoding a colour-blind reader can use, and it's also just faster to compare 41 vs 39 than two ambers.
+3. **Add a legend** above the tree: `● <40 critical · ● 40–69 needs work · ● 70+ healthy`. *Why:* a heat map without a scale is decoration. Put the same three bands in a `Tooltip` on each row with `debtScore` / `riskScore`.
+
+**g) Clicking a file with no finding must say so (A15).** *Why:* silence reads as "broken". Either `toast("No findings in this file — it's clean.")`, or open the panel in a "file summary" mode showing the node's `healthScore`/`debtScore` (better: it makes every tree row clickable-and-useful). Pick one; don't leave the silent branch.
+
+**h) Finding panel — the last mile.** Add a **Copy path** button (`file:line` — the thing a developer actually wants to paste into their editor), the parent file's health context, and `SheetTitle`/`SheetDescription` that are real sentences. Verify focus returns to the triggering row on close (Radix does this automatically **only** if the trigger is a focusable element — which is exactly what A12 fixes).
+
+**✅ Micro-check:** the dashboard reads top-to-bottom as *how bad · trending which way · fix this first · where it lives* — and a stranger can name the worst file in 10 seconds.
+**💾** `git commit -m "polish(web): dashboard hierarchy, ranked list, heat-map legibility"`
+
+---
+
+### 11.5 — Colour that carries meaning (DoD: readable contrast)
+
+- *Why its own sub-phase:* in this app colour **is data** — severity, grade, and the heat map all encode meaning in hue. Measured against the shipped tokens, three of those encodings are currently unreadable, and the fourth is grey. These are numbers, not opinions: check them, don't eyeball them.
+
+**a) The measurements (A17, A18)** — current tokens as text on the white card (WCAG AA needs **4.5:1** for text, **3:1** for large text and graphic objects):
+
+| Token | Hex | On white | Verdict |
+|---|---|---|---|
+| `--severity-critical` / `--health-bad` | `#dc2828` | **4.80** | ✅ |
+| `--severity-high` | `#f97415` | **2.79** | ❌ badge text unreadable |
+| `--severity-medium` / `--health-mid` | `#f59f0a` | **2.13** | ❌ fails even the 3:1 graphics floor |
+| `--severity-low` | `#65758b` | **4.70** | ✅ |
+| `--health-good` | `#21c45d` | **2.30** | ❌ — and this is the **grade letter for A and B**, the largest element on the dashboard |
+
+**b) The fix: per-mode steps, same token names.** *Why this shape:* `severityColor()` / `healthColor()` build `hsl(var(--token))` strings, so if you keep the `H S% L%` triplet convention **no TypeScript changes at all** — only `globals.css`. Verified values (all ≥4.5:1 in their own mode):
+
+```css
+:root {                            /* light — darker steps so text passes */
+  --severity-critical: 0 74% 42%;  /* 6.4:1 */
+  --severity-high:     21 90% 35%; /* 6.1:1 */
+  --severity-medium:   26 90% 33%; /* 6.0:1 */
+  --severity-low:      215 19% 35%;/* 7.5:1 */
+  --health-bad:  0 74% 42%;        /* 6.4:1 */
+  --health-mid:  26 90% 33%;       /* 6.0:1 */
+  --health-good: 142 72% 29%;      /* 5.1:1 */
+}
+.dark {                            /* dark — the current bright steps are right HERE */
+  --severity-critical: 0 91% 71%;  /* 6.5:1 on #171717 */
+  --severity-high:     27 96% 61%; /* 7.9:1 */
+  --severity-medium:   43 96% 56%; /* 10.6:1 */
+  --severity-low:      215 20% 65%;/* 7.0:1 */
+  --health-bad:  0 91% 71%;
+  --health-mid:  43 96% 56%;
+  --health-good: 142 69% 58%;      /* 10.3:1 */
+}
+```
+⚠️ **Residual to accept knowingly:** in light mode `high` and `medium` sit close in hue/lightness. That is tolerable **only because** every severity is always rendered with its **word** ("high", "medium") beside the colour — a status colour must never carry meaning alone. Don't drop the label to save space.
+
+**c) Decide dark mode, don't leave it half-built (A19).** Today `.dark` exists but nothing ever applies the class, and `next-themes` is installed but has no provider — so it's dead code that a reviewer will read as unfinished.
+
+| Option | Work | Verdict |
+|---|---|---|
+| **Wire it** — `ThemeProvider` in the root layout + a toggle in the rail footer + the `.dark` tokens above | ~45 min | **Recommended.** Evaluators toggle dark mode; `sonner` already calls `useTheme()`; the tokens are half-written. High perceived polish per minute. |
+| **Park it** — delete the `.dark` block (or move it to a `// v1.1` comment) and ship light-only | ~10 min | Honest and defensible if time is gone. |
+
+If you wire it: add `suppressHydrationWarning` to `<html>`, use `attribute="class" defaultTheme="system"`, and **re-check the tree tint and chart colours in both modes** — that's the whole point of doing it properly.
+
+**d) Give the category pie real, distinguishable colours (A16).** *Why:* `--chart-1…5` in this theme are `oklch(… 0 0)` — **zero chroma, i.e. five greys** — and the `security` slice borrows `--severity-critical`, which makes a *status* colour impersonate a *series* colour (a category isn't "critical"; a finding is). Add proper categorical tokens. These five are validated colourblind-safe against both surfaces (worst adjacent CVD ΔE 9.1 light / 8.4 dark, normal-vision floor 19.6 / 19.3 — all checks pass):
+
+```css
+:root {
+  --category-code-design:  #2a78d6;   /* blue    */
+  --category-security:     #eb6834;   /* orange  */
+  --category-test:         #1baf7a;   /* aqua    */
+  --category-documentation:#eda100;   /* yellow  */
+  --category-requirement:  #e87ba4;   /* magenta */
+}
+.dark {
+  --category-code-design:  #3987e5;
+  --category-security:     #d95926;
+  --category-test:         #199e70;
+  --category-documentation:#c98500;
+  --category-requirement:  #d55181;
+}
+```
+Rules that come with them: **the hue follows the category, never its rank** — filtering the list must not repaint the pie; and because three of the light steps sit under 3:1 on white, the slices need **visible labels** (see below), not colour alone.
+
+**e) Fix the pie's form, not just its colours.** A 96px donut with five unlabelled slices is a decoration. Two acceptable v1.0 shapes:
+- **Keep the donut, make it legible** (smallest diff): grow it, add a **legend with counts** beside it (`● security 1 · ● code-design 3 · …`) — the legend doubles as the direct labels *and* as the table-view twin for screen readers — put the **total** in the donut's centre, and give the `ChartContainer` an `aria-label` summarising the split.
+- **Or switch to one horizontal stacked bar** (recommended if you have 20 minutes): part-to-whole with long category names reads better as a stacked bar than as a pie, labels fit, and it shrinks gracefully on a laptop. Use a 2px surface gap between segments rather than borders.
+
+Either way: ≤6 segments (you have 5 ✅), no slice smaller than ~3% without folding into "Other", and **never** a second y-axis or a rainbow ramp anywhere in this app.
+
+**f) Card B, the trend (A21).**
+- **Format the ticks**: `2026-07-22` → `Jul 22`. Raw ISO on an axis is machine output.
+- **Fix the baseline honestly**: a *filled area* implies a zero baseline, so keep `domain={[0, 100]}` if you keep the area. If the 68→75 movement then looks too flat to read, **switch the mark to a line** and zoom the domain — a line may start above zero, a filled area may not. Pick one; don't zoom an area.
+- Add the **y-axis** (currently absent) or direct-label the last point with its score. A trend with no vertical reference isn't quantitative.
+- One series needs **no legend** — the card title names it. Keep the tooltip (already there).
+- Guard the empty case (11.2b).
+
+**✅ Micro-check:** open the dashboard, screenshot it, and open the screenshot in a colour-blindness simulator (or Chrome DevTools → Rendering → *Emulate vision deficiencies* → deuteranopia). Every finding is still identifiable **by its label**, the pie's slices are still tellable apart, and the grade letter is comfortably readable.
+**💾** `git commit -m "polish(web): accessible severity/health tokens + category palette + chart legibility"`
+
+---
+
+### 11.6 — Keyboard & screen readers (DoD #4, first half)
+
+- *Why:* "keyboard-navigable with visible focus" is in your own DoD, it's a marking criterion in most module rubrics, and one of the gaps (**A12**) means the product's central flow — *click a finding, read why* — is impossible without a mouse.
+
+**a) Fix the Refactor-First rows (A12) — the real bug.** *Why the pattern below:* shadcn's `Table` has no built-in row-activation pattern, and changing a `<tr>`'s ARIA role breaks table semantics. A focusable row with an explicit key handler is the pragmatic, widely-used compromise:
+```tsx
+<TableRow
+  key={f.fingerprint}
+  tabIndex={0}
+  aria-selected={f.fingerprint === selectedFingerprint}
+  onClick={() => onSelect?.(f)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(f) }
+  }}
+  className="focus-visible:ring-ring cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
+>
+```
+*(The alternative — a real `<button>` filling the first cell — is more correct ARIA but splits the click target across the row. Note whichever you chose in a comment so the reviewer knows it was a decision.)*
+
+**b) The tree (A14 follow-on).** Rows are already `<button>`s, so Tab works. Add the cheap 90%: `aria-expanded={isOpen}` on folders, an `aria-label` that includes the score (`"src/payments — health 38, needs work"`), and confirm the focus ring survives the new background tint (a custom `background` can visually swallow a ring — test it, don't assume). The full `role="tree"` + roving-tabindex + arrow-key pattern is real work; label it **v1.1** in a comment rather than half-doing it.
+
+**c) Sweep the rest:**
+- Every **icon-only** button gets an `aria-label` (sidebar trigger, copy-path, external link).
+- The branch `Select` already has `aria-label="Branch"` ✅ — check the filter `Select` and the tabs too.
+- `Sheet` gets a real `SheetTitle` (Radix warns if a dialog has no accessible name — check the console; the warning is easy to miss).
+- Add a **skip link** (`Skip to content`) as the first focusable element in `(app)/layout.tsx` — one anchor, and it makes the rail skippable on every page.
+- Confirm `:focus-visible` is visible on **tinted** surfaces (tree rows, selected table row, severity badges).
+
+**d) Walk it.** Unplug the mouse. From `/login`: Tab to Sign in → Enter → Tab through the rail → into the top nav → change branch with arrows + Enter → Tab into the list → Enter on a row → the panel opens and **focus moves into it** → Esc closes and **focus returns to the row**. Every stop must be visible. Fix whatever you can't reach.
+
+**✅ Micro-check:** the full journey above with the mouse unplugged, plus zero Radix a11y warnings in the console.
+**💾** `git commit -m "polish(web): keyboard access + aria labels"`
+
+---
+
+### 11.7 — Responsive to laptop width (DoD #4, second half)
+
+- *Why:* it will be demoed on a laptop, possibly mirrored to a projector at 1024×768, and marked from a screenshot. Nobody has ever resized this app.
+
+**Test at five widths** (Chrome DevTools device toolbar) and fix what breaks:
+
+| Width | What to check |
+|---|---|
+| **1440** | The dashboard doesn't sprawl — cap content (`max-w-[1600px] mx-auto`) so the two columns don't stretch to absurd line lengths |
+| **1280** (the demo default) | Everything above the fold: top nav on one line, both cards side by side, ~8 findings visible without scrolling |
+| **1024** | `lg:` breakpoint boundary — the tree drops below the list. Give the tree panel `max-h-[70vh] overflow-auto` so it can't push the page to infinity (A24), and drop the table's least useful column (Type — it's in the detail panel) |
+| **768** | The rail is a Sheet → **11.3a's trigger is mandatory here**; the top nav wraps to two lines (it already has `flex-wrap` ✅); the 4-column table needs `overflow-x-auto` on its wrapper |
+| **390** (phone) | Not a v1.0 target — but it must not *break*. Acceptable outcome: everything stacks, nothing overflows horizontally, no element is unreachable |
+
+Lock it in with a viewport project in `playwright.config.ts` so a regression fails the build:
+```ts
+projects: [
+  { name: "laptop", use: { viewport: { width: 1280, height: 800 } } },
+  { name: "narrow", use: { viewport: { width: 900,  height: 800 } } },
+]
+```
+
+**✅ Micro-check:** at every width above, `document.body.scrollWidth <= window.innerWidth` (no horizontal page scroll — wide tables scroll *inside their own container*).
+**💾** `git commit -m "polish(web): responsive pass 1440→768"`
+
+---
+
+### 11.8 — Feedback & motion (the last 5%)
+
+- *Why:* these are the details that make an interface feel *alive* rather than *correct*. Cheap, and all of them are already half-there.
+
+- **Announce the scan (A22).** Wrap the progress text in `<div role="status" aria-live="polite">` so a screen reader hears "Scanning 34%". Render `queued` as an indeterminate state ("Queued…", no percentage) instead of "Scanning… 0%", and **disable the Scan button while running** so a double-click can't start a second scan.
+- **Route transitions.** Add `src/app/(app)/loading.tsx` — Next shows it during navigation, which removes the dead pause between Projects and Dashboard.
+- **Refetch without a flash.** Switching branch currently clears the data and re-shows the skeleton. *That was deliberate* (Phase 8 chose it to avoid showing stale numbers), but the smoother pattern is **hold the previous render at reduced opacity** (`aria-busy` + `opacity-60`) so nothing jumps. Either is defensible — pick one, write down why, and know the branch E2E stays green either way.
+- **Respect `prefers-reduced-motion`.** One rule in `globals.css` disabling animations/transitions under the media query. *Why:* it's a WCAG requirement and it's four lines.
+- **Toast discipline.** You already toast on scan complete/stopped/failed ✅. Do **not** add a toast for "scan started" — the button state already says that, and a toast for something already visible is noise. Toasts are for things that finish while the user's attention is elsewhere.
+
+**💾** `git commit -m "polish(web): scan announcements, route loading, reduced motion"`
+
+---
+
+### 11.9 — Tests that lock the polish in (DoD #3)
+
+- *Why:* every state you added in 11.2 is invisible on the happy path, so nothing stops a future edit from deleting it. A state with no test is a state you'll lose.
+
+**Component tests (Vitest) — one per new behaviour:**
+- `error-state` renders the message and calls `onRetry` on click.
+- `use-query` — **retry refetches**: fail the first request via `server.use(...)`, assert the error, call `refetch()`, assert data. *(This is the highest-value new test in the phase: it covers the trickiest code you wrote.)*
+- `refactor-first-list` — **Enter on a focused row fires `onSelect`** (the A12 regression net), the empty-filter state shows *Clear filter*, and the clean-repo empty state differs from the filtered one.
+- `overall-health-card` — a negative delta renders the down icon and the bad-health colour.
+- `file-tree` — a row exposes its score in the accessible name; the legend renders.
+- `relativeTime` — a pure unit test with a frozen `now` (that's what the injectable second argument is for).
+
+**E2E (Playwright) — the states you can only see by breaking the network.** This is the guide's original "point a hook at an empty/erroring response" check, made permanent:
+```ts
+test("dashboard shows a friendly error and recovers on retry", async ({ page }) => {
+  await page.route("**/api/repos/*/health*", (r) => r.fulfill({ status: 500, body: "{}" }))
+  await page.goto("/dashboard/demo-repo")
+  await expect(page.getByText(/couldn’t load/i)).toBeVisible()
+
+  await page.unroute("**/api/repos/*/health*")          // heal the network
+  await page.getByRole("button", { name: /retry/i }).click()
+  await expect(page.getByText("Code Health")).toBeVisible()
+})
+
+test("empty projects list invites you to connect one", async ({ page }) => {
+  await page.route("**/api/projects", (r) => r.fulfill({ status: 200, body: "[]" }))
+  await page.goto("/projects")
+  await expect(page.getByText(/connect one to see its health/i)).toBeVisible()
+})
+```
+Add one **keyboard-only** E2E (`page.keyboard.press("Tab"/"Enter")` through sign-in → project → finding) — it's the cheapest possible guard on A12 and it doubles as evidence for the accessibility section of your report.
+
+⚠️ Keep the three Phase 10 journeys **green and unchanged**. If a polish edit breaks one of them, the polish changed behaviour — that's the signal, so investigate before you edit the selector.
+
+**💾** `git commit -m "test(web): states, retry, keyboard journey"`
+
+---
+
+### 11.10 — Review & sign-off (DoD #5)
+
+- *Why:* the last DoD item is the one that's actually skipped. Make it mechanical: paste this table into the PR and tick it per view — it's also the evidence trail for the "quality" section of your report.
+
+| View | Loading | Empty | Error+Retry | Keyboard | 1280 & 900 | Contrast | Tests |
+|---|---|---|---|---|---|---|---|
+| Login | ☐ | n/a | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Projects | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Dashboard — top nav | ☐ | n/a | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Dashboard — Card A | ☐ | ☐ | n/a | ☐ | ☐ | ☐ | ☐ |
+| Dashboard — Card B | ☐ | ☐ | n/a | ☐ | ☐ | ☐ | ☐ |
+| Dashboard — list | ☐ | ☐ | n/a | ☐ | ☐ | ☐ | ☐ |
+| Dashboard — tree | ☐ | ☐ | n/a | ☐ | ☐ | ☐ | ☐ |
+| Finding panel | n/a | n/a | n/a | ☐ | ☐ | ☐ | ☐ |
+| Scan History · Profiles | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+
+**Reviewer's job (your teammate):** don't read the diff first — **run it**. Do the demo script below on their own machine from a clean clone. Anything that surprises them is a finding, because the examiner will be a stranger too.
+
+---
+
+**✅ Test / verify — the whole phase**
+
+*The gates:*
+```powershell
+pnpm verify        # tsc + eslint --max-warnings 0 + prettier --check + vitest run + next build
+pnpm test:e2e      # all Playwright journeys, incl. the new state + keyboard specs
+```
+
+*The demo script (do it end to end, mouse-free once):*
+1. Fresh clone → `cp .env.example .env.local` → `pnpm i` → `pnpm dev` → data appears.
+2. `/login` → **Sign in with GitHub** → Projects (real names, health hints).
+3. Select `acme-payments` → dashboard: the grade is readable at a glance, the delta is coloured, the pie is legible with a legend, the tree is visibly a heat map with a scale.
+4. **Scan** → live % + announced progress → complete toast → **Stop** mid-scan on a second run.
+5. Switch branch → numbers re-scope with no layout jump.
+6. Click the top finding (and the same finding from the tree) → the panel explains *why*, and **Copy path** works.
+7. Break it on purpose: DevTools → Offline → reload → friendly error → back Online → **Retry** → recovered.
+8. Resize 1440 → 1280 → 1024 → 768: nothing overflows, the rail is reachable at every width.
+
+**💾 Commits:** one per sub-phase (11.1 → 11.10), then open **one PR** titled `polish(web): v1.0 Definition of Done` linking the audit table — small commits, one review.
+
+> **What this phase deliberately does NOT do:** add features, touch `@/lib/types`, swap any library, or "improve" the mock data. If you catch yourself editing `fixtures.ts` to make a screen look better, stop — either the component can't handle real data (a bug, fix the component) or you're building a feature (v1.1).
 
 ---
 
