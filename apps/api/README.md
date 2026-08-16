@@ -84,6 +84,41 @@ Asgardeo console; `.env.example` documents every value. `/api/auth/login`,
 `/api/auth/callback` and `/api/healthz` are the **only** unauthenticated routes —
 everything else returns `401` without a valid cookie.
 
+### Watching a scan — `scripts/trigger_scan.py`
+
+A development tool, not part of the service and imported by nothing. It enqueues one
+attempt and follows it to a terminal phase:
+
+```bash
+python scripts/trigger_scan.py <attempt_id> --workspace <workspace_id>
+python scripts/trigger_scan.py <attempt_id> --workspace <workspace_id> --watch
+```
+
+```
+attempt  6f1c…   commit a1e6e5e   phase queued
+enqueued codesage.scan
+  queued      0%
+  running    35%
+  running    80%
+  done      100%
+
+done after 41.7s
+```
+
+Three things it shows that are easy to get wrong when reading the code:
+
+- **It takes an attempt id, not a repository URL.** `POST /api/repos/{repo_id}/scan`
+  creates the ANALYSIS_ATTEMPT row; the worker carries it out. A scan is never
+  "analyse this URL" — which is what makes a cancelled attempt structurally unable
+  to produce a snapshot (locked decision 9).
+- **Phase comes from PostgreSQL, percent from Redis, neither from Celery.**
+  `tasks/app.py` sets `backend=None`: a scan's outcome is the attempt row and its
+  snapshot, not a task return value. `result.ready()` and `result.state` have
+  nothing to read here.
+- **`--workspace` is required** because ANALYSIS_ATTEMPT sits behind RLS. A caller
+  from the wrong workspace gets the same answer as one asking for a row that never
+  existed — running the script by hand earns no exemption.
+
 ## Tests
 
 ```bash
@@ -91,6 +126,11 @@ pytest tests/unit          # no database, no broker — pure functions
 pytest tests/integration   # real PostgreSQL via testcontainers
 lint-imports               # the architecture contracts
 ```
+
+**Testing Celery tasks: set `task_always_eager=True`** and the task runs inline, in
+the calling process, with no broker and no worker — so a pipeline test is an ordinary
+unit test. This came from Nathasha's work on `feature/setup-celery-redis` and is the
+right pattern to reuse here.
 
 The database suite follows a red-green-refactor workflow:
 
