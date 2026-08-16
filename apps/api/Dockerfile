@@ -26,13 +26,22 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ── CK ──────────────────────────────────────────────────────────────────────
+# CK is a Java program, not a pip package, so it is not in requirements.txt and
+# cannot be. The jar is not committed either — it is ~10 MB of build output that
+# does not belong in git history — so it is fetched once into `vendor/` and
+# copied in here. See apps/api/vendor/README.md.
+#
+# The whole directory is copied rather than one named file, so the image still
+# builds on a machine that has not fetched the jar yet. Only the worker needs
+# it, and only once the scan pipeline stops being stubs; the API container runs
+# perfectly well without it.
+#
 # TEAM TODO: pin an exact CK release and record the same version string on
 # AnalysisEngineVersion.ck_version, so REL-10's "same revision, consistent results"
 # claim is actually checkable. A floating version silently invalidates historical
 # comparisons.
-ARG CK_VERSION=0.7.0
 ENV CODESAGE_CK_JAR=/opt/ck/ck.jar
-COPY vendor/ck-${CK_VERSION}-jar-with-dependencies.jar ${CODESAGE_CK_JAR}
+COPY vendor/ /opt/ck/
 
 WORKDIR /app
 

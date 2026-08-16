@@ -1,0 +1,11 @@
+{
+  // Point the editor and every new terminal at the API's virtual environment.
+  // Without this, VS Code picks the system Python — which has none of this
+  // project's packages installed — and reports "fastapi is not installed" on a
+  // machine where it plainly is.
+  "python.defaultInterpreterPath": "${workspaceFolder}/apps/api/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["apps/api/tests"],
+  "python.analysis.extraPaths": ["${workspaceFolder}/apps/api/src"]
+}
