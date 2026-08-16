@@ -101,6 +101,23 @@ def test_wire_names_are_snake_case() -> None:
     }
 
 
+def test_a_provider_that_shares_nothing_still_produces_a_session() -> None:
+    """A GitHub account can keep its email private and never set a display name.
+
+    That person is still signed in — identity is the Asgardeo subject, not the
+    profile around it. If this shape demanded an email, the sign-in would succeed
+    and then `GET /api/auth/session` would 500 on its own response model, which is
+    the most confusing possible way to fail.
+    """
+    bare = SessionOut(user_id="u", workspace_id="w")
+    assert bare.email is None
+    assert bare.name is None
+    assert bare.avatar_url is None
+
+    required = set(SessionOut.model_json_schema()["required"])
+    assert required == {"user_id", "workspace_id"}
+
+
 def test_no_shape_leaks_camel_case() -> None:
     """One sweep over the whole generated document, so a new shape added later
     cannot quietly reintroduce camelCase."""
