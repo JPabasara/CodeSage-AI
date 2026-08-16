@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import copy
 import re
+import zipfile
 
 from docx.oxml.ns import qn
 
@@ -239,6 +240,115 @@ def insert_paragraphs_before(paragraph, blocks: list[tuple[str, str | None]]):
     for text, style in blocks[1:]:
         anchor = insert_paragraph_after(anchor, text, style)
     return anchor
+
+
+def patch_header_text(path: str, subs: list[tuple[str, str]],
+                      pattern: str = r"word/header\d*\.xml") -> int:
+    """Substitute visible text inside header/footer parts, on the raw XML.
+
+    python-docx cannot do this safely: merely *reading* `section.header` creates an
+    empty definition and breaks inheritance from the template. So the part is
+    rewritten in the zip instead.
+
+    ⚠️ The substitution is applied **only inside `<w:t>` elements**, never to the
+    whole file. A blanket string replace over header XML looks harmless and is not:
+    replacing "1.0" with "1.1" to bump a version number also rewrites the XML
+    declaration to `<?xml version="1.1"?>`, and Word refuses to open a document
+    whose parts claim XML 1.1. lxml accepts it, so the damage survives every check
+    short of opening the file in Word.
+
+    Returns the number of parts changed.
+    """
+    with zipfile.ZipFile(path) as archive:
+        items = {name: archive.read(name) for name in archive.namelist()}
+
+    changed = 0
+    for name in items:
+        if not re.match(pattern, name):
+            continue
+        xml = items[name].decode("utf8")
+
+        def substitute(match: "re.Match[str]") -> str:
+            text = match.group(2)
+            for old, new in subs:
+                text = text.replace(old, new)
+            return f"{match.group(1)}{text}{match.group(3)}"
+
+        patched = re.sub(r"(<w:t(?:\s[^>]*)?>)(.*?)(</w:t>)", substitute, xml,
+                         flags=re.DOTALL)
+        if patched != xml:
+            items[name] = patched.encode("utf8")
+            changed += 1
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, blob in items.items():
+            archive.writestr(name, blob)
+    return changed
+
+
+def verify_docx(path: str) -> None:
+    """Fail loudly if the file is not something Word will open.
+
+    Written after a bad header patch produced a document that passed every other
+    check - the zip CRCs were fine and python-docx opened it happily - and still
+    could not be opened in Word. Each assertion below corresponds to a way that
+    happened.
+    """
+    from lxml import etree
+
+    with zipfile.ZipFile(path) as archive:
+        bad = archive.testzip()
+        if bad is not None:
+            raise AssertionError(f"corrupt zip entry: {bad}")
+
+        names = archive.namelist()
+        for required in ("[Content_Types].xml", "word/document.xml"):
+            if required not in names:
+                raise AssertionError(f"missing required part: {required}")
+
+        for name in names:
+            if not name.endswith(".xml") and not name.endswith(".rels"):
+                continue
+            blob = archive.read(name)
+
+            # Word parses XML 1.0 only. lxml will happily accept 1.1, so this has
+            # to be checked on the raw bytes rather than after parsing.
+            head = blob[:200].decode("utf8", "ignore")
+            if "<?xml" in head and 'version="1.0"' not in head \
+                    and "version='1.0'" not in head:
+                declaration = head.split("?>")[0] + "?>"
+                raise AssertionError(
+                    f"{name}: XML declaration is not version 1.0 - Word will "
+                    f"refuse to open this file.\n    {declaration}"
+                )
+
+            try:
+                etree.fromstring(blob)
+            except etree.XMLSyntaxError as error:
+                raise AssertionError(f"{name}: malformed XML - {error}") from error
+
+        # Every part must have a declared content type, by extension or by name.
+        # python-docx rewrites `Default` extension rules into per-part `Override`
+        # rules when it saves, which is equivalent - unless one gets dropped, and
+        # then Word reports the same unhelpful "error trying to open the file".
+        types_ns = "{http://schemas.openxmlformats.org/package/2006/content-types}"
+        root = etree.fromstring(archive.read("[Content_Types].xml"))
+        defaults = {e.get("Extension").lower()
+                    for e in root if e.tag == f"{types_ns}Default"}
+        overrides = {e.get("PartName").lstrip("/")
+                     for e in root if e.tag == f"{types_ns}Override"}
+
+        uncovered = [
+            name for name in names
+            if name != "[Content_Types].xml" and not name.endswith("/")
+            and name.rsplit(".", 1)[-1].lower() not in defaults
+            and name not in overrides
+        ]
+        if uncovered:
+            raise AssertionError(
+                "parts with no declared content type (Word will refuse the file): "
+                + ", ".join(uncovered)
+            )
 
 
 def revise(doc, rows: list[tuple[str, str, str, str]]) -> None:

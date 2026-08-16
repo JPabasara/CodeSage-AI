@@ -34,10 +34,8 @@ What v1.1 changes:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sys
-import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -52,9 +50,11 @@ from _docx_patch import (  # noqa: E402
     insert_paragraphs_before,
     insert_rows,
     must_replace,
+    patch_header_text,
     replace_text,
     row_index,
     set_row,
+    verify_docx,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -767,31 +767,14 @@ doc.save(OUT)
 # ══════════════════════════════════════════════════════════════════════════════
 # 18. Header: version and document identifier
 # ══════════════════════════════════════════════════════════════════════════════
-def patch_parts(path: str, subs: list[tuple[str, str]], pattern: str) -> int:
-    with zipfile.ZipFile(path) as zf:
-        items = {n: zf.read(n) for n in zf.namelist()}
-    hits = 0
-    for name in items:
-        if not re.match(pattern, name):
-            continue
-        text = items[name].decode("utf8")
-        before = text
-        for old, new in subs:
-            text = text.replace(old, new)
-        if text != before:
-            items[name] = text.encode("utf8")
-            hits += 1
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, blob in items.items():
-            zf.writestr(name, blob)
-    return hits
-
-
-note("header version + doc id", patch_parts(OUT, [
+note("header version + doc id", patch_header_text(OUT, [
     ("CS3203-G16-SAD-v1.0", "CS3203-G16-SAD-v1.1"),
     ("1.0", "1.1"),
     ("09/08/2026", "15/08/2026"),
-], r"word/header\d*\.xml"))
+]))
+
+# The file is only finished once it is something Word will actually open.
+verify_docx(OUT)
 
 print(f"SAD v1.1 written to {OUT}")
 for line in changes:
