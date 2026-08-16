@@ -68,6 +68,8 @@ strict = true
 # SAD, and none of them is visible to a reviewer reading a single file.
 [tool.importlinter]
 root_package = "codesage_api"
+include_external_packages = true
+
 
 # SAD G4 / SRS SP-11: ScoringEngine is a PURE function. It must be unit-testable
 # against the TC-11 fixture with no database, no broker and no web framework

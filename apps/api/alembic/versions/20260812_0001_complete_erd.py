@@ -19,7 +19,12 @@ down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-
+# Every table below gets "you only see your own workspace's rows".
+#
+# `session` is deliberately NOT here. It is the table that tells us which
+# workspace the caller belongs to, so it cannot be filtered by the workspace it
+# has not told us yet. It holds no tenant data — only a pointer to a tenant —
+# and its rows are found by an unguessable random id.
 DIRECT_POLICIES = {
     "workspace": "id = app_current_workspace_id()",
     "membership": "workspace_id = app_current_workspace_id()",
