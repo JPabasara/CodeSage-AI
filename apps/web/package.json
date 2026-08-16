@@ -11,8 +11,9 @@
     "test:run": "vitest run",
     "test:e2e": "playwright test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
-
+    "format:check": "prettier --check .",
+    "gen:types": "openapi-typescript ../../docs/api/openapi.yaml -o src/lib/types/api.ts",
+    "gen:types:check": "openapi-typescript ../../docs/api/openapi.yaml"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -43,6 +44,7 @@
     "eslint-config-next": "16.2.10",
     "jsdom": "^29.1.1",
     "msw": "^2.15.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.5",
     "tailwindcss": "^4",
     "typescript": "^5",
