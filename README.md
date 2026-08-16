@@ -20,7 +20,8 @@ docs/
 ├── Diagrams/UMLs/              # draw.io sources for every figure in the SAD
 ├── Change Requests/            # accepted changes to the deliverables, with rationale
 │   └── CR-001_2026-07-30_scoring-model-and-finding-ux.md
-├── Templates/                  # course templates + the scripts that build the deliverables
+├── Templates/                  # the blank course templates (inputs only)
+├── tools/                      # the scripts that build the deliverables — see its README
 └── Project Management & Planning/
     ├── frontend_build_stepbystep.md   # the execution recipe (phase by phase)
     ├── frontend_prototype_plan.md     # architecture & design decisions
