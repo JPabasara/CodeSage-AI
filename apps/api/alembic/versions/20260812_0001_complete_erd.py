@@ -67,6 +67,23 @@ def upgrade() -> None:
         "CREATE FUNCTION app_current_workspace_id() RETURNS uuid LANGUAGE sql STABLE "
         "AS $$ SELECT NULLIF(current_setting('app.current_workspace_id', true), '')::uuid $$"
     )
+
+    # Sign-in has a chicken-and-egg problem: to bind a workspace we must first
+    # look one up, but the MEMBERSHIP table that holds the answer is itself
+    # filtered by the workspace we do not have yet.
+    #
+    # SECURITY DEFINER runs this function as its owner instead of as the caller,
+    # so it sees past the policy. It is the ONLY thing in the system that does,
+    # and it is deliberately narrow: one argument, one answer, no table exposed.
+    # EXECUTE is revoked from everyone and granted only to the application role.
+    op.execute(
+        "CREATE FUNCTION app_workspace_for_user(p_user_id uuid) RETURNS uuid "
+        "LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp "
+        "AS $$ SELECT workspace_id FROM membership "
+        "WHERE user_id = p_user_id AND status = 'active' LIMIT 1 $$"
+    )
+    op.execute("REVOKE EXECUTE ON FUNCTION app_workspace_for_user(uuid) FROM PUBLIC")
+    op.execute("GRANT EXECUTE ON FUNCTION app_workspace_for_user(uuid) TO codesage_app")
     for table_name, predicate in {**DIRECT_POLICIES, **DESCENDANT_POLICIES}.items():
         op.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY')
         op.execute(f'ALTER TABLE "{table_name}" FORCE ROW LEVEL SECURITY')
@@ -101,6 +118,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     for table_name in reversed([*DIRECT_POLICIES, *DESCENDANT_POLICIES]):
         op.execute(f'DROP POLICY IF EXISTS tenant_isolation ON "{table_name}"')
+    op.execute("DROP FUNCTION IF EXISTS app_workspace_for_user(uuid)")
     op.execute("DROP FUNCTION IF EXISTS app_current_workspace_id()")
     bind = op.get_bind()
     enum_types: dict[str, Enum] = {}
