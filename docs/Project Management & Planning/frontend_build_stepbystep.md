@@ -1247,6 +1247,150 @@ Also:
 
 ---
 
+## Phase 10.6 — CR-002 migration (five categories · snake_case · real sign-in)
+
+**Added 12 Aug 2026.** Everything above this line is already built and is not being
+revisited. This phase lands the decisions taken *after* Phase 10.5 shipped — see
+[docs/NEXT_STEPS.md](../NEXT_STEPS.md) for the locked list.
+
+**Goal:** make the frontend agree with the backend that now exists, and stop
+hand-maintaining the contract.
+
+### 10.6.1 — The contract stops being hand-written
+
+`lib/types/index.ts` becomes **generated** from `docs/api/openapi.yaml`:
+
+```powershell
+pnpm add -D openapi-typescript
+pnpm exec openapi-typescript ../../docs/api/openapi.yaml -o src/lib/types/api.ts
+```
+
+Add it as a `pnpm gen:types` script and run it in CI. From here, a backend field
+change that the frontend has not absorbed is a **type error**, not a runtime surprise.
+This is the phase's single most valuable change — everything else below is a
+consequence of it.
+
+### 10.6.2 — snake_case on the wire
+
+The decision reversed: the wire is **snake_case**, matching the SRS field names, the
+database columns and Pydantic's default. Roughly **244 usages across 15 files**.
+
+```
+riskScore → risk_score      commitSha  → commit_sha      scannedAt → scanned_at
+debtScore → debt_score      lastCommitSha → last_commit_sha
+healthScore → health_score  isDefault  → is_default      findingCount → finding_count
+scanId → scan_id            repoId → repo_id             isPreset → is_preset
+```
+
+Do it as a mechanical rename **after** 10.6.1, so the generated types tell you when
+you have missed one. Fixtures, component tests and the Playwright specs all move too.
+
+### 10.6.3 — Five categories, not six
+
+`defect` is gone — SATDAUG has no `defect_debt` label.
+
+```ts
+export type Category =
+  | "code-design" | "requirement" | "documentation" | "test" | "security";
+```
+
+- the debt-type filter loses a chip
+- `ScoreProfile.weights` becomes exactly those five keys
+- **the profile is six numbers**: five weights + one trust slider
+- the Profiles page shows **five sliders**, not six
+- check `mockHealthReport.categoryBreakdown` for a `defect` slice
+
+### 10.6.4 — The `cancelled` scan phase
+
+```ts
+export type ScanPhase = "idle" | "queued" | "running" | "done" | "error" | "cancelled";
+```
+
+`idle` is now only the resting state *before* a scan. Stopping a running scan ends in
+`cancelled`, so a stopped scan is distinguishable from one that never ran. The Scan
+control needs a state for it, and the MSW handler's `stop` action must return
+`cancelled` rather than `idle`.
+
+### 10.6.5 — Real sign-in through Asgardeo
+
+The mocked "Sign in with GitHub" button goes away. Real OAuth is a **browser
+redirect**, not a `fetch()` — this is the one change MSW cannot mock, because the
+browser leaves the page.
+
+```
+GET  /api/auth/login      → 302 to Asgardeo   (a link, not a fetch)
+GET  /api/auth/callback   → 302 back, sets the session cookie
+GET  /api/auth/session    → { user } or 401   ← this one the client does call
+POST /api/auth/logout     → clears the session
+```
+
+- the login button becomes `<a href="/api/auth/login">`, never `signInWithGitHub()`
+- every `fetch` needs `credentials: "include"` so the cookie travels
+- a 401 from any endpoint means *redirect to login*, handled once in `lib/api/client.ts`
+- keep MSW for everything else; stub `GET /api/auth/session` to return a signed-in user
+  so dev and tests never leave the app
+
+> #### ⚠️ Do **not** install `@asgardeo/nextjs`
+>
+> An earlier attempt on `chamodh/backend` added the Asgardeo Next.js SDK — a
+> `proxy.ts` route matcher, an `<AsgardeoProvider>` in the root layout, and
+> `<SignInButton>` / `<SignOutButton>` components. **It has to be removed.** Two
+> reasons, and the second is the one that matters:
+>
+> 1. It moves the Backend-for-Frontend into Next.js, which is the opposite of locked
+>    decision 5. FastAPI is the BFF.
+> 2. It protected the **pages** and left the **API** open. Next.js redirected an
+>    unauthenticated visitor away from `/dashboard`, while
+>    `curl http://localhost:8000/api/projects` still returned that workspace's data.
+>    The screens looked secure; the data was not.
+>
+> With FastAPI as the BFF the frontend needs no identity library at all: signing in is
+> an `<a>`, signing out is one `POST`, and "am I signed in?" is
+> `GET /api/auth/session`. Removing the SDK is step 3a of
+> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+>
+> Files to clean: delete `apps/web/proxy.ts`; drop `<AsgardeoProvider>` from
+> `src/app/layout.tsx`; replace the buttons in `(auth)/login/page.tsx` and
+> `components/layout/app-rail.tsx`; remove `@asgardeo/nextjs` from `package.json`.
+
+### 10.6.6 — The error envelope
+
+Errors are now `{ detail, code, errors[] }`. Switch on `code`, never on the English
+text in `detail`:
+
+```ts
+if (err.code === "SCAN_ALREADY_RUNNING") { /* show the running scan */ }
+```
+
+`json<T>()` in `lib/api/client.ts` currently throws `new Error("409 Conflict")` and
+discards the body. Parse the envelope and throw a typed error instead.
+
+### 10.6.7 — Two missing endpoints
+
+Neither exists in `lib/api/client.ts` yet:
+
+- `POST /api/projects` — connect a repository by URL (FR-3). `connect-repo.tsx` has
+  the form but no call behind it.
+- `GET /api/profiles/active` — seeds the Profiles screen so the sliders open at the
+  values actually in force, rather than at a client-side guess.
+
+### Done when
+
+- [ ] `lib/types` is generated, and `pnpm gen:types` runs in CI
+- [ ] No camelCase field name survives anywhere in `src/` or `e2e/`
+- [ ] `Category` has five values; the Profiles page has five sliders and one trust slider
+- [ ] `cancelled` is a reachable, rendered scan state
+- [ ] Sign-in is a real redirect; `credentials: "include"` on every request; one 401 handler
+- [ ] `@asgardeo/nextjs` and `proxy.ts` are gone — the frontend holds no identity SDK
+- [ ] Errors carry `code`, and at least one component branches on it
+- [ ] `POST /api/projects` and `GET /api/profiles/active` are wired
+- [ ] All unit + E2E gates green
+
+> **Order matters:** 10.6.1 first. Generating the types before the rename means the
+> compiler finds every site for you; doing it after means finding them by hand.
+
+---
+
 ## Phase 11 — Polish & Definition of Done
 
 **Goal:** take the working v1.0 slice from *"it demos"* to *"it looks and feels like a product"* — **without adding a single feature**.

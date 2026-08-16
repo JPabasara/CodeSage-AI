@@ -5,6 +5,33 @@
 
 > **Status:** DRAFT for team review. The version split below is a recommendation; confirm it before we freeze the SRS. Open decisions are listed at the bottom.
 
+> ## Decision log — reversals after this document was written
+>
+> **D5 (debt-category taxonomy) was reopened and re-closed on 9 Aug 2026.**
+> It had closed at **six** categories including `defect`. The corpus then changed from
+> Li et al. to **SATDAUG**, which carries **no `defect_debt` label** — so ML-1 cannot
+> predict that category and it cannot exist in the product. The taxonomy is now
+> **five**: `code-design`, `requirement`, `documentation`, `test`, `security`.
+> Consequence: the scoring profile is **five weights + one trust slider = six numbers**.
+>
+> **Four further reversals (12 Aug 2026)**, all recorded in
+> [docs/NEXT_STEPS.md](../NEXT_STEPS.md):
+> Lizard → **CK** (Java only) · GHPR → **D'Ambros** · GitHub OAuth → **Asgardeo**
+> with GitHub federated · the wire is **snake_case**.
+>
+> **Settled 15 Aug 2026, in SRS v1.1 and SAD v1.1.** The identity change is bigger
+> than "use a different provider". The **API is the Backend-for-Frontend**: it runs
+> the whole sign-in exchange, keeps the identity tokens, and gives the browser only
+> an httpOnly session cookie. Sessions are server-side rows, so sign-out revokes
+> immediately. Four security requirements now state this (SRS SEC-17 to SEC-20), and
+> SAD §6.4 describes the exchange. A short-lived attempt to run Asgardeo inside
+> Next.js was **rejected**: it protected the pages while leaving the API open.
+>
+> All six reversals are recorded in the **v1.1 revision-history rows of the SRS and
+> SAD themselves**, which is where a marker will look. A separate CR-002 document is
+> therefore not being written — see "Not doing" in
+> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+
 ---
 
 ## 0. Two lenses — never confuse them
@@ -48,10 +75,10 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 - Top-nav right: **last analyzed time + last commit SHA**.
 
 **Dashboard — analysis pipeline** (backend)
-- **Extraction:** Lizard metrics + PyDriller process metrics + **source comments at the scanned SHA**.
+- **Extraction:** CK metrics (Java only) + PyDriller process metrics + **source comments at the scanned SHA**, extracted with Tree-sitter.
 - **Detection:** rule engine (code/design rules **+ security patterns**: hardcoded secrets, SQL concat, `eval`/`exec`) + **SATD classifier (ML-1)** + **risk model (ML-2)**. Every finding carries a `source` (`rule | satd` — the only two producers), a `category`, and a **`severity` assigned at detection**: from the rule register for rule findings, from the comment-marker table for SATD findings. No model and no user ever sets a severity.
 - **Scoring:** weighted-sum over `base_points × category_weight × source_trust × churn_factor × risk_factor`, with the **critical-security visibility floor**. The risk score enters as a bounded multiplier on the findings in that file — it adds no separate term and creates no debt on its own.
-- **Profiles:** three **presets** (Balanced default / Security-first / Delivery-speed) **plus custom sliders** — six category weights and one rules ↔ model trust slider, with reset-to-preset. *(Sliders pulled forward from v1.1 by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
+- **Profiles:** three **presets** (Balanced default / Security-first / Delivery-speed) **plus custom sliders** — five category weights and one rules ↔ model trust slider, with reset-to-preset. *(Sliders pulled forward from v1.1 by [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md).)*
 - **Extraction boundary (normative):** *git history enters the pipeline as aggregated numbers, never as text.* SATD runs on comments only; commit-message text, pull requests and issues are **not** scan inputs; stored snapshots are never model or scoring input. Full rationale in [backend engine §2.1 + §3.2.1](./code-sage_backend-analysis-engine.md) and SRS FR-7.1 / FR-9.1.
 
 **Dashboard — outputs** (all read from stored snapshots — the dashboard *computes nothing*)

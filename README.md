@@ -9,13 +9,19 @@ shows it all on a heat-map dashboard.
 ```
 apps/
 ├── web/     # Next.js frontend (App Router + shadcn). Runs on a mock backend today.
-├── api/     # FastAPI + Celery. One codebase, two entrypoints (API and worker).
-└── ml/      # SATD classifier (ML-1), risk model (ML-2), feature extraction, calibration
+├── api/     # FastAPI + Celery — the API process and the scan worker (one image, two commands)
+└── ml/      # ML inference service (:8001) + offline training code for ML-1 and ML-2
+infra/
+└── docker-compose.yml          # the six-container local stack
 docs/
-├── api/openapi.yaml            # ★ THE CONTRACT — normative for every wire shape
-├── Deliverables/               # SRS, SAD (formal documents)
+├── NEXT_STEPS.md               # ← the current working plan and the locked decisions
+├── api/openapi.yaml            # the REST contract. Frontend types are generated from it
+├── Deliverables/               # SRS and SAD — .docx is the deliverable, .md is a generated mirror
+├── Diagrams/UMLs/              # draw.io sources for every figure in the SAD
 ├── Change Requests/            # accepted changes to the deliverables, with rationale
 │   └── CR-001_2026-07-30_scoring-model-and-finding-ux.md
+├── Templates/                  # the blank course templates (inputs only)
+├── tools/                      # the scripts that build the deliverables — see its README
 └── Project Management & Planning/
     ├── frontend_build_stepbystep.md   # the execution recipe (phase by phase)
     ├── frontend_prototype_plan.md     # architecture & design decisions
@@ -24,18 +30,74 @@ docs/
     └── release-roadmap.md
 ```
 
-> **Change Requests.** Once a deliverable is written, a decision that contradicts it is recorded as a **CR** rather than silently edited in. Each CR states the problem, the decision and the *why*, then lists every document it touches — so a reader six months later can tell the difference between a considered change and a drifting document.
+> **Change Requests.** Once a deliverable is written, a decision that contradicts it is
+> recorded rather than silently edited in — as a CR, or as a revision-history row in the
+> deliverable itself. Each records the problem, the decision and the *why*, so a reader
+> six months later can tell a considered change from a drifting document.
 
-> **The contract is [`docs/api/openapi.yaml`](docs/api/openapi.yaml).** It is
-> normative for every shape crossing the browser/backend boundary — snake_case
-> throughout — and `apps/web/src/lib/types/api.ts` is generated from it by
-> `pnpm gen:types`. `pnpm gen:types:check` fails if the two drift apart.
->
-> The backend (`apps/api` — FastAPI + Celery + Redis + PostgreSQL) **is in the repo**:
-> the database models, migration, RLS policies, scoring formula and Asgardeo sign-in
-> are real, while most route handlers are still `raise NotImplementedError`. The
-> frontend runs against a **mock backend (MSW)**, so it is fully testable with no
-> backend running; wiring it to the real API is frontend Phase 10.6.
+> **Start here:** [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md) carries the decisions that are
+> locked and the order of work. Read it before changing anything — several decisions
+> were reversed after the deliverables were written.
+
+> **The contract generates the frontend's types.** `apps/web/src/lib/types/api.ts` is
+> produced from [`docs/api/openapi.yaml`](docs/api/openapi.yaml) by `pnpm gen:types`
+> and must never be hand-edited. `pnpm gen:types:check` regenerates in memory and
+> compares, so it exits 1 the moment the contract and the generated file drift apart.
+> Edit the contract, regenerate, commit both together. Not wired into CI yet — this
+> repo has no CI pipeline, so it is a command someone has to run.
+
+## Architecture
+
+**A modular monolith with an asynchronous worker and one extracted inference service.**
+Not microservices — the boundaries are drawn around *workload*, not around *domain*.
+
+```
+browser ──HTTPS──▶  api :8000  ──▶ postgres        worker ──HTTP──▶ ml :8001
+   │                    │                             │                 │
+   │                    └──▶ redis ──enqueue──────────┘            /models (mounted)
+   └── httpOnly session cookie
+```
+
+Six containers, but two are infrastructure (`postgres`, `redis`), one is the frontend
+(`web`), and **`api` and `worker` are the same image with a different command**. One
+codebase, one schema, one bounded context.
+
+| Style | Where it shows up |
+|---|---|
+| **Modular monolith** | `apps/api` — module boundaries enforced by import-linter contracts in CI, not by network calls |
+| **Layered** | presentation → application/domain → data; dependencies point one way |
+| **Pipe and filter** | the scan pipeline: `clone → extract → detect → finalize`, with the cancel check *between* stages |
+| **Competing consumers** | API produces one job to Redis; N workers compete. `--scale worker=3` meets PERF-07 with no code change |
+| **Write path / read path split** | the worker stores **facts**; the API derives **scores** on every read. This is what lets a profile change re-rank findings with no re-scan |
+| **Functional core** | `ScoringEngine` is a pure function — and an import contract makes it stay one |
+
+**Why not microservices.** One bounded context; snapshot finalization must be a single
+database transaction (a saga would have to invent a rollback for "half a snapshot",
+which FR-6 forbids); Row-Level Security needs one database to key tenant isolation on;
+and a dashboard read joins everything at once. Microservices would add failure modes
+and coordination cost without adding capability at this size.
+
+**Where `apps/ml` fits.** It is a stateless inference service — no database, no domain,
+model artifacts *mounted* rather than baked into the image so swapping a model is a
+restart, not a rebuild. It is extracted so that "ML unavailable" is a **degraded mode**
+the scan can handle rather than an exception that kills it. Training lives in
+`apps/ml/training/` and is never deployed.
+
+## Security
+
+The API is the **Backend-for-Frontend**. Sign-in runs through
+[Asgardeo](https://wso2.com/asgardeo/), which federates GitHub, and the exchange
+happens server-side:
+
+- the authorization-code exchange (with PKCE) is performed by `apps/api`, never by the browser
+- identity tokens stay in the backend — the browser receives only an **httpOnly, Secure,
+  SameSite=Lax** cookie holding an opaque session id
+- sessions are **server-side rows**, so signing out revokes access on the next request
+- every endpoint requires a session except sign-in start, sign-in callback and `/healthz`
+
+Adding Google or a username-and-password login later is a setting in the Asgardeo
+console, not new code — which matters because v2 brings viewers and stakeholders who
+may not have GitHub accounts. Details: SRS §3.5 (SEC-17 to SEC-20) and SAD §6.4.
 
 ## Getting started (frontend)
 
@@ -49,27 +111,33 @@ pnpm dev            # http://localhost:3000
 See **[apps/web/README.md](apps/web/README.md)** for full setup (including the
 required `.env.local`), the test/quality gates, and how the mock data layer works.
 
+## Getting started (full stack)
+
+```powershell
+cd infra
+docker compose up -d              # postgres · redis · ml · api · worker · web
+docker compose up --scale worker=3   # three concurrent scans (PERF-07)
+```
+
 ## Status
 
-Frontend build is progressing through the phased guide: the app shell, the typed
-contract, the static screens, the **mock backend (MSW) with live data hooks**, the
-interactive scan flow and the **Playwright end-to-end tests** are in place
-(Phases 0–10 complete).
+**Frontend** — Phases 0–10.5 complete: app shell, typed contract, static screens,
+**mock backend (MSW) with live data hooks**, the interactive scan flow, **Playwright
+end-to-end tests**, and the
+[CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)
+migration (`Source` narrowed to `rule | satd`, in-place finding detail, the profile
+sliders with an explicit **Apply**).
 
-Next up is **Phase 10.5**, which lands
-[CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md):
-the `Source` enum narrows to `rule | satd`, the scoring profile becomes **five**
-category weights plus a rules-versus-model trust slider — six numbers, applied with
-an explicit **Apply** button (one `PUT /api/profiles/active`, no re-scan) — and the
-finding detail moves from a slide-over into the dashboard itself.
+**Backend** — `apps/api` skeleton: routers, services, Alembic with the first migration,
+RLS policies and cross-tenant tests, the Celery app and the scan pipeline are laid out,
+with handler bodies still to come. `apps/ml` is the inference service.
 
-> CR-001 originally added a sixth category, `defect`. It was **dropped** by a later
-> decision: the corpus this project trains on is SATDAUG, which carries no
-> `defect_debt` label, so ML-1 cannot predict that category. Five categories —
-> `code-design`, `requirement`, `documentation`, `test`, `security`.
+**Documents** — SRS and SAD are at **v1.1**. The `.docx` under
+`docs/Deliverables/{SRS,SAD}/v1.1/` is the deliverable; the `.md` alongside is a
+generated mirror for reading and diffing in the repository.
 
-Then **Phase 10.6**, which regenerates the types from the contract and points the
-frontend at the real API, and Phase 11 (polish and Definition of Done).
+**Next** — frontend Phase 10.6 (snake_case rename, five categories, Asgardeo sign-in).
+Order of work in [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
 
 ## How the health score works
 
@@ -84,8 +152,8 @@ grade            = A ≥ 85 · B ≥ 70 · C ≥ 55 · D ≥ 40 · E < 40
 ```
 
 Every term above is either **measured** from the code (base points, churn, risk) or
-**set by the user** (the **five** category weights and the trust slider on the
-Profiles page — six numbers in total) — except **`k`**, which is chosen by us. It is worth understanding, because it
+**set by the user** (the five category weights and the trust slider on the Profiles
+page) — except **`k`**, which is chosen by us. It is worth understanding, because it
 is the one number that can quietly make every grade meaningless.
 
 **Scores are computed on every read, never stored.** The database keeps the findings;
@@ -122,16 +190,22 @@ says they belong. It is a sanity check against human judgement, not a fit.
 
 ⚠️ **`k` is currently uncalibrated.** [CR-001](docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)
 changed the scale of `file_debt` (an additive risk term was removed and a multiplier
-of up to 2.5× added), so any earlier value is invalid. Formula and calibration
-method: [the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md);
-model training and evaluation rules: [apps/ml/training/README.md](apps/ml/training/README.md).
+of up to 2.5× added), so any earlier value is invalid. Method and worked example:
+**[apps/ml/README.md](apps/ml/README.md)**; formula in
+[the analysis-engine doc §6](docs/Project%20Management%20&%20Planning/code-sage_backend-analysis-engine.md).
 
 ## Stack
 
-Next.js / TypeScript / Tailwind + shadcn (frontend) · FastAPI / Celery / Redis
-(backend) · Python / scikit-learn + **CK** + **Tree-sitter** + PyDriller
-(analysis/ML) · PostgreSQL (data) · Asgardeo (identity) · Docker.
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js · TypeScript · Tailwind + shadcn/ui |
+| API & worker | FastAPI · Celery · Redis (one image, two commands) |
+| Extraction | **CK** (Java metrics, run as a jar) · **Tree-sitter** (comments) · **PyDriller** (process metrics) |
+| ML | scikit-learn — **SATDAUG** trains ML-1, **D'Ambros** trains ML-2 |
+| Data | PostgreSQL with Row-Level Security |
+| Identity | **Asgardeo**, with GitHub federated inside it |
+| Deployment | Docker Compose — six containers |
 
-**CK, not Lizard.** CK is a Java jar the worker runs as a separate process, not a
-pip package — Java is the only language v1.0 analyses, and CK produces the
-class- and method-level metrics the risk model (ML-2) is trained on.
+**v1.0 analyses Java only**, because CK is a Java-only extractor. Widening that needs
+a Tree-sitter grammar, a per-language rule pack and a recalibration of `k` — it is not
+a config change.

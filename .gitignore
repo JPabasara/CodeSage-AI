@@ -38,11 +38,3 @@ out/
 # ── Editors and operating systems ───────────────────────────────────────────
 # Claude Code local config (per-machine permission approvals, etc.) — not shared.
 .claude/
-.DS_Store
-Thumbs.db
-
-# ── Third-party binaries ────────────────────────────────────────────────────
-# The CK jar is ~10 MB of another project's build output. Fetched, not committed
-# — see apps/api/vendor/README.md, which IS committed.
-apps/api/vendor/*
-!apps/api/vendor/README.md

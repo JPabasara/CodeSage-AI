@@ -5,6 +5,46 @@
 
 Why this file exists: the schema decisions were scattered across the SRS, the SAD and a chat thread. They are cheap to honour on day one and expensive to retrofit, so they live in one place the backend can read before writing the first migration.
 
+> ## ⚠️ Five schema changes since this was written (last updated 15 Aug 2026)
+>
+> **Status against `origin/chamodh/backend` @ `a1e6e5e`:** change 1 is done; changes 2,
+> 3 and 4 are **not** in the models yet; change 5 is done. The exact edits are step 3c
+> of [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+>
+> **1. `SCAN` is split into `AnalysisAttempt` + `Snapshot`.**
+> Every attempt gets a row, including cancelled and failed ones; only a *successful*
+> attempt produces a Snapshot. This makes "only a completed scan can be read back"
+> **structural** rather than a `WHERE phase = 'done'` convention that someone must
+> remember on every query. There is no `FILE_SCORE` table — per-file facts live in
+> `StaticMetric`, `ProcessMetric` and `BugRiskPrediction`.
+>
+> **2. Five debt categories, not six.** `defect` is gone (SATDAUG has no such label),
+> so `ScoringProfile` carries **five weights + `trust_s`**. There is no `defect_weight`
+> column, and `ScoringPreset` must carry the same five — including `security_weight`,
+> without which the Security-first preset cannot express itself.
+>
+> **3. Identity keys on Asgardeo, not GitHub.** Sign-in is Asgardeo with GitHub
+> federated inside it, so the stable identity is Asgardeo's `sub` claim:
+> `app_user.asgardeo_sub` is the unique key. `github_user_id` stays as display metadata
+> and loses its unique constraint. **Never key a user on email** — email changes,
+> `sub` does not.
+>
+> **4. A `session` table.** FastAPI is the BFF and holds a server-side session,
+> handing the browser an httpOnly cookie. Sign-out deletes the row, which is what makes
+> SEC-10 true. No token is ever stored. Columns: `id`, `user_id`, `workspace_id`,
+> `created_at`, `last_used_at`, `expires_at` — plus an RLS policy like every other
+> tenant-owned table.
+>
+> **5. "Exactly one active profile" is a partial unique index, not a foreign key.**
+> This document and SAD v1.0 both proposed `WORKSPACE.active_profile_id`. The
+> implemented schema instead puts `is_active` on `SCORING_PROFILE` with
+> `UNIQUE (workspace_id) WHERE is_active`. **Both give the same structural guarantee**,
+> the migration already does it this way, and SAD v1.1 §6.2 and Table 9-2 have been
+> updated to match. Do not change it back.
+>
+> Unchanged and still correct: `workspace_id` on every tenant-owned table, RLS keyed on
+> it, and no OAuth-token column anywhere.
+
 ---
 
 ## 1. Does the frontend need to wait for the database? **No.**

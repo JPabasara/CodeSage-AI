@@ -3,6 +3,30 @@
 **Group 16 · PID 7 · CS3203 · v1.1 · 21 Jul 2026, revised 30 Jul 2026 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md))**
 *Companion to the Development Plan. Focuses on the backend: how a cloned repo becomes dashboard output. Feeds the SRS (dashboard-output definitions, FR IDs, the reason-template table) and the SDD (pipeline + component contracts). Read the Development Plan first for the process/increment view; this document zooms into stages 2–5 of the pipeline.*
 
+> ## ⚠️ Partially superseded — read this first
+>
+> **Four decisions in this document were reversed after it was written (12 Aug 2026).**
+> The *reasoning* below is still sound; these four *facts* are not. Full list in
+> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+>
+> | Where this doc says | It is now |
+> |---|---|
+> | **Lizard** for static metrics | **CK** — a Java jar run as a subprocess, not a pip package. **v1.0 analyses `.java` only**, because CK is Java-only. |
+> | text extraction unspecified | **Tree-sitter** extracts source comments for ML-1 |
+> | **GHPR** trains the risk model | **D'Ambros** bug-prediction dataset |
+> | **six** debt categories, including `defect` | **five** — `code-design`, `requirement`, `documentation`, `test`, `security`. SATDAUG has no `defect_debt` label, so ML-1 cannot predict it. The profile is **five weights + one trust slider = six numbers**. |
+>
+> Also: the SATD corpus is **SATDAUG** (68,514 labelled comments), not Li et al. directly.
+> The normative rule register now lives at
+> `apps/api/src/codesage_api/detection/rules/register.yaml`, generated from SRS Appendix C.1.
+>
+> **Two more, settled 15 Aug 2026 in SRS v1.1 / SAD v1.1:**
+>
+> | Where this doc says | It is now |
+> |---|---|
+> | a `SCAN` table, with `FILE_SCORE` rows per file | **`AnalysisAttempt` + `Snapshot`.** Every attempt gets a row; only a successful one produces a snapshot, so a cancelled scan structurally cannot be read back as a result. There is no `FILE_SCORE` table — per-file facts are `StaticMetric`, `ProcessMetric` and `BugRiskPrediction`. |
+> | risk falls back to `0.0` when ML is unreachable | `risk_score` is **`null`** when the model did not run. `null` means *not assessed*; `0.0` would mean *assessed and safe*. Scoring treats a missing score as `risk_factor = 1.0`, so the arithmetic is unchanged — only the honesty of the value is. |
+
 ---
 
 ## Contents
