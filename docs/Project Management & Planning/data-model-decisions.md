@@ -107,6 +107,37 @@ Three things the backend must honour:
 
 Seed the three presets as rows with `is_preset = true`; they are the values the sliders reset to, and **Balanced** is the default profile for every new workspace.
 
+> ### ⚠️ SUPERSEDED 16 Aug 2026 — reversed by locked decision 11
+>
+> The entry below chose `WORKSPACE.active_profile_id`. **The implemented design is
+> the opposite:** `SCORING_PROFILE.is_active`, under a partial unique index on
+> `(workspace_id) WHERE is_active`. See `db/models/profile.py` and the `is_active`
+> description in `docs/api/openapi.yaml`.
+>
+> **Why it was reversed.** The objection below — that a partial unique index is
+> "something someone has to remember to write" — turned out not to hold. The index
+> is written once in the migration and is then enforced by PostgreSQL on every
+> write, exactly as an FK would be; two active rows is not a silent corruption, it
+> is a rejected `INSERT`. Both designs are structural. What separates them is
+> row-level security: the FK version writes to `WORKSPACE` *and* `SCORING_PROFILE`,
+> so a profile switch has to satisfy two tables' policies, while the flag version
+> stays inside one table.
+>
+> **One thing the FK did give us**, and it is a real loss: a `NOT NULL` FK
+> guarantees *exactly* one active profile. The index guarantees only *at most* one
+> — nothing in the database prevents every row being `is_active = false`. That
+> guarantee is now held in the service layer, by sign-in seeding **Balanced** as
+> active and by `PUT /api/profiles/active` clearing the old row and setting the new
+> one in a single transaction.
+>
+> **Also settled 16 Aug 2026:** profiles are **not versioned**. Applying a profile
+> updates the one row in place. The `version` column has been dropped —
+> `docs/api/openapi.yaml` cannot express or return a version, so a row per Apply
+> would have accumulated a history no endpoint could read.
+>
+> The original entry is kept below unedited, because why we changed our minds is
+> worth more than a tidy document.
+
 **Which profile is active lives on `WORKSPACE`, not on `SCORE_PROFILE`** — added 01 Aug 2026:
 
 ```
@@ -172,4 +203,4 @@ Full rationale in [CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-
 
 ---
 
-*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); D-5 added 2026-07-31 ([CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); `WORKSPACE.active_profile_id` added to D-4 on 2026-08-01** (SRS FR-20 apply semantics — a schema addition, not a decision change). Any change to D-1 through D-5 is a PR both sides review — the contract is the agreement.*
+*Decisions recorded 2026-07-25; D-3 and the append-only clarification added 2026-07-27; **D-4 added and D-1 amended 2026-07-30 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); D-5 added 2026-07-31 ([CR-001 D-CR8 – D-CR11](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md)); `WORKSPACE.active_profile_id` added to D-4 on 2026-08-01** (SRS FR-20 apply semantics — a schema addition, not a decision change); **that `active_profile_id` addition was reversed on 2026-08-16 in favour of `SCORING_PROFILE.is_active` under a partial unique index (locked decision 11), and profiles were settled as unversioned — see the SUPERSEDED banner in D-4.** Any change to D-1 through D-5 is a PR both sides review — the contract is the agreement.*
