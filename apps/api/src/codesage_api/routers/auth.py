@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session as DbSession
 from codesage_api.config import get_settings
 from codesage_api.db.session import SessionLocal
 from codesage_api.deps import get_current_user_id, get_db
+from codesage_api.errors import MisconfiguredSignIn
 from codesage_api.schemas.auth import SessionOut
 from codesage_api.services import auth as auth_service
 
@@ -43,6 +44,14 @@ def begin_sign_in() -> RedirectResponse:
     This is a navigation, not a fetch — the browser has to leave the page.
     """
     settings = get_settings()
+
+    # Fail loudly on a half-configured service. Without this, an empty base URL
+    # produces a *relative* redirect to /oauth2/authorize, the browser resolves
+    # it against this host, and the user gets a bare 404 that says nothing about
+    # the real cause — a missing environment variable.
+    if not settings.asgardeo_base_url or not settings.asgardeo_client_id:
+        raise MisconfiguredSignIn
+
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     challenge = (

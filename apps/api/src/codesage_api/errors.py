@@ -95,6 +95,22 @@ class UpstreamUnavailable(CodeSageError):
     message = "A service we depend on is temporarily unavailable. Please try again."
 
 
+class MisconfiguredSignIn(CodeSageError):
+    """The service is running without the Asgardeo settings it needs.
+
+    Deliberately its own error. The failure it replaces was a bare 404 from a
+    relative redirect, which points at nothing and sends whoever is debugging it
+    looking for a missing route instead of a missing environment variable.
+    """
+
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "INTERNAL_ERROR"
+    message = (
+        "Sign-in is not configured on this server: CODESAGE_ASGARDEO_BASE_URL "
+        "and CODESAGE_ASGARDEO_CLIENT_ID are required."
+    )
+
+
 def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(CodeSageError)
     async def _handle(request: Request, exc: CodeSageError) -> JSONResponse:
