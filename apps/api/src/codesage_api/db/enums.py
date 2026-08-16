@@ -28,8 +28,6 @@ class RepositoryConnectionStatus(ValueEnum):
 
 class AnalysisTriggerType(ValueEnum):
     MANUAL = "manual"
-    WEBHOOK = "webhook"
-    SCHEDULED = "scheduled"
 
 
 class AnalysisStatus(ValueEnum):
@@ -78,7 +76,7 @@ class ModelDeploymentStatus(ValueEnum):
 
 class FileTreeNodeType(ValueEnum):
     FILE = "file"
-    DIRECTORY = "directory"
+    FOLDER = "folder"
 
 
 class ScoringPresetType(ValueEnum):
