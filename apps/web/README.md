@@ -43,7 +43,28 @@ pnpm test:e2e              # Playwright end-to-end (Phase 10)
 pnpm exec tsc --noEmit     # type-check
 pnpm exec eslint src       # lint
 pnpm format                # Prettier write
+pnpm gen:types             # regenerate src/lib/types/api.ts from the API contract
+pnpm gen:types:check       # fails if that file is stale — run before you commit
 ```
+
+### Regenerating the API types
+
+`docs/api/openapi.yaml` is the **contract** — the single source of truth for every
+shape crossing the browser/backend boundary. `src/lib/types/api.ts` is **generated
+from it** and must never be hand-edited:
+
+```
+docs/api/openapi.yaml ──pnpm gen:types──> src/lib/types/api.ts
+```
+
+Edit the contract, then run `pnpm gen:types` and commit both together.
+`pnpm gen:types:check` regenerates in memory and compares, so it exits 1 the moment
+the two drift apart — which is the only thing stopping a contract change from
+silently not reaching the frontend. It is **not wired into CI yet** (this repo has
+no CI pipeline), so today it is on you to run it.
+
+`api.ts` is listed in `.prettierignore`: Prettier would reformat generated output
+and `gen:types:check` could then never pass.
 
 ### Watching the E2E tests run
 
@@ -70,8 +91,11 @@ component → hook (src/hooks) → client (src/lib/api/client.ts) → fetch("/ap
                                                        fixtures (src/lib/mocks/fixtures.ts)
 ```
 
-- **`src/lib/types`** — the data **contract**. One source of truth for every shape
-  that flows between the frontend, the mock, and the future real backend.
+- **`src/lib/types`** — the shapes the components use. **`api.ts` in this folder is
+  generated** from `docs/api/openapi.yaml` (the actual contract) by `pnpm gen:types`;
+  the other files here are hand-written and are being replaced by it in Phase 10.6.
+  Until that phase lands, components still import the hand-written ones — which is
+  why they are still camelCase while the contract is snake_case.
 - **`src/lib/mocks/handlers.ts`** — the fake API endpoints. The **same handlers**
   power the dev app (browser worker), the tests (Node server), and E2E.
 - **`src/lib/api/client.ts`** — thin `fetch` functions. Final code; unaware the
@@ -94,14 +118,37 @@ never runs the scoring formula. Two things follow:
 - **Real scores depend on a constant called `k`** that converts internal debt points
   into the 0–100 scale, and it is **not yet calibrated** (CR-001 changed the scale of
   `file_debt`). Expect real grades to move once it is. Background in the
-  [root README](../../README.md#how-the-health-score-works); method in
-  [apps/ml/README.md](../ml/README.md).
+  [root README](../../README.md#how-the-health-score-works); training and evaluation
+  rules in [apps/ml/training/README.md](../ml/training/README.md).
 
 Changing a **scoring profile** doesn't change this: the Profiles page `PUT`s the
 profile, then re-reads `HealthReport` — the numbers are re-derived server-side and no
 scan runs. See Phase 10.5 in the build guide.
 
 ### Pending contract change — CR-001 (Phase 10.5)
+
+> #### ⚠️ The `defect` row below is SUPERSEDED — there are **five** categories
+>
+> `defect` was dropped by **locked decision 2**. The corpus this project actually
+> trains on is **SATDAUG**, which carries **no `defect_debt` label** — so ML-1
+> cannot predict that category and it does not exist. The count below (472
+> comments, 31 Jul) came from a different dataset that is no longer the primary
+> corpus (locked decision 8).
+>
+> The authoritative list is `docs/api/openapi.yaml` and the `Category` type it
+> generates into `src/lib/types/api.ts`:
+>
+> ```ts
+> Category: "code-design" | "requirement" | "documentation" | "test" | "security"
+> ```
+>
+> So a profile is **five weights + one trust slider = six numbers**, not seven.
+> Removing `defect` from the category filter (five chips, not six) is item 3 of
+> **Phase 10.6** — the components still say six until that phase runs.
+>
+> The rest of this section — the `Source` narrowing and why the old weight vector
+> mixed axes — still stands. It is left unedited below because the reasoning is
+> still the reasoning.
 
 Two shapes in `src/lib/types` change before Phase 11. Details and rationale:
 [CR-001](../../docs/Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md);
@@ -140,7 +187,7 @@ src/
 ├── lib/
 │   ├── api/client.ts    # network calls
 │   ├── mocks/           # MSW handlers + fixtures (deleted at go-live)
-│   ├── types/           # THE CONTRACT
+│   ├── types/           # api.ts = GENERATED from docs/api/openapi.yaml (the contract)
 │   └── utils.ts         # colour helpers (grade/severity/health), cn, shortSha
 └── test/setup.ts        # jsdom polyfills + MSW node server for tests
 ```
