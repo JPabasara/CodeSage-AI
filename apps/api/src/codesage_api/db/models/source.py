@@ -94,4 +94,4 @@ class FileTreeNode(UUIDPrimaryKey, Base):
     parent: Mapped[FileTreeNode | None] = relationship(back_populates="children", remote_side="FileTreeNode.id")
     children: Mapped[list[FileTreeNode]] = relationship(back_populates="parent", passive_deletes=True)
     source_file: Mapped[SourceFile | None] = relationship(back_populates="file_tree_nodes")
-    __table_args__ = (CheckConstraint("(node_type = 'file' AND source_file_id IS NOT NULL) OR (node_type = 'directory' AND source_file_id IS NULL)", name="node_source_file"),)
+    __table_args__ = (CheckConstraint("(node_type = 'file' AND source_file_id IS NOT NULL) OR (node_type = 'folder' AND source_file_id IS NULL)", name="node_source_file"),)
