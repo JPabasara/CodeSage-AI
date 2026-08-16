@@ -25,7 +25,7 @@ services:
     #   docker compose exec postgres psql -U codesage_owner codesage
     # An open database port is the single easiest thing to forget before a demo.
     # If you need it from the host for a moment, use an override file rather
-    # than editing this one — see infra/README or NEXT_STEPS 3.6.
+    # than editing this one — see infra/README or the work plan, step 3.6.
 
   redis:
     image: redis:7-alpine
@@ -54,7 +54,7 @@ services:
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
       CODESAGE_SECRET_KEY: dev-only-change-me
       # ── Sign-in. The two blank ones come from infra/.env, which is never
-      #    committed. Fill them in at NEXT_STEPS step 3.10.
+      #    committed. Fill them in at the work plan, step 3.10.
       CODESAGE_ASGARDEO_BASE_URL: ${CODESAGE_ASGARDEO_BASE_URL:-}
       CODESAGE_ASGARDEO_CLIENT_ID: ${CODESAGE_ASGARDEO_CLIENT_ID:-}
       CODESAGE_ASGARDEO_CLIENT_SECRET: ${CODESAGE_ASGARDEO_CLIENT_SECRET:-}

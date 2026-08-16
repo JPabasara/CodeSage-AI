@@ -1251,7 +1251,7 @@ Also:
 
 **Added 12 Aug 2026.** Everything above this line is already built and is not being
 revisited. This phase lands the decisions taken *after* Phase 10.5 shipped — see
-[docs/NEXT_STEPS.md](../NEXT_STEPS.md) for the locked list.
+[the work plan and locked decisions](work-plan-and-locked-decisions.md) for the locked list.
 
 **Goal:** make the frontend agree with the backend that now exists, and stop
 hand-maintaining the contract.
@@ -1347,7 +1347,7 @@ POST /api/auth/logout     → clears the session
 > With FastAPI as the BFF the frontend needs no identity library at all: signing in is
 > an `<a>`, signing out is one `POST`, and "am I signed in?" is
 > `GET /api/auth/session`. Removing the SDK is step 3a of
-> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+> [the work plan and locked decisions](work-plan-and-locked-decisions.md).
 >
 > Files to clean: delete `apps/web/proxy.ts`; drop `<AsgardeoProvider>` from
 > `src/app/layout.tsx`; replace the buttons in `(auth)/login/page.tsx` and

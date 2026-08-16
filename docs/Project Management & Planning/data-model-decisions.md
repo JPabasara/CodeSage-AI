@@ -9,7 +9,7 @@ Why this file exists: the schema decisions were scattered across the SRS, the SA
 >
 > **Status against `origin/chamodh/backend` @ `a1e6e5e`:** change 1 is done; changes 2,
 > 3 and 4 are **not** in the models yet; change 5 is done. The exact edits are step 3c
-> of [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+> of [the work plan and locked decisions](work-plan-and-locked-decisions.md).
 >
 > **1. `SCAN` is split into `AnalysisAttempt` + `Snapshot`.**
 > Every attempt gets a row, including cancelled and failed ones; only a *successful*

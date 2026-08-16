@@ -9,7 +9,7 @@ Output : docs/Deliverables/SAD/v1.1/Software_Architecture_Document_v1.1.docx
 Every embedded figure, style, header, footer and field code is inherited
 byte-for-byte, because this is the same file with edits applied. The figures
 themselves are NOT redrawn here - the diagram corrections are listed in
-docs/NEXT_STEPS.md and are done by hand in draw.io.
+the work plan (docs/Project Management & Planning/work-plan-and-locked-decisions.md) and are done by hand in draw.io.
 
 What v1.1 changes:
 
