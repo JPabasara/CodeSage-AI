@@ -9,6 +9,7 @@ contract is TypeScript-first.
 the frontend — see the note in `scoring/enums.py`.
 """
 
+from codesage_api.schemas.auth import SessionOut
 from codesage_api.schemas.base import CamelModel
 from codesage_api.schemas.branch import BranchOut
 from codesage_api.schemas.finding import FindingOut
@@ -35,6 +36,7 @@ __all__ = [
     "RepoOut",
     "ScanStatusOut",
     "ScanSummaryOut",
+    "SessionOut",
     "ScoreProfileIn",
     "ScoreProfileOut",
     "StartScanIn",
