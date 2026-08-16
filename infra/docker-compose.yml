@@ -21,18 +21,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    ports:
-      - "127.0.0.1:55432:5432"
+    # Deliberately NOT published to the host. Reach it with:
+    #   docker compose exec postgres psql -U codesage_owner codesage
+    # An open database port is the single easiest thing to forget before a demo.
+    # If you need it from the host for a moment, use an override file rather
+    # than editing this one — see infra/README or NEXT_STEPS 3.6.
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@codesage.com
-      PGADMIN_DEFAULT_PASSWORD: adminpassword
-    ports:
-      - "127.0.0.1:5050:80"
-    depends_on:
-      - postgres
   redis:
     image: redis:7-alpine
     healthcheck:
@@ -59,6 +53,16 @@ services:
       CODESAGE_ML_SERVICE_URL: http://ml:8001
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
       CODESAGE_SECRET_KEY: dev-only-change-me
+      # ── Sign-in. The two blank ones come from infra/.env, which is never
+      #    committed. Fill them in at NEXT_STEPS step 3.10.
+      CODESAGE_ASGARDEO_BASE_URL: ${CODESAGE_ASGARDEO_BASE_URL:-}
+      CODESAGE_ASGARDEO_CLIENT_ID: ${CODESAGE_ASGARDEO_CLIENT_ID:-}
+      CODESAGE_ASGARDEO_CLIENT_SECRET: ${CODESAGE_ASGARDEO_CLIENT_SECRET:-}
+      CODESAGE_ASGARDEO_REDIRECT_URI: http://localhost:8000/api/auth/callback
+      CODESAGE_FRONTEND_BASE_URL: http://localhost:3000
+      # Local development is plain http, so a Secure-only cookie would never be
+      # sent at all. This MUST be true anywhere real.
+      CODESAGE_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
     depends_on:
