@@ -1,24 +1,33 @@
-"""Operational endpoints. Not part of the product API surface.
+"""Operational endpoints.
 
-Mounted outside `/api` so they are never confused with the contract in SRS
-Table 3.106.
+Split in two, because they are not all the same kind of thing.
+
+`public_router` holds the liveness probe, which IS in the API contract at
+`/api/healthz` and is marked public there. It is public for a practical reason:
+whatever restarts a dead container cannot be asked to sign in first.
+
+`ops_router` holds the two that are NOT in the contract. They are mounted
+outside `/api` so they are never mistaken for product surface, and so the
+sign-in lock on `/api` does not apply to them — Docker has to be able to ask
+"are you ready?" without a session.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-router = APIRouter(tags=["system"])
+public_router = APIRouter(tags=["system"])
+ops_router = APIRouter(tags=["system"])
 
 
-@router.get("/healthz")
+@public_router.get("/healthz")
 def liveness() -> dict[str, str]:
     """Is the process up? No dependency checks — a failing database must not cause
     an orchestrator to restart a perfectly healthy API container."""
     return {"status": "ok"}
 
 
-@router.get("/readyz")
+@ops_router.get("/readyz")
 def readiness() -> dict[str, str]:
     """Can this process serve traffic? Checks PostgreSQL and Redis.
 
@@ -29,7 +38,7 @@ def readiness() -> dict[str, str]:
     raise NotImplementedError
 
 
-@router.get("/version")
+@ops_router.get("/version")
 def version() -> dict[str, str]:
     """Build and analysis-engine version, for correlating a result with what produced it."""
     raise NotImplementedError
