@@ -12,7 +12,8 @@ psycopg[binary]>=3.2
 celery>=5.4
 redis>=5.2
 httpx>=0.28
-authlib>=1.3
+# No OAuth library: the Asgardeo exchange is two plain HTTP calls in
+# services/auth.py. `itsdangerous` signs the sign-in handshake cookie.
 itsdangerous>=2.2
 pyyaml>=6.0
 

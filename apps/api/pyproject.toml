@@ -17,7 +17,10 @@ dependencies = [
     "celery>=5.4",
     "redis>=5.2",
     "httpx>=0.28",
-    "authlib>=1.3",
+    # NOTE: no OAuth library. The Asgardeo exchange is two plain HTTP calls in
+    # services/auth.py — a library here would hide the one part of this system
+    # most worth being able to read. `itsdangerous` signs the short-lived
+    # sign-in handshake cookie, which is the only cryptography we do ourselves.
     "itsdangerous>=2.2",
     "pyyaml>=6.0",
     # ── extraction toolchain (SRS FR-7) — worker-only, shared image ──────────
@@ -97,7 +100,18 @@ forbidden_modules = [
 name = "workers never score"
 type = "forbidden"
 source_modules = ["codesage_api.tasks", "codesage_api.extractors", "codesage_api.detection"]
-forbidden_modules = ["codesage_api.scoring"]
+# The maths, not the vocabulary. `scoring.enums` deliberately holds the shared
+# words — Category, Severity, Source — and its own docstring says everything may
+# import *down* into it; a detector has to name the category it found. What a
+# worker must never touch is anything that turns findings into a number, because
+# that is the moment it would start storing a derived value (FR-21).
+forbidden_modules = [
+    "codesage_api.scoring.engine",
+    "codesage_api.scoring.formula",
+    "codesage_api.scoring.floor",
+    "codesage_api.scoring.models",
+    "codesage_api.scoring.config_loader",
+]
 
 # SAD §8.1: dependencies point downward only. No arrow goes back up.
 [[tool.importlinter.contracts]]
