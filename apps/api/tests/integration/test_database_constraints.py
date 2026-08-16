@@ -40,6 +40,7 @@ def test_duplicate_membership_is_rejected(postgres_engine: object) -> None:
             insert(tables["app_user"]),
             {
                 "id": user_id,
+                "asgardeo_sub": f"asgardeo-{user_id}",
                 "github_user_id": f"github-{user_id}",
                 "github_username": "database-test-user",
                 "theme_preference": "system",

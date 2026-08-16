@@ -9,7 +9,7 @@ EXPECTED_TABLES = {
     "app_user", "branch", "bug_risk_prediction", "code_symbol", "debt_category",
     "file_tree_node", "finding", "membership", "ml_model_version", "process_metric",
     "repository", "rule_definition", "satd_marker_pattern", "satd_prediction",
-    "scoring_preset", "scoring_profile", "security_audit_record", "snapshot",
+    "scoring_preset", "scoring_profile", "security_audit_record", "session", "snapshot",
     "source_file", "source_location", "static_metric", "workspace",
 }
 
