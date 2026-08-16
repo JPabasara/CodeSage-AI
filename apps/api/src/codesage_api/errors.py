@@ -13,19 +13,28 @@ from fastapi.responses import JSONResponse
 
 
 class CodeSageError(Exception):
-    """Base for every domain error."""
+    """Base for every domain error.
+
+    `code` is the part clients are allowed to branch on. It is a fixed constant
+    whose meaning never changes; `message` is an English sentence someone may
+    reword tomorrow. Every value below is copied from the `ErrorCode` list in
+    docs/api/openapi.yaml, so the two cannot drift.
+    """
 
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code: str = "INTERNAL_ERROR"
     message: str = "Something went wrong."
 
 
 class NotFound(CodeSageError):
     status_code = status.HTTP_404_NOT_FOUND
+    code = "NOT_FOUND"
     message = "Not found."
 
 
 class NotAuthenticated(CodeSageError):
     status_code = status.HTTP_401_UNAUTHORIZED
+    code = "NOT_AUTHENTICATED"
     message = "Sign in to continue."
 
 
@@ -39,6 +48,7 @@ class RepositoryNotPublic(CodeSageError):
     """
 
     status_code = status.HTTP_400_BAD_REQUEST
+    code = "REPOSITORY_NOT_PUBLIC"
     message = (
         "Only public repositories can be connected in this release. "
         "Private repositories require a GitHub App installation."
@@ -47,11 +57,13 @@ class RepositoryNotPublic(CodeSageError):
 
 class RepositoryUnreachable(CodeSageError):
     status_code = status.HTTP_400_BAD_REQUEST
+    code = "REPOSITORY_UNREACHABLE"
     message = "That repository could not be reached. Check the URL and try again."
 
 
 class ScanAlreadyRunning(CodeSageError):
     status_code = status.HTTP_409_CONFLICT
+    code = "SCAN_ALREADY_RUNNING"
     message = "A scan is already running for this branch."
 
 
@@ -65,6 +77,7 @@ class MLServiceUnavailable(CodeSageError):
     """
 
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "UPSTREAM_UNAVAILABLE"
     message = "Analysis models are temporarily unavailable."
 
 
@@ -78,6 +91,7 @@ class UpstreamUnavailable(CodeSageError):
     """
 
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "UPSTREAM_UNAVAILABLE"
     message = "A service we depend on is temporarily unavailable. Please try again."
 
 
@@ -86,4 +100,7 @@ def install_exception_handlers(app: FastAPI) -> None:
     async def _handle(request: Request, exc: CodeSageError) -> JSONResponse:
         # Only the curated `message` crosses the boundary. Stack traces, SQL and
         # upstream error text stay in the logs (SEC-16).
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.message, "code": exc.code},
+        )
