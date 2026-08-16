@@ -68,6 +68,19 @@ class MLServiceUnavailable(CodeSageError):
     message = "Analysis models are temporarily unavailable."
 
 
+class UpstreamUnavailable(CodeSageError):
+    """An outside service we depend on did not answer.
+
+    Raised when Asgardeo cannot be reached during sign-in. Kept separate from
+    MLServiceUnavailable because the two mean completely different things to the
+    user: this one means "you cannot sign in right now", and that one means
+    "your scan ran, but with rules only".
+    """
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    message = "A service we depend on is temporarily unavailable. Please try again."
+
+
 def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(CodeSageError)
     async def _handle(request: Request, exc: CodeSageError) -> JSONResponse:
