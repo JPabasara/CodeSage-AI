@@ -15,6 +15,13 @@
 
 // ── enums ───────────────────────────────────────────────────────────────────
 
+/**
+ * HOW BAD the finding is. Assigned by the DETECTOR at scan time and stored on the
+ * row — never computed here. Rules carry a fixed severity (see the rule register,
+ * SRS Appendix C); SATD findings default to "medium" (ML-1 predicts `category`
+ * only); the risk model produces no Finding at all. The client's only job is to
+ * map this string to a colour token (`severityColor`). SRS FR-8.1.
+ */
 export type Severity = "critical" | "high" | "medium" | "low";
 
 /** WHICH DETECTOR produced the finding (orthogonal to `Category`). */

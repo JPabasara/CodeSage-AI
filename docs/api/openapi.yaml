@@ -1,0 +1,1373 @@
+openapi: 3.1.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Code Sage AI — the data contract.
+#
+# THIS FILE IS NORMATIVE. It is the single source of truth for every shape that
+# crosses the browser/backend boundary (SRS SP-4, SRS Appendix B).
+#
+#   frontend :  apps/web/src/lib/types is GENERATED from this file.
+#               `pnpm gen:types` — never hand-edit the generated output.
+#   backend  :  Pydantic models must match. CI diffs FastAPI's /openapi.json
+#               against this file; a divergence fails the build.
+#
+# Written spec-first, because the frontend was built against a mock backend and
+# the API handlers are still skeletons. When the backend is complete and trusted,
+# this file may be generated from it instead — but the diff check stays either way.
+#
+# ── Conventions, all settled decisions ──────────────────────────────────────
+#
+#   snake_case            every field name, and every path parameter. Matches the
+#                         SRS field vocabulary and the database columns, so one
+#                         name survives from PostgreSQL to the browser.
+#   session cookie        FastAPI is the BFF. It completes the Asgardeo OIDC flow
+#                         and hands the browser an httpOnly cookie. No token ever
+#                         reaches client JavaScript (SEC-08, SEC-09).
+#   five categories       code-design · requirement · documentation · test ·
+#                         security. SATDAUG carries no `defect_debt` label, so
+#                         ML-1 cannot predict that category and it does not exist.
+#   six numbers           a scoring profile is five weights plus one trust slider.
+#   derived on read       every score in this document is computed per request
+#                         under the active profile. None is read from a column
+#                         (FR-21). This is why a profile change re-ranks with no
+#                         re-scan, and why no endpoint takes a profile parameter.
+# ─────────────────────────────────────────────────────────────────────────────
+
+info:
+  title: Code Sage AI API
+  version: 1.0.0
+  summary: Technical-debt analytics for a connected Git repository.
+  description: |
+    The REST surface behind the Code Sage AI dashboard.
+
+    **Reading this contract.** Endpoints fall into three groups that behave very
+    differently, and the difference is the architecture:
+
+    - **Reads** (`/projects`, `/branches`, `/health`, `/scans`) return stored facts
+      with every score derived on the spot under the workspace's active profile.
+    - **The scan** (`POST /repos/{repo_id}/scan`) is asynchronous. It returns a
+      `202` with a `scan_id` immediately and the client polls; the work happens on
+      a Celery worker (PERF-03, PERF-05).
+    - **The profile** (`PUT /profiles/active`) is a single idempotent write of six
+      numbers. It touches no snapshot and starts no scan (FR-20, FR-21).
+
+    **No endpoint accepts a scoring profile.** The active profile is server-side
+    state scoped to the workspace, so `GET /repos/{repo_id}/health?branch=…` takes
+    a branch and nothing else. Passing the profile in the query string would grow
+    every read endpoint each time the profile changed shape, and would leak the
+    scoring formula into the API surface.
+  contact:
+    name: Group 16 · Project ID 7 · CS3203
+  license:
+    name: Academic project — not licensed for redistribution
+
+servers:
+  - url: http://localhost:8000
+    description: Local development (infra/docker-compose.yml)
+  - url: https://api.codesage.dev
+    description: Deployed
+
+tags:
+  - name: auth
+    description: |
+      Sign-in through **Asgardeo**, which federates GitHub as an identity provider.
+      The application is an OIDC client of Asgardeo only and never performs a
+      GitHub OAuth exchange itself — so adding Google or username/password later
+      is an Asgardeo configuration change with no code here.
+  - name: projects
+    description: Connected repositories. v1.0 is public repositories by URL paste.
+  - name: scans
+    description: The asynchronous scan lifecycle.
+  - name: dashboard
+    description: The read path. Everything here is derived under the active profile.
+  - name: profiles
+    description: Scoring profiles — five category weights and one trust slider.
+  - name: system
+    description: Operational endpoints.
+
+security:
+  - sessionCookie: []
+
+paths:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # AUTH  (SRS FR-1, SEC-01, SEC-10)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/auth/login:
+    get:
+      tags: [auth]
+      operationId: begin_sign_in
+      security: []
+      summary: Begin sign-in
+      description: |
+        Redirects the browser to Asgardeo's authorization endpoint with a signed,
+        single-use `state` value.
+
+        **This is a navigation, not a fetch.** The frontend renders it as
+        `<a href="/api/auth/login">`, never as an XHR — the browser has to leave
+        the page for the OIDC flow to work. It is the one endpoint a mock service
+        worker cannot intercept.
+
+        The path carries no provider name: which identity provider the user picks
+        is Asgardeo's business, not this API's.
+      responses:
+        '302':
+          description: Redirect to the Asgardeo authorization endpoint.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /api/auth/callback:
+    get:
+      tags: [auth]
+      operationId: complete_sign_in
+      security: []
+      summary: OIDC redirect target
+      description: |
+        Asgardeo's redirect target. Validates `state`, exchanges the authorization
+        code, and establishes a **server-side session**, returning its identifier
+        in an httpOnly cookie. The browser never receives a token.
+
+        On first sign-in this also creates the user's Workspace, its Membership,
+        and seeds the **Balanced** profile with `is_active = true` — so a workspace
+        always has exactly one active profile and the read path never needs a
+        fallback.
+
+        A `SecurityAuditRecord` is written for both success and failure (SEC-14).
+        A failed sign-in has no established actor, which is exactly the event most
+        worth recording.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+          description: Authorization code issued by Asgardeo.
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+          description: |
+            The single-use nonce issued at `/api/auth/login`. Without checking it,
+            the callback would accept an authorization code from anywhere, which
+            is CSRF on the sign-in flow.
+      responses:
+        '302':
+          description: |
+            Session established. Redirects to the Projects page. Sets the session
+            cookie with `HttpOnly`, `Secure`, `SameSite=Lax`.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+            Set-Cookie:
+              schema: { type: string }
+              example: codesage_session=…; HttpOnly; Secure; SameSite=Lax; Path=/
+        '400':
+          description: |
+            The `state` did not validate, or the code exchange failed. Redirects to
+            the login page with an error rather than rendering a JSON body — the
+            caller here is a browser mid-navigation, not a script.
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /api/auth/session:
+    get:
+      tags: [auth]
+      operationId: get_session
+      summary: Who is signed in
+      description: |
+        Returns the signed-in user, or `401` if there is no valid session.
+
+        This is the only auth endpoint the client calls with `fetch`, and it is how
+        the app decides whether to render the dashboard or bounce to sign-in.
+      responses:
+        '200':
+          description: The signed-in user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: sign_out
+      summary: End the session
+      description: |
+        Deletes the session **server-side** and clears the cookie, so the session is
+        invalid immediately (SEC-10).
+
+        This is why the session is server-side state rather than a self-contained
+        JWT: a stateless token stays valid until it expires, and sign-out could not
+        actually revoke it without a denylist — which is most of a session store
+        anyway.
+      responses:
+        '204':
+          description: Signed out. The cookie is cleared.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              example: codesage_session=; Max-Age=0; Path=/
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PROJECTS  (SRS FR-3, FR-4)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/projects:
+    get:
+      tags: [projects]
+      operationId: list_projects
+      summary: List connected projects
+      description: |
+        Every repository connected to the caller's workspace. `latest_health` is a
+        derived hint for the projects list and is absent until the project has at
+        least one finalized snapshot.
+      responses:
+        '200':
+          description: The connected projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Repo' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+    post:
+      tags: [projects]
+      operationId: connect_project
+      summary: Connect a repository by URL
+      description: |
+        Validates the URL, reads the repository's metadata from GitHub, and records
+        it against the workspace.
+
+        **v1.0 accepts public repositories only.** A private URL returns
+        `REPOSITORY_NOT_PUBLIC` with a message that explains why rather than saying
+        "forbidden" — a user pasting their own repository has done nothing wrong
+        and needs to know that private support requires a GitHub App installation,
+        which is not in this release.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectRepoRequest' }
+      responses:
+        '201':
+          description: Connected.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Repo' }
+        '400':
+          description: |
+            The URL is malformed, the repository is unreachable, or it is private.
+            Distinguish the three by `code`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                private:
+                  summary: Private repository
+                  value:
+                    detail: Only public repositories can be connected in this release. Private repositories require a GitHub App installation.
+                    code: REPOSITORY_NOT_PUBLIC
+                unreachable:
+                  summary: Not reachable
+                  value:
+                    detail: That repository could not be reached. Check the URL and try again.
+                    code: REPOSITORY_UNREACHABLE
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '409':
+          description: Already connected to this workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # BRANCHES  (SRS FR-5)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/repos/{repo_id}/branches:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [dashboard]
+      operationId: list_branches
+      summary: Branches with head commit
+      description: |
+        Read from the GitHub REST API with ETag-conditional requests, so a repeated
+        read usually costs no rate-limit quota.
+      responses:
+        '200':
+          description: The repository's branches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Branch' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # DASHBOARD  (SRS FR-12 … FR-18, FR-21)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/repos/{repo_id}/health:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [dashboard]
+      operationId: get_health_report
+      summary: The full dashboard payload
+      description: |
+        One response carrying all six dashboard outputs (SRS Appendix B): the health
+        card, the category breakdown, the trend, the Refactor-First list, the data
+        behind the finding detail, and the hotspot tree.
+
+        **Every score here is computed on this request** under the workspace's
+        active profile — `health_score`, `grade`, `delta`, each finding's
+        `priority`, each file's `debt_score`, and the whole trend line. None is read
+        from a column (FR-21). A profile change therefore re-ranks everything with
+        no re-scan, and the trend is redrawn end to end so every point is comparable
+        with every other (FR-14, "one lens per line").
+
+        **There is no profile parameter, by design.** See the description at the top
+        of this document.
+      parameters:
+        - name: branch
+          in: query
+          required: true
+          schema: { type: string }
+          description: Branch name. Trends and deltas are per branch.
+          example: main
+        - name: snapshot_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: |
+            Load a specific historical snapshot instead of the newest one (FR-19).
+            Omit for the latest. Only snapshots produced by a **successful** scan
+            are addressable — a cancelled or failed attempt produces no snapshot.
+      responses:
+        '200':
+          description: The dashboard payload.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReport' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: |
+            No repository, no such branch, or the branch has never been scanned
+            successfully. The client renders the empty state, not an error.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/repos/{repo_id}/scans:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [dashboard]
+      operationId: list_scan_history
+      summary: Scan history
+      description: |
+        The stored snapshots for this repository, newest first (FR-19). Only
+        successful scans appear — a cancelled or failed attempt is retained for
+        diagnosis (SP-13) but is never presented as a result (DBR-22).
+
+        `finding_count` and `commit_sha` are stored facts; `health_score`, `grade`
+        and `delta` are derived on this request, which is why switching profiles
+        redraws this list too.
+      parameters:
+        - name: branch
+          in: query
+          required: false
+          schema: { type: string }
+          description: Restrict to one branch. Omit for all branches.
+      responses:
+        '200':
+          description: Snapshot summaries, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ScanSummary' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # SCAN LIFECYCLE  (SRS FR-6, PERF-03, PERF-05)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/repos/{repo_id}/scan:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    post:
+      tags: [scans]
+      operationId: start_scan
+      summary: Start a scan
+      description: |
+        Enqueues an analysis and returns immediately with `202` — the work runs on a
+        Celery worker, never inside this request (PERF-05). The job is on the queue
+        within one second (PERF-03).
+
+        **Skip-if-unchanged.** The API first reads the branch head SHA from GitHub
+        and compares it with the SHA of the **last successful** scan of that branch.
+        If they match, no job is queued and the response carries
+        `phase: "done"` with the existing `scan_id`. Comparing against the last
+        *successful* scan is what stops a cancelled attempt being mistaken for a
+        stored snapshot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartScanRequest' }
+      responses:
+        '202':
+          description: |
+            Queued, or skipped as unchanged. Poll `GET /api/repos/{repo_id}/scan/{scan_id}`
+            once per second until `phase` is terminal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanStatus' }
+              examples:
+                queued:
+                  summary: Queued
+                  value:
+                    scan_id: 6f1c2a3e-6d18-4f4a-9a1e-0f0f9f1b2c34
+                    phase: queued
+                    progress: 0
+                    branch: main
+                    commit_sha: 9fceb02d0ae598e95dc970b74767f19372d61af8
+                    started_at: '2026-08-12T09:14:03Z'
+                skipped:
+                  summary: Head SHA unchanged — nothing to do
+                  value:
+                    scan_id: 2b7d4e11-88a0-4c3e-b2fb-5c9b1c1a77aa
+                    phase: done
+                    progress: 100
+                    branch: main
+                    commit_sha: 9fceb02d0ae598e95dc970b74767f19372d61af8
+                    finished_at: '2026-08-12T08:02:55Z'
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A scan is already running for this branch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                detail: A scan is already running for this branch.
+                code: SCAN_ALREADY_RUNNING
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/repos/{repo_id}/scan/{scan_id}:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+      - $ref: '#/components/parameters/ScanId'
+    get:
+      tags: [scans]
+      operationId: get_scan_status
+      summary: Poll a scan
+      description: |
+        Polled once per second while a scan is active, and stopped as soon as
+        `phase` is `done`, `error` or `cancelled` (SRS Table 3.107). No WebSockets
+        and no Server-Sent Events in v1.0.
+
+        **The two fields come from two different stores.** `phase` is read from
+        PostgreSQL and `progress` from Redis. Losing a percentage when the broker
+        restarts costs nothing — the next poll produces a new one. Losing the fact
+        that a scan failed would breach SP-13, which requires the terminal phase and
+        its error message to be recoverable from the database alone.
+      responses:
+        '200':
+          description: Current phase and progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanStatus' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/repos/{repo_id}/scan/{scan_id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+      - $ref: '#/components/parameters/ScanId'
+    post:
+      tags: [scans]
+      operationId: stop_scan
+      summary: Cancel a running scan
+      description: |
+        **Cancellation is cooperative, not forced.** This sets a flag in Redis and
+        returns immediately; it does not kill the worker. The worker reads the flag
+        **between pipeline stages**, stops at the first boundary it reaches, deletes
+        its clone and writes `phase: "cancelled"`.
+
+        Consequences worth knowing:
+
+        - The response is `202`, and `phase` is usually still `running`. The client
+          learns the scan really stopped from the **next poll**, not from this call.
+        - A user who presses Stop waits until the current stage ends. That is the
+          price of never leaving a half-written snapshot.
+        - Once finalization begins the scan completes. FR-6 requires the previous
+          snapshot to survive a cancellation intact, and a killed write would leave
+          a partial one.
+        - The terminal phase is `cancelled`, **not** `idle`, so a scan that was
+          stopped stays distinguishable from one that never ran.
+      responses:
+        '202':
+          description: |
+            Cancellation requested. Keep polling until `phase` becomes `cancelled`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanStatus' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            The scan already reached a terminal phase, or finalization has begun and
+            is past the last cancellation checkpoint.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                detail: This scan can no longer be cancelled.
+                code: SCAN_NOT_CANCELLABLE
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PROFILES  (SRS FR-20, FR-21, FR-24)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/profiles:
+    get:
+      tags: [profiles]
+      operationId: list_profiles
+      summary: Available profiles
+      description: |
+        The three presets — **Balanced** (the workspace default), **Security-first**
+        and **Delivery-speed** — plus any custom profile. Selecting a preset seeds
+        the sliders in one interaction; adjusting from it is optional.
+      responses:
+        '200':
+          description: The available profiles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+  /api/profiles/active:
+    get:
+      tags: [profiles]
+      operationId: get_active_profile
+      summary: The active profile
+      description: |
+        The profile currently in force for the workspace. The Profiles screen reads
+        this on load, so the sliders always open showing what is really applied
+        rather than a client-side guess.
+      responses:
+        '200':
+          description: The active profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+    put:
+      tags: [profiles]
+      operationId: apply_profile
+      summary: Apply a profile
+      description: |
+        Replaces the workspace's active profile with exactly the submitted values.
+
+        **PUT, not PATCH.** The body carries the **complete** profile — six numbers,
+        never a delta. That makes the write idempotent, so retrying after a dropped
+        response cannot leave a half-applied profile. It matters here specifically
+        because the client fires a dependent read (`GET …/health`) immediately
+        afterwards, and a half-applied profile would render a dashboard matching no
+        profile the system actually holds.
+
+        **Nothing is sent while the user drags.** Slider positions are client state
+        until **Apply** is pressed. A single drag crosses many intermediate values;
+        writing each one would put a write and a full re-derivation on the server
+        per pixel of travel, and would leave the user no way to abandon an
+        experiment.
+
+        **Out-of-range weights are clamped, not rejected.** A weight of `9.0` is
+        stored as `3.0` and returned as `3.0` with `200` — the response is the
+        profile as it is *really in force*, which is what lets the client confirm
+        what was saved instead of trusting what it sent. A **malformed** body (wrong
+        type, missing key, unknown category) is a different thing and returns `422`.
+
+        **The same row is updated every time; profiles are not versioned.** Applying
+        a profile overwrites the workspace's single `SCORING_PROFILE` row in place —
+        its `id` never changes and no history is kept. There is deliberately no
+        version column: no endpoint in this contract can express or return one, so
+        accumulating a row per Apply would grow the table without bound for a
+        history nothing is able to read. Scores are derived on read (FR-21), so a
+        superseded profile also explains no stored result.
+
+        **This writes no snapshot and starts no scan.** Six numbers change on that
+        one row, in one transaction. No
+        `FINDING`, no `SNAPSHOT`, no `ANALYSIS_ATTEMPT` row is touched. A snapshot is
+        keyed by commit SHA and records what the code was; a profile is not a commit.
+        Were a profile change to write one, the trend chart would show a step on a
+        day nobody touched the code (FR-21).
+
+        **The visibility floor holds regardless** (FR-24). No weight, including the
+        minimum `0.1` on `security`, can push a critical security finding out of
+        sight — such findings come back with `pinned_by_floor: true`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplyProfileRequest' }
+            examples:
+              security_first:
+                summary: The Security-first preset
+                value:
+                  name: Security-first
+                  weights:
+                    security: 3.0
+                    code_design: 1.0
+                    requirement: 0.8
+                    documentation: 0.5
+                    test: 1.0
+                  trust_s: 0.5
+      responses:
+        '200':
+          description: |
+            The profile **as stored**, after clamping. Compare it with what you sent:
+            a differing value means it was out of range.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # SYSTEM
+  # ══════════════════════════════════════════════════════════════════════════
+
+  /api/healthz:
+    get:
+      tags: [system]
+      operationId: liveness
+      security: []
+      summary: Liveness probe
+      description: Container orchestration only. Does not touch the database.
+      responses:
+        '200':
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMPONENTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+components:
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: codesage_session
+      description: |
+        An httpOnly, Secure, SameSite=Lax cookie holding a **server-side session
+        identifier** — not a token, and not readable by JavaScript.
+
+        FastAPI is the BFF: it completes the Asgardeo OIDC flow, keeps the tokens
+        server-side, and hands the browser only this cookie. Two consequences: an
+        XSS bug cannot steal a credential that JavaScript cannot read (SEC-09), and
+        sign-out genuinely revokes the session because the server holds it (SEC-10).
+
+        Browser clients must send `credentials: "include"` on every request.
+
+  parameters:
+    RepoId:
+      name: repo_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: The connected repository's identifier.
+    ScanId:
+      name: scan_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: |
+        The analysis attempt's identifier, as returned by `POST …/scan`. Every
+        attempt has one, including attempts that end in `error` or `cancelled` —
+        only successful ones go on to produce a snapshot.
+
+  # ── shared error responses ────────────────────────────────────────────────
+  responses:
+    NotAuthenticated:
+      description: No valid session. The client should redirect to `/api/auth/login`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: Sign in to continue.
+            code: NOT_AUTHENTICATED
+    Forbidden:
+      description: |
+        The resource belongs to another workspace. Row-Level Security keys every
+        tenant-owned table on `workspace_id` (DBR-3), so this is enforced in the
+        database rather than only in application code.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: You do not have access to that resource.
+            code: FORBIDDEN
+    NotFound:
+      description: No such resource in this workspace.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: Not found.
+            code: NOT_FOUND
+    ValidationFailed:
+      description: |
+        The request body is malformed — a wrong type, a missing key, or an unknown
+        category. Distinct from an out-of-range weight, which is clamped and
+        accepted rather than refused.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: The request could not be processed.
+            code: VALIDATION_FAILED
+            errors:
+              - field: weights.security
+                detail: Input should be a valid number.
+    RateLimited:
+      description: Too many requests (SEC-12).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: Too many requests. Try again shortly.
+            code: RATE_LIMITED
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds to wait before retrying.
+    UpstreamUnavailable:
+      description: |
+        A required external service — GitHub or Asgardeo — is unavailable or
+        degraded (REL-06, PERF-09). Previously completed results stay readable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: An external service is temporarily unavailable.
+            code: UPSTREAM_UNAVAILABLE
+
+  # ── schemas ───────────────────────────────────────────────────────────────
+  schemas:
+
+    # ---- error envelope -------------------------------------------------
+    Error:
+      type: object
+      description: |
+        Every non-2xx response in this API has this shape.
+
+        **Clients switch on `code`, never on `detail`.** `detail` is a human
+        sentence whose wording may change; `code` is a stable constant. Per SEC-16,
+        `detail` never carries a stack trace, SQL, an internal hostname or any other
+        implementation detail.
+      required: [detail, code]
+      additionalProperties: false
+      properties:
+        detail:
+          type: string
+          description: A human-readable sentence naming what failed.
+          example: A scan is already running for this branch.
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        errors:
+          type: array
+          description: Field-level detail. Present on validation failures only.
+          items:
+            type: object
+            required: [field, detail]
+            additionalProperties: false
+            properties:
+              field:
+                type: string
+                description: Dotted path to the offending field.
+                example: weights.security
+              detail: { type: string }
+
+    ErrorCode:
+      type: string
+      description: |
+        The stable, machine-readable reason. New members may be added; existing
+        members never change meaning.
+      enum:
+        - NOT_AUTHENTICATED       # 401
+        - FORBIDDEN               # 403
+        - NOT_FOUND               # 404
+        - INVALID_REPOSITORY_URL  # 400
+        - REPOSITORY_NOT_PUBLIC   # 400
+        - REPOSITORY_UNREACHABLE  # 400
+        - ALREADY_CONNECTED       # 409
+        - SCAN_ALREADY_RUNNING    # 409
+        - SCAN_NOT_CANCELLABLE    # 409
+        - VALIDATION_FAILED       # 422
+        - RATE_LIMITED            # 429
+        - UPSTREAM_UNAVAILABLE    # 503
+        - INTERNAL_ERROR          # 500
+
+    # ---- enums ----------------------------------------------------------
+    Severity:
+      type: string
+      description: |
+        How bad a finding is. **Assigned once, at detection, and never recomputed**
+        (FR-8.1): the rule register fixes it for rule findings, the SATD marker
+        table for SATD findings, and ML-2 assigns none because it produces no
+        findings. No model and no user ever sets a severity.
+
+        Read by exactly two consumers — the base-point lookup in scoring, and the
+        badge colour in the UI — so the ranking and the badge cannot disagree.
+      enum: [critical, high, medium, low]
+
+    Source:
+      type: string
+      description: |
+        Which detector produced the finding. **Exactly two values** (FR-8.2).
+
+        There is no `security` source: security patterns run inside the rule engine,
+        so a security finding is a `rule` finding whose `category` is `security`. A
+        separate source value would correlate perfectly with the category axis and
+        collapse two orthogonal axes into one.
+
+        There is no `ml-risk` source either: ML-2 emits no findings at all, only a
+        per-file risk score.
+      enum: [rule, satd]
+
+    Category:
+      type: string
+      description: |
+        What kind of debt it is. **Exactly five values** (FR-9.3), orthogonal to
+        `source` — a finding is always both *found by X* and *of type Y*.
+
+        Four are SATDAUG comment-dataset labels, so ML-1 trains and predicts on the
+        same vocabulary the product uses. `security` is the fifth and is **never
+        predicted** — it is emitted by the rule engine alone.
+
+        There is no `defect`: SATDAUG carries no `defect_debt` label, so it cannot
+        be predicted and does not exist in the product.
+      enum: [code-design, requirement, documentation, test, security]
+
+    Grade:
+      type: string
+      description: 'A ≥ 85 · B ≥ 70 · C ≥ 55 · D ≥ 40 · E < 40.'
+      enum: [A, B, C, D, E]
+
+    FindingStatus:
+      type: string
+      description: |
+        v1.0 is view-only: every finding is `open`. The later values exist now
+        because FR-11 sums *open* finding priorities — the filter needs something to
+        filter on. The v1.1 accept / resolve / false-positive actions will set them.
+      enum: [open, accepted, resolved, false-positive]
+
+    ScanPhase:
+      type: string
+      description: |
+        `idle → queued → running → done | error | cancelled`.
+
+        `idle` is the resting state of the scan control **before** a scan; it is
+        never a stored outcome. `cancelled` is a distinct terminal phase, not a
+        return to `idle`, so a scan that was stopped stays distinguishable from one
+        that never ran — which SP-13 needs for diagnosis and DBR-22 needs to keep a
+        cancelled attempt from ever being presented as a result.
+      enum: [idle, queued, running, done, error, cancelled]
+
+    # ---- auth -----------------------------------------------------------
+    Session:
+      type: object
+      description: |
+        The signed-in user. Carries no token and no provider credential — those stay
+        server-side (SEC-09).
+
+        **Only the two identifiers are guaranteed.** `user_id` and `workspace_id`
+        are ours and always exist. Everything else is display detail supplied by
+        the identity provider, and a provider may simply not have it: a GitHub
+        account can keep its email private and need never set a display name.
+
+        Since the application's identity is the Asgardeo subject and nothing else,
+        a missing display name must not be able to fail a sign-in that otherwise
+        succeeded. Clients render a fallback — the email, or initials, or a generic
+        avatar — rather than assuming these are present.
+      required: [user_id, workspace_id]
+      additionalProperties: false
+      properties:
+        user_id: { type: string, format: uuid }
+        email:
+          type: [string, 'null']
+          format: email
+        name:
+          type: [string, 'null']
+        avatar_url:
+          type: [string, 'null']
+          format: uri
+        workspace_id:
+          type: string
+          format: uuid
+          description: The tenant every request is scoped to.
+        identity_provider:
+          type: [string, 'null']
+          description: |
+            Which provider the user authenticated with inside Asgardeo — `github`,
+            `google` or `local`. Display only; the application's identity is the
+            Asgardeo subject, not this.
+          examples: [github]
+
+    # ---- projects -------------------------------------------------------
+    ConnectRepoRequest:
+      type: object
+      required: [url]
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          format: uri
+          description: A public repository URL.
+          example: https://github.com/octocat/Hello-World
+
+    Repo:
+      type: object
+      required: [id, name, owner, visibility, url, default_branch, connected_at]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Hello-World }
+        owner: { type: string, example: octocat }
+        visibility:
+          type: string
+          description: v1.0 connects public repositories only; `private` is v1.1.
+          enum: [public, private]
+        url: { type: string, format: uri }
+        default_branch: { type: string, example: main }
+        connected_at: { type: string, format: date-time }
+        latest_health:
+          description: |
+            A derived hint for the projects list. **Absent** until the project has
+            at least one successful scan — absent means "not yet scanned", which is
+            a different thing from a health score of zero.
+          oneOf:
+            - $ref: '#/components/schemas/LatestHealth'
+            - type: 'null'
+
+    LatestHealth:
+      type: object
+      required: [score, grade, delta]
+      additionalProperties: false
+      properties:
+        score: { type: number, minimum: 0, maximum: 100 }
+        grade: { $ref: '#/components/schemas/Grade' }
+        delta:
+          type: number
+          description: Change since the previous snapshot, both scored under the active profile.
+
+    Branch:
+      type: object
+      required: [name, is_default]
+      additionalProperties: false
+      properties:
+        name: { type: string, example: main }
+        is_default: { type: boolean }
+        head_commit_sha:
+          type: [string, 'null']
+          description: Full 40-character SHA. The UI shows the first seven.
+          example: 9fceb02d0ae598e95dc970b74767f19372d61af8
+        head_commit_at:
+          type: [string, 'null']
+          format: date-time
+
+    # ---- scans ----------------------------------------------------------
+    StartScanRequest:
+      type: object
+      required: [branch]
+      additionalProperties: false
+      properties:
+        branch: { type: string, example: main }
+
+    ScanStatus:
+      type: object
+      description: |
+        The scan-button state machine. `phase` comes from PostgreSQL and `progress`
+        from Redis — see `GET …/scan/{scan_id}` for why they live in different
+        stores.
+      required: [scan_id, phase, progress]
+      additionalProperties: false
+      properties:
+        scan_id: { type: string, format: uuid }
+        phase: { $ref: '#/components/schemas/ScanPhase' }
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Meaningful while `phase` is `running`; otherwise 0 or 100.
+        branch: { type: [string, 'null'] }
+        commit_sha:
+          type: [string, 'null']
+          description: The commit this scan is analysing.
+        started_at: { type: [string, 'null'], format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+        error:
+          type: [string, 'null']
+          description: |
+            Present only when `phase` is `error`. Stored on the attempt row, not
+            merely logged, so a user-reported failure is diagnosable from the
+            database alone (SP-13).
+
+    ScanSummary:
+      type: object
+      description: One row in the Scan-History view (FR-19).
+      required: [snapshot_id, scan_id, branch, commit_sha, scanned_at, finding_count, health_score, grade, delta]
+      additionalProperties: false
+      properties:
+        snapshot_id:
+          type: string
+          format: uuid
+          description: Pass to `GET …/health?snapshot_id=` to load it into the dashboard.
+        scan_id:
+          type: string
+          format: uuid
+          description: The analysis attempt that produced this snapshot.
+        branch: { type: string }
+        commit_sha: { type: string }
+        scanned_at: { type: string, format: date-time }
+        finding_count:
+          type: integer
+          minimum: 0
+          description: Stored fact.
+        health_score:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Derived on this request.
+        grade: { $ref: '#/components/schemas/Grade' }
+        delta:
+          type: number
+          description: Versus the previous snapshot, both under the active profile.
+
+    # ---- dashboard ------------------------------------------------------
+    Finding:
+      type: object
+      description: |
+        One row in the Refactor-First list, and the subject of the finding-detail
+        panel. The atomic unit of output.
+
+        `severity` and `category` are **stored facts** written at detection.
+        `priority` is **derived** on this request under the active profile — it is
+        included as the sort key the list is already ordered by, so the client never
+        re-sorts and the badge can never disagree with the ranking.
+      required: [fingerprint, source, category, severity, file, line, reason, status, priority, pinned_by_floor]
+      additionalProperties: false
+      properties:
+        fingerprint:
+          type: string
+          description: |
+            Stable across scans, so a finding can be tracked over time and
+            deduplicated (DBR-15).
+        source: { $ref: '#/components/schemas/Source' }
+        category: { $ref: '#/components/schemas/Category' }
+        severity: { $ref: '#/components/schemas/Severity' }
+        file: { type: string, example: src/main/java/com/acme/Billing.java }
+        line: { type: integer, minimum: 1 }
+        symbol:
+          type: [string, 'null']
+          description: The method or class the finding sits on. Null for file-scoped rules.
+          example: charge
+        reason:
+          type: string
+          description: |
+            A one-line, plain-English explanation produced by a **string template**,
+            never by text generation (FR-16). Reliable, instant, and incapable of
+            hallucinating.
+          example: charge() has cyclomatic complexity 18, over the limit of 15 - split it into smaller functions.
+        status: { $ref: '#/components/schemas/FindingStatus' }
+        priority:
+          type: number
+          description: |
+            `base_points(severity) × category_weight × source_trust × churn_factor ×
+            risk_factor` (FR-11). Derived, never stored. The list is returned already
+            sorted by this, descending.
+        pinned_by_floor:
+          type: boolean
+          default: false
+          description: |
+            True when this finding is held in the visible list by the
+            **critical-security visibility floor** (FR-24) rather than by its
+            computed priority. Lets the UI explain why a row is present even at the
+            minimum `security` weight of 0.1.
+        rule_id:
+          type: [string, 'null']
+          description: Which rule fired. Rule findings only.
+          example: complex-function
+        metric_value:
+          type: [number, 'null']
+          description: The measured value. Rule findings only.
+          example: 18
+        threshold:
+          type: [number, 'null']
+          description: The limit crossed. Rule findings only.
+          example: 15
+        comment_text:
+          type: [string, 'null']
+          description: |
+            The developer's own words, quoted as evidence. SATD findings only. Only
+            the comment that produced the finding is stored — never the surrounding
+            source (DBR-27).
+          example: '// FIXME: this is not thread-safe'
+        confidence:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+          description: ML-1's confidence in the predicted category. SATD findings only.
+
+    FileScore:
+      type: object
+      description: Per-file numbers behind the heat map and the hotspot ranking.
+      required: [file, debt_score, risk_score]
+      additionalProperties: false
+      properties:
+        file: { type: string }
+        debt_score:
+          type: number
+          description: Σ of the priorities of the open findings in this file. Derived.
+        risk_score:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+          description: |
+            ML-2's bug-proneness estimate — a **stored fact**, not derived.
+
+            **`null` means the ML service was unreachable** when this snapshot was
+            taken, so no estimate exists. That is different from `0.0`, which is a
+            measured "this file looks safe". Render `null` as "not assessed" and
+            never as a zero-risk badge.
+
+            A risky file with no findings still contributes no debt: risk enters
+            scoring only as a bounded multiplier on findings that already exist
+            (FR-10).
+
+    TreeNode:
+      type: object
+      description: |
+        A node in the hotspot file tree (FR-18). Folder values aggregate the stored
+        file scores beneath them, so drilling in re-aggregates a subtree by summing
+        numbers already in memory — no re-scan and no second query.
+      required: [path, name, type, health_score, grade, debt_score]
+      additionalProperties: false
+      properties:
+        path: { type: string, example: src/main/java/com/acme }
+        name: { type: string, example: acme }
+        type: { type: string, enum: [file, folder] }
+        health_score:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Drives the red → amber → green tint.
+        grade: { $ref: '#/components/schemas/Grade' }
+        debt_score: { type: number }
+        risk_score:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+          description: Files only, and null when unassessed. See `FileScore.risk_score`.
+        children:
+          type: [array, 'null']
+          description: Folders only.
+          items: { $ref: '#/components/schemas/TreeNode' }
+
+    HealthPoint:
+      type: object
+      description: |
+        One point on the trend chart (FR-14). **Every point on a line is computed
+        under the same, currently active profile**, so a profile change redraws the
+        entire history and every point stays comparable with every other. A line
+        whose points came from different profiles would be unreadable: you could not
+        tell a code change from a settings change.
+      required: [t, score]
+      additionalProperties: false
+      properties:
+        t: { type: string, format: date-time }
+        score: { type: number, minimum: 0, maximum: 100 }
+        commit_sha: { type: [string, 'null'] }
+
+    CategoryBreakdownItem:
+      type: object
+      description: |
+        One slice of the category pie (FR-13). `count` is a plain query over stored
+        rows; `debt` is weighted by the active profile — so the two move
+        independently, and a category can hold many findings but little debt.
+      required: [category, count, debt]
+      additionalProperties: false
+      properties:
+        category: { $ref: '#/components/schemas/Category' }
+        count: { type: integer, minimum: 0 }
+        debt: { type: number }
+
+    HealthReport:
+      type: object
+      description: |
+        The whole dashboard in one response — all six outputs of SRS Appendix B.
+
+        Everything numeric here is derived on this request under the active profile.
+        The client renders; it computes nothing.
+      required:
+        [snapshot_id, repo_id, branch, commit_sha, scanned_at, health_score, grade,
+         delta, red_issue_count, profile, history, tree, file_scores, findings,
+         category_breakdown]
+      additionalProperties: false
+      properties:
+        snapshot_id: { type: string, format: uuid }
+        repo_id: { type: string, format: uuid }
+        branch: { type: string }
+        commit_sha:
+          type: string
+          description: The commit analysed. The UI shows the first seven characters.
+        scanned_at: { type: string, format: date-time }
+        health_score: { type: number, minimum: 0, maximum: 100 }
+        grade: { $ref: '#/components/schemas/Grade' }
+        delta:
+          type: number
+          description: |
+            Versus the previous snapshot, **both scored under the same active
+            profile** — so it always reflects a change in the code, never a change
+            in settings.
+        red_issue_count:
+          type: integer
+          minimum: 0
+          description: Critical + high, for the health-card summary.
+        profile:
+          type: string
+          description: |
+            The active profile's name, shown on the trend chart. Without the label,
+            the chart changing shape after a profile switch reads as a defect
+            (FR-14).
+          example: Balanced
+        model_version:
+          type: [string, 'null']
+          description: |
+            The ML model version that produced this snapshot (AI-03, DBR-18). Null
+            when the snapshot was taken in degraded mode with no ML available.
+        history:
+          type: array
+          items: { $ref: '#/components/schemas/HealthPoint' }
+        tree:
+          type: array
+          items: { $ref: '#/components/schemas/TreeNode' }
+        file_scores:
+          type: array
+          items: { $ref: '#/components/schemas/FileScore' }
+        findings:
+          type: array
+          description: The Refactor-First list, already sorted by `priority` descending.
+          items: { $ref: '#/components/schemas/Finding' }
+        category_breakdown:
+          type: array
+          items: { $ref: '#/components/schemas/CategoryBreakdownItem' }
+
+    # ---- profiles -------------------------------------------------------
+    CategoryWeights:
+      type: object
+      description: |
+        One weight per `Category` value — five, no more and no fewer. Modelled as
+        named fields rather than a free-form map so that a client omitting one, or
+        inventing a sixth, is rejected at the edge instead of producing a missing-key
+        failure deep inside the scoring engine.
+
+        Bounds are documented here, but **the server is the enforcement point**: it
+        clamps on write and returns what it stored. The client-side clamp is a
+        usability affordance, not the rule.
+      required: [security, code_design, requirement, documentation, test]
+      additionalProperties: false
+      properties:
+        security: { type: number, minimum: 0.1, maximum: 3.0, default: 1.0 }
+        code_design: { type: number, minimum: 0.1, maximum: 3.0, default: 1.0 }
+        requirement: { type: number, minimum: 0.1, maximum: 3.0, default: 1.0 }
+        documentation: { type: number, minimum: 0.1, maximum: 3.0, default: 1.0 }
+        test: { type: number, minimum: 0.1, maximum: 3.0, default: 1.0 }
+
+    ApplyProfileRequest:
+      type: object
+      description: |
+        The complete profile — six numbers. Never a delta; that is what makes the
+        `PUT` idempotent.
+      required: [weights, trust_s]
+      additionalProperties: false
+      properties:
+        name:
+          type: [string, 'null']
+          description: |
+            Optional label. Sending a preset's name records which preset the values
+            came from; omit it for a custom profile.
+        weights: { $ref: '#/components/schemas/CategoryWeights' }
+        trust_s:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.5
+          description: |
+            The trust slider `s`. `0` = trust the model, `1` = trust the rules.
+            Scoring derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it
+            (FR-11).
+
+            **Security findings are excluded**: `source_trust` is fixed at 1.0 for
+            the `security` category, so no position of this slider can de-weight
+            them (FR-24 mechanism 2).
+
+    ScoreProfile:
+      type: object
+      description: A stored profile, as returned after clamping.
+      required: [id, name, weights, trust_s, is_preset, is_active]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: Balanced }
+        weights: { $ref: '#/components/schemas/CategoryWeights' }
+        trust_s: { type: number, minimum: 0, maximum: 1 }
+        is_preset:
+          type: boolean
+          description: Presets are read-only templates that seed the sliders.
+        is_active:
+          type: boolean
+          description: |
+            Whether this is the workspace's active profile. Stored as `is_active` on
+            the profile row, under a partial unique index on `(workspace_id) WHERE
+            is_active` — so "at most one active profile per workspace" is refused by
+            the database on write rather than being a rule a handler must remember
+            (locked decision 11).
+
+            The index guarantees *at most* one. That a workspace always has *at
+            least* one is guaranteed separately, by sign-in seeding **Balanced** as
+            active when the workspace is created. `PUT /api/profiles/active` must
+            therefore clear the old row and set the new one in a single transaction;
+            a clear that can commit on its own would leave a workspace with no
+            active profile.

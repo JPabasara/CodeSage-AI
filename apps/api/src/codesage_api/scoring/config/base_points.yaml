@@ -1,0 +1,15 @@
+# Severity → base points (SRS FR-11, Table 3.13; Appendix C "Base" column).
+#
+# A four-entry lookup over the severity the DETECTOR already assigned and stored.
+# Scoring never decides how bad a finding is; it decides how much that badness is
+# worth under the active profile.
+#
+# The 8× spread between low and critical is load-bearing: it is wider than the
+# maximum 5× combined churn×risk boost (2.0 × 2.5), which is what guarantees ML-2
+# can never push a Low finding above a Critical one.
+
+base_points:
+  critical: 8
+  high: 5
+  medium: 3
+  low: 1

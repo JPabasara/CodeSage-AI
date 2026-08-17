@@ -1,0 +1,35 @@
+# Scoring calibration constants (SRS FR-11, FR-20).
+# Change a number here, restart, done — no migration, no release.
+
+# ── churn_factor = 1 + min(commits_90d, cap) / cap  →  1.0 – 2.0 ────────────
+# The window is 90 days measured BACK FROM THE SCANNED COMMIT'S committer date,
+# never from the scan time (FR-11). The anchoring itself lives in the process-metric
+# extractor; this is only the saturation cap.
+churn_cap_commits: 20
+churn_window_days: 90
+
+# ── repo_health = 100 × (1 − min(1, Σ file_debt / (k × KLOC))) ──────────────
+# ⚠️ PLACEHOLDER. FR-11 requires: "k shall be calibrated against a set of reference
+# repositories before release; the calibrated value and the calibration method
+# shall be recorded in the SAD." Neither has happened yet, so no grade produced
+# with this value is meaningful.
+# TEAM TODO: run the calibration set, replace this number, and write the method
+# into the SAD.
+k: 25.0
+
+# ── Profile clamps, enforced server-side on write (FR-20) ───────────────────
+# The client also clamps, but that is a usability affordance. This is the rule:
+# repo_health is calibrated against k, so one unclamped weight arriving from any
+# client would render every stored grade incomparable with every other.
+weight_min: 0.1
+weight_max: 3.0
+s_min: 0.0
+s_max: 1.0
+
+# ── grade bands, evaluated top-down (FR-11) ────────────────────────────────
+grade_bands:
+  - { min_score: 85, grade: A }
+  - { min_score: 70, grade: B }
+  - { min_score: 55, grade: C }
+  - { min_score: 40, grade: D }
+  - { min_score: 0, grade: E }

@@ -1,0 +1,64 @@
+rules:
+  # ── security patterns ──────────────────────────────────────────────────────
+  - rule_id: hardcoded-secret
+    category: security
+    severity: critical
+    base_points: 8
+    mechanism: pattern
+    message_template: >-
+      A credential-like value is assigned to {symbol} - move it to an environment
+      variable and rotate the key.
+
+  - rule_id: sql-concat
+    category: security
+    severity: high
+    base_points: 5
+    mechanism: pattern
+    message_template: >-
+      SQL is built by string concatenation in {symbol}() - use a parameterised query.
+
+  # ── metric rules (thresholds over CK output) ───────────────────────────────
+  - rule_id: complex-function
+    category: code-design
+    severity: medium
+    base_points: 3
+    mechanism: metric
+    metric_name: wmc
+    threshold: 15
+    message_template: >-
+      {symbol}() has cyclomatic complexity {value}, over the limit of {threshold}
+      - split it into smaller functions.
+
+  - rule_id: long-method
+    category: code-design
+    severity: medium
+    base_points: 3
+    mechanism: metric
+    metric_name: loc
+    threshold: 80
+    message_template: >-
+      {symbol}() is {value} lines long, over the limit of {threshold} - extract
+      cohesive blocks into helpers.
+
+  - rule_id: deep-nesting
+    category: code-design
+    severity: medium
+    base_points: 3
+    mechanism: metric
+    metric_name: max_nested_blocks
+    threshold: 4
+    message_template: >-
+      {symbol}() nests {value} levels deep, over the limit of {threshold} - use
+      early returns to flatten it.
+
+  - rule_id: large-file
+    category: code-design
+    severity: low
+    base_points: 1
+    mechanism: metric
+    metric_name: loc
+    threshold: 800
+    scope: file
+    message_template: >-
+      {file} is {value} lines long, over the limit of {threshold} - consider
+      splitting it by responsibility.

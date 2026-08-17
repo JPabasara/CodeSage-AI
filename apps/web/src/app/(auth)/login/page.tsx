@@ -1,29 +1,6 @@
-"use client"
-
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-
-import { Button } from "@/components/ui/button"
-import { signInWithGitHub } from "@/lib/api/client"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [pending, setPending] = useState(false)
-
-  // Mocked GitHub sign-in: POST the fake auth endpoint, then land on Projects.
-  // Real OAuth (redirect + session + route guards) is Phase 12 — see client.ts.
-  const onSignIn = async () => {
-    setPending(true)
-    try {
-      await signInWithGitHub()
-      router.push("/projects")
-    } catch {
-      setPending(false)
-      toast.error("Sign in failed. Please try again.")
-    }
-  }
-
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
       <div className="w-full max-w-sm space-y-6 text-center">
@@ -33,14 +10,18 @@ export default function LoginPage() {
             Sign in to analyse your repositories.
           </p>
         </div>
-        <Button
-          size="lg"
-          className="w-full"
-          onClick={onSignIn}
-          disabled={pending}
+        {/*
+          A plain link, not a button with an onClick. The browser has to leave
+          this page entirely and go to Asgardeo — a fetch would stay here and
+          the sign-in could never complete. It is also the one request the mock
+          service worker cannot intercept.
+        */}
+        <a
+          href={`${API_BASE}/api/auth/login`}
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 w-full items-center justify-center rounded-md px-6 text-sm font-medium transition-colors"
         >
-          {pending ? "Signing in…" : "Sign in with GitHub"}
-        </Button>
+          Sign in
+        </a>
       </div>
     </main>
   )

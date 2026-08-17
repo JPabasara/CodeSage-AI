@@ -98,7 +98,9 @@ The **Dashboard** content is arranged as: a **top horizontal nav bar**, and belo
   - **Top:** two cards side by side —
     - **Card A — Overall Health:** the repo's score / grade / delta-since-last-scan.
     - **Card B — Health Graph:** a shadcn chart. **v1 shows overall *repo* health.** **Planned evolution:** hovering a file/folder in the heat-map tree re-scopes this card to **that node's** health (per-file / per-folder). See 2.3.
-  - **Bottom:** the **Refactor-First list** — the prioritized findings, sorted, with severity badges. Clicking a row opens the **finding detail** as a slide-over panel.
+  - **Bottom:** the **Refactor-First list** — the prioritized findings, sorted, each row carrying a **category chip**, a **severity chip**, `file:line`, the one-line reason, and — for SATD rows only — a **`SATD` source chip**.
+
+> **Revised 30 Jul 2026 ([CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) D-CR7) — finding detail renders *in place*, not as a slide-over.** Selecting a finding puts the dashboard into **detail mode**: the Card A + Card B region is replaced by the finding detail, the file tree on the right **auto-expands and highlights** that finding's file, and the Refactor-First list condenses to a strip so the user can move between findings. Closing restores the cards. *Why:* triage means reading many findings in sequence, and an overlay covers the tree, costs a close-and-reopen per finding, and is too narrow to render a code snippet without wrapping. Build order is unchanged — the same `finding-detail-panel` component is reused; only its container moves.
 
 ### 2.3 Interaction contracts (design these now, even if v1 is simpler)
 
@@ -110,7 +112,7 @@ These are the wires between components. Getting the boundaries right now means t
 | **Active branch** | branch dropdown | scan + all cards + tree | changing branch refetches the health report for that branch | unchanged |
 | **Scan status** | Scan button → `useScan` | top nav + (subtle) whole dashboard | mock drives `idle → running(%) → done`; Stop cancels | live scan stream from backend |
 | **Hovered/selected tree node** | `file-tree` (`onHoverNode`, `onSelectNode`) | **Card B** (health graph) + finding detail | node is captured in dashboard state; **Card B still shows repo health** | **Card B re-scopes to the hovered node** (per-file/folder health) |
-| **Selected finding** | refactor list row / tree file | finding-detail slide-over | opens a Sheet with reason + snippet + actions | unchanged |
+| **Selected finding** | refactor list row / tree file | **detail mode** — the Card A/B region, the file tree, and the list all react | region swaps to the finding detail; tree expands + highlights the file; list condenses; fingerprint goes in the URL | snippet ([v1.1]) and actions ([v1.1]) fill the same region |
 
 **Key implication:** the Dashboard page owns a small piece of state — `{ hoveredNode, selectedNode }` — that the file tree writes and Card B reads. In v1 Card B ignores it and renders repo health; the plumbing exists so flipping to contextual health is a one-line change in Card B plus a fixture that carries per-node series. (No global store needed yet — lift state in the page or a tiny React context.)
 
@@ -162,7 +164,7 @@ pnpm dlx shadcn@latest init
 You now have `components.json`, Tailwind configured, `globals.css` holding the theme variables, and dark mode already wired.
 
 ### Step 2 — add the shadcn components you'll use now (why: pull only what you need, own the source)
-These map directly onto the layout in §2. `chart` is the one graph primitive; `sidebar` is the left rail; `sheet` is the finding-detail slide-over.
+These map directly onto the layout in §2. `chart` is the one graph primitive; `sidebar` is the left rail. `sheet` was the finding-detail slide-over until [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md) moved the detail **in place** (§2.2); it stays in the set for the mobile drawer and any future overlay, but the finding detail no longer uses it.
 
 ```bash
 pnpm dlx shadcn@latest add \
@@ -230,7 +232,7 @@ apps/web/
 │   │       ├── overall-health-card.tsx   # Card A  (V1)
 │   │       ├── health-graph-card.tsx     # Card B  (shadcn Chart) — repo scope now, node scope later
 │   │       ├── refactor-first-list.tsx   # V3
-│   │       ├── finding-detail-panel.tsx  # V4  (shadcn Sheet slide-over)
+│   │       ├── finding-detail-panel.tsx  # V4  (in-place detail region — CR-001)
 │   │       ├── category-breakdown.tsx    # V5  (shadcn Chart) — added later
 │   │       └── file-tree/                # ★ boundary fixed, LIBRARY DEFERRED (§7.4)
 │   │           ├── file-tree.tsx         #   public component — props ARE the contract
@@ -276,16 +278,25 @@ This section is the answer to *"how do I build the whole thing before the backen
 Extended from v1.0 to cover the flow in §2 (projects, branches, scan status, tree nodes). Put this in `lib/types/index.ts`:
 
 > ⚠️ **Canonical version:** the contract now lives in **`apps/web/src/lib/types/index.ts`** (created in Phase 5) and is the finalized v1 shape. It **extends** the baseline below with: a `Source` type; finding-detail fields (`priority`, `ruleId`, `metricValue`, `threshold`, `snippet`); `ScanSummary` (Scan-History tab); `CategoryBreakdownItem` (Health-card pie); `ScoreProfile` (profiles); extra `HealthReport` fields (`scanId`, `commitSha`, `profile`, `redIssueCount`, `categoryBreakdown`); a `Repo.workspaceId` multi-tenant seam; and v2 `Role`/`Member`/`Workspace`. Treat the **code file** as the source of truth and keep this section in sync via PR.
+>
+> **CR-001 (30 Jul 2026) changes two of those shapes** — applied in **Phase 10.5**, see [the build guide](./frontend_build_stepbystep.md) and [CR-001](../Change%20Requests/CR-001_2026-07-30_scoring-model-and-finding-ux.md): `Source` drops to `"rule" | "satd"`, and `ScoreProfile` becomes five **category**-keyed weights (`security`, `codeDesign`, `requirement`, `documentation`, `test`) plus a `trust` scalar `s`, replacing `wMl`. The old vector mixed axes — `satd` is a *source* and `duplication` is a *rule* — and omitted three real categories, which was invisible while profiles were presets and becomes a dead slider once the user can drag them.
 
 ```typescript
 export type Severity = "critical" | "high" | "medium" | "low";
-export type Category = "code-design" | "requirement" | "documentation" | "test" | "security";
+export type Category =
+  | "code-design" | "requirement" | "defect"        // ML-1 (SATD)
+  | "documentation" | "test"                       // ML-1 (SATD)
+  | "security";                                    // rule engine only
+// Six values, frozen against satd-dataset-code_comments.csv (SRS FR-9.3, CR-001 D-CR12).
 export type FindingStatus = "open" | "acknowledged" | "accepted" | "resolved" | "false-positive";
 export type Grade = "A" | "B" | "C" | "D" | "E";
 
 export interface Finding {
   fingerprint: string;
-  source: "rule" | "satd" | "security" | "ml-risk";
+  source: "rule" | "satd";     // CR-001: the only two producers of findings.
+                               // Security patterns live in the rule engine, so a
+                               // security finding is source "rule" + category "security".
+                               // The risk model writes FileScore.riskScore, never a Finding.
   category: Category;
   severity: Severity;
   file: string;
@@ -383,10 +394,19 @@ export async function stopScan(repoId: string, scanId: string): Promise<ScanStat
   return json(await fetch(`/api/repos/${repoId}/scan/${scanId}/stop`, { method: "POST" }));
 }
 
+// the only non-scan write in v1.0 — see "Applying a profile" below
+export async function setActiveProfile(p: ProfileInput): Promise<ScoreProfile> {
+  return json(await fetch("/api/profiles/active", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+  }));
+}
+
 async function json(res: Response) { if (!res.ok) throw new Error(res.statusText); return res.json(); }
 ```
 
 Note: this code is **final**. It does not know or care that there's no backend. It just calls `/api/...`.
+
+**Applying a profile — a write, then an ordinary read.** The scoring profile is the one place users change what the numbers *mean*, and it is worth seeing why it is only one function. The six sliders and the trust slider are local component state; nothing is sent while they move. Pressing **Apply** issues a single `PUT` carrying the *whole* profile — idempotent, so a retry cannot half-apply it — and the server clamps, stores it against the workspace, and returns what it stored. The client then simply invalidates its health query, and `getHealthReport` above re-runs **unchanged**: it carries no profile parameter, because the active profile is server-side workspace state (SAD §6.2, §9). That is the point of this shape — the read surface does not grow when the profile shape does, and a reload or a second tab sees the same lens. No scan is triggered and no snapshot is written (SRS FR-20).
 
 ### 6.3 The mock layer — MSW answers those calls with fixtures
 
@@ -413,6 +433,11 @@ export const handlers = [
   http.post("/api/repos/:repoId/scan", ({ params }) => HttpResponse.json(advanceScan(params.repoId as string, "start"))),
   http.get("/api/repos/:repoId/scan/:scanId", ({ params }) => HttpResponse.json(advanceScan(params.repoId as string, "tick"))),
   http.post("/api/repos/:repoId/scan/:scanId/stop", ({ params }) => HttpResponse.json(advanceScan(params.repoId as string, "stop"))),
+
+  // profiles: a read, plus the one write that is not a scan
+  http.get("/api/profiles", () => HttpResponse.json(mockProfiles)),
+  http.put("/api/profiles/active", async ({ request }) =>
+    HttpResponse.json(setMockActiveProfile(await request.json()))),   // clamps, keeps it in memory
 ];
 ```
 
