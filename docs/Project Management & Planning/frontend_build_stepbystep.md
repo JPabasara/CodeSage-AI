@@ -1190,7 +1190,7 @@ const apply = useMutation({
 Three things to get right:
 
 - **`PUT`, whole body, no delta.** Re-sending the same profile is a no-op, so a retry after a dropped response can't half-apply. The client fires a dependent read straight after — that read must not race a partially-written profile.
-- **The health request does not change.** `GET /api/repos/:id/health?branch=…` carries **no** profile parameter; the backend resolves the active profile itself (`WORKSPACE.active_profile_id`). If you find yourself adding `?profile=` to a read, stop — that is the design the SAD §6.2 rejected.
+- **The health request does not change.** `GET /api/repos/:id/health?branch=…` carries **no** profile parameter; the backend resolves the active profile itself (the workspace's `SCORING_PROFILE` row with `is_active = true`). If you find yourself adding `?profile=` to a read, stop — that is the design the SAD §6.2 rejected.
 - **Seed the draft from `setDraft(saved)`, not from your own state.** The server clamps; rendering your pre-clamp value would show the user a number that isn't stored.
 
 Add the MSW handler alongside the existing `*/api/profiles` read:
@@ -1251,7 +1251,7 @@ Also:
 
 **Added 12 Aug 2026.** Everything above this line is already built and is not being
 revisited. This phase lands the decisions taken *after* Phase 10.5 shipped — see
-[docs/NEXT_STEPS.md](../NEXT_STEPS.md) for the locked list.
+[the work plan and locked decisions](work-plan-and-locked-decisions.md) for the locked list.
 
 **Goal:** make the frontend agree with the backend that now exists, and stop
 hand-maintaining the contract.
@@ -1347,7 +1347,7 @@ POST /api/auth/logout     → clears the session
 > With FastAPI as the BFF the frontend needs no identity library at all: signing in is
 > an `<a>`, signing out is one `POST`, and "am I signed in?" is
 > `GET /api/auth/session`. Removing the SDK is step 3a of
-> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+> [the work plan and locked decisions](work-plan-and-locked-decisions.md).
 >
 > Files to clean: delete `apps/web/proxy.ts`; drop `<AsgardeoProvider>` from
 > `src/app/layout.tsx`; replace the buttons in `(auth)/login/page.tsx` and

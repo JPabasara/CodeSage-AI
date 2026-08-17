@@ -7,7 +7,7 @@
 >
 > **Four decisions in this document were reversed after it was written (12 Aug 2026).**
 > The *reasoning* below is still sound; these four *facts* are not. Full list in
-> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+> [the work plan and locked decisions](work-plan-and-locked-decisions.md).
 >
 > | Where this doc says | It is now |
 > |---|---|
@@ -515,7 +515,7 @@ PUT /api/profiles/active
 What the handler does, in full:
 
 1. **Clamp** every weight to `0.1–3.0` and `s` to `0–1`. Do this server-side even though the sliders already cannot exceed it — the sliders are a UI affordance, the clamp is the invariant, and `repo_health` is calibrated against `k` (§6). Reject nothing; clamp silently and return what was stored, so the client can render the corrected value rather than believe its own.
-2. **Write** the workspace's `SCORE_PROFILE` row and point `WORKSPACE.active_profile_id` at it (SAD §9). Seven numbers. No queue, no worker, no clone, no `SCAN` row.
+2. **Write** the workspace's `SCORING_PROFILE` row and mark it active (SAD §9). Six numbers — five weights and the trust slider. The same row is updated in place; profiles are not versioned and no history is kept. "At most one active profile per workspace" is held by a partial unique index on the table, so the database refuses a second active row rather than this handler having to remember (locked decision 11). Clear the old row and set the new one in one transaction. No queue, no worker, no clone, no `SCAN` row.
 3. **Return the stored profile.** The client then re-issues its normal reads — `GET /api/repos/{id}/health?branch=…` — and the scoring pass above runs under the new profile.
 
 **Why `PUT` and not `PATCH`.** The body is the *complete* profile, not a delta, so applying it twice is applying it once — which matters because the client fires a dependent read immediately after, and a retry on a dropped response must not leave three weights updated and three not.

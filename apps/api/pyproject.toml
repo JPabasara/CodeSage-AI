@@ -1,0 +1,120 @@
+[project]
+name = "codesage-api"
+version = "0.1.0"
+description = "Code Sage AI — FastAPI API process + Celery scan workers (SAD v0.5 §8.2)"
+requires-python = ">=3.12"
+
+# Source of truth for dependencies. `requirements.txt` is a flat mirror of this
+# list for anyone who prefers `pip install -r`; regenerate it if you edit here.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "celery>=5.4",
+    "redis>=5.2",
+    "httpx>=0.28",
+    # NOTE: no OAuth library. The Asgardeo exchange is two plain HTTP calls in
+    # services/auth.py — a library here would hide the one part of this system
+    # most worth being able to read. `itsdangerous` signs the short-lived
+    # sign-in handshake cookie, which is the only cryptography we do ourselves.
+    "itsdangerous>=2.2",
+    "pyyaml>=6.0",
+    # ── extraction toolchain (SRS FR-7) — worker-only, shared image ──────────
+    # Tree-sitter extracts source comments for the SATD classifier; v1.0 ships the
+    # Java grammar only, matching the CK constraint.
+    "tree-sitter>=0.23",
+    "tree-sitter-java>=0.23",
+    "pydriller>=2.6",
+    # NOTE: CK is not listed. It is a Java jar run as a subprocess, installed into
+    # the image by the Dockerfile (CODESAGE_CK_JAR). There is no pip package.
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    "testcontainers[postgres]>=4.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codesage_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["codesage_api"]
+strict = true
+
+# ── Architecture enforcement ────────────────────────────────────────────────
+# These contracts are the SAD's layering rules expressed as CI checks. Run with
+# `lint-imports`. They exist because each one has been argued for at length in the
+# SAD, and none of them is visible to a reviewer reading a single file.
+[tool.importlinter]
+root_package = "codesage_api"
+include_external_packages = true
+
+
+# SAD G4 / SRS SP-11: ScoringEngine is a PURE function. It must be unit-testable
+# against the TC-11 fixture with no database, no broker and no web framework
+# running. The moment `scoring` imports an ORM row, that property is gone.
+[[tool.importlinter.contracts]]
+name = "scoring is pure — no db, no web, no queue, no io"
+type = "forbidden"
+source_modules = ["codesage_api.scoring"]
+forbidden_modules = [
+    "codesage_api.db",
+    "codesage_api.routers",
+    "codesage_api.services",
+    "codesage_api.tasks",
+    "codesage_api.integrations",
+    "sqlalchemy",
+    "fastapi",
+    "celery",
+    "httpx",
+]
+
+# SAD Figure 5: the write path ends at "persist the snapshot". Scoring happens
+# later, on the read path, invoked by the API. A worker that imports `scoring` is
+# a worker that is about to store a derived value — an SRS FR-21 violation.
+[[tool.importlinter.contracts]]
+name = "workers never score"
+type = "forbidden"
+source_modules = ["codesage_api.tasks", "codesage_api.extractors", "codesage_api.detection"]
+# The maths, not the vocabulary. `scoring.enums` deliberately holds the shared
+# words — Category, Severity, Source — and its own docstring says everything may
+# import *down* into it; a detector has to name the category it found. What a
+# worker must never touch is anything that turns findings into a number, because
+# that is the moment it would start storing a derived value (FR-21).
+forbidden_modules = [
+    "codesage_api.scoring.engine",
+    "codesage_api.scoring.formula",
+    "codesage_api.scoring.floor",
+    "codesage_api.scoring.models",
+    "codesage_api.scoring.config_loader",
+]
+
+# SAD §8.1: dependencies point downward only. No arrow goes back up.
+[[tool.importlinter.contracts]]
+name = "layers point downward only"
+type = "layers"
+layers = ["codesage_api.routers", "codesage_api.services", "codesage_api.db"]

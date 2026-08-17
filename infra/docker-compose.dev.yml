@@ -1,0 +1,21 @@
+# Local development override — OPT-IN, never used by default.
+#
+# The main compose file keeps postgres off the host network on purpose: an open
+# database port is the easiest thing to forget about before a demo. But running
+# alembic, or pointing a database viewer at it, needs a port from the host.
+#
+# So this file exists separately and you have to ask for it by name:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
+#
+# Typing the second -f is the point. The default stays locked, and opening it up
+# is something you did on purpose and can see in your shell history.
+#
+# 5433, not 5432, so it cannot collide with a PostgreSQL already installed on
+# the machine — and not 55432, which lands inside a port range Windows reserves
+# for itself and refuses to bind.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5433:5432"

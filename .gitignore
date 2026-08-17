@@ -1,4 +1,40 @@
+# Repository-wide ignores. Each app also has its own .gitignore for things only
+# it produces; this file covers what appears at the root or in several places.
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+# Never commit a real credential. If one is ever pushed, rotate it at the
+# provider — deleting the commit does not help, because every clone still has it.
+.env
+.env.*
+!.env.example
+
+# ── Tool caches and downloads ───────────────────────────────────────────────
+# pnpm's content-addressable store. Hundreds of megabytes, machine-specific, and
+# rebuilt from the lockfile on demand — the lockfile is the thing worth keeping.
+.pnpm-store/
+node_modules/
+
+# Scratch space for one-off analysis. Nothing here is a deliverable.
+.tmp/
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+.venv312/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.import_linter_cache/
+.coverage
+htmlcov/
+
+# ── Next.js / TypeScript build output ───────────────────────────────────────
+.next/
+out/
+*.tsbuildinfo
+
+# ── Editors and operating systems ───────────────────────────────────────────
 # Claude Code local config (per-machine permission approvals, etc.) — not shared.
 .claude/
-
-__pycache__/

@@ -1,7 +1,7 @@
 "use client"; // uses usePathname → must be a Client Component
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   FolderGit2,
   LayoutDashboard,
@@ -68,8 +68,23 @@ const NAV: NavItem[] = [
   },
 ];
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
 export function AppRail() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  // `credentials: "include"` is what actually sends the session cookie: the API
+  // is on a different origin (port 8000 vs 3000), and the browser leaves cookies
+  // out of cross-origin requests unless asked. Without it the server sees no
+  // cookie, deletes nothing, and the user stays signed in.
+  async function signOut() {
+    await fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+    router.push("/login");
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -102,9 +117,9 @@ export function AppRail() {
         <SidebarMenu>
           <SidebarMenuItem>
             {/* stub for now — Phase 8+ turns this into a real menu (Sign out / Settings / Billing) */}
-            <SidebarMenuButton tooltip="Account">
+            <SidebarMenuButton tooltip="Sign out" onClick={signOut}>
               <LogOut />
-              <span>Account</span>
+              <span>Sign out</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

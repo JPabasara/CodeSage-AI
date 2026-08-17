@@ -1,3 +1,7 @@
 .next
 node_modules
 pnpm-lock.yaml
+
+# Generated from docs/api/openapi.yaml by `pnpm gen:types`. Prettier would
+# reformat it, and then `pnpm gen:types:check` could never pass again.
+src/lib/types/api.ts

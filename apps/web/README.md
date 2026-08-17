@@ -43,7 +43,28 @@ pnpm test:e2e              # Playwright end-to-end (Phase 10)
 pnpm exec tsc --noEmit     # type-check
 pnpm exec eslint src       # lint
 pnpm format                # Prettier write
+pnpm gen:types             # regenerate src/lib/types/api.ts from the API contract
+pnpm gen:types:check       # fails if that file is stale — run before you commit
 ```
+
+### Regenerating the API types
+
+`docs/api/openapi.yaml` is the **contract** — the single source of truth for every
+shape crossing the browser/backend boundary. `src/lib/types/api.ts` is **generated
+from it** and must never be hand-edited:
+
+```
+docs/api/openapi.yaml ──pnpm gen:types──> src/lib/types/api.ts
+```
+
+Edit the contract, then run `pnpm gen:types` and commit both together.
+`pnpm gen:types:check` regenerates in memory and compares, so it exits 1 the moment
+the two drift apart — which is the only thing stopping a contract change from
+silently not reaching the frontend. It is **not wired into CI yet** (this repo has
+no CI pipeline), so today it is on you to run it.
+
+`api.ts` is listed in `.prettierignore`: Prettier would reformat generated output
+and `gen:types:check` could then never pass.
 
 ### Watching the E2E tests run
 
@@ -70,8 +91,11 @@ component → hook (src/hooks) → client (src/lib/api/client.ts) → fetch("/ap
                                                        fixtures (src/lib/mocks/fixtures.ts)
 ```
 
-- **`src/lib/types`** — the data **contract**. One source of truth for every shape
-  that flows between the frontend, the mock, and the future real backend.
+- **`src/lib/types`** — the shapes the components use. **`api.ts` in this folder is
+  generated** from `docs/api/openapi.yaml` (the actual contract) by `pnpm gen:types`;
+  the other files here are hand-written and are being replaced by it in Phase 10.6.
+  Until that phase lands, components still import the hand-written ones — which is
+  why they are still camelCase while the contract is snake_case.
 - **`src/lib/mocks/handlers.ts`** — the fake API endpoints. The **same handlers**
   power the dev app (browser worker), the tests (Node server), and E2E.
 - **`src/lib/api/client.ts`** — thin `fetch` functions. Final code; unaware the
@@ -94,8 +118,8 @@ never runs the scoring formula. Two things follow:
 - **Real scores depend on a constant called `k`** that converts internal debt points
   into the 0–100 scale, and it is **not yet calibrated** (CR-001 changed the scale of
   `file_debt`). Expect real grades to move once it is. Background in the
-  [root README](../../README.md#how-the-health-score-works); method in
-  [apps/ml/README.md](../ml/README.md).
+  [root README](../../README.md#how-the-health-score-works); training and evaluation
+  rules in [apps/ml/training/README.md](../ml/training/README.md).
 
 Changing a **scoring profile** doesn't change this: the Profiles page `PUT`s the
 profile, then re-reads `HealthReport` — the numbers are re-derived server-side and no
@@ -121,7 +145,7 @@ weight at all.
 becomes a type error rather than a runtime surprise. Everything below follows from
 that. Step-by-step in Phase 10.6 of the
 [build guide](../../docs/Project%20Management%20&%20Planning/frontend_build_stepbystep.md);
-locked decisions in [docs/NEXT_STEPS.md](../../docs/NEXT_STEPS.md).
+locked decisions in [the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md).
 
 | What | From | To |
 |---|---|---|
@@ -137,7 +161,7 @@ locked decisions in [docs/NEXT_STEPS.md](../../docs/NEXT_STEPS.md).
 Backend-for-Frontend: it performs the whole OIDC exchange and hands the browser an
 httpOnly session cookie, so the frontend holds no token and needs no identity SDK.
 Signing in is a link; signing out is one `POST`. See
-[docs/NEXT_STEPS.md](../../docs/NEXT_STEPS.md) step 3 and SAD §6.4.
+[the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md) step 3 and SAD §6.4.
 
 **`defect` is removed, reversing the 31 Jul decision.** The SATD corpus changed to
 **SATDAUG**, which carries no `defect_debt` label — so ML-1 cannot predict that
@@ -161,7 +185,7 @@ src/
 ├── lib/
 │   ├── api/client.ts    # network calls
 │   ├── mocks/           # MSW handlers + fixtures (deleted at go-live)
-│   ├── types/           # THE CONTRACT
+│   ├── types/           # api.ts = GENERATED from docs/api/openapi.yaml (the contract)
 │   └── utils.ts         # colour helpers (grade/severity/health), cn, shortSha
 └── test/setup.ts        # jsdom polyfills + MSW node server for tests
 ```

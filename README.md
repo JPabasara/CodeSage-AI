@@ -14,15 +14,16 @@ apps/
 infra/
 └── docker-compose.yml          # the six-container local stack
 docs/
-├── NEXT_STEPS.md               # ← the current working plan and the locked decisions
 ├── api/openapi.yaml            # the REST contract. Frontend types are generated from it
 ├── Deliverables/               # SRS and SAD — .docx is the deliverable, .md is a generated mirror
 ├── Diagrams/UMLs/              # draw.io sources for every figure in the SAD
 ├── Change Requests/            # accepted changes to the deliverables, with rationale
 │   └── CR-001_2026-07-30_scoring-model-and-finding-ux.md
+├── Progress Evaluations/       # viva / progress-review preparation, one file per review
 ├── Templates/                  # the blank course templates (inputs only)
 ├── tools/                      # the scripts that build the deliverables — see its README
 └── Project Management & Planning/
+    ├── work-plan-and-locked-decisions.md  # ← start here: the work order and the locked decisions
     ├── frontend_build_stepbystep.md   # the execution recipe (phase by phase)
     ├── frontend_prototype_plan.md     # architecture & design decisions
     ├── code-sage_backend-analysis-engine.md
@@ -35,9 +36,16 @@ docs/
 > deliverable itself. Each records the problem, the decision and the *why*, so a reader
 > six months later can tell a considered change from a drifting document.
 
-> **Start here:** [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md) carries the decisions that are
+> **Start here:** [the work plan and locked decisions](docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md) carries the decisions that are
 > locked and the order of work. Read it before changing anything — several decisions
 > were reversed after the deliverables were written.
+
+> **The contract generates the frontend's types.** `apps/web/src/lib/types/api.ts` is
+> produced from [`docs/api/openapi.yaml`](docs/api/openapi.yaml) by `pnpm gen:types`
+> and must never be hand-edited. `pnpm gen:types:check` regenerates in memory and
+> compares, so it exits 1 the moment the contract and the generated file drift apart.
+> Edit the contract, regenerate, commit both together. Not wired into CI yet — this
+> repo has no CI pipeline, so it is a command someone has to run.
 
 ## Architecture
 
@@ -130,7 +138,7 @@ with handler bodies still to come. `apps/ml` is the inference service.
 generated mirror for reading and diffing in the repository.
 
 **Next** — frontend Phase 10.6 (snake_case rename, five categories, Asgardeo sign-in).
-Order of work in [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
+Order of work in [the work plan and locked decisions](docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md).
 
 ## How the health score works
 

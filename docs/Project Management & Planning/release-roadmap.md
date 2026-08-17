@@ -15,7 +15,7 @@
 > Consequence: the scoring profile is **five weights + one trust slider = six numbers**.
 >
 > **Four further reversals (12 Aug 2026)**, all recorded in
-> [docs/NEXT_STEPS.md](../NEXT_STEPS.md):
+> [the work plan and locked decisions](work-plan-and-locked-decisions.md):
 > Lizard → **CK** (Java only) · GHPR → **D'Ambros** · GitHub OAuth → **Asgardeo**
 > with GitHub federated · the wire is **snake_case**.
 >
@@ -30,7 +30,7 @@
 > All six reversals are recorded in the **v1.1 revision-history rows of the SRS and
 > SAD themselves**, which is where a marker will look. A separate CR-002 document is
 > therefore not being written — see "Not doing" in
-> [docs/NEXT_STEPS.md](../NEXT_STEPS.md).
+> [the work plan and locked decisions](work-plan-and-locked-decisions.md).
 
 ---
 

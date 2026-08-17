@@ -1,0 +1,47 @@
+# The three preset profiles (SRS FR-20, Table 3.100).
+#
+# Presets SEED the sliders — they are not a separate mechanism. A preset populates
+# the five weights and `s` in one click; adjusting from there is optional, and
+# "Reset to preset" is the same PUT with a preset's values as its body. Balanced is
+# the workspace default.
+#
+# FIVE weights, one per Category value: security, code-design, requirement,
+# documentation, test (FR-9.3). There is no `defect` weight — that category was
+# removed when the taxonomy was re-read off the SATDAUG dataset.
+#
+# ⚠️ TEAM TODO: SRS v1.0 FR-20 names the three presets but no longer publishes
+# their weight table. The security-first and delivery-speed values below are
+# carried forward from the earlier six-weight table with the `defect` column
+# dropped, so they are a reasonable default but NOT normative. Either add the
+# table back to the SRS or confirm these values and record them there.
+
+presets:
+  balanced:
+    name: Balanced
+    s: 0.5
+    weights:
+      security: 1.0
+      code-design: 1.0
+      requirement: 1.0
+      documentation: 1.0
+      test: 1.0
+
+  security-first:
+    name: Security-first
+    s: 0.5
+    weights:
+      security: 3.0
+      code-design: 1.0
+      requirement: 0.8
+      documentation: 0.5
+      test: 1.0
+
+  delivery-speed:
+    name: Delivery-speed
+    s: 0.7
+    weights:
+      security: 1.5
+      code-design: 1.2
+      requirement: 0.8
+      documentation: 0.5
+      test: 0.5
