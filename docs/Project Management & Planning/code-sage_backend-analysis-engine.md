@@ -7,7 +7,7 @@
 >
 > **Four decisions in this document were reversed after it was written (12 Aug 2026).**
 > The *reasoning* below is still sound; these four *facts* are not. Full list in
-> [the work plan and locked decisions](work-plan-and-locked-decisions.md).
+> [the work plan and locked decisions](work-plan-and-locked-decisions-after-progress-eval.md).
 >
 > | Where this doc says | It is now |
 > |---|---|

@@ -48,7 +48,7 @@ python -c "from openapi_spec_validator import validate; from openapi_spec_valida
 
 ## The conventions it encodes
 
-All of these are settled decisions — see [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md).
+All of these are settled decisions — see [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md).
 
 | Convention | Detail |
 |---|---|
@@ -116,4 +116,4 @@ describes an API that does not yet enforce itself:
 - `{ detail, code }` on every error, with `code` drawn from the `ErrorCode` enum
 - snake_case responses — the Pydantic base still converts to camelCase
 
-Steps 3a to 3f of [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md) cover all of it.
+Steps 3a to 3f of [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md) cover all of it.
