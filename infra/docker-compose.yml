@@ -42,6 +42,15 @@ services:
     volumes:
       # Artifacts are mounted, not baked in, so swapping a model is a restart.
       - ../apps/ml/models:/models:ro
+    healthcheck:
+      # python:3.12-slim ships neither curl nor wget, and adding one just to ask
+      # a question Python can ask itself would be a layer for nothing.
+      # urlopen raises on any non-2xx, so a bad status is already a failure.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     # Not published. Workers call it by service name.
 
   api:
@@ -49,6 +58,15 @@ services:
       context: ../apps/api
     environment:
       CODESAGE_DATABASE_URL: postgresql+psycopg://codesage_app:devpassword@postgres:5432/codesage
+      # ⚠️ A SECOND URL, AND A DIFFERENT ROLE ON PURPOSE.
+      # `codesage_app` cannot create tables, and must not be able to — it is the
+      # role Row-Level Security applies to (infra/postgres/init/01-init.sql).
+      # Migrations therefore run as the owner. Without this line alembic falls
+      # back to the default in config.py, which points at localhost:5432 with
+      # the password "changeme", and `alembic upgrade head` fails inside the
+      # container with a connection error that looks like a networking problem
+      # and is not one.
+      CODESAGE_MIGRATION_DATABASE_URL: postgresql+psycopg://codesage_owner:devpassword@postgres:5432/codesage
       CODESAGE_REDIS_URL: redis://redis:6379/0
       CODESAGE_ML_SERVICE_URL: http://ml:8001
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
@@ -65,6 +83,17 @@ services:
       CODESAGE_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
+    healthcheck:
+      # Liveness, not readiness — deliberately. /api/healthz answers "is the
+      # process up?" and checks nothing else, so a database blip cannot make an
+      # orchestrator restart a perfectly healthy API container. /readyz is the
+      # one that checks Postgres and Redis; use it by hand when diagnosing, not
+      # as the restart trigger. (See routers/system.py, which says the same.)
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,6 +113,18 @@ services:
       # ~2 GB of scratch per concurrent scan. A named volume rather than the
       # container's writable layer, so a large clone cannot bloat the image layer.
       - clones:/var/tmp/codesage-clones
+    healthcheck:
+      # The worker serves no HTTP — there is no port to poll. Celery's own
+      # answer is `inspect ping`, which goes out over the broker and comes back
+      # "pong", so a green tick here means the worker is genuinely reachable on
+      # Redis rather than merely a process that has not exited yet.
+      # Slower interval and a long start_period: this costs a broker round trip,
+      # and Celery takes its time connecting.
+      test: ["CMD-SHELL", "celery -A codesage_api.worker inspect ping -t 10 | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 45s
     depends_on:
       postgres:
         condition: service_healthy
