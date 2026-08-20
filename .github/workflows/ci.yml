@@ -21,6 +21,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:  
 
 # A second push to the same branch makes the first run pointless. Cancel it
 # rather than queueing behind it — except on main, where every commit that
