@@ -96,8 +96,18 @@ services:
   web:
     build:
       context: ../apps/web
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      args:
+        # ⚠️ A BUILD ARGUMENT, NOT AN ENVIRONMENT VARIABLE — and the difference
+        # is not cosmetic. Next.js replaces every NEXT_PUBLIC_* reference with a
+        # string literal while `next build` runs, so by the time a container
+        # starts, the address is already inside the JavaScript the browser
+        # downloads. It was written here as `environment:` until 20 Aug 2026,
+        # which did nothing at all: the image still pointed at localhost:8000
+        # wherever it was deployed. Moving it to `args:` is what makes the
+        # frontend deployable somewhere other than a laptop.
+        #
+        # Changing this means rebuilding: `docker compose build web`.
+        NEXT_PUBLIC_API_BASE_URL: ${CODESAGE_WEB_API_BASE_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     depends_on:

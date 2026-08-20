@@ -1,0 +1,48 @@
+# Build context for apps/web/Dockerfile.
+#
+# Everything here is either huge, machine-specific, or actively harmful inside
+# the image. The last category is the one that matters: `.env.local` sets
+# NEXT_PUBLIC_API_MOCKING=enabled, and Next reads .env files during `next build`.
+# If it reached the builder, `pnpm build` would bake the MSW fake backend into a
+# production image and the deployed site would answer its own API calls.
+
+# Installed inside the image instead — and a host node_modules is the wrong
+# platform anyway (Windows/macOS binaries in a Linux container).
+node_modules
+.pnpm-store
+
+# Build output. Stale artifacts from `pnpm dev` would shadow the real build.
+.next
+out
+build
+*.tsbuildinfo
+
+# Every env file, deliberately. The API address comes in as a build argument
+# (see Dockerfile), never from a file — that is the whole point of J0.2.
+.env
+.env.*
+
+# Tests and their output: not run inside the image, and CI runs them separately.
+e2e
+playwright.config.ts
+playwright-report
+test-results
+coverage
+vitest.config.ts
+
+# Editor, VCS and docs.
+.git
+.gitignore
+.vscode
+.idea
+README.md
+*.md
+
+# Itself.
+Dockerfile
+.dockerignore
+
+# Misc
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
