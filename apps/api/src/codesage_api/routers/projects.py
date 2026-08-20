@@ -1,24 +1,24 @@
 """Project (repository) endpoints (SRS FR-3, FR-4)."""
 
 from __future__ import annotations
+import uuid
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session 
 
-from fastapi import APIRouter, status
-
+from codesage_api.deps import get_db, get_workspace_id 
 from codesage_api.schemas import ConnectRepoIn, RepoOut
+from codesage_api.services import repositories as repository_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.get("", response_model=list[RepoOut])
-def list_projects() -> list[RepoOut]:
-    """Connected projects with name, owner, visibility and current health (FR-4).
+def list_projects(
+    db: Session = Depends(get_db),
+    workspace_id: uuid.UUID = Depends(get_workspace_id)) -> list[RepoOut]:
 
-    The health hint is derived, like every other score. If the projects list ever
-    becomes slow enough to need a cached column, that cache must be stamped with
-    the profile that produced it and recomputed whenever the active profile
-    differs — otherwise the list shows one grade and the dashboard another.
-    """
-    raise NotImplementedError
+    """Return repositories belonging to the caller's workspace."""
+    return repository_service.list_projects(db, workspace_id)
 
 
 @router.post("", response_model=RepoOut, status_code=status.HTTP_201_CREATED)
