@@ -1,0 +1,51 @@
+# Build context for apps/api/Dockerfile.
+#
+# Owned by whoever does deployment, like the Dockerfile beside it — see the team
+# plan, §1. Chamodh: if something you need is missing from the image, ask rather
+# than editing this.
+#
+# Without this file the build context was 253 MB, almost all of it .venv — a
+# Windows/Linux-mismatched virtualenv that the image would never use anyway.
+# Docker sends the whole context to the daemon before the first instruction
+# runs, so this is pure waiting.
+
+# Local virtualenvs. The image installs its own with pip.
+.venv
+venv
+env
+
+# Python bytecode and tool caches.
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.import_linter_cache
+.coverage
+htmlcov
+
+# Secrets and local settings. The image gets its configuration from the
+# environment at run time — never from a file baked into a layer.
+.env
+.env.*
+!.env.example
+
+# Tests are run by CI, not inside the image.
+tests
+
+# Scratch space for clones. Never part of an image.
+var
+/var/tmp
+
+# Editor and VCS.
+.git
+.gitignore
+.vscode
+.idea
+
+# Itself.
+Dockerfile
+.dockerignore
+
+.DS_Store
