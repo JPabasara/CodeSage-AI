@@ -71,7 +71,7 @@ function healthReportFor(repoId: string, branch: string): HealthReport {
     ...mockHealthReport,
     repo_id: repoId,
     branch: branchInfo.name,
-    commit_sha: branchInfo.head_commit_sha,
+    commit_sha: branchInfo.head_commit_sha ?? "",
     health_score: target,
     grade: gradeFor(target),
     delta: target - previous,
@@ -108,7 +108,7 @@ function advanceScan(
       phase: "running",
       progress: 0,
       branch: branchInfo.name,
-      commit_sha: branchInfo.head_commit_sha,
+      commit_sha: branchInfo.head_commit_sha ?? undefined,
       started_at: now,
     }
     scans.set(repoId, started)

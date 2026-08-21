@@ -20,7 +20,6 @@ export const mockRepos: Repo[] = [
     owner: "acme",
     visibility: "public",
     url: "https://github.com/acme/acme-payments",
-    source: "public-url",
     default_branch: "main",
     connected_at: "2026-07-10T09:00:00.000Z",
     latest_health: { score: 72, grade: "B", delta: 3 },
@@ -31,7 +30,6 @@ export const mockRepos: Repo[] = [
     owner: "acme",
     visibility: "public",
     url: "https://github.com/acme/web-store",
-    source: "public-url",
     default_branch: "main",
     connected_at: "2026-07-12T14:20:00.000Z",
     latest_health: { score: 54, grade: "C", delta: -4 },
@@ -59,7 +57,7 @@ export const mockBranches: Branch[] = [
 export const mockFindings: Finding[] = [
   {
     fingerprint: "f-secret-1",
-    source: "security",
+    source: "rule",
     category: "security",
     severity: "critical",
     file: "src/payments/payment_service.ts",
@@ -68,6 +66,7 @@ export const mockFindings: Finding[] = [
     reason: "Hardcoded Stripe API key detected — move it to an environment variable.",
     status: "open",
     priority: 40.8,
+    pinned_by_floor: false,
     rule_id: "hardcoded-secret",
   },
   {
@@ -81,6 +80,7 @@ export const mockFindings: Finding[] = [
     reason: "order_controller.ts is 940 lines long (limit 800) — consider splitting the module.",
     status: "open",
     priority: 12.0,
+    pinned_by_floor: false,
     rule_id: "large-file",
     metric_value: 940,
     threshold: 800,
@@ -96,6 +96,7 @@ export const mockFindings: Finding[] = [
     reason: "charge() has cyclomatic complexity 18, over the limit of 15 — split it into smaller functions.",
     status: "open",
     priority: 9.3,
+    pinned_by_floor: false,
     rule_id: "complex-function",
     metric_value: 18,
     threshold: 15,
@@ -111,6 +112,7 @@ export const mockFindings: Finding[] = [
     reason: "Self-admitted debt: 'TODO: temporary hack until v2 ships' — classified as code-design.",
     status: "open",
     priority: 5.1,
+    pinned_by_floor: false,
   },
   {
     fingerprint: "f-doc-1",
@@ -123,6 +125,7 @@ export const mockFindings: Finding[] = [
     reason: "Self-admitted debt: 'FIXME: document the timezone handling' — classified as documentation.",
     status: "open",
     priority: 1.5,
+    pinned_by_floor: false,
   },
 ];
 
@@ -248,6 +251,7 @@ export const mockHealthReport: HealthReport = {
 
 export const mockScanHistory: ScanSummary[] = [
   {
+    snapshot_id: "snap-2026-07-22",
     scan_id: "scan-2026-07-22",
     branch: "main",
     commit_sha: "a1b2c3d",
@@ -258,6 +262,7 @@ export const mockScanHistory: ScanSummary[] = [
     finding_count: 5,
   },
   {
+    snapshot_id: "snap-2026-07-15",
     scan_id: "scan-2026-07-15",
     branch: "main",
     commit_sha: "9f8e7d6",
@@ -268,6 +273,7 @@ export const mockScanHistory: ScanSummary[] = [
     finding_count: 6,
   },
   {
+    snapshot_id: "snap-2026-07-08",
     scan_id: "scan-2026-07-08",
     branch: "main",
     commit_sha: "5c4b3a2",
@@ -283,22 +289,43 @@ export const mockProfiles: ScoreProfile[] = [
   {
     id: "balanced",
     name: "Balanced",
-    weights: { security: 1, code_design: 1, satd: 1, duplication: 1 },
-    wMl: 1,
+    weights: {
+      security: 1.0,
+      code_design: 1.0,
+      requirement: 1.0,
+      documentation: 1.0,
+      test: 1.0,
+    },
+    trust_s: 0.5,
     is_preset: true,
+    is_active: true, // Balanced is the default for every new workspace
   },
   {
     id: "security-first",
     name: "Security-first",
-    weights: { security: 3, code_design: 1, satd: 1, duplication: 0.8 },
-    wMl: 1,
+    weights: {
+      security: 3.0,
+      code_design: 1.0,
+      requirement: 0.8,
+      documentation: 0.5,
+      test: 1.0,
+    },
+    trust_s: 0.5,
     is_preset: true,
+    is_active: false,
   },
   {
     id: "delivery-speed",
     name: "Delivery-speed",
-    weights: { security: 1.5, code_design: 1.2, satd: 0.5, duplication: 0.5 },
-    wMl: 1.2,
+    weights: {
+      security: 1.5,
+      code_design: 1.2,
+      requirement: 0.8,
+      documentation: 0.5,
+      test: 0.5,
+    },
+    trust_s: 0.7,
     is_preset: true,
+    is_active: false,
   },
 ];

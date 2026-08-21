@@ -3,18 +3,19 @@
 // Single source of truth for the shapes that flow between the frontend, the mock
 // API (MSW), and the real FastAPI backend. Everyone imports from `@/lib/types`.
 //
-// FIELD NAMING: snake_case, matching `docs/api/openapi.yaml` exactly (J2.2). The
-// generated `./api.ts` is the authority — when these two disagree, api.ts wins.
-// Do not "tidy" a field back to camelCase: the name here is the name on the wire.
+// THESE SHAPES MATCH `docs/api/openapi.yaml` EXACTLY (J2.2) — field names,
+// required/optional, and nullability. The generated `./api.ts` is the authority;
+// when the two disagree, api.ts wins and this file is wrong.
 //
-// Scope: v1.0. Fields for later releases are marked  // v1.1  or  // v2  and kept
-// optional so neither the mock nor the backend is forced to fill them in v1.
+// Two consequences worth knowing before you edit:
+//   * snake_case is the name ON THE WIRE. Do not "tidy" a field to camelCase.
+//   * `?: T | null` means the backend may omit it OR send null. Both happen, and
+//     they mean the same thing to the UI: render the fallback.
+//
+// React component props are a separate, internal API and stay camelCase.
+//
 // See docs: release-roadmap.md · code-sage_backend-analysis-engine.md (§4 source
 // vs category, §6 scoring, §7 outputs).
-//
-// ⚠️ Canonical enum values (Severity / Category / Grade) must equal what the
-// backend emits. In particular `Category` must equal the SATD dataset labels
-// (backend §3.2) — confirm against the CSV before freezing (roadmap D5).
 // ────────────────────────────────────────────────────────────────────────────
 
 // ── enums ───────────────────────────────────────────────────────────────────
@@ -28,8 +29,16 @@
  */
 export type Severity = "critical" | "high" | "medium" | "low";
 
-/** WHICH DETECTOR produced the finding (orthogonal to `Category`). */
-export type Source = "rule" | "satd" | "security" | "ml-risk";
+/**
+ * WHICH DETECTOR produced the finding (orthogonal to `Category`). **Exactly two
+ * values** (FR-8.2).
+ *
+ * There is no `security` source: security patterns run inside the rule engine, so
+ * a security finding is a `rule` finding whose `category` is `security`. There is
+ * no `ml-risk` source either — the risk model scores files, it never emits a
+ * Finding (see `FileScore.risk_score`).
+ */
+export type Source = "rule" | "satd";
 
 /** WHAT TYPE of debt it is (orthogonal to `Source`). Must equal SATD dataset labels. */
 export type Category =
@@ -39,13 +48,12 @@ export type Category =
   | "test" // SATD
   | "security"; // rule engine (security patterns: secrets, SQL concat, eval/exec)
 
-  //v.1.1 adds these new statuses to the finding lifecycle. They are user-settable, and affect the scoring and the Refactor-First list.
-export type FindingStatus =
-  | "open"
-  | "acknowledged" // v1.1
-  | "accepted" // v1.1  (suppressed from the score)
-  | "resolved" // v1.1
-  | "false-positive"; // v1.1
+/**
+ * v1.0 is view-only: every finding is `open`. The later values exist now because
+ * FR-11 sums *open* finding priorities — the filter needs something to filter on.
+ * The v1.1 accept / resolve / false-positive actions will set them.
+ */
+export type FindingStatus = "open" | "accepted" | "resolved" | "false-positive";
 
 //A to E grades are used to indicate the overall health of a repo or file. A is the best, E is the worst.
 export type Grade = "A" | "B" | "C" | "D" | "E";
@@ -59,16 +67,25 @@ export interface Finding {
   severity: Severity;
   file: string;
   line: number;
-  symbol: string; // the function/class the finding sits on
+  symbol?: string | null; // the function/class it sits on; null for file-scoped rules
   reason: string; // one-line TEMPLATE explanation — the anti-noise differentiator (§8)
 
   status: FindingStatus; // v1: read-only, backend-set (default "open"); user actions are v1.1
 
-  priority?: number; // computed sort key: base × category_weight × churn_factor (§6)
-  rule_id?: string; // rule findings: which rule fired
-  metric_value?: number; // rule findings: measured value (e.g. CCN 18) — feeds reason + evidence
-  threshold?: number; // rule findings: the limit crossed (e.g. 15)
-  snippet?: string; // v1.1: offending code snippet, loaded on demand
+  /** Derived on this request under the active profile; the list arrives sorted by it. */
+  priority: number;
+  /**
+   * True when the critical-security visibility floor (FR-24) is what keeps this row
+   * visible, rather than its computed priority. Lets the UI explain why a finding is
+   * present even at the minimum `security` weight of 0.1.
+   */
+  pinned_by_floor: boolean;
+
+  rule_id?: string | null; // rule findings: which rule fired
+  metric_value?: number | null; // rule findings: measured value (e.g. CCN 18)
+  threshold?: number | null; // rule findings: the limit crossed (e.g. 15)
+  comment_text?: string | null; // SATD findings: the developer's own words, as evidence
+  confidence?: number | null; // SATD findings: ML-1's confidence in the category, 0–1
 }
 
 // ── Per-file scores: power the heat map + hotspot ranking ───────────────────
@@ -88,8 +105,8 @@ export interface TreeNode {
   health_score: number; // 0–100 → heat-map colour (folders = aggregate of children)
   grade: Grade;
   debt_score: number;
-  risk_score: number; // 0–1
-  children?: TreeNode[]; // folders only
+  risk_score?: number | null; // 0–1; absent when ML was unreachable (degraded mode)
+  children?: TreeNode[] | null; // folders only
 }
 
 // ── Repo: 1 repo = 1 project in v1 ──────────────────────────────────────────
@@ -100,11 +117,16 @@ export interface Repo {
   owner: string;
   visibility: "public" | "private"; // v1: public only; private = v1.1 (GitHub App)
   url: string;
-  source: "public-url" | "github"; // how it was connected
   default_branch: string;
   connected_at: string; // ISO
-  workspace_id?: string; // multi-tenant seam — v2 uses it; v1 = one workspace
-  latest_health?: { score: number; grade: Grade; delta: number }; // Projects-list hint
+  latest_health?: LatestHealth | null; // Projects-list hint
+}
+
+/** The health hint on a projects-list row. */
+export interface LatestHealth {
+  score: number;
+  grade: Grade;
+  delta: number;
 }
 
 // ── Branch ──────────────────────────────────────────────────────────────────
@@ -112,8 +134,8 @@ export interface Repo {
 export interface Branch {
   name: string;
   is_default: boolean;
-  head_commit_sha: string; // full; UI shows short (first 7)
-  head_commit_at: string; // ISO
+  head_commit_sha?: string | null; // full; UI shows short (first 7)
+  head_commit_at?: string | null; // ISO
 }
 
 // ── Scan lifecycle: drives the Scan button state machine ────────────────────
@@ -134,14 +156,15 @@ export interface ScanStatus {
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──
 
 export interface ScanSummary {
-  scan_id: string;
+  snapshot_id: string; // the stored snapshot; what the dashboard reads
+  scan_id: string; // the attempt that produced it
   branch: string;
   commit_sha: string;
   scanned_at: string; // ISO
+  finding_count: number;
   health_score: number;
   grade: Grade;
   delta: number;
-  finding_count: number;
 }
 
 // ── Trend chart point (repo scope in v1; per-node later) ────────────────────
@@ -160,19 +183,31 @@ export interface CategoryBreakdownItem {
   debt: number; // summed debt contribution (for a debt-weighted pie)
 }
 
-// ── Scoring profile (v1: select a preset; v1.1: custom sliders) ─────────────
+// ── Scoring profile ─────────────────────────────────────────────────────────
+
+/** One weight per category — five numbers, each clamped to 0.1–3.0. */
+export interface CategoryWeights {
+  security: number;
+  code_design: number;
+  requirement: number;
+  documentation: number;
+  test: number;
+}
 
 export interface ScoreProfile {
   id: string;
   name: string; // "Balanced" | "Security-first" | "Delivery-speed" | a custom name
-  weights: {
-    security: number;
-    code_design: number;
-    satd: number;
-    duplication: number;
-  };
-  wMl: number; // weight of the ML risk term — J2.4 replaces this with `trust_s`
-  is_preset: boolean;
+  weights: CategoryWeights;
+  /**
+   * The trust slider `s`. `0` = trust the model, `1` = trust the rules. Scoring
+   * derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it (FR-11).
+   *
+   * Security findings are excluded: `source_trust` is fixed at 1.0 for the
+   * `security` category, so no position of this slider can de-weight them.
+   */
+  trust_s: number;
+  is_preset: boolean; // presets are read-only templates that seed the sliders
+  is_active: boolean; // at most one active profile per workspace (DB-enforced)
 }
 
 // ── HealthReport: the full dashboard payload for one branch snapshot ─────────
@@ -186,8 +221,9 @@ export interface HealthReport {
   health_score: number; // 0–100
   grade: Grade;
   delta: number; // vs the previous snapshot
-  profile: string; // active scoring profile name
   red_issue_count: number; // critical/high count for the health-card summary
+  profile: string; // active scoring profile name, labelled on the trend chart
+  model_version?: string | null; // which ML model produced this; null in degraded mode
   history: HealthPoint[]; // trend chart (repo scope)
   tree: TreeNode[]; // heat-map file tree
   file_scores: FileScore[];
