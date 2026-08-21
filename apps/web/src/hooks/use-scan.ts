@@ -8,7 +8,7 @@ import type { ScanStatus } from "@/lib/types"
 
 // ~6 polls × 17% ≈ 4s from 0 → done; slow enough to watch, fast enough to demo.
 const POLL_MS = 600
-const IDLE: ScanStatus = { scanId: "", phase: "idle", progress: 0 }
+const IDLE: ScanStatus = { scan_id: "", phase: "idle", progress: 0 }
 
 /**
  * Drives the Scan button. `scan(branch)` POSTs to start, then polls the scan
@@ -36,7 +36,7 @@ export function useScan(repoId: string, onComplete?: () => void) {
       const started = await startScan(repoId, branch) // phase: "running", progress: 0
       setStatus(started)
       timer.current = setInterval(async () => {
-        const next = await getScanStatus(repoId, started.scanId)
+        const next = await getScanStatus(repoId, started.scan_id)
         setStatus(next)
         if (next.phase === "done" || next.phase === "error") {
           clearTimer()
@@ -54,10 +54,10 @@ export function useScan(repoId: string, onComplete?: () => void) {
 
   const stop = useCallback(async () => {
     clearTimer() // stop polling *first* so a late tick can't re-paint "running"
-    const stopped = await stopScan(repoId, status.scanId)
+    const stopped = await stopScan(repoId, status.scan_id)
     setStatus(stopped) // phase: "idle", progress: 0
     toast("Scan stopped")
-  }, [repoId, status.scanId, clearTimer])
+  }, [repoId, status.scan_id, clearTimer])
 
   return { status, scan, stop }
 }

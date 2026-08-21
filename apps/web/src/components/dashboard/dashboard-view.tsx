@@ -25,7 +25,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const [pickedBranch, setPickedBranch] = useState<string>()
   const activeBranch =
     pickedBranch ??
-    branches?.find((b) => b.isDefault)?.name ??
+    branches?.find((b) => b.is_default)?.name ??
     branches?.[0]?.name ??
     ""
 
@@ -79,8 +79,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         branches={branches ?? []}
         activeBranch={activeBranch}
         onBranchChange={setPickedBranch}
-        lastCommitSha={report.commitSha}
-        scannedAt={report.scannedAt}
+        lastCommitSha={report.commit_sha}
+        scannedAt={report.scanned_at}
         scan={{
           phase: scanStatus.phase,
           progress: scanStatus.progress,
@@ -93,11 +93,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <OverallHealthCard
-              score={report.healthScore}
+              score={report.health_score}
               grade={report.grade}
               delta={report.delta}
-              redIssueCount={report.redIssueCount}
-              categoryBreakdown={report.categoryBreakdown}
+              redIssueCount={report.red_issue_count}
+              categoryBreakdown={report.category_breakdown}
             />
             <HealthGraphCard history={report.history} />
           </div>
@@ -111,7 +111,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         <div className="rounded-lg border p-2">
           <FileTree
             nodes={report.tree}
-            colorFor={(node) => healthColor(node.healthScore)}
+            colorFor={(node) => healthColor(node.health_score)}
             onHoverNode={setHoveredNode}
             onSelectNode={(node) => {
               const match = report.findings.find((f) => f.file === node.path)

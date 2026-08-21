@@ -42,7 +42,7 @@ function clampScore(n: number) {
   return Math.max(0, Math.min(100, Math.round(n)))
 }
 
-const defaultBranch = mockBranches.find((b) => b.isDefault) ?? mockBranches[0]
+const defaultBranch = mockBranches.find((b) => b.is_default) ?? mockBranches[0]
 
 /**
  * Build the health report for one repo + branch from the single stored fixture.
@@ -56,10 +56,10 @@ function healthReportFor(repoId: string, branch: string): HealthReport {
     mockBranches.find((b) => b.name === branch) ?? defaultBranch
 
   const target = clampScore(
-    (repo?.latestHealth?.score ?? mockHealthReport.healthScore) +
-      (branchInfo.isDefault ? 0 : -6),
+    (repo?.latest_health?.score ?? mockHealthReport.health_score) +
+      (branchInfo.is_default ? 0 : -6),
   )
-  const shift = target - mockHealthReport.healthScore
+  const shift = target - mockHealthReport.health_score
 
   const history = mockHealthReport.history.map((p) => ({
     ...p,
@@ -69,15 +69,15 @@ function healthReportFor(repoId: string, branch: string): HealthReport {
 
   return {
     ...mockHealthReport,
-    repoId,
+    repo_id: repoId,
     branch: branchInfo.name,
-    commitSha: branchInfo.lastCommitSha,
-    healthScore: target,
+    commit_sha: branchInfo.head_commit_sha,
+    health_score: target,
     grade: gradeFor(target),
     delta: target - previous,
     history,
     // derived, never hand-maintained: the card can't disagree with the list
-    redIssueCount: mockHealthReport.findings.filter(
+    red_issue_count: mockHealthReport.findings.filter(
       (f) => f.severity === "critical" || f.severity === "high",
     ).length,
   }
@@ -89,7 +89,7 @@ const SCAN_STEP = 17 // % added per poll → ~6 polls from 0 to done
 const scans = new Map<string, ScanStatus>()
 
 function idleScan(repoId: string): ScanStatus {
-  return { scanId: `scan-${repoId}-idle`, phase: "idle", progress: 0 }
+  return { scan_id: `scan-${repoId}-idle`, phase: "idle", progress: 0 }
 }
 
 function advanceScan(
@@ -104,12 +104,12 @@ function advanceScan(
     const branchInfo =
       mockBranches.find((b) => b.name === branch) ?? defaultBranch
     const started: ScanStatus = {
-      scanId: `scan-${Date.now()}`,
+      scan_id: `scan-${Date.now()}`,
       phase: "running",
       progress: 0,
       branch: branchInfo.name,
-      commitSha: branchInfo.lastCommitSha,
-      startedAt: now,
+      commit_sha: branchInfo.head_commit_sha,
+      started_at: now,
     }
     scans.set(repoId, started)
     return started
@@ -120,7 +120,7 @@ function advanceScan(
       ...current,
       phase: "idle",
       progress: 0,
-      finishedAt: now,
+      finished_at: now,
     }
     scans.set(repoId, stopped)
     return stopped
@@ -132,7 +132,7 @@ function advanceScan(
   const progress = Math.min(100, current.progress + SCAN_STEP)
   const next: ScanStatus =
     progress >= 100
-      ? { ...current, phase: "done", progress: 100, finishedAt: now }
+      ? { ...current, phase: "done", progress: 100, finished_at: now }
       : { ...current, progress }
   scans.set(repoId, next)
   return next
