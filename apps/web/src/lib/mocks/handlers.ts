@@ -146,11 +146,6 @@ export function resetMockBackend() {
 // ── the endpoints ───────────────────────────────────────────────────────────
 
 export const handlers = [
-  // mocked GitHub sign-in: pretend OAuth succeeded and hand back the user's repos
-  http.post("*/api/auth/github", () =>
-    HttpResponse.json({ user: "sage-dev", repos: mockRepos }),
-  ),
-
   http.get("*/api/projects", () => HttpResponse.json(mockRepos)),
 
   http.get("*/api/repos/:repoId/branches", () =>
