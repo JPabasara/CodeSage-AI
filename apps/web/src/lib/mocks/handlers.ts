@@ -18,7 +18,15 @@
 //    URL (browser) or an absolute one (Node/tests) — one less environment trap.
 // ────────────────────────────────────────────────────────────────────────────
 import { http, HttpResponse } from "msw"
-import type { Grade, HealthReport, ScanStatus } from "@/lib/types"
+import type {
+  ApplyProfileRequest,
+  CategoryWeights,
+  Grade,
+  HealthReport,
+  ScanStatus,
+  ScoreProfile,
+} from "@/lib/types"
+import { WEIGHT_MAX, WEIGHT_MIN, TRUST_MAX, TRUST_MIN } from "@/lib/types"
 import {
   mockBranches,
   mockHealthReport,
@@ -160,9 +168,49 @@ function advanceScan(
 }
 
 /** Clear scan progress between tests — `server.resetHandlers()` can't see this Map. */
+// ── the active profile ──────────────────────────────────────────────────────
+
+// Applying replaces the workspace's single active profile in place; profiles are
+// not versioned. Held here rather than in fixtures.ts because it is mutable
+// server state, not sample data.
+let activeProfile: ScoreProfile =
+  mockProfiles.find((p) => p.is_active) ?? mockProfiles[0]
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
+
+/**
+ * Out-of-range weights are CLAMPED, not rejected: 9.0 is stored as 3.0 and
+ * returned as 3.0 with a 200. The response is the profile as it is really in
+ * force, which is what lets the client confirm what was saved rather than
+ * trusting what it sent.
+ */
+function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
+  const w = (n: number) => clamp(n, WEIGHT_MIN, WEIGHT_MAX)
+  const weights: CategoryWeights = {
+    security: w(body.weights.security),
+    code_design: w(body.weights.code_design),
+    requirement: w(body.weights.requirement),
+    documentation: w(body.weights.documentation),
+    test: w(body.weights.test),
+  }
+
+  activeProfile = {
+    ...activeProfile,
+    name: body.name ?? "Custom",
+    weights,
+    trust_s: clamp(body.trust_s, TRUST_MIN, TRUST_MAX),
+    // Editing a preset's numbers produces a custom profile; the preset itself is
+    // a read-only template and is never overwritten.
+    is_preset: false,
+    is_active: true,
+  }
+  return activeProfile
+}
+
 export function resetMockBackend() {
   scans.clear()
   cancelRequested.clear()
+  activeProfile = mockProfiles.find((p) => p.is_active) ?? mockProfiles[0]
 }
 
 // ── the endpoints ───────────────────────────────────────────────────────────
@@ -191,6 +239,13 @@ export const handlers = [
 
   // Profiles screen (v1: presets only)
   http.get("*/api/profiles", () => HttpResponse.json(mockProfiles)),
+
+  http.get("*/api/profiles/active", () => HttpResponse.json(activeProfile)),
+
+  http.put("*/api/profiles/active", async ({ request }) => {
+    const body = (await request.json()) as ApplyProfileRequest
+    return HttpResponse.json(applyToWorkspace(body))
+  }),
 
   // ── scan lifecycle: POST starts it, polling reports progress, POST stops it ──
   http.post("*/api/repos/:repoId/scan", async ({ params, request }) => {
