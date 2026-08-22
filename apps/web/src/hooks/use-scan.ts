@@ -38,11 +38,19 @@ export function useScan(repoId: string, onComplete?: () => void) {
       timer.current = setInterval(async () => {
         const next = await getScanStatus(repoId, started.scan_id)
         setStatus(next)
-        if (next.phase === "done" || next.phase === "error") {
+        // Three terminal phases, not two. `cancelled` ends the poll loop just
+        // like `done` and `error` — miss it and the UI polls a dead scan forever.
+        if (
+          next.phase === "done" ||
+          next.phase === "error" ||
+          next.phase === "cancelled"
+        ) {
           clearTimer()
           if (next.phase === "done") {
             toast.success("Scan complete")
             onComplete?.()
+          } else if (next.phase === "cancelled") {
+            toast("Scan cancelled")
           } else {
             toast.error(next.error ?? "Scan failed")
           }
@@ -52,12 +60,19 @@ export function useScan(repoId: string, onComplete?: () => void) {
     [repoId, onComplete, clearTimer],
   )
 
+  /**
+   * Ask the backend to cancel. Deliberately does NOT stop polling.
+   *
+   * Cancellation is cooperative: the POST returns 202 with the phase usually
+   * still "running", because the worker only stops at the next stage boundary.
+   * The scan is over when a poll reports "cancelled" — and that poll is what
+   * clears the timer and raises the toast. Clearing the timer here instead would
+   * strand the UI on "Scanning…" forever.
+   */
   const stop = useCallback(async () => {
-    clearTimer() // stop polling *first* so a late tick can't re-paint "running"
-    const stopped = await stopScan(repoId, status.scan_id)
-    setStatus(stopped) // phase: "idle", progress: 0
-    toast("Scan stopped")
-  }, [repoId, status.scan_id, clearTimer])
+    const requested = await stopScan(repoId, status.scan_id)
+    setStatus(requested)
+  }, [repoId, status.scan_id])
 
   return { status, scan, stop }
 }
