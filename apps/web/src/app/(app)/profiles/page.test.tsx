@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, test, vi } from "vitest"
 
@@ -109,8 +109,66 @@ test("the three presets are offered", async () => {
   render(<ProfilesPage />)
   await ready()
 
-  const presets = screen.getByText("Start from a preset").parentElement!
   for (const name of ["Balanced", "Security-first", "Delivery-speed"]) {
-    expect(within(presets).getByRole("button", { name })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name })).toBeInTheDocument()
   }
+})
+
+test("an untouched preset is sent WITH its name", async () => {
+  const put = vi.spyOn(client, "applyProfile")
+  render(<ProfilesPage />)
+  await ready()
+
+  await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
+  expect(screen.getByTestId("profile-label")).toHaveTextContent("Security-first")
+
+  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+
+  // The numbers are still exactly the preset's, so the name records where they
+  // came from.
+  expect(put.mock.calls[0][0].name).toBe("Security-first")
+  put.mockRestore()
+})
+
+test("dragging away from a preset makes it Custom and omits the name", async () => {
+  const put = vi.spyOn(client, "applyProfile")
+  render(<ProfilesPage />)
+  await ready()
+
+  await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
+  expect(screen.getByTestId("profile-label")).toHaveTextContent("Security-first")
+
+  // Nudge one weight - the values are no longer Security-first.
+  const securitySlider = screen.getByRole("slider", { name: /security weight/i })
+  securitySlider.focus()
+  await userEvent.keyboard("{ArrowLeft}")
+
+  await waitFor(() =>
+    expect(screen.getByTestId("profile-label")).toHaveTextContent("Custom"),
+  )
+
+  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+
+  // Contract: "omit it for a custom profile". Sending "Security-first" here
+  // would mislabel a profile that is not Security-first.
+  expect(put.mock.calls[0][0].name).toBeUndefined()
+  put.mockRestore()
+})
+
+test("the mock stores an edited preset as a custom, non-preset profile", async () => {
+  render(<ProfilesPage />)
+  await ready()
+
+  const securitySlider = screen.getByRole("slider", { name: /security weight/i })
+  securitySlider.focus()
+  await userEvent.keyboard("{ArrowRight}")
+  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+  // Round-trips through the real MSW handler: name "Custom", is_preset false.
+  const saved = await client.getActiveProfile()
+  expect(saved.name).toBe("Custom")
+  expect(saved.is_preset).toBe(false)
+  expect(saved.is_active).toBe(true)
 })

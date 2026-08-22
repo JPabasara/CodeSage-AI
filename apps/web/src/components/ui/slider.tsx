@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 
 function Slider({
   className,
+  "aria-label": ariaLabel,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
   return (
@@ -30,6 +31,7 @@ function Slider({
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
         data-slot="slider-thumb"
+        aria-label={ariaLabel}
         className={cn(
           "border-primary bg-background block size-4 rounded-full border-2 shadow-sm transition-colors",
           "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",

@@ -30,7 +30,19 @@ const WEIGHT_ROWS: { key: keyof CategoryWeights; label: string; hint: string }[]
   ]
 
 /** The six numbers the user is editing, before Apply sends them. */
-type Draft = { weights: CategoryWeights; trust_s: number; name?: string }
+type Draft = { weights: CategoryWeights; trust_s: number }
+
+/** Same six numbers? Compared with a tolerance because slider steps are floats. */
+function sameNumbers(
+  a: { weights: CategoryWeights; trust_s: number },
+  b: { weights: CategoryWeights; trust_s: number },
+) {
+  const near = (x: number, y: number) => Math.abs(x - y) < 1e-9
+  return (
+    near(a.trust_s, b.trust_s) &&
+    WEIGHT_ROWS.every(({ key }) => near(a.weights[key], b.weights[key]))
+  )
+}
 
 export default function ProfilesPage() {
   const { data: presets, loading: loadingPresets } = useProfiles()
@@ -50,14 +62,19 @@ export default function ProfilesPage() {
 
   const weights = draft?.weights ?? active?.weights
   const trustS = draft?.trust_s ?? active?.trust_s
-  const seededFrom = draft?.name ?? active?.name
+
+  // Which preset, if any, these numbers still ARE. Derived by comparing values
+  // rather than remembering which button was pressed: the moment a slider moves,
+  // this is no longer that preset, and the contract says the name is then omitted
+  // ("omit it for a custom profile"). Sending "Balanced" for numbers that are not
+  // Balanced would mislabel the stored profile.
+  const matchedPreset =
+    weights && trustS !== undefined
+      ? (presets ?? []).find((p) => sameNumbers(p, { weights, trust_s: trustS }))
+      : undefined
 
   function seedFrom(preset: ScoreProfile) {
-    setDraft({
-      weights: preset.weights,
-      trust_s: preset.trust_s,
-      name: preset.name,
-    })
+    setDraft({ weights: preset.weights, trust_s: preset.trust_s })
   }
 
   async function onApply() {
@@ -68,15 +85,12 @@ export default function ProfilesPage() {
       // rather than rejecting, so we adopt what came back instead of trusting
       // what we sent.
       const saved = await applyProfile({
-        name: seededFrom,
+        // Present only while the numbers are still exactly a preset's.
+        name: matchedPreset?.name,
         weights,
         trust_s: trustS,
       })
-      setDraft({
-        weights: saved.weights,
-        trust_s: saved.trust_s,
-        name: saved.name,
-      })
+      setDraft({ weights: saved.weights, trust_s: saved.trust_s })
       toast.success("Profile applied")
     } catch {
       toast.error("Couldn't apply the profile")
@@ -116,13 +130,18 @@ export default function ProfilesPage() {
 
       {/* Presets seed the sliders in one interaction; adjusting after is optional. */}
       <section className="space-y-2">
-        <h2 className="text-sm font-medium">Start from a preset</h2>
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="text-sm font-medium">Start from a preset</h2>
+          <span className="text-muted-foreground text-xs" data-testid="profile-label">
+            {matchedPreset ? matchedPreset.name : "Custom"}
+          </span>
+        </div>
         <div className="flex flex-wrap gap-2">
           {(presets ?? []).map((preset) => (
             <Button
               key={preset.id}
               size="sm"
-              variant={seededFrom === preset.name ? "default" : "outline"}
+              variant={matchedPreset?.id === preset.id ? "default" : "outline"}
               onClick={() => seedFrom(preset)}
             >
               {preset.name}
@@ -152,11 +171,7 @@ export default function ProfilesPage() {
               step={0.1}
               value={[weights[key]]}
               onValueChange={([v]) =>
-                setDraft({
-                  weights: { ...weights, [key]: v },
-                  trust_s: trustS,
-                  name: seededFrom,
-                })
+                setDraft({ weights: { ...weights, [key]: v }, trust_s: trustS })
               }
             />
           </div>
@@ -183,7 +198,7 @@ export default function ProfilesPage() {
           step={0.05}
           value={[trustS]}
           onValueChange={([v]) =>
-            setDraft({ weights, trust_s: v, name: seededFrom })
+            setDraft({ weights, trust_s: v })
           }
         />
         <p className="text-muted-foreground text-xs">
