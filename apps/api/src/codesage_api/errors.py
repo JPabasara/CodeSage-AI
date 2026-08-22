@@ -25,6 +25,11 @@ class CodeSageError(Exception):
     code: str = "INTERNAL_ERROR"
     message: str = "Something went wrong."
 
+class RepositoryMissingDefaultBranch(CodeSageError):
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "INTERNAL_ERROR"
+    message = "The repository information is incomplete."
+
 
 class NotFound(CodeSageError):
     status_code = status.HTTP_404_NOT_FOUND
