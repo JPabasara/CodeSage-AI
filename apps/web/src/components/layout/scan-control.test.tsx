@@ -40,3 +40,27 @@ test("running shows progress and a Stop button that fires onStop", async () => {
   await userEvent.click(screen.getByRole("button", { name: /stop/i }));
   expect(onStop).toHaveBeenCalledTimes(1);
 });
+
+test("stopping says so and refuses a second click", async () => {
+  const onStop = vi.fn();
+  render(
+    <ScanControl phase="running" progress={85} stopping onStop={onStop} />,
+  );
+
+  // The phase is still "running" here - that is exactly the window where the
+  // old UI looked frozen at "Scanning… 85%".
+  expect(screen.getByText(/stopping/i)).toBeInTheDocument();
+  expect(screen.queryByText(/scanning/i)).not.toBeInTheDocument();
+
+  const button = screen.getByRole("button", { name: /stop/i });
+  expect(button).toBeDisabled();
+  await userEvent.click(button);
+  expect(onStop).not.toHaveBeenCalled();
+});
+
+test("running without stopping still shows progress and an enabled Stop", () => {
+  render(<ScanControl phase="running" progress={85} />);
+  expect(screen.getByText(/85%/)).toBeInTheDocument();
+  expect(screen.queryByText(/stopping/i)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /stop/i })).toBeEnabled();
+});
