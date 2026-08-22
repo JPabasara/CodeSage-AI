@@ -16,3 +16,24 @@ def test_version():
     data = response.json()
     assert "satd_model_version" in data
     assert "risk_model_version" in data
+
+def test_classify():
+    payload = {
+        "comments": [
+            {"id": "c1", "text": "TODO: fix this"},
+            {"id": "c2", "text": "regular comment"}
+        ]
+    }
+    response = client.post("/classify", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "predictions" in data
+    assert len(data["predictions"]) == 2
+    assert "model_version" in data
+    
+    # Verify shape of first prediction
+    pred = data["predictions"][0]
+    assert "id" in pred
+    assert "is_debt" in pred
+    assert "category" in pred
+    assert "confidence" in pred
