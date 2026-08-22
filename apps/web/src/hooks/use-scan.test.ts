@@ -113,3 +113,49 @@ test("stop pressed during finalize is too late - the scan still completes", asyn
   expect(onComplete).toHaveBeenCalledTimes(1)
   expect(vi.getTimerCount()).toBe(0)
 })
+
+test("stopping is true only between the Stop press and the terminal phase", async () => {
+  const { result } = renderHook(() => useScan("demo-repo"))
+
+  await act(async () => {
+    await result.current.scan("main")
+  })
+  expect(result.current.stopping).toBe(false)
+
+  await act(async () => {
+    await result.current.stop()
+  })
+  // Still "running" - this is the window the flag exists for.
+  expect(result.current.status.phase).toBe("running")
+  expect(result.current.stopping).toBe(true)
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600 * 2)
+  })
+  expect(result.current.status.phase).toBe("cancelled")
+  expect(result.current.stopping).toBe(false)
+})
+
+test("stopping is released when a too-late Stop ends in done", async () => {
+  const { result } = renderHook(() => useScan("demo-repo"))
+
+  await act(async () => {
+    await result.current.scan("main")
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600 * 5)
+  })
+  await act(async () => {
+    await result.current.stop()
+  })
+  expect(result.current.stopping).toBe(true)
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600 * 3)
+  })
+
+  // The scan completed instead of cancelling, but the flag must still clear -
+  // otherwise the next scan starts with a disabled Stop button.
+  expect(result.current.status.phase).toBe("done")
+  expect(result.current.stopping).toBe(false)
+})
