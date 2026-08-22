@@ -86,7 +86,19 @@ function healthReportFor(repoId: string, branch: string): HealthReport {
 // ── scan state machine (in-memory, one running scan per repo) ───────────────
 
 const SCAN_STEP = 17 // % added per poll → ~6 polls from 0 to done
+
+// The pipeline is clone → extract → detect → FINALIZE, and the cancel flag is
+// only read BETWEEN stages — never inside finalize, because a half-written
+// snapshot reads exactly like a complete one (FR-6, DBR-22). Past this progress
+// the mock is "in finalize": Stop is accepted but the scan still completes.
+const FINALIZE_AT = 85
 const scans = new Map<string, ScanStatus>()
+
+// Stop only *requests* cancellation; the scan keeps reporting "running" until the
+// next poll. Modelled faithfully on purpose — a mock that returned "cancelled"
+// straight from the POST would let the UI skip the polling path the real backend
+// requires, and the bug would only surface on the live site.
+const cancelRequested = new Set<string>()
 
 function idleScan(repoId: string): ScanStatus {
   return { scan_id: `scan-${repoId}-idle`, phase: "idle", progress: 0 }
@@ -116,18 +128,27 @@ function advanceScan(
   }
 
   if (action === "stop") {
-    const stopped: ScanStatus = {
-      ...current,
-      phase: "idle",
-      progress: 0,
-      finished_at: now,
-    }
-    scans.set(repoId, stopped)
-    return stopped
+    // 202: the flag is set and we return the phase unchanged. The client learns
+    // the scan really stopped from the NEXT poll, not from this response.
+    if (current.phase === "running") cancelRequested.add(repoId)
+    return current
   }
 
   // "tick" — polling a scan that isn't running just echoes its state back
   if (current.phase !== "running") return current
+
+  // The worker reads the cancel flag between pipeline stages and stops at the
+  // first boundary. Progress freezes where it was: the scan did not finish.
+  if (cancelRequested.has(repoId)) {
+    cancelRequested.delete(repoId)
+    if (current.progress < FINALIZE_AT) {
+      const cancelled: ScanStatus = { ...current, phase: "cancelled", finished_at: now }
+      scans.set(repoId, cancelled)
+      return cancelled
+    }
+    // Too late — finalization has begun, so the flag is dropped and the scan
+    // runs to `done` below. The user pressed Stop and still gets a result.
+  }
 
   const progress = Math.min(100, current.progress + SCAN_STEP)
   const next: ScanStatus =
@@ -141,6 +162,7 @@ function advanceScan(
 /** Clear scan progress between tests — `server.resetHandlers()` can't see this Map. */
 export function resetMockBackend() {
   scans.clear()
+  cancelRequested.clear()
 }
 
 // ── the endpoints ───────────────────────────────────────────────────────────
