@@ -268,3 +268,61 @@ test("errors carry the full envelope, not just a message", async () => {
   expectShape(body, ["detail", "code"], "Error")
   expect(body.code).toBe("NOT_FOUND")
 })
+
+test("POST /projects returns 201 and a contract-shaped Repo", async () => {
+  const res = await fetch(`${BASE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://github.com/octocat/Hello-World" }),
+  })
+
+  expect(res.status).toBe(201)
+  const repo = (await res.json()) as Record<string, unknown>
+  expectShape(
+    repo,
+    ["id", "name", "owner", "visibility", "url", "default_branch", "connected_at"],
+    "Repo (connected)",
+  )
+  // v1.0 accepts public repositories only, so anything stored is public.
+  expect(repo.visibility).toBe("public")
+})
+
+test("POST /projects distinguishes its four failures by code", async () => {
+  const connect = (url: string) =>
+    fetch(`${BASE}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    })
+
+  const cases: [string, number, string][] = [
+    ["not-a-url", 400, "INVALID_REPOSITORY_URL"],
+    ["https://github.com/octocat/private-x", 400, "REPOSITORY_NOT_PUBLIC"],
+    ["https://github.com/octocat/missing-x", 400, "REPOSITORY_UNREACHABLE"],
+    ["https://github.com/acme/acme-payments", 409, "ALREADY_CONNECTED"],
+  ]
+
+  for (const [url, status, code] of cases) {
+    const res = await connect(url)
+    expect(res.status, url).toBe(status)
+    const body = (await res.json()) as ApiError
+    expectShape(body, ["detail", "code"], `Error for ${url}`)
+    expect(body.code, url).toBe(code)
+    // The detail has to be a sentence a user can act on, not a status line.
+    expect(body.detail.length, url).toBeGreaterThan(20)
+  }
+})
+
+test("a connected repository shows up in the projects list", async () => {
+  const before = await get<Record<string, unknown>[]>("/projects")
+
+  await fetch(`${BASE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://github.com/octocat/brand-new" }),
+  })
+
+  const after = await get<Record<string, unknown>[]>("/projects")
+  expect(after.length).toBe(before.length + 1)
+  expect(after.some((r) => r.name === "brand-new")).toBe(true)
+})
