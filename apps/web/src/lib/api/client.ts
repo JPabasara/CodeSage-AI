@@ -7,6 +7,7 @@
 // attached — see the note on credentials below.
 // ────────────────────────────────────────────────────────────────────────────
 import type {
+  ApplyProfileRequest,
   Branch,
   HealthReport,
   Repo,
@@ -64,6 +65,27 @@ export function getScanHistory(repoId: string): Promise<ScanSummary[]> {
   return fetch(`${API_BASE}/api/repos/${repoId}/scans`, {
     credentials: "include",
   }).then(json<ScanSummary[]>)
+}
+
+/** The profile actually in force — what the Profiles screen opens showing. */
+export function getActiveProfile(): Promise<ScoreProfile> {
+  return fetch(`${API_BASE}/api/profiles/active`, {
+    credentials: "include",
+  }).then(json<ScoreProfile>)
+}
+
+/**
+ * Apply a profile. Sends the whole thing, and returns the profile as it is
+ * *really* in force — the server clamps out-of-range weights rather than
+ * rejecting them, so the response is the source of truth, not what we sent.
+ */
+export function applyProfile(body: ApplyProfileRequest): Promise<ScoreProfile> {
+  return fetch(`${API_BASE}/api/profiles/active`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(json<ScoreProfile>)
 }
 
 export function getProfiles(): Promise<ScoreProfile[]> {
