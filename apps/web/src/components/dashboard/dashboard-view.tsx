@@ -32,7 +32,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const { data: report, loading, error } = useHealthReport(repoId, activeBranch)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
-  const { status: scanStatus, scan: runScan, stop: stopScan } = useScan(repoId)
+  const {
+    status: scanStatus,
+    stopping,
+    scan: runScan,
+    stop: stopScan,
+  } = useScan(repoId)
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -84,6 +89,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         scan={{
           phase: scanStatus.phase,
           progress: scanStatus.progress,
+          stopping,
           onScan: () => runScan(activeBranch),
           onStop: stopScan,
         }}
