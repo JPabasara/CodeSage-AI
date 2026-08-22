@@ -28,6 +28,20 @@ export function ScanControl({ phase, progress, onScan, onStop }: Readonly<ScanCo
     );
   }
 
+  // Cancelled is NOT idle. Without this branch it falls through to the plain
+  // Scan button below and a stopped scan looks identical to one that never ran —
+  // the compiler cannot catch it, because nothing here is an exhaustive switch.
+  if (phase === "cancelled") {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground text-sm">Cancelled</span>
+        <Button size="sm" onClick={onScan}>
+          <Play className="size-3.5" /> Scan
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <Button size="sm" onClick={onScan}>
       <Play className="size-3.5" /> Scan
