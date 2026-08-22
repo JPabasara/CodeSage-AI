@@ -206,6 +206,28 @@ export interface CategoryWeights {
   test: number;
 }
 
+/**
+ * The body of `PUT /api/profiles/active`. The COMPLETE profile — six numbers,
+ * never a delta. That is what makes the write idempotent: retrying after a
+ * dropped response cannot leave a half-applied profile.
+ */
+export interface ApplyProfileRequest {
+  name?: string | null; // records which preset the values came from; omit for custom
+  weights: CategoryWeights;
+  trust_s: number;
+}
+
+/**
+ * Bounds from the contract. **The server is the enforcement point** — it clamps on
+ * write and returns what it stored. These exist so the sliders cannot produce a
+ * value the server would have to correct; they are a usability affordance, not the
+ * rule.
+ */
+export const WEIGHT_MIN = 0.1;
+export const WEIGHT_MAX = 3.0;
+export const TRUST_MIN = 0;
+export const TRUST_MAX = 1;
+
 export interface ScoreProfile {
   id: string;
   name: string; // "Balanced" | "Security-first" | "Delivery-speed" | a custom name
