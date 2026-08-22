@@ -7,8 +7,11 @@
 // attached — see the note on credentials below.
 // ────────────────────────────────────────────────────────────────────────────
 import type {
+  ApiError,
   ApplyProfileRequest,
   Branch,
+  ConnectRepoRequest,
+  ErrorCode,
   HealthReport,
   Repo,
   ScanStatus,
@@ -25,10 +28,45 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? ""
 // out of cross-origin requests unless it is asked — without this the session
 // cookie never arrives and every endpoint answers 401. (J2.7)
 
-/** Unwrap a fetch Response as JSON, turning a non-2xx status into a thrown Error. */
+/**
+ * A failed request, carrying the contract's error envelope.
+ *
+ * `code` is the stable, machine-readable reason — it is what a caller branches on
+ * to choose a message. `message` stays human-readable for anything that just logs
+ * the error.
+ */
+export class ApiRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: ErrorCode | undefined,
+    readonly detail: string,
+  ) {
+    super(detail)
+    this.name = "ApiRequestError"
+  }
+}
+
+/**
+ * Unwrap a fetch Response as JSON, turning a non-2xx into an ApiRequestError.
+ *
+ * The error BODY is read, not discarded. `POST /api/projects` distinguishes a
+ * malformed URL from a private repository from an unreachable one purely by
+ * `code`, and throwing `new Error("400 Bad Request")` would make all three
+ * indistinguishable to the UI.
+ */
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    throw new Error(`${res.status} ${res.statusText}`)
+    let body: Partial<ApiError> = {}
+    try {
+      body = (await res.json()) as Partial<ApiError>
+    } catch {
+      // A proxy or gateway can fail with a non-JSON body; fall back to the status.
+    }
+    throw new ApiRequestError(
+      res.status,
+      body.code,
+      body.detail ?? `${res.status} ${res.statusText}`,
+    )
   }
   return res.json() as Promise<T>
 }
@@ -38,6 +76,23 @@ async function json<T>(res: Response): Promise<T> {
 // fetch. Sign-out is a POST from the app rail.
 
 // ── reads ────────────────────────────────────────────────────────────────────
+
+/**
+ * Connect a public repository by URL (FR-3).
+ *
+ * v1.0 accepts public repositories only. A private URL comes back as
+ * `REPOSITORY_NOT_PUBLIC` — connecting a private repository needs a GitHub App
+ * installation and the SEC-04/SEC-06 authorization controls, which are v2.
+ */
+export function connectRepo(url: string): Promise<Repo> {
+  const body: ConnectRepoRequest = { url }
+  return fetch(`${API_BASE}/api/projects`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(json<Repo>)
+}
 
 export function getProjects(): Promise<Repo[]> {
   return fetch(`${API_BASE}/api/projects`, {
