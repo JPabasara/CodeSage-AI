@@ -58,6 +58,34 @@ export type FindingStatus = "open" | "accepted" | "resolved" | "false-positive";
 //A to E grades are used to indicate the overall health of a repo or file. A is the best, E is the worst.
 export type Grade = "A" | "B" | "C" | "D" | "E";
 
+// ── Errors ──────────────────────────────────────────────────────────────────
+
+/**
+ * The stable, machine-readable reason a request failed. New members may be added;
+ * existing members never change meaning — so it is safe to branch on.
+ */
+export type ErrorCode =
+  | "NOT_AUTHENTICATED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "INVALID_REPOSITORY_URL"
+  | "REPOSITORY_NOT_PUBLIC"
+  | "REPOSITORY_UNREACHABLE"
+  | "ALREADY_CONNECTED"
+  | "SCAN_ALREADY_RUNNING"
+  | "SCAN_NOT_CANCELLABLE"
+  | "VALIDATION_FAILED"
+  | "RATE_LIMITED"
+  | "UPSTREAM_UNAVAILABLE"
+  | "INTERNAL_ERROR";
+
+/** Every non-2xx response body. `code` is required, not decorative. */
+export interface ApiError {
+  detail: string; // a human-readable sentence naming what failed
+  code: ErrorCode;
+  errors?: { field: string; detail: string }[]; // VALIDATION_FAILED only
+}
+
 // ── Finding: one row in the Refactor-First list ─────────────────────────────
 
 export interface Finding {
