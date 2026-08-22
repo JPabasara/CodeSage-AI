@@ -19,6 +19,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 import { http, HttpResponse } from "msw"
 import type {
+  ApiError,
   ApplyProfileRequest,
   CategoryWeights,
   Grade,
@@ -214,6 +215,22 @@ export function resetMockBackend() {
 }
 
 // ── the endpoints ───────────────────────────────────────────────────────────
+//
+// Four contract endpoints are deliberately NOT handled here. They are absences by
+// design, not gaps somebody forgot — MSW passes anything it has no handler for
+// straight through (`onUnhandledRequest: "bypass"` in the browser), which is
+// exactly what each of these needs:
+//
+//   GET  /api/auth/login     a navigation, not a fetch. The browser has to leave
+//   GET  /api/auth/callback  the page for OIDC, so a service worker never sees it.
+//   GET  /api/auth/session   must reach the REAL API, or sign-in cannot be tested
+//   POST /api/auth/logout    locally at all.
+//   POST /api/projects       has no caller yet - ConnectRepo is still a
+//                            placeholder form (see the note on the Projects page).
+//
+// `src/test/setup.ts` runs the Node server with `onUnhandledRequest: "error"`, so
+// if a component ever starts calling one of these, the test fails loudly rather
+// than hanging on a real network call.
 
 export const handlers = [
   http.get("*/api/projects", () => HttpResponse.json(mockRepos)),
@@ -225,7 +242,14 @@ export const handlers = [
   http.get("*/api/repos/:repoId/health", ({ params, request }) => {
     const repoId = params.repoId as string
     if (!mockRepos.some((r) => r.id === repoId)) {
-      return HttpResponse.json({ detail: "Repo not found" }, { status: 404 })
+      // Typed, so an envelope missing `code` fails the build rather than
+      // silently teaching the frontend that errors have no machine-readable
+      // reason on them.
+      const notFound: ApiError = {
+        detail: "Repo not found",
+        code: "NOT_FOUND",
+      }
+      return HttpResponse.json(notFound, { status: 404 })
     }
     const branch =
       new URL(request.url).searchParams.get("branch") ?? defaultBranch.name
