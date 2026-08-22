@@ -136,34 +136,932 @@ This is why deployment work comes before frontend work, and why it does not bloc
 
 ### Phase 1 — deploy (Wed 19)
 
-| # | Step | Done when |
-|---|---|---|
-| J1.1 | Create a Neon account, get a Postgres database | You can connect to it |
-| J1.2 | Run the database migration against Neon | Tables exist — check them in Neon's web console |
-| J1.3 | Create an Upstash account, get a Redis address | It responds |
-| J1.4 | Deploy the four containers to Railway from the published images | All four running |
-| J1.5 | Fill in every setting in the Railway dashboard | Nothing secret is in the repository |
-| J1.6 | Add the live callback address in the Asgardeo console | It matches the deployed address exactly, character for character |
-| J1.7 | Check `/api/healthz` answers | 200 |
-| J1.8 | **Check `/api/projects` returns 401 when signed out** | This is the security working — do not skip it |
-| J1.9 | Sign in on the live site | You reach the dashboard |
-| J1.10 | Set a spending limit of about $15 | Not $5 — see section 8 |
-
-### Phase 2 — frontend (Thu 20 – Sun 23)
-
-This is Phase 10.6 from the build guide. Do it in this order — the first step generates the errors that find the rest.
+> **Changed 20 Aug 2026: we are buying `codesageai.dev`.** That is not cosmetic. It removes two
+> problems this phase would otherwise have hit, and it changes the order of the steps — the web
+> image is now built *before* anything is deployed, not after. Read *Why the domain comes first* in
+> the guide below before starting.
 
 | # | Step | Done when |
 |---|---|---|
-| J2.1 | `pnpm gen:types` | Types regenerate from the contract |
-| J2.2 | Rename every field to snake_case | Type check passes. About 244 places; the compiler lists every one |
-| J2.3 | Category filter: five chips, `defect` removed | Five categories show |
-| J2.4 | Profiles page: five weights plus the trust slider | Six numbers, and Apply saves them |
-| J2.5 | Add `cancelled` to the scan states | A stopped scan shows correctly |
-| J2.6 | Sign-in button points at the real backend | It is a plain link, never a fetch — the browser has to leave the page |
-| J2.7 | Add `credentials: "include"` to every request | Without this no request carries the session and everything returns 401 |
-| J2.8 | Update the mock handlers to the new shapes | Tests still run with no backend |
-| J2.9 | Redeploy and walk the whole path on the live URL | It works there, not just locally |
+| J1.1 | Register `codesageai.dev` at Spaceship, keep its own DNS | The domain is yours and Advanced DNS Manager opens |
+| J1.2 | Write down the three live addresses | Site, backend and callback decided, in a file you can copy from |
+| J1.3 | Set `WEB_API_BASE_URL` in GitHub, re-run CI on `main` | The published `web` image contains `https://api.codesageai.dev`, not `localhost` |
+| J1.4 | Neon: create the database, create the `codesage_app` role **by hand**, collect both connection strings | Two roles exist; you have the un-pooled owner string and the pooled app string |
+| J1.5 | Point `apps/api/.env` at Neon and run the migration | 27 tables — check them in Neon's web console |
+| J1.6 | Create an Upstash account, get a Redis address | It responds |
+| J1.7 | Deploy three containers to Railway from the published images | `api`, `worker` and `web` running (`ml` stays off — see §9) |
+| J1.8 | Fill in every setting in the Railway dashboard | Nothing secret is in the repository |
+| J1.9 | Attach both custom domains and add the DNS records | Both addresses load over https with a valid certificate |
+| J1.10 | Add the live callback address in the Asgardeo console | It matches the deployed address exactly, character for character |
+| J1.11 | Check `/api/healthz` answers | 200 |
+| J1.12 | **Check `/api/projects` returns 401 when signed out** | This is the security working — do not skip it |
+| J1.13 | Sign in on the live site | You reach the dashboard |
+| J1.14 | Set a spending limit of about $15 | Not $5 — see §9 |
+| J1.15 | Stop the Railway services until the 23rd | Usage drops to nothing; Neon and Upstash stay up |
+
+### Phase 2 — frontend against the real contract (Fri 21 – Sun 23)
+
+Full detail in **[§6b](#6b-phase-2--frontend-fri-21--sun-23)**. J2.1–J2.8 and J2.10 are done;
+J2.9 is the live walk.
+
+### Phase 3 — finish the slice, then polish (Mon 24 onward)
+
+Full detail in **[§6c](#6c-phase-3--finish-the-slice-then-polish)**.
+
+| # | Step | Ships as |
+|---|---|---|
+| J3.1 | D-CR7 — finding detail renders in place, not as a slide-over | PR A |
+| J3.2 | Read the session — `GET /api/auth/session` | PR A |
+| J3.3 | Route protection — `src/middleware.ts` | PR A |
+| J3.4 | Polish for the mid-evaluation — build guide §11.M | PR B |
+
+---
+
+## 6a. Guide — Phase 1, step by step
+
+*Written for someone doing this for the first time. Every step is listed; nothing is assumed.*
+
+### Before you start
+
+Accounts you will need: **Spaceship** (the domain), **Neon**, **Upstash**, **Railway**, and the
+**Asgardeo** console we already use. A card for the domain (about $13 a year) and for Railway ($5).
+
+Open a scratch file — **not in the repository** — and keep these four things in it as you go. You
+will paste each one into two or three different dashboards:
+
+1. the Neon connection string for the **owner** role
+2. the Neon connection string for the **app** role
+3. the Upstash Redis address
+4. a freshly generated `CODESAGE_SECRET_KEY`
+
+---
+
+### Why the domain comes first
+
+Two problems disappear the moment we own a domain, and both were going to cost a day.
+
+**1. Sign-in would have appeared to work and then failed on every request.**
+
+Railway gives each service its own address, like `codesage-api-production.up.railway.app`. Those
+*look* like two names under one roof. Browsers do not see them that way: every `*.up.railway.app`
+name is treated as a **completely separate site**, because that suffix sits on the public list
+browsers use to decide where one owner's territory ends and another's begins.
+
+Our session cookie is marked `SameSite=Lax`, which means *"only send me when the request comes from
+my own site"*. So the frontend on one Railway address would never have sent the cookie to the
+backend on another. You would sign in successfully, land on the dashboard, and then watch every
+request come back 401 — with nothing visibly wrong in the code.
+
+With our own domain the site goes on `codesageai.dev` and the backend on `api.codesageai.dev`.
+Those **are** the same site, so the cookie is sent. **No backend change is needed** — which matters,
+because the fix would have been in `apps/api`, and that is Chamodh's folder (§1).
+
+**2. The web image would have needed rebuilding after the deploy.**
+
+The frontend's API address is frozen into the image when it is *built*, not read when it runs
+(deployment log, Entry 1). Without a domain the order would have been: deploy the backend, wait for
+Railway to invent an address, put that address into GitHub, rebuild the image, then deploy the
+frontend. Owning the domain means **we choose the address before anything exists**, so the image is
+built once, correctly, up front.
+
+That is why J1.3 sits before J1.7.
+
+> **A note on `.dev`.** Browsers refuse to load a `.dev` address over plain `http` — https is
+> compulsory and built into the browser itself. That suits us: our session cookie is already marked
+> `Secure`, meaning https-only, so there is nothing to work around.
+
+---
+
+### Step 1 — Register the domain (J1.1)
+
+**Registrar: Spaceship. DNS: Spaceship's own. No Cloudflare needed.**
+
+Buy `codesageai.dev` there and leave the nameservers as they come. Nothing else to set up yet — the
+records go in at step 8.
+
+> **Why this needed checking at all.** Railway asks you to point a name at *its* address using a DNS
+> record called a `CNAME`. The rules of DNS do not permit a `CNAME` on a **bare** domain like
+> `codesageai.dev` — only on a name in front of it, like `api.codesageai.dev`. Some DNS hosts work
+> around this (the feature is called *CNAME flattening*, or an *ALIAS* record); many do not.
+> Railway's own documentation names Route 53, Azure DNS and GoDaddy as hosts that cannot, and tells
+> you to move the domain to Cloudflare.
+>
+> **Spaceship can.** Its Advanced DNS Manager takes a `CNAME` with the host `@` and resolves it as
+> an ALIAS behind the scenes, answering queries with plain address records — so the bare domain
+> works and the root's mail and authority records keep working alongside it. That is why we can keep
+> everything in one place.
+>
+> Two consequences, both at step 8: create the apex record as a **`CNAME` with host `@`** rather
+> than looking for an "ALIAS" type in the dropdown, and do not be surprised when a DNS lookup shows
+> an `A` record rather than the `CNAME` you typed. That is the flattening working.
+
+**If you end up on a registrar whose DNS cannot do this**, you have two ways out: move the
+nameservers to a free Cloudflare account, or put the site on `app.codesageai.dev` instead of the
+bare domain — every host handles a subdomain `CNAME` without any special feature.
+
+---
+
+### Step 2 — Decide the addresses (J1.2)
+
+| What | Address |
+|---|---|
+| The site people visit | `https://codesageai.dev` |
+| The backend | `https://api.codesageai.dev` |
+| Where sign-in comes back to | `https://api.codesageai.dev/api/auth/callback` |
+
+Write these down. They go into five different dashboards, and a single typo in any one of them costs
+an hour of confused debugging. Copy and paste them everywhere; never retype them.
+
+---
+
+### Step 3 — Build the web image with the real address (J1.3)
+
+In GitHub: **Settings → Secrets and variables → Actions → Variables tab → New repository variable**.
+
+- Name: `WEB_API_BASE_URL`
+- Value: `https://api.codesageai.dev` — **no trailing slash**
+
+Then **Actions → CI → Run workflow → main**, and wait for green.
+
+Now prove it worked rather than assume it.
+
+```powershell
+docker pull ghcr.io/jpabasara/codesage-ai/web:latest
+docker run --rm --entrypoint sh ghcr.io/jpabasara/codesage-ai/web:latest -c 'grep -rho api.codesageai.dev .next/static/chunks | sort -u; grep -rho localhost:8000 .next/static/chunks | sort -u'
+```
+
+You want to see `api.codesageai.dev` printed and **nothing** on the second line.
+
+| What it prints | What it means |
+|---|---|
+| `api.codesageai.dev` only | Correct. Carry on. |
+| `localhost:8000` | **Stop.** The image was built before the variable existed. Re-run the workflow on `main`, pull again, re-check. |
+| nothing at all | The command did not run — see the box below |
+
+Getting this wrong is not a small mistake. The site would load perfectly and send every one of its
+requests to the *visitor's* own laptop, where nothing is listening.
+
+> **Two PowerShell traps, both hit while writing this.**
+>
+> 1. **A trailing `\` does not continue a line.** That is bash. PowerShell uses a backtick, so a
+>    pasted multi-line bash command fails with `sh: can't open '\'`. Keep these on one line.
+> 2. **Do not put double quotes inside a command you hand to `sh -c`.** PowerShell 5.1 strips them
+>    on the way to a native program, so anything they were protecting is then read by `sh` itself.
+>    A `|` inside a quoted regular expression becomes a real pipe, and you get
+>    `sh: http://localhost:8000: not found`. The command above avoids double quotes entirely, which
+>    is why it survives.
+
+Verified 20 Aug 2026: the published image contains `api.codesageai.dev` and no `localhost:8000`.
+
+---
+
+### Step 4 — Neon (J1.4)
+
+**This is the step most likely to go wrong**, and the reason is worth understanding rather than
+copying past.
+
+Create the project, pick the region closest to you, let Neon create a database. Neon gives you one
+role, and that role owns everything.
+
+**Our application deliberately does not connect as that role.** Postgres has a feature that keeps
+one workspace's rows invisible to another, and it is *switched off for whoever owns the tables* —
+silently, with no error. Connect as the owner and every isolation rule in the database stops
+applying while appearing to work perfectly. So there are two roles on purpose: one owns the tables
+and runs migrations, and a second, weaker one is what the application connects as.
+
+| | `neondb_owner` | `codesage_app` |
+|---|---|---|
+| Who made it | Neon, automatically | you, with the SQL below |
+| Can it create or alter tables? | yes | **no** |
+| Used by | `alembic upgrade head`, once | the API and the worker, always |
+| Ends up in | `CODESAGE_MIGRATION_DATABASE_URL` (your laptop) | `CODESAGE_DATABASE_URL` (Railway) |
+
+#### 4a. Create the second role
+
+Locally that second role is created by `infra/postgres/init/01-init.sql` — but that file only runs
+inside our own Postgres container. **Neon never sees it.** Skip this and J1.5 fails with
+`role "codesage_app" does not exist`.
+
+So in Neon's **SQL Editor**, run the following. Substitute the owner role Neon actually gave you
+(usually `neondb_owner`), the database name it actually created (usually `neondb`), and **a password
+you invent** for the app role — nothing gives you this one, you are creating a brand-new login:
+
+```sql
+CREATE ROLE codesage_app WITH LOGIN PASSWORD '<invent-a-strong-one>'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE;
+
+GRANT CONNECT ON DATABASE neondb TO codesage_app;
+GRANT USAGE   ON SCHEMA   public TO codesage_app;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO codesage_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO codesage_app;
+```
+
+Check it took:
+
+```sql
+SELECT rolname FROM pg_roles WHERE rolname LIKE 'codesage%';
+```
+
+> **Those last two statements are why step 4 must come before step 5.** They are a standing
+> instruction about *future* tables — "whenever the owner creates one, let `codesage_app` read and
+> write its rows". Run the migration first and the tables arrive with no permissions attached, and
+> the API will connect happily and then fail on every query.
+
+#### 4b. Collect the two connection strings
+
+Both come from the same **Connect** dialog on the Neon dashboard, with two settings changed between
+them. Take them now, while you are here.
+
+| | For the migration (step 5) | For Railway (step 7) |
+|---|---|---|
+| **Role** dropdown | `neondb_owner` | `codesage_app` |
+| **Connection pooling** toggle | **off** | **on** |
+| Host you end up with | `ep-xxxx.region.aws.neon.tech` | `ep-xxxx**-pooler**.region.aws.neon.tech` |
+
+Then **change the prefix on both** from `postgresql://` to `postgresql+psycopg://`. Neon writes the
+plain form; our code needs the driver named. Leave `?sslmode=require&channel_binding=require` alone —
+`sslmode` is why Neon accepts the connection at all, and `channel_binding` just adds a check that
+you are talking to the real server.
+
+> **Why pooling is off for one and on for the other.** The pooler holds a small set of open
+> connections and lends them out a statement at a time. That is exactly right for the API and the
+> worker, which make many short requests. It is wrong for Alembic, which changes the shape of the
+> database and needs a connection that stays its own for the whole job. Using the pooled address for
+> a migration is a good way to get a failure halfway through.
+>
+> The pooled host is the same name with `-pooler` inserted before the region, so the two strings
+> differ by seven characters. Read carefully.
+
+---
+
+### Step 5 — Run the migration (J1.5)
+
+From your laptop, not from a container.
+
+#### 5a. Put the address in `apps/api/.env`
+
+Do **not** set a Windows environment variable. `alembic/env.py` reads the address through the
+application's own settings, which load `apps/api/.env` — and that file is already gitignored, so the
+password never reaches the repository.
+
+Open `apps/api/.env` (it exists already, with the local docker settings in it) and point the
+migration line at Neon, keeping the local one commented out so you can switch back:
+
+```
+# ── Migrations: currently pointed at NEON (J1.5) ────────────────────────────
+# Direct endpoint, NOT the -pooler one.
+CODESAGE_MIGRATION_DATABASE_URL=postgresql+psycopg://neondb_owner:PASS@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+# CODESAGE_MIGRATION_DATABASE_URL=postgresql+psycopg://codesage_owner:devpassword@localhost:5433/codesage
+```
+
+No quotes around the value — a `.env` file is not a shell.
+
+**Leave `CODESAGE_DATABASE_URL` alone.** That one is for running the API on your laptop and should
+stay pointed at local docker. Neon's `codesage_app` address belongs in Railway, not here.
+
+> **Remember to switch back** when you next want to migrate the local database. The Neon line is
+> live; comment it and uncomment the one below it. Otherwise a routine `alembic upgrade head` on
+> your laptop quietly runs against the deployed database.
+
+#### 5b. Run it
+
+`alembic` is installed in the api's own virtual environment, not on your PATH — which is why
+`alembic` on its own reports "not recognized":
+
+```powershell
+cd apps\api
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+```
+
+#### 5c. Check it
+
+Open Neon's **Tables** view and count: **27**. Fewer than that means the migration stopped partway
+through — read the error and fix the cause. Do not simply run it again and hope.
+
+---
+
+### Step 6 — Upstash (J1.6)
+
+Create a Redis database, in a region near whichever Railway region you pick. Copy the address that
+starts `rediss://` — two s's, meaning encrypted.
+
+What Redis is doing here: it is the queue the API drops scan jobs into and the worker picks them up
+from, plus somewhere to keep *"this scan is 40% done"* and *"this scan was cancelled"*. It holds
+nothing you would miss.
+
+Two things to watch:
+
+- Celery needs the encrypted address spelled `rediss://`, and may want `?ssl_cert_reqs=required`
+  added on the end. If the worker will not connect, try that first.
+- Upstash's free plan counts commands, and Celery talks to the broker continuously even when there
+  is nothing to do. Look at the counter on the first day rather than at the end of the month.
+
+> **If it fights you for more than half an hour, stop and use Railway's own Redis instead**
+> (Railway → New → Database → Redis). It costs a few cents a month, needs no encryption fiddling,
+> and nothing valuable lives in it. §9 chose Upstash so the data survives Railway being switched
+> off — that reasoning is sound for the database and does not apply here at all.
+
+---
+
+### Step 7 — Railway (J1.7, J1.8)
+
+One project, three services. Every one runs an image we already published, so nothing is built on
+Railway.
+
+> **You need the Hobby plan, not the free trial — and the reason is the domain.** Railway's
+> documentation limits the **Trial plan to 1 custom domain in total**, while **Hobby allows 2 per
+> service**. We need two: `codesageai.dev` on `web` and `api.codesageai.dev` on `api`. So the trial
+> cannot do this deployment at all. Hobby's allowance is comfortably enough — it even leaves room
+> for `www.codesageai.dev` later, which counts as a second domain on the `web` service.
+>
+> Hobby is $5 of minimum spend that comes with $5 of credit, so it is the same money §9 already
+> budgeted.
+
+#### Service `api`
+
+| Setting | Value |
+|---|---|
+| Image | `ghcr.io/jpabasara/codesage-ai/api:latest` |
+| Port | `8000` |
+| Health check path | **`/api/healthz`** |
+
+> ⚠️ **Never point the health check at `/readyz`.** It returns 500 by design — it is an unfinished
+> stub (deployment log, Entry 2). Railway would see the 500 and refuse to send traffic to a
+> container that is working perfectly.
+
+Variables — Railway's **Raw editor** accepts this whole block in one paste:
+
+```
+CODESAGE_DATABASE_URL=postgresql+psycopg://codesage_app:PASS@ep-xxxx-pooler.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+CODESAGE_REDIS_URL=rediss://...upstash.io:6379
+CODESAGE_ASGARDEO_BASE_URL=https://api.asgardeo.io/t/<your-org>
+CODESAGE_ASGARDEO_CLIENT_ID=...
+CODESAGE_ASGARDEO_CLIENT_SECRET=...
+CODESAGE_ASGARDEO_REDIRECT_URI=https://api.codesageai.dev/api/auth/callback
+CODESAGE_FRONTEND_BASE_URL=https://codesageai.dev
+CODESAGE_CORS_ORIGINS=["https://codesageai.dev"]
+CODESAGE_COOKIE_SECURE=true
+CODESAGE_SECRET_KEY=<generate a fresh one>
+CODESAGE_ML_TIMEOUT_SECONDS=5
+CODESAGE_LOG_LEVEL=INFO
+```
+
+Four of those need explaining:
+
+- **`CODESAGE_DATABASE_URL` uses the `-pooler` host**, unlike the migration address in step 5. The
+  API and the worker make many short requests, which is what the pooler is for. Step 5 deliberately
+  used the un-pooled one because Alembic needs a connection of its own.
+
+- **`CODESAGE_CORS_ORIGINS` must be written in square brackets with double quotes**, exactly as
+  above. The setting is read as a *list*, not as text, and the plain form shown in
+  `apps/api/.env.example` would stop the service from starting at all. `infra/docker-compose.yml`
+  already writes it the correct way — copy that shape.
+- **`CODESAGE_COOKIE_SECURE=true`** — locally it is `false`, because plain http cannot carry a
+  Secure cookie. Anywhere real it must be `true`.
+- **`CODESAGE_ML_TIMEOUT_SECONDS=5`**, lowered from the default 30, because we are deliberately not
+  deploying the ML service. The system is built to carry on without it, but at the default setting
+  it waits half a minute before giving up on every call. Five seconds stops a scan crawling.
+
+Generate the secret key with:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+#### Service `worker`
+
+| Setting | Value |
+|---|---|
+| Image | `ghcr.io/jpabasara/codesage-ai/api:latest` — **the same image as `api`** |
+| Start command | `celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1` |
+| Domain, port, health check | **none** — it serves no web traffic |
+
+Variables: only `CODESAGE_DATABASE_URL` and `CODESAGE_REDIS_URL`. Nothing else is needed.
+
+**Do not attach a storage volume.** Each scan clones a repository into roughly 2 GB of scratch space
+and throws it away afterwards. Paid storage is for the database only (§9).
+
+One image serving two services with different commands is the design, not a shortcut — the API and
+the worker share the domain model, so shipping two images would mean maintaining the same contract
+on both sides of a network boundary.
+
+#### Service `web`
+
+| Setting | Value |
+|---|---|
+| Image | `ghcr.io/jpabasara/codesage-ai/web:latest` — the one you rebuilt in step 3 |
+| Port | `3000` |
+| Variables | **`PORT=3000`, and nothing else** |
+
+`PORT` is the one exception, and it is not optional. Railway injects a `PORT` of its own choosing,
+and Next reads it at startup — so without this the container listens on Railway's port while the
+custom domain is routing to 3000, and every request returns **502**. Setting it explicitly makes the
+two agree. *(Hit on 20 Aug: the generated Railway domain worked while `codesageai.dev` gave 502.)*
+
+Everything **else** the frontend needs was frozen into the image when it was built, and any other
+variable you set here is read by nobody. If the site points at the wrong backend, the fix is step 3
+and a rebuild — never a setting on this screen.
+
+#### `ml` is not deployed
+
+Deliberately. §9 explains why, and the design already treats the model service as optional: the scan
+finishes without it, every rule finding still appears, and risk comes back as "not measured".
+
+---
+
+### Step 7b — When a deployment will not go Active
+
+Every failure in Phase 1 on 20 Aug looked identical from the outside, and the trap is in that
+sameness. Read this before changing anything.
+
+#### The symptom that misleads
+
+A failed deployment shows `1/1 replicas never became healthy` and 11 healthcheck attempts. Meanwhile
+the service still says **Online** and `https://api.codesageai.dev/api/healthz` still answers **200**.
+
+> **Railway keeps the previous container running when a new deployment fails.** So a green healthcheck
+> from outside proves the *old* build is alive — it says nothing about the change you just made.
+> The deployment badge, not the URL, is what tells you whether your fix is live.
+
+And `/api/healthz` never touches the database on purpose (it is a liveness check), so no amount of
+polling it will reveal a broken database setting. **Signing in is the first request that opens a
+database connection.** That is why everything looked healthy for an hour while the URL was wrong.
+
+#### How to read the log
+
+Deploy Logs, not Network Logs — Network Logs only shows status codes. Then scroll to the **very
+bottom**. A Python traceback's middle is the call chain and is identical every time; the answer is
+the last line, the one beginning with an error name:
+
+| Last line | What it means | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'psycopg2'` | URL says `postgresql://`, so SQLAlchemy loaded its default driver. The image ships psycopg **3** | prefix must be `postgresql+psycopg://` |
+| `SettingsError: error parsing value for field "cors_origins"` | `CODESAGE_CORS_ORIGINS` written as plain text | must be `["https://codesageai.dev"]` |
+| `invalid channel_binding value: "('requiresslmode=require', ...)"` | the `&` between query parameters was lost | end the URL at `?sslmode=require` |
+
+The first two kill the app at **import**, before uvicorn binds a port — hence a healthcheck that can
+never pass. The third starts fine and fails later, on the first query.
+
+#### The database URL, spelled out
+
+Neon's copy button gives you something that will not work as-is. Three edits, every time:
+
+```
+postgresql://codesage_app:PASS@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+└─ 1 ─┘                        └── 2 ──┘                                          └────── 3 ──────┘
+```
+
+1. `postgresql://` → **`postgresql+psycopg://`** — this names the driver. Neon cannot know it
+2. add **`-pooler`** to the host (or toggle Connection pooling on before copying)
+3. **delete `&channel_binding=require`** — `sslmode=require` alone still encrypts the connection
+
+---
+
+### Step 8 — Point the domain at Railway (J1.9)
+
+**First, in Railway.** On the **`api`** service: Settings → Networking → **Custom Domain** → type
+`api.codesageai.dev`. Railway responds with a target address ending in `.up.railway.app` — copy it.
+Do the same on **`web`** with `codesageai.dev`, and copy that target too. They are two different
+targets; do not mix them up.
+
+**Then, in Spaceship.** Open the domain → **Advanced DNS Manager** → **DNS records → Custom
+records**, and add two:
+
+| Type | Host | Value |
+|---|---|---|
+| `CNAME` | `api` | the target Railway showed for **api** |
+| `CNAME` | `@` | the target Railway showed for **web** |
+
+> **The `@` record is the bare domain, and it is the one that needed checking.** Choose the plain
+> `CNAME` type and put `@` in the host field — do **not** go looking for an "ALIAS" option. Spaceship
+> converts it automatically and serves it as an address record. If you later run a DNS lookup on
+> `codesageai.dev` and see an `A` record instead of the `CNAME` you typed, nothing is wrong; that is
+> the conversion doing its job.
+
+> **Two traps hit on 20 Aug, both worth 20 minutes each.**
+>
+> 1. **Railway also asks for a TXT record, and its name starts with an underscore** —
+>    `_railway-verify.api`, and `_railway-verify` for the apex. The underscore is required; it marks
+>    a record meant for machines rather than browsers. Strip it and verification never completes,
+>    the domain stays yellow, and no certificate is issued. If Spaceship's host field refuses a
+>    leading underscore, type the whole name instead: `_railway-verify.api.codesageai.dev`.
+> 2. **Use "Generate Domain" or "Custom Domain", never "TCP Proxy".** A TCP proxy publishes a raw
+>    `host:port` endpoint for non-HTTP services. On a web service it is both useless and an
+>    unencrypted way into the container. Delete any you created.
+>
+> Both domains also need their **port** set explicitly when you attach them: `api` → 8000,
+> `web` → 3000. Leaving it to Railway's guess is how `codesageai.dev` ends up returning 502 while
+> the generated `*.up.railway.app` address works.
+
+Wait for Railway to report the certificate as issued — usually a couple of minutes, occasionally
+longer while the DNS change spreads. Then open `https://api.codesageai.dev/api/healthz` in a browser.
+
+Once both custom domains work, remove the temporary `*.up.railway.app` domain from `api`. Leaving it
+means the backend is reachable at an address that is not in the CORS list and not on our cookie's
+site — harmless, but it makes future debugging ambiguous. One address, one answer.
+
+---
+
+### Step 9 — Asgardeo (J1.10)
+
+In the Asgardeo console, open the application and add to **Authorized redirect URLs**:
+
+```
+https://api.codesageai.dev/api/auth/callback
+```
+
+**Keep the existing `localhost` entry too**, so local development still works.
+
+If the console also asks for allowed origins, add `https://codesageai.dev`.
+
+§13 lists this as the most likely thing to break, and the cause is always the same: one character
+different. Copy and paste it from your scratch file. Watch especially for a trailing slash.
+
+---
+
+### Step 10 — The three checks (J1.11–J1.13)
+
+Do these in order. Each one tells you something the others do not.
+
+**1. `https://api.codesageai.dev/api/healthz`** → `{"status":"ok"}`
+The backend is alive and the domain reaches it.
+
+**2. `https://api.codesageai.dev/api/projects`, in a private window** → **401**
+This is the one never to skip. It proves the application refuses strangers. A 200 here would mean
+every workspace's data is readable by anyone with the address.
+
+**3. `https://codesageai.dev`** → sign in → you land on the projects page.
+
+If step 3 fails, work through it in this order — each stage rules out the one before:
+
+| What you see | Almost always |
+|---|---|
+| The browser never reaches Asgardeo | `CODESAGE_ASGARDEO_REDIRECT_URI` wrong in Railway |
+| It reaches Asgardeo but errors on the way back | The callback URL is not registered in Asgardeo, or differs by a character |
+| You come back but land on the login page again | `CODESAGE_COOKIE_SECURE`, or `CODESAGE_FRONTEND_BASE_URL` |
+| You reach the dashboard but its data calls return 401 | The CORS list — **or see the note below** |
+
+> **Expect 401s on the dashboard's data at this point, and do not chase them.** The frontend does
+> not yet ask the browser to attach the session cookie to its requests — that is **J2.7**, already
+> on the Phase 2 list. The cookie exists and is the right kind; nobody is sending it yet. Sign-in
+> itself will work, because that is a full page navigation rather than a background request.
+> Changing backend settings to chase these will only break something that is currently correct.
+>
+> The live path is finished at **J2.9**, not here. Phase 1 is done when sign-in completes and the
+> two checks above pass.
+
+---
+
+### Step 11 — Money, and switching it off (J1.14, J1.15)
+
+Railway → your workspace → **Usage** → set the limit to **$15**.
+
+**Not $5.** Railway *stops your services* when a hard limit is reached, and a cap at exactly the plan
+minimum could take the site down in the middle of the evaluation. The cap is a safety net against
+something stuck in a loop overnight. It is not how you control the bill.
+
+You control the bill by not leaving things running. From Railway's own per-second prices, memory
+works out at roughly **$10 per GB per month** and active CPU at roughly **$20 per vCPU per month** —
+and an idle container uses almost no CPU. Our three services sitting idle come to about
+**25 cents a day**, so the $5 credit is around two weeks of continuous uptime. A two-minute scan
+costs a few cents.
+
+> §9 estimated $10–20 a month and "about ten days". That was the conservative reading, based on
+> provisioned box sizes. Railway bills **actual memory in use**, not the ceiling you are allowed, so
+> the real figure is friendlier. The advice does not change — stop things when they are not needed —
+> but you have more headroom than the plan assumed.
+
+So the plan is:
+
+1. Deploy on the 19th, run the three checks.
+2. **Stop all three services.** Stopped services cost nothing.
+3. Restart on the 23rd and leave them up through the evaluation.
+
+**Neon and Upstash stay on the whole time** — they are free, and they hold the data. Your database
+survives Railway being switched off entirely.
+
+---
+
+### When you are done
+
+Record it. Add **Entry 4** to
+[deployment-implementation-log.md](deployment-implementation-log.md) covering what you set where,
+anything that surprised you, and how to check it still works. The value of that file is that the
+next person — or you in three weeks — does not have to re-derive any of this.
+
+Then tell the group the live addresses, and start Phase 2 — beginning with **J2.7**, not J2.1.
+See §6b for the running order and why it differs from the numbering.
+
+## 6b. Phase 2 — frontend (Fri 21 – Sun 23)
+
+This is Phase 10.6 from the build guide.
+
+**The order below is not the order the steps are numbered in.** The J-numbers are fixed labels —
+they are referenced in `deployment-implementation-log.md` and in messages to the rest of the team,
+so renumbering them would break those references. The **Order** column is what you actually follow.
+
+Three of the nine are already done. Of the six that remain, one rule matters more than the rest:
+
+> **J2.2, J2.5 and the type half of J2.4 all edit the same file — `src/lib/types/index.ts`.**
+> Make all three edits, *then* run the type checker once. Doing them separately means working
+> through the same ~244 compiler errors three times over.
+
+| Order | # | Step | Done when |
+|---|---|---|---|
+| ✅ | J2.1 | `pnpm gen:types` | **Done.** `src/lib/types/api.ts` is generated from the contract |
+| ✅ | J2.2 | Rename every field to snake_case | **Done.** Types match the contract field-for-field |
+| ✅ | J2.3 | Category filter: five chips, `defect` removed | **Done.** Five categories show |
+| ✅ | J2.4 | Profiles page: five weights plus the trust slider | **Done.** Six numbers, Apply saves them |
+| ✅ | J2.5 | Add `cancelled` to the scan states | **Done.** A stopped scan reads *Cancelled*, not *Idle* |
+| ✅ | J2.6 | Sign-in button points at the real backend | **Done.** A plain link, never a fetch |
+| ✅ | J2.7 | Add `credentials: "include"` to every request | **Done.** Proven live at J2.9 |
+| ✅ | J2.8 | Update the mock handlers to the new shapes | **Done.** `pnpm test` green with no backend running |
+| **1** | **J2.10** | **Connect a repository from the Projects page** | **Pasting a public GitHub URL adds it to the list, and it is still there after a refresh** |
+| **2** | J2.9 | Redeploy and walk the whole path on the live URL | It works there, not just locally |
+
+---
+
+### ✅ J2.7 — Attach the session cookie to every request
+
+**What.** Every function in `src/lib/api/client.ts` calls plain `fetch(...)` with no options. Add
+`credentials: "include"` to each one. `src/components/layout/app-rail.tsx` already does this on the
+sign-out call — copy that pattern.
+
+**Why it goes first.** It is about ten lines in one file, it depends on nothing else, and it is the
+only thing standing between a signed-in user and real data. It also clears a question mark: once it
+is done, any 401 you see afterwards is a genuine bug rather than this known gap.
+
+**Done when.** DevTools → Network → the `projects` request carries a `Cookie` header, and the
+response changes from **401 to 500**. A 500 is the correct result here — the backend endpoint is
+still `raise NotImplementedError`. **401 → 500 is the win.**
+
+**Trap.** Do not stop at the two or three calls the Projects page happens to use. Every function in
+the file needs it, or the failure reappears later on a page nobody was testing.
+
+### ✅ J2.1 — Regenerate types from the contract *(already done)*
+
+`src/lib/types/api.ts` is generated from `docs/api/openapi.yaml` by `pnpm gen:types`. It is the
+source of truth for the three steps below — when the two disagree, the generated file is right.
+Re-run it if the contract changes; `pnpm gen:types:check` fails the build if the file has drifted.
+
+### ✅ J2.2 — Rename every field to snake_case
+
+**What.** The contract uses snake_case (`repo_id`, `latest_health`, `health_score`, `commit_sha`).
+Our hand-written `src/lib/types/index.ts` still uses camelCase — `latestHealth`, `codeDesign`,
+`scanId`, `repoId`, `commitSha`, `wMl`, `isPreset`. Bring it in line with the generated file.
+
+**Why here.** It is the largest single change and it produces the compiler errors that find
+everything else. Everything after this point is easier because of it.
+
+**How.** Change the type definitions **first**, then run `pnpm typecheck` and work down the list it
+prints. Do not go hunting through components by hand — the compiler already knows every site.
+
+**Done when.** `pnpm typecheck` passes.
+
+### ✅ J2.5 — Add `cancelled` to the scan states
+
+**Do this inside the J2.2 pass**, while you are already in that file.
+
+**What.** `ScanPhase` in `index.ts` is `"idle" | "queued" | "running" | "done" | "error"`. The
+contract has one more: `"cancelled"`. Add it.
+
+**Trap — this one is quiet.** Adding the member will **not** break the build.
+`src/components/layout/scan-control.tsx` only asks `phase === "running" || phase === "queued"`, so a
+cancelled scan falls into the "not running" branch and renders identically to idle. The compiler
+cannot catch this because there is no exhaustive switch to fail. You have to render it deliberately.
+
+**Why it matters.** The contract is explicit that `cancelled` is a distinct terminal phase, **not**
+`idle` — precisely so a cancelled attempt is never mistaken for a completed one.
+
+**Done when.** A stopped scan reads *Cancelled*, not *Idle*.
+
+### ✅ J2.4 — Profiles page: five weights plus the trust slider
+
+**This is bigger than the table line suggests.** `src/app/(app)/profiles/page.tsx` is currently a
+placeholder — a heading and one sentence. There is no weights UI to edit; the page has to be built.
+
+**Two parts:**
+
+- **The type** — `weights` today has four keys (`security`, `codeDesign`, `satd`, `duplication`).
+  The contract's `CategoryWeights` has **five**, matching the five categories, plus a separate trust
+  slider `s` where `0` = trust the model and `1` = trust the rules. *Do this half during J2.2.*
+- **The UI** — five weight inputs, one slider, an Apply button.
+
+**Done when.** Six numbers on screen, and Apply saves them.
+
+**Expect.** The backend `PUT` is still a stub, so Apply will return 500 until Chamodh's C-phase.
+Build and test against the mock handlers; that is what they are for.
+
+### ✅ J2.3 — Category filter: five chips *(already done)*
+
+Verified in `src/components/dashboard/overall-health-card.tsx`: five categories — `code-design`,
+`security`, `documentation`, `requirement`, `test` — matching the contract enum exactly. `defect`
+appears nowhere in `src/` except in generated comments explaining why it does not exist (the SATDAUG
+dataset carries no `defect_debt` label, so it cannot be produced).
+
+### ✅ J2.6 — Sign-in button points at the real backend *(already done)*
+
+`src/app/(auth)/login/page.tsx` is a plain `<a href>` to `/api/auth/login`, not a fetch. That is
+required, not a style choice: the browser has to physically leave the page for an OIDC flow, and a
+fetch would stay put and never complete the sign-in.
+
+### ✅ J2.8 — Update the mock handlers
+
+**What.** `src/lib/mocks/fixtures.ts` still returns the old shapes — camelCase keys and four
+weights. Bring it in line with whatever J2.2, J2.4 and J2.5 settled on.
+
+**Why here and not earlier.** The mocks mirror the types. Updating them before the types are final
+means updating them twice.
+
+**Why it matters.** The mocks are what let the frontend be developed and tested while every backend
+endpoint is still a stub. If they drift from the real shapes, the tests pass against a fiction and
+the live site breaks in ways nothing caught.
+
+**Done when.** `pnpm test` is green with no backend running.
+
+### 1 · J2.10 — Connect a repository from the Projects page
+
+**Why this is a new step.** It was never on anyone's frontend list, and it is
+**step 2 of the four-step demo path** — sign in → *connect a repository* → run a scan →
+see the dashboard. Without it there is no repository to scan, so nothing downstream can
+be demonstrated on the live site.
+
+**What is there now.** `src/components/projects/connect-repo.tsx` is a working form —
+input, Connect button, submit handler. It calls an optional `onConnect` prop. The
+Projects page renders `<ConnectRepo />` **without passing one**, so `onConnect?.()`
+resolves to `undefined`, the input clears, and nothing happens. It looks like it worked.
+
+**Four things are missing, and all four are frontend:**
+
+| | |
+|---|---|
+| `connectRepo()` in `src/lib/api/client.ts` | `POST /api/projects`, body `{ url }`, with `credentials: "include"` |
+| `onConnect` wired on the Projects page | call it, then refresh the list |
+| An MSW handler for `POST */api/projects` | so it works with no backend, and the tests cover it |
+| Error handling | the contract returns `INVALID_REPOSITORY_URL`, `REPOSITORY_NOT_PUBLIC`, `REPOSITORY_UNREACHABLE` and `ALREADY_CONNECTED` — each needs a message, not a silent failure |
+
+**Depends on Chamodh's C1.2** for real data, but not for the frontend work: build it
+against the mock handler exactly as every other screen was built.
+
+**Done when.** Pasting a public GitHub URL adds it to the list, and it is still there
+after a refresh.
+
+**Also remove the "Private (GitHub)" tab.** The SRS specifies this panel exactly:
+
+> Connect panel: an example URL text box and a Connect button with inline validation.
+
+No tabs, and no private option. The two-tab layout is something the prototype invented.
+Connecting a private repository is **v2** — it needs a GitHub App installation and the
+SRS **SEC-04**/**SEC-06** authorization controls, both tagged `[v2]`. The tab currently
+advertises a feature two releases away, and it would be on screen during the evaluation.
+
+Note the distinction: **`Repo.visibility` stays.** FR-3 records visibility from v1.0 and
+the projects list displays it per row. What moves to v2 is *connecting* a private repo,
+not knowing whether a repo is private.
+
+### 2 · J2.9 — Redeploy and walk the whole path on the live URL
+
+Everything in the codebase is ready. What remains is deployment and observation — the steps
+below are **yours to do by hand**, in this order.
+
+**What you are actually proving.** Not that the app works: it cannot yet, because every
+backend endpoint is still a stub. You are proving that **sign-in, the session cookie, CORS
+and routing work on the live site** — that a request arrives authenticated and reaches the
+right endpoint. The endpoint having nothing to say yet is Chamodh's half.
+
+#### Before you deploy
+
+| | Step | Why |
+|---|---|---|
+| 1 | Merge the frontend branch to `main` | CI only pushes images to GHCR from `main` |
+| 2 | Confirm CI is green | A red build means the image was never published |
+| 3 | Check `WEB_API_BASE_URL` is still `https://api.codesageai.dev` in GitHub | Frozen into the image at **build** time, never read at runtime |
+| 4 | Start the `api` and `web` services on Railway | `worker` can stay stopped; nothing enqueues jobs yet |
+
+> **The `NEXT_PUBLIC_API_BASE_URL` trap.** It is baked in at build time. A local
+> `.env.local` pointing at `localhost:8000` will ship inside the image if the build arg is
+> missing, and the site will silently call a machine that is not there. Verify the built
+> image contains `api.codesageai.dev` and no `localhost:8000` before trusting anything else.
+
+#### The walk
+
+Sign in on `https://codesageai.dev`, then open DevTools → Network and click through:
+sign in → projects → a dashboard → sign out.
+
+| # | Check | Pass looks like |
+|---|---|---|
+| 1 | `GET /api/healthz` | `{"status":"ok"}` |
+| 2 | `GET /api/projects` in a **private window** | **401** `NOT_AUTHENTICATED` — never skip this |
+| 3 | Sign in | You land on `/projects` and the page renders |
+| 4 | The `projects` request carries a **`Cookie` header** | **This is J2.7 finally proven.** Request side, not response |
+| 5 | Its response is **501**, not 401 | 401 → 501 is the win. The request arrived authenticated |
+| 6 | Response has `access-control-allow-origin: https://codesageai.dev` | CORS is correct |
+| 7 | The page shows *"This endpoint is not implemented yet."* | The error envelope survives the trip |
+| 8 | Connect a repository | Also 501 until **C1.2**. The form, the validation and the messages are all live |
+| 9 | Sign out from the rail | Session really ends — re-open `/projects` and you are asked to sign in |
+
+**Done when.** Steps 1–9 pass on the live URL, not on your machine.
+
+#### Expect 501, and do not chase it
+
+`501 This endpoint is not implemented yet.` is the **correct** answer from every stub. It
+means the whole chain worked: DNS, TLS, routing, CORS, the cookie, the session lookup, the
+tenant binding — all of it — and then the handler had nothing to return. Each endpoint
+Chamodh implements turns one 501 into real data with no frontend change.
+
+> **Why 501 and not a CORS error.** Until 22 Aug this walk would have shown a *CORS failure*
+> on every data call, and it would have looked like a deployment fault. A stub raises
+> `NotImplementedError`, which was unhandled; Starlette's `ServerErrorMiddleware` catches
+> unhandled exceptions and sits **outside** `CORSMiddleware`, so its `text/plain` 500 carried
+> no `Access-Control-Allow-Origin` and the browser blocked it. `apps/api/errors.py` now
+> handles `NotImplementedError` explicitly, which puts the response back inside the CORS
+> layer. Registering a handler for bare `Exception` does **not** work — that lands outside
+> again. Delete the handler once no endpoint raises `NotImplementedError`.
+
+#### If a step fails
+
+| What you see | Almost always |
+|---|---|
+| 502 on the custom domain, but `*.up.railway.app` works | The domain lost its explicit port (`api` → 8000, `web` → 3000) |
+| Site loads but every call goes to `localhost:8000` | The build arg was missing; rebuild the image |
+| Sign-in reaches Asgardeo but errors coming back | The callback URL is not registered, or differs by a character |
+| You return from Asgardeo to the login page again | `CODESAGE_COOKIE_SECURE` or `CODESAGE_FRONTEND_BASE_URL` |
+| **401** on the data calls, not 501 | The cookie is not being sent — check the *request* for a `Cookie` header before touching any server setting |
+| A CORS error rather than a 501 | The API image predates the `NotImplementedError` handler; redeploy `api` |
+
+---
+
+**When Phase 2 is finished**, the frontend is complete and correct against the contract, and every
+remaining failure on the live site is a missing backend endpoint. That is the handover point: from
+there, each endpoint Chamodh implements turns one 500 into working data with no further frontend
+work.
+
+---
+
+## 6c. Phase 3 — finish the slice, then polish
+
+Phase 2 closed the contract. Three things survived it that are **not polish**, and Phase 11 of the
+build guide says so itself: *"if it changes what the user can do, it is a feature."* All three do.
+
+Then, and only then, polish.
+
+| # | Step | Ships as | Done when |
+|---|---|---|---|
+| J3.1 | **D-CR7 — finding detail renders in place** | **PR A** | No `Sheet` in the dashboard; detail mode renders in place and survives a refresh |
+| J3.2 | **Read the session** — `GET /api/auth/session` | **PR A** | The rail shows who is signed in; a 401 sends you to `/login` |
+| J3.3 | **Route protection** — `src/middleware.ts` | **PR A** | A signed-out visit to `/projects` lands on `/login` |
+| J3.4 | **Polish for the mid-evaluation** — build guide §11.M | **PR B** | M1–M7 done, and the demo path walked on the live URL |
+
+Full detail: **[frontend_build_stepbystep.md §10.7 and §11.M](frontend_build_stepbystep.md)**.
+
+### Why these three are not polish
+
+**J3.1 — the slide-over was supposed to be gone already.** CR-001 decided in July that finding
+detail renders **in place**, not as a slide-over: triage means reading many findings in sequence,
+and an overlay blurs the file tree and costs a close-and-reopen every time. Phase 10.5 landed the
+rest of CR-001 — the `Source` collapse, the five category weights, the trust slider — but the
+layout change was never built. `finding-detail-panel.tsx` is still a `Sheet`.
+
+It touches **no types and no endpoints**. It is a container change, and CR-001 is explicit that it
+must come before polish: *polishing a slide-over you are about to delete is wasted work.*
+
+**J3.2 — nothing reads the session.** `GET /api/auth/session` has no caller anywhere in the app.
+So the product cannot say who is signed in, and — worse — when a session expires after an hour it
+cannot tell. Every request simply starts returning 401 and the user is stuck looking at an error
+box with no route back to sign-in.
+
+**J3.3 — no route is protected.** There is no `middleware.ts`. Visiting `/projects` signed out
+renders the page shell with an error inside it instead of redirecting to `/login`. Right now the
+501s disguise this; it becomes obvious the moment Chamodh's endpoints return real data.
+
+> The middleware can only check that the session cookie is **present** — it is `httpOnly`, so its
+> contents are unreadable from the edge. That is the correct split: the middleware is a redirect
+> for the common case, and the **API is the security boundary**, checking the session on every
+> request. A middleware check is never authorization.
+
+### The polish, and what actually matters for the evaluation
+
+Phase 11 in the build guide is long. §11.M is the cut that matters for the demo, in order of what
+breaks it hardest:
+
+1. **Loading / empty / error states** — the highest-value item by a wide margin. A blank panel
+   mid-scan reads as a crash
+2. **The Projects empty state** — the first screen after sign-in, and empty until a repo is connected
+3. **Dashboard legibility** — chart labels, grade colours that actually pass contrast
+4. **Visible focus and a keyboard path** through the demo
+5. **1280 px laptop width** — test at projector resolution, not on your monitor
+6. **Copy pass** — no placeholder text anywhere
+7. **Toast feedback on every write** — Connect, Apply, Scan, Stop
+
+Plus one demo-specific check: **make the 501 render as a calm message**, not a raw error string.
+Until the backend lands, that is what an evaluator sees on every data call.
+
+> **Do not start the polish before PR A is merged.** Items 3, 4 and 5 all touch the dashboard, and
+> J3.1 changes its layout.
 
 ---
 
@@ -178,7 +1076,7 @@ The frontend needs these to have anything to show.
 | # | Step | Done when |
 |---|---|---|
 | C1.1 | `GET /api/projects` | Returns the workspace's repositories |
-| C1.2 | `POST /api/projects` | Connecting a public GitHub repository adds it, and it survives a refresh |
+| C1.2 | `POST /api/projects` **(demo-critical)** | Connecting a public GitHub repository adds it, and it survives a refresh |
 | C1.3 | `GET /api/repos/{id}/branches` | Real branch names from GitHub |
 | C1.4 | `GET /api/repos/{id}/scans` | Scan history for a branch |
 | C1.5 | `GET /api/profiles` and `GET /api/profiles/active` | Returns the six numbers |
@@ -186,6 +1084,12 @@ The frontend needs these to have anything to show.
 | C1.7 | Tests: signed out gives 401, signed in gives data, one workspace cannot see another's rows | Tests pass |
 
 > ⚠️ **On applying a profile.** The database guarantees *at most* one active profile — **not at least one**. Clearing the old row and setting the new one must happen in a single transaction. A clear that commits on its own leaves the workspace with no active profile at all. Also remember profiles are **not versioned**: the same row is updated in place.
+
+> **C1.2 is demo-critical and was not marked as such.** It is step 2 of the four-step
+> demo path — sign in → *connect a repository* → run a scan → see the dashboard. Every
+> later step (C2.x) needs a connected repository to act on, so nothing downstream can be
+> demonstrated until this returns real data. Janidu's **J2.10** is the matching frontend
+> half; the two can be built in parallel against the mock.
 
 ### Phase B — the scan (Thu 20 – Sun 23)
 
@@ -241,6 +1145,193 @@ Start on Monday in `apps/ml/src/`. Pull `main` after Tuesday evening.
 | # | Step | Done when |
 |---|---|---|
 | A3.1 | Write the model results section of the evaluation document | Per class, with counts, and honest about what is not trained yet |
+
+---
+
+### Where your contract actually is
+
+**Not in `docs/api/openapi.yaml`.** That file is the browser-to-API contract and says
+nothing about the model service. Yours is defined in three places:
+
+| Where | What it gives you |
+|---|---|
+| SRS §3, interfaces table | One sentence: *"Batched comments in, SATD label and category out; per-file numeric feature vector in, risk score 0–1 out"* |
+| SAD, component + deployment views | Prose: the container is reached by the **worker only**, never by the browser |
+| **`apps/ml/src/codesage_ml/schemas.py`** | **The real contract** — `ClassifyRequest`, `ClassifyResponse`, `RiskRequest`, `RiskResponse`, `VersionResponse` |
+
+Run the service and FastAPI publishes a machine-readable version of those shapes at
+`/docs` and `/openapi.json`. **That is the page to send Chamodh** when he wires the worker.
+
+> **A gap to close early.** `apps/api/src/codesage_api/integrations/ml_service.py` is a
+> single line — `#TO BE IMPLEMENTED`. Nothing yet checks that the two sides agree, and
+> there is no equivalent of the frontend's `gen:types:check` guarding this boundary. If
+> you change a field name in `schemas.py`, nothing will tell Chamodh. **Agree the shapes
+> with him in week one and treat `schemas.py` as frozen** unless you both change it together.
+
+---
+
+### The steps, explained
+
+#### A1.1 — The service starts and answers
+
+`apps/ml/src/codesage_ml/main.py` already exists with four routes wired
+(`/classify`, `/risk`, `/version`, `/healthz`). Only `/healthz` returns anything; the
+rest `raise NotImplementedError`.
+
+**Do:** get it running and reachable from the worker container.
+
+```bash
+cd apps/ml
+uvicorn codesage_ml.main:app --port 8001
+curl localhost:8001/healthz          # {"status":"ok"}
+```
+
+**Why the health check has no model in it:** the same reason the API's does not touch
+the database. A dead model must not make an orchestrator kill a process that is
+otherwise fine — it should degrade, not restart.
+
+#### A1.2 / A1.3 — The endpoints answer in the right shape
+
+**This is the week's real deliverable, and accuracy is not part of it.** Return a
+constant, or a keyword match, or a coin flip — as long as the *shape* is exact.
+
+`/classify` takes `{comments: [{id, text}]}` and returns
+`{predictions: [{id, is_debt, category, confidence}], model_version}`.
+
+Three rules the shape enforces:
+
+- `id` is echoed back. The worker uses it to put each prediction back on the right
+  comment — **never rely on list order.**
+- `category` is `null` whenever `is_debt` is false. Not `"none"`, not an empty string.
+- `category` is **never `"security"`.** Security findings come from the rule engine.
+  The classifier has four categories; the product has five.
+
+`/risk` takes `{files: [{path, metrics}]}` and returns
+`{scores: [{path, risk_score}], model_version}`, with `risk_score` between 0 and 1.
+
+**Why shape first:** Chamodh can write and test the entire worker pipeline against a
+placeholder that returns constants. If you deliver accuracy in week two but the shape
+changed, his week is wasted. If you deliver the shape now and accuracy later, he never
+notices the swap.
+
+#### A1.4 — Tests for both endpoints
+
+FastAPI's `TestClient` — no server, no network:
+
+```python
+from fastapi.testclient import TestClient
+from codesage_ml.main import app
+
+def test_classify_echoes_every_id():
+    r = TestClient(app).post("/classify", json={"comments": [{"id": "a", "text": "TODO: fix"}]})
+    assert r.status_code == 200
+    assert [p["id"] for p in r.json()["predictions"]] == ["a"]
+```
+
+Worth pinning now, because each one is a promise Chamodh is relying on:
+
+- [ ] every input `id` comes back, exactly once
+- [ ] `category` is `null` when `is_debt` is false
+- [ ] `category` is never `"security"`
+- [ ] `risk_score` is within 0–1
+- [ ] `model_version` is present on every response
+- [ ] an empty input list returns an empty list, not an error
+
+#### A2.1 — Train the SATD classifier on SATDAUG
+
+The label mapping is already written for you in
+`apps/ml/src/codesage_ml/satd/labels.py`, and it carries the class counts:
+
+| Dataset label | Product category | Examples |
+|---|---|---|
+| `code/design_debt` | `code-design` | 2,703 |
+| `requirement_debt` | `requirement` | 2,271 |
+| `test_debt` | `test` | 2,635 |
+| `documentation_debt` | `documentation` | 2,701 |
+| `non_debt` | *(negative class)* | **58,204** |
+
+**Train on the dataset's own label strings and apply the mapping to the output.** Doing
+the rename before training would put the product's vocabulary inside the model and make
+a future rename a retraining job.
+
+**The number that shapes everything: 58,204 vs ~10,310.** Roughly five out of six
+comments are not debt at all. Two consequences you must plan for, not discover:
+
+- A model that answers "not debt" every single time scores about **85% accuracy** and
+  is completely useless. This is why accuracy is banned below.
+- Use a **stratified** train/test split, or a small class can end up almost absent from
+  your test set and its score becomes noise.
+
+Start simple — TF-IDF plus logistic regression is a legitimate baseline and trains in
+seconds. A weak baseline you can explain beats a strong one you cannot.
+
+#### A2.2 — Evaluate per class, with counts
+
+**Never report a single accuracy figure.** Not in the document, not in the slides, not
+in conversation. See the reasoning above — it is the one number that makes a useless
+model look good.
+
+Report, for each of the five classes including `non_debt`:
+
+| | |
+|---|---|
+| **Precision** | when it said this class, how often was it right |
+| **Recall** | of all the real ones, how many did it find |
+| **F1** | the two combined |
+| **Support** | how many test examples that class had ← **the one people forget** |
+
+`sklearn.metrics.classification_report(y_true, y_pred)` prints exactly this table.
+Also save the confusion matrix — it shows *which* classes get confused with each other,
+which is the interesting question and the one an evaluator will ask.
+
+For the risk model add **AUC** (Area Under the Curve — the chance the model ranks a
+random buggy file above a random clean one; 0.5 is a coin flip).
+
+#### A2.3 — Serve the trained model
+
+`registry.py` already defines how this works: models load **once at startup**, cached,
+never per request. A scan classifies tens of thousands of comments, so re-loading per
+batch would dominate the cost.
+
+Swapping a model is meant to be *drop an artifact, set the version, restart* — with no
+code change anywhere, and nothing in `apps/api` knowing what algorithm is inside. Keep
+it that way: no training code, no dataset paths and no scikit-learn imports in the
+serving path.
+
+#### A2.4 — Bug-risk model (only if time allows)
+
+Explicitly optional, and the system is designed to run without it: when the service is
+unreachable every `risk_score` falls back so that ranking is unaffected — the dashboard
+shows rule findings and SATD findings exactly as normal.
+
+If you do not get to it, say so plainly in the write-up. **A missing model honestly
+reported is a better result than a rushed one presented as finished.**
+
+#### A2.5 — Record which model version produced what
+
+Every response already carries `model_version`, and `HealthReport.model_version` carries
+it through to the dashboard — `null` when a snapshot was taken with no ML available.
+
+This is what makes a result reproducible: six months from now, "why did this file score
+0.8?" is answerable only if you know which model said so.
+
+#### A3.1 — The write-up
+
+Per class, with counts, and honest about what is not trained yet. Include the confusion
+matrix and one paragraph on what the model is bad at — evaluators trust a report that
+names its own weaknesses far more than one that does not.
+
+---
+
+### The one thing that protects your schedule
+
+Your work is **not** on the demo's critical path, and that is by design: when the model
+service is unreachable the scan still completes, every rule finding still appears, and
+risk comes back as "not measured". Nobody should re-plan around waiting for models.
+
+**But that only holds if A1.2 and A1.3 land on time.** The moment the endpoints answer
+in the right shape, Chamodh is unblocked whether or not a real model exists behind them.
+Ship the shape early, and the accuracy whenever it is ready.
 
 ---
 

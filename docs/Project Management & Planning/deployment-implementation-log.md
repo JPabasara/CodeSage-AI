@@ -8,6 +8,215 @@ New to Docker Compose? Start with **[Reference — Docker Compose, explained](#r
 
 ---
 
+## Entry 4 — 20–21 Aug 2026 — Phase 1 (deploy) — **COMPLETE**
+
+**Plan reference:** §6, Phase 1 (J1.1–J1.15) and the step-by-step guide in §6a.
+
+**Status: J1.1–J1.15 done and verified. Phase 1 is closed.** The live path works end to end:
+sign-in completes, a user row exists in Neon, and the browser lands on `/projects`.
+
+> **Read this before you "fix" anything here.** The Projects page loads and then shows
+> *"Couldn't load projects: 401"*. **That is correct behaviour at the end of Phase 1, not a
+> fault.** The explanation is in [The 401 that is supposed to happen](#the-401-that-is-supposed-to-happen)
+> below. Do not change CORS, cookie or Railway settings to chase it — they are all correct.
+
+### What is live
+
+| | Address |
+|---|---|
+| Site | `https://codesageai.dev` |
+| Backend | `https://api.codesageai.dev` |
+| Database | Neon, `ap-southeast-1`, 27 tables |
+| Broker | Upstash Redis, `ap-southeast-1` |
+| Services | Railway `codesageai/production` — `api`, `worker`, `web` in Singapore. `ml` deliberately not deployed |
+
+### Verified, not assumed
+
+| Check | Result |
+|---|---|
+| `GET /api/healthz` | `{"status":"ok"}` — J1.11 |
+| `GET /api/projects` signed out | **401** `NOT_AUTHENTICATED` — J1.12 |
+| `GET /api/auth/login` | 302 to Asgardeo, correct `client_id` and `redirect_uri`, PKCE S256 |
+| Handshake cookie | `HttpOnly; Secure; SameSite=lax; Path=/api/auth` |
+| **Sign-in on the live site** | **Completes. Lands on `/projects`, page renders — J1.13** |
+| **`app_user` rows** | **Present. A real sign-in wrote one** |
+| **`user_session` row** | **Live after sign-in** |
+| **Sign out from the app rail** | **Ends the session** (it is the one frontend call that already sends the cookie) |
+| `codesageai.dev` | 307 → `/projects` |
+| Web image contents | `api.codesageai.dev` baked in, no `localhost:8000` |
+| Neon grants | `codesage_app` has SELECT on all 27 tables; both RLS functions executable |
+| Neon RLS | 17 tables, FORCE on, `tenant_isolation` policies present |
+| `codesage_app` login | works on both pooled and direct endpoints |
+| Worker → Upstash | `celery@… ready` |
+| Spending cap | **$15 — J1.14** |
+
+### The decision that shaped this phase: buying `codesageai.dev`
+
+Registered at Spaceship, DNS on Spaceship (its Advanced DNS Manager flattens a `CNAME` at the apex,
+so no Cloudflare was needed). Two effects, both worth knowing:
+
+**1. It removed a bug we would otherwise have had to fix in `apps/api`.** Every `*.up.railway.app`
+address is a separate *site* to a browser, because that suffix is on the public suffix list. Our
+session cookie is `SameSite=Lax`, so a frontend on one Railway address would never have sent it to a
+backend on another — sign-in would succeed and every subsequent request would return 401.
+`codesageai.dev` and `api.codesageai.dev` are the same site, so `Lax` works and
+`routers/auth.py` needs no change.
+
+**2. It let the web image be built once, correctly.** The API address is frozen in at build time, so
+without a domain we would have had to deploy, wait for Railway to invent an address, rebuild, and
+redeploy. Instead `WEB_API_BASE_URL` was set in GitHub first and the image built with the real
+address before anything was deployed.
+
+Railway's **Hobby plan is required, not optional**: the Trial plan allows 1 custom domain in total
+and we need two. Hobby allows 2 per service.
+
+### What J1.13 was stuck on, and what fixed it
+
+Three separate faults, each producing the *same* outward symptom — a deployment that fails its
+healthcheck while the service still shows Online and `/api/healthz` still returns 200.
+
+| # | Last line of the traceback | Cause | Fix |
+|---|---|---|---|
+| 1 | `invalid channel_binding value: "('requiresslmode=require', 'require')"` | the `&` between query parameters was lost | end the URL at `?sslmode=require` |
+| 2 | `ModuleNotFoundError: No module named 'psycopg2'` | URL began `postgresql://`, so SQLAlchemy loaded its default driver; the image ships psycopg **3** | prefix must be `postgresql+psycopg://` |
+| 3 | `SettingsError: error parsing value for field "cors_origins"` | `CODESAGE_CORS_ORIGINS` written as plain text | must be `["https://codesageai.dev"]` |
+
+Fault 1 starts fine and fails on the first query. Faults 2 and 3 kill the process at **import**,
+before uvicorn binds a port — which is why the healthcheck can never pass.
+
+Once all three were corrected the `api` service started, sign-in completed on the first attempt, and
+Neon showed the new `app_user` and `user_session` rows.
+
+### The 401 that is supposed to happen
+
+**Symptom:** you sign in, you land on `https://codesageai.dev/projects`, the page renders — and then
+shows *"Couldn't load projects: 401"*.
+
+**This is three different things, and only the last one fails:**
+
+| | Result |
+|---|---|
+| Sign-in | works — a full page navigation, so the browser carries the cookie by itself |
+| The `/projects` page | loads and renders |
+| The page's background data call | **401** |
+
+**Cause.** The session cookie is set on `api.codesageai.dev`; the page is served from
+`codesageai.dev`. Those are different **origins**, and a browser leaves cookies out of a
+cross-origin request unless the code asks for them. `apps/web/src/lib/api/client.ts` calls
+plain `fetch(...)` with no options, so no cookie is sent, so `deps.get_current_user_id`
+correctly refuses.
+
+**This is J2.7 on the Phase 2 list** — add `credentials: "include"` to every request — and §6a
+Step 10 already warns about it in writing. The session is real, the cookie is the right kind and on
+the right site; nobody is sending it yet.
+
+**Proof it is this and not a config fault:** open DevTools → Network → the `projects` request and
+confirm it carries **no `Cookie` header**. If the cookie is absent from the *request*, no amount of
+server-side CORS or cookie configuration can change the answer. Checked on the live site: the
+`Cookie` header is absent and the response carries
+`access-control-allow-origin: https://codesageai.dev`, so CORS is already correct.
+
+**The wall behind this wall.** After J2.7 the same endpoint will return **500, not 200**, because
+`routers/projects.py::list_projects` is still `raise NotImplementedError` — as is every other
+business endpoint. That is Chamodh's C1.1. **401 → 500 is progress, not a regression.** Do not read
+it as J2.7 having failed.
+
+### Two things that cost time and should not cost it again
+
+**A failed deployment leaves the previous container serving.** So "the URL still returns 200" proves
+the *old* build is alive and says nothing about the change you just made. Trust the deployment
+badge, not the URL.
+
+**`/api/healthz` never touches the database** — deliberately, so a database blip cannot make an
+orchestrator restart a healthy API. Sign-in is therefore the first request that opens a database
+connection, and every database misconfiguration stays invisible until then.
+
+### Smaller findings
+
+- **TXT verification records need their leading underscore** (`_railway-verify.api`). Stripping it
+  leaves the domain unverified and no certificate is issued.
+- **"TCP Proxy" is not "Generate Domain".** A TCP proxy publishes a raw unencrypted `host:port`;
+  both created ones were deleted.
+- **Attach custom domains with an explicit port** — `api` → 8000, `web` → 3000. Otherwise the
+  generated `*.up.railway.app` address works while the custom domain returns 502.
+- **`web` needs `PORT=3000`.** It is the one runtime variable that image reads; everything else was
+  frozen in at build time.
+- **Celery warns** `Secure redis scheme specified (rediss) with no ssl options`. Appending
+  `?ssl_cert_reqs=required` to `CODESAGE_REDIS_URL` silences it and turns certificate checking on.
+- **`Failed to find Server Action "0000…"`** in the web logs is a browser holding a page from the
+  previous deployment. Harmless; a hard refresh clears it.
+- The `neondb_owner` password was pasted into a chat transcript during this work. **Rotated** on
+  21 Aug (Neon → Reset password). See the open item below.
+- **`worker` had nothing to do and was costing money.** Every Celery task
+  (`tasks/scan_pipeline.py`, `tasks/progress.py`, `tasks/cancel.py`) is `raise NotImplementedError`,
+  and `POST /api/repos/{id}/scan` is a stub too — so nothing can even enqueue a job. It was polling
+  an empty Upstash queue and billing for memory. Stopped until Chamodh's Phase B lands.
+- **Do not enable Railway's Serverless / App Sleeping before the evaluation.** It saves money by
+  sleeping an idle service, but the first request then takes seconds to wake — during a live demo
+  that reads as "the site is broken".
+
+### Current state of the services
+
+`worker` is **stopped**. `api` and `web` are **left running**.
+
+This is a deliberate deviation from J1.15, which said to stop all three until the 23rd. That step
+assumed a four-day idle gap. Phase 2 started on the 21st instead, and **J2.9 — "walk the whole path
+on the live URL" — needs `api` and `web` up**. At the measured ~25¢/day for all three, stopping them
+for two days saves about 50 cents and costs a restart cycle. `worker` is stopped because it is dead
+weight regardless (see above), not to save the 50 cents.
+
+**Stop a service without destroying it:** service → **Deployments** tab → ⋮ on the active
+deployment → **Remove**. Compute billing stops; environment variables, custom domains, port mappings
+and settings all survive. CLI equivalent: `railway link` then `railway down`.
+
+**Never delete the *service*** — that takes the domains and variables with it. The action you want
+is on the *deployment* row.
+
+**Restart:** same Deployments tab → ⋮ → **Redeploy**. Use Redeploy on the existing deployment rather
+than triggering a fresh build, or you get whatever is on the branch at that moment instead of the
+image that was verified here.
+
+### How to check it still works
+
+After any restart, in this order:
+
+1. `https://api.codesageai.dev/api/healthz` → `{"status":"ok"}`
+2. `https://api.codesageai.dev/api/projects` **in a private window** → **401** `NOT_AUTHENTICATED`.
+   Never skip this. A 200 here would mean every workspace's data is readable by anyone with the
+   address.
+3. `https://codesageai.dev` → sign in → you land on `/projects` and the page renders.
+   *A 401 on the page's data is expected until J2.7 — see above.*
+4. `https://codesageai.dev` returns a page, not a **502**. A 502 on the custom domain while the
+   `*.up.railway.app` address works means the domain lost its explicit port.
+
+### Phase 1 sign-off
+
+| Step | Status |
+|---|---|
+| J1.1–J1.12 | Done and verified |
+| J1.13 | **Done** — sign-in completes on the live site, user row in Neon |
+| J1.14 | **Done** — spending cap at $15 |
+| J1.15 | **Done, adapted** — `worker` stopped; `api` and `web` intentionally left up for Phase 2 J2.9 |
+
+**Next: Phase 2 (§6b), J2.1 onward.** Where it actually stands, checked against the code rather than
+assumed:
+
+| # | Step | Status |
+|---|---|---|
+| J2.1 | `pnpm gen:types` | **Done** — `src/lib/types/api.ts` generated from `docs/api/openapi.yaml` |
+| J2.2 | Rename every field to snake_case | **Not started** — `src/lib/types/index.ts` still has `latestHealth`, `codeDesign`, `scanId`, `repoId`, `commitSha`, `wMl` |
+| J2.3 | Category filter: five chips, `defect` removed | **Done** — matches the contract enum exactly |
+| J2.4 | Profiles page: five weights plus the trust slider | **Not started** — `weights` has 4 keys; the contract wants `CategoryWeights` (5) plus slider `s` |
+| J2.5 | Add `cancelled` to the scan states | **Not started** — `ScanPhase` in `index.ts` lacks it; the contract has it |
+| J2.6 | Sign-in button points at the real backend | **Done** — a plain `<a>`, never a fetch |
+| J2.7 | Add `credentials: "include"` to every request | **Not started** — this is the 401 above |
+| J2.8 | Update the mock handlers to the new shapes | **Not started** — `fixtures.ts` still camelCase, 4 weights |
+| J2.9 | Redeploy and walk the whole path on the live URL | Blocked on the above |
+
+J2.2 is the large one — roughly 244 call sites, and the compiler lists every one.
+
+---
+
 ## Entry 3 — 20 Aug 2026 — J0.5, J0.6 and J0.7 (CI)
 
 **Plan reference:** §6, Phase 0, steps J0.5, J0.6, J0.7. Also §10.
