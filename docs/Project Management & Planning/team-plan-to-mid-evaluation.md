@@ -159,6 +159,22 @@ This is why deployment work comes before frontend work, and why it does not bloc
 | J1.14 | Set a spending limit of about $15 | Not $5 — see §9 |
 | J1.15 | Stop the Railway services until the 23rd | Usage drops to nothing; Neon and Upstash stay up |
 
+### Phase 2 — frontend against the real contract (Fri 21 – Sun 23)
+
+Full detail in **[§6b](#6b-phase-2--frontend-fri-21--sun-23)**. J2.1–J2.8 and J2.10 are done;
+J2.9 is the live walk.
+
+### Phase 3 — finish the slice, then polish (Mon 24 onward)
+
+Full detail in **[§6c](#6c-phase-3--finish-the-slice-then-polish)**.
+
+| # | Step | Ships as |
+|---|---|---|
+| J3.1 | D-CR7 — finding detail renders in place, not as a slide-over | PR A |
+| J3.2 | Read the session — `GET /api/auth/session` | PR A |
+| J3.3 | Route protection — `src/middleware.ts` | PR A |
+| J3.4 | Polish for the mid-evaluation — build guide §11.M | PR B |
+
 ---
 
 ## 6a. Guide — Phase 1, step by step
@@ -983,6 +999,69 @@ Chamodh implements turns one 501 into real data with no frontend change.
 remaining failure on the live site is a missing backend endpoint. That is the handover point: from
 there, each endpoint Chamodh implements turns one 500 into working data with no further frontend
 work.
+
+---
+
+## 6c. Phase 3 — finish the slice, then polish
+
+Phase 2 closed the contract. Three things survived it that are **not polish**, and Phase 11 of the
+build guide says so itself: *"if it changes what the user can do, it is a feature."* All three do.
+
+Then, and only then, polish.
+
+| # | Step | Ships as | Done when |
+|---|---|---|---|
+| J3.1 | **D-CR7 — finding detail renders in place** | **PR A** | No `Sheet` in the dashboard; detail mode renders in place and survives a refresh |
+| J3.2 | **Read the session** — `GET /api/auth/session` | **PR A** | The rail shows who is signed in; a 401 sends you to `/login` |
+| J3.3 | **Route protection** — `src/middleware.ts` | **PR A** | A signed-out visit to `/projects` lands on `/login` |
+| J3.4 | **Polish for the mid-evaluation** — build guide §11.M | **PR B** | M1–M7 done, and the demo path walked on the live URL |
+
+Full detail: **[frontend_build_stepbystep.md §10.7 and §11.M](frontend_build_stepbystep.md)**.
+
+### Why these three are not polish
+
+**J3.1 — the slide-over was supposed to be gone already.** CR-001 decided in July that finding
+detail renders **in place**, not as a slide-over: triage means reading many findings in sequence,
+and an overlay blurs the file tree and costs a close-and-reopen every time. Phase 10.5 landed the
+rest of CR-001 — the `Source` collapse, the five category weights, the trust slider — but the
+layout change was never built. `finding-detail-panel.tsx` is still a `Sheet`.
+
+It touches **no types and no endpoints**. It is a container change, and CR-001 is explicit that it
+must come before polish: *polishing a slide-over you are about to delete is wasted work.*
+
+**J3.2 — nothing reads the session.** `GET /api/auth/session` has no caller anywhere in the app.
+So the product cannot say who is signed in, and — worse — when a session expires after an hour it
+cannot tell. Every request simply starts returning 401 and the user is stuck looking at an error
+box with no route back to sign-in.
+
+**J3.3 — no route is protected.** There is no `middleware.ts`. Visiting `/projects` signed out
+renders the page shell with an error inside it instead of redirecting to `/login`. Right now the
+501s disguise this; it becomes obvious the moment Chamodh's endpoints return real data.
+
+> The middleware can only check that the session cookie is **present** — it is `httpOnly`, so its
+> contents are unreadable from the edge. That is the correct split: the middleware is a redirect
+> for the common case, and the **API is the security boundary**, checking the session on every
+> request. A middleware check is never authorization.
+
+### The polish, and what actually matters for the evaluation
+
+Phase 11 in the build guide is long. §11.M is the cut that matters for the demo, in order of what
+breaks it hardest:
+
+1. **Loading / empty / error states** — the highest-value item by a wide margin. A blank panel
+   mid-scan reads as a crash
+2. **The Projects empty state** — the first screen after sign-in, and empty until a repo is connected
+3. **Dashboard legibility** — chart labels, grade colours that actually pass contrast
+4. **Visible focus and a keyboard path** through the demo
+5. **1280 px laptop width** — test at projector resolution, not on your monitor
+6. **Copy pass** — no placeholder text anywhere
+7. **Toast feedback on every write** — Connect, Apply, Scan, Stop
+
+Plus one demo-specific check: **make the 501 render as a calm message**, not a raw error string.
+Until the backend lands, that is what an evaluator sees on every data call.
+
+> **Do not start the polish before PR A is merged.** Items 3, 4 and 5 all touch the dashboard, and
+> J3.1 changes its layout.
 
 ---
 
