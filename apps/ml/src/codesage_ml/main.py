@@ -26,6 +26,7 @@ from codesage_ml.schemas import (
     CommentPrediction,
     RiskRequest,
     RiskResponse,
+    FileRisk,
     VersionResponse,
 )
 
@@ -74,8 +75,16 @@ def risk(body: RiskRequest) -> RiskResponse:
     and both sides import it, because a mismatch is silent: the model returns
     plausible numbers computed from the wrong columns.
     """
-    raise NotImplementedError
-
+    scores = []
+    for file in body.files:
+        scores.append(
+            FileRisk(
+                path=file.path,
+                risk_score=round(random.uniform(0.0, 1.0), 2)
+            )
+        )
+        
+    return RiskResponse(scores=scores, model_version="mock-1.0.0")
 @app.get("/version", response_model=VersionResponse)
 def version() -> VersionResponse:
     """Deployed model versions.
