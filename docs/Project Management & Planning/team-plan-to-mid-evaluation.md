@@ -1148,6 +1148,193 @@ Start on Monday in `apps/ml/src/`. Pull `main` after Tuesday evening.
 
 ---
 
+### Where your contract actually is
+
+**Not in `docs/api/openapi.yaml`.** That file is the browser-to-API contract and says
+nothing about the model service. Yours is defined in three places:
+
+| Where | What it gives you |
+|---|---|
+| SRS §3, interfaces table | One sentence: *"Batched comments in, SATD label and category out; per-file numeric feature vector in, risk score 0–1 out"* |
+| SAD, component + deployment views | Prose: the container is reached by the **worker only**, never by the browser |
+| **`apps/ml/src/codesage_ml/schemas.py`** | **The real contract** — `ClassifyRequest`, `ClassifyResponse`, `RiskRequest`, `RiskResponse`, `VersionResponse` |
+
+Run the service and FastAPI publishes a machine-readable version of those shapes at
+`/docs` and `/openapi.json`. **That is the page to send Chamodh** when he wires the worker.
+
+> **A gap to close early.** `apps/api/src/codesage_api/integrations/ml_service.py` is a
+> single line — `#TO BE IMPLEMENTED`. Nothing yet checks that the two sides agree, and
+> there is no equivalent of the frontend's `gen:types:check` guarding this boundary. If
+> you change a field name in `schemas.py`, nothing will tell Chamodh. **Agree the shapes
+> with him in week one and treat `schemas.py` as frozen** unless you both change it together.
+
+---
+
+### The steps, explained
+
+#### A1.1 — The service starts and answers
+
+`apps/ml/src/codesage_ml/main.py` already exists with four routes wired
+(`/classify`, `/risk`, `/version`, `/healthz`). Only `/healthz` returns anything; the
+rest `raise NotImplementedError`.
+
+**Do:** get it running and reachable from the worker container.
+
+```bash
+cd apps/ml
+uvicorn codesage_ml.main:app --port 8001
+curl localhost:8001/healthz          # {"status":"ok"}
+```
+
+**Why the health check has no model in it:** the same reason the API's does not touch
+the database. A dead model must not make an orchestrator kill a process that is
+otherwise fine — it should degrade, not restart.
+
+#### A1.2 / A1.3 — The endpoints answer in the right shape
+
+**This is the week's real deliverable, and accuracy is not part of it.** Return a
+constant, or a keyword match, or a coin flip — as long as the *shape* is exact.
+
+`/classify` takes `{comments: [{id, text}]}` and returns
+`{predictions: [{id, is_debt, category, confidence}], model_version}`.
+
+Three rules the shape enforces:
+
+- `id` is echoed back. The worker uses it to put each prediction back on the right
+  comment — **never rely on list order.**
+- `category` is `null` whenever `is_debt` is false. Not `"none"`, not an empty string.
+- `category` is **never `"security"`.** Security findings come from the rule engine.
+  The classifier has four categories; the product has five.
+
+`/risk` takes `{files: [{path, metrics}]}` and returns
+`{scores: [{path, risk_score}], model_version}`, with `risk_score` between 0 and 1.
+
+**Why shape first:** Chamodh can write and test the entire worker pipeline against a
+placeholder that returns constants. If you deliver accuracy in week two but the shape
+changed, his week is wasted. If you deliver the shape now and accuracy later, he never
+notices the swap.
+
+#### A1.4 — Tests for both endpoints
+
+FastAPI's `TestClient` — no server, no network:
+
+```python
+from fastapi.testclient import TestClient
+from codesage_ml.main import app
+
+def test_classify_echoes_every_id():
+    r = TestClient(app).post("/classify", json={"comments": [{"id": "a", "text": "TODO: fix"}]})
+    assert r.status_code == 200
+    assert [p["id"] for p in r.json()["predictions"]] == ["a"]
+```
+
+Worth pinning now, because each one is a promise Chamodh is relying on:
+
+- [ ] every input `id` comes back, exactly once
+- [ ] `category` is `null` when `is_debt` is false
+- [ ] `category` is never `"security"`
+- [ ] `risk_score` is within 0–1
+- [ ] `model_version` is present on every response
+- [ ] an empty input list returns an empty list, not an error
+
+#### A2.1 — Train the SATD classifier on SATDAUG
+
+The label mapping is already written for you in
+`apps/ml/src/codesage_ml/satd/labels.py`, and it carries the class counts:
+
+| Dataset label | Product category | Examples |
+|---|---|---|
+| `code/design_debt` | `code-design` | 2,703 |
+| `requirement_debt` | `requirement` | 2,271 |
+| `test_debt` | `test` | 2,635 |
+| `documentation_debt` | `documentation` | 2,701 |
+| `non_debt` | *(negative class)* | **58,204** |
+
+**Train on the dataset's own label strings and apply the mapping to the output.** Doing
+the rename before training would put the product's vocabulary inside the model and make
+a future rename a retraining job.
+
+**The number that shapes everything: 58,204 vs ~10,310.** Roughly five out of six
+comments are not debt at all. Two consequences you must plan for, not discover:
+
+- A model that answers "not debt" every single time scores about **85% accuracy** and
+  is completely useless. This is why accuracy is banned below.
+- Use a **stratified** train/test split, or a small class can end up almost absent from
+  your test set and its score becomes noise.
+
+Start simple — TF-IDF plus logistic regression is a legitimate baseline and trains in
+seconds. A weak baseline you can explain beats a strong one you cannot.
+
+#### A2.2 — Evaluate per class, with counts
+
+**Never report a single accuracy figure.** Not in the document, not in the slides, not
+in conversation. See the reasoning above — it is the one number that makes a useless
+model look good.
+
+Report, for each of the five classes including `non_debt`:
+
+| | |
+|---|---|
+| **Precision** | when it said this class, how often was it right |
+| **Recall** | of all the real ones, how many did it find |
+| **F1** | the two combined |
+| **Support** | how many test examples that class had ← **the one people forget** |
+
+`sklearn.metrics.classification_report(y_true, y_pred)` prints exactly this table.
+Also save the confusion matrix — it shows *which* classes get confused with each other,
+which is the interesting question and the one an evaluator will ask.
+
+For the risk model add **AUC** (Area Under the Curve — the chance the model ranks a
+random buggy file above a random clean one; 0.5 is a coin flip).
+
+#### A2.3 — Serve the trained model
+
+`registry.py` already defines how this works: models load **once at startup**, cached,
+never per request. A scan classifies tens of thousands of comments, so re-loading per
+batch would dominate the cost.
+
+Swapping a model is meant to be *drop an artifact, set the version, restart* — with no
+code change anywhere, and nothing in `apps/api` knowing what algorithm is inside. Keep
+it that way: no training code, no dataset paths and no scikit-learn imports in the
+serving path.
+
+#### A2.4 — Bug-risk model (only if time allows)
+
+Explicitly optional, and the system is designed to run without it: when the service is
+unreachable every `risk_score` falls back so that ranking is unaffected — the dashboard
+shows rule findings and SATD findings exactly as normal.
+
+If you do not get to it, say so plainly in the write-up. **A missing model honestly
+reported is a better result than a rushed one presented as finished.**
+
+#### A2.5 — Record which model version produced what
+
+Every response already carries `model_version`, and `HealthReport.model_version` carries
+it through to the dashboard — `null` when a snapshot was taken with no ML available.
+
+This is what makes a result reproducible: six months from now, "why did this file score
+0.8?" is answerable only if you know which model said so.
+
+#### A3.1 — The write-up
+
+Per class, with counts, and honest about what is not trained yet. Include the confusion
+matrix and one paragraph on what the model is bad at — evaluators trust a report that
+names its own weaknesses far more than one that does not.
+
+---
+
+### The one thing that protects your schedule
+
+Your work is **not** on the demo's critical path, and that is by design: when the model
+service is unreachable the scan still completes, every rule finding still appears, and
+risk comes back as "not measured". Nobody should re-plan around waiting for models.
+
+**But that only holds if A1.2 and A1.3 land on time.** The moment the endpoints answer
+in the right shape, Chamodh is unblocked whether or not a real model exists behind them.
+Ship the shape early, and the accuracy whenever it is ready.
+
+---
+
 ## 9. Deployment plan
 
 ### The shape
