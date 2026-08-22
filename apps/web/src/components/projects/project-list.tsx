@@ -34,15 +34,15 @@ export function ProjectList({ repos, onSelect, activeRepoId }: Readonly<ProjectL
                   </span>
                   <Badge variant="secondary">{repo.visibility}</Badge>
                 </div>
-                {repo.latestHealth ? (
+                {repo.latest_health ? (
                   <p className="text-muted-foreground text-sm">
-                    <span style={{ color: gradeColor(repo.latestHealth.grade) }}>
-                      {repo.latestHealth.grade}
+                    <span style={{ color: gradeColor(repo.latest_health.grade) }}>
+                      {repo.latest_health.grade}
                     </span>{" "}
-                    · {repo.latestHealth.score}/100 ·{" "}
-                    {repo.latestHealth.delta >= 0
-                      ? `+${repo.latestHealth.delta}`
-                      : repo.latestHealth.delta}
+                    · {repo.latest_health.score}/100 ·{" "}
+                    {repo.latest_health.delta >= 0
+                      ? `+${repo.latest_health.delta}`
+                      : repo.latest_health.delta}
                   </p>
                 ) : (
                   <p className="text-muted-foreground text-sm">Not scanned yet</p>

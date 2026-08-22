@@ -599,7 +599,10 @@ export interface components {
             /** @example octocat */
             owner: string;
             /**
-             * @description v1.0 connects public repositories only; `private` is v1.1.
+             * @description Recorded for every repository from v1.0 - FR-3 stores it and the projects
+             *     list displays it. What is deferred is *connecting* a private repository,
+             *     which needs a GitHub App installation and the SEC-04/SEC-06 authorization
+             *     controls: that is **v2**, not v1.1.
              * @enum {string}
              */
             visibility: "public" | "private";
