@@ -368,7 +368,7 @@ Because they share one mold, "static → mock → real" are painless **swaps**, 
 | Scoring profile — select a preset | `ScoreProfile` | **v1.0** (custom sliders = v1.1) |
 | Act on a finding (accept / resolve / false-positive) | `Finding.status`, `FindingStatus` | **v1.1** (view-only in v1.0) |
 | Standalone category-breakdown view | group / filter by `Category` | **v1.1** |
-| Private repos (GitHub App) | `Repo.visibility = "private"` | **v1.1** |
+| Private repos (GitHub App) | `Repo.visibility = "private"` | **v2** (the *field* is v1.0; connecting a private repo is v2) |
 | Card B per-node health (hover a file) | per-node `HealthPoint` series | **v2** |
 | Multi-repo workspace + rollup, Team / RBAC | `Workspace`, `Member`, `Role` | **v2** |
 
@@ -1413,7 +1413,7 @@ Neither exists in `lib/api/client.ts` yet:
 
 | ✅ In scope (v1.0, already built) | ❌ Out of scope (say no on purpose) |
 |---|---|
-| Login · Projects · Dashboard (top nav, branch, scan, Card A, Card B, Refactor-First list, finding detail, heat-map tree) | New features, or any v1.1/v2 field (finding actions, per-node Card B, private repos) |
+| Login · Projects · Dashboard (top nav, branch, scan, Card A, Card B, Refactor-First list, finding detail, heat-map tree) | New features, or any v1.1/v2 field (finding actions = v1.1; per-node Card B and private repos = v2) |
 | **States** (loading / empty / error), **affordances** (can I tell it's clickable?), **legibility** (contrast, chart labels), **keyboard**, **responsive**, **copy** | Redesigns, a different component library, a "real" tree/virtualisation lib |
 | Repo hygiene that affects a fresh clone or a screenshot | Animation for its own sake; anything that changes `@/lib/types` |
 
