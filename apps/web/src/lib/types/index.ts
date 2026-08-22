@@ -79,6 +79,11 @@ export type ErrorCode =
   | "UPSTREAM_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
+/** The body of `POST /api/projects`. */
+export interface ConnectRepoRequest {
+  url: string; // a PUBLIC repository URL
+}
+
 /** Every non-2xx response body. `code` is required, not decorative. */
 export interface ApiError {
   detail: string; // a human-readable sentence naming what failed
@@ -143,7 +148,7 @@ export interface Repo {
   id: string;
   name: string;
   owner: string;
-  visibility: "public" | "private"; // v1: public only; private = v1.1 (GitHub App)
+  visibility: "public" | "private"; // recorded from v1.0; CONNECTING a private repo is v2
   url: string;
   default_branch: string;
   connected_at: string; // ISO
