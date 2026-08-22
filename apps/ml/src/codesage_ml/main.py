@@ -16,11 +16,14 @@ questions; it never learns.
 
 from __future__ import annotations
 
+import random
+
 from fastapi import FastAPI
 
 from codesage_ml.schemas import (
     ClassifyRequest,
     ClassifyResponse,
+    CommentPrediction,
     RiskRequest,
     RiskResponse,
     VersionResponse,
@@ -44,8 +47,22 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
     Batched because a repository has tens of thousands of comments and a
     per-comment round trip would dominate scan time.
     """
-    raise NotImplementedError
-
+    predictions = []
+    categories = ["code-design", "requirement", "documentation", "test", None]
+    
+    for comment in body.comments:
+        cat = random.choice(categories)
+        is_debt = cat is not None
+        predictions.append(
+            CommentPrediction(
+                id=comment.id,
+                is_debt=is_debt,
+                category=cat,
+                confidence=round(random.uniform(0.5, 0.99), 2) if is_debt else 0.0
+            )
+        )
+        
+    return ClassifyResponse(predictions=predictions, model_version="mock-1.0.0")
 
 @app.post("/risk", response_model=RiskResponse)
 def risk(body: RiskRequest) -> RiskResponse:
@@ -59,7 +76,6 @@ def risk(body: RiskRequest) -> RiskResponse:
     """
     raise NotImplementedError
 
-
 @app.get("/version", response_model=VersionResponse)
 def version() -> VersionResponse:
     """Deployed model versions.
@@ -68,8 +84,10 @@ def version() -> VersionResponse:
     identifies what produced it. Without this, trend points computed before and
     after a retraining would be silently incomparable (AI-03, DBR-18).
     """
-    raise NotImplementedError
-
+    return VersionResponse(
+        satd_model_version="mock-1.0.0",
+        risk_model_version="mock-1.0.0"
+    )
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
