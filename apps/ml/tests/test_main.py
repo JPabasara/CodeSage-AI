@@ -43,11 +43,13 @@ def test_risk():
         "files": [
             {
                 "path": "src/main.py",
-                "additions": 10,
-                "deletions": 5,
-                "cyclomatic_complexity": 15,
-                "author_count": 2,
-                "commit_count": 5
+                "metrics": {
+                    "additions": 10,
+                    "deletions": 5,
+                    "cyclomatic_complexity": 15,
+                    "author_count": 2,
+                    "commit_count": 5
+                }
             }
         ]
     }
