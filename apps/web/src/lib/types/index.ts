@@ -140,7 +140,19 @@ export interface Branch {
 
 // ── Scan lifecycle: drives the Scan button state machine ────────────────────
 
-export type ScanPhase = "idle" | "queued" | "running" | "done" | "error";
+/**
+ * `idle → queued → running → done | error | cancelled`.
+ *
+ * `cancelled` is a DISTINCT terminal phase, never `idle` — so a scan somebody
+ * stopped can never be mistaken for one that completed, or for one that never ran.
+ */
+export type ScanPhase =
+  | "idle"
+  | "queued"
+  | "running"
+  | "done"
+  | "error"
+  | "cancelled";
 
 export interface ScanStatus {
   scan_id: string;
