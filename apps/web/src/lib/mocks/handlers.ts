@@ -21,6 +21,8 @@ import { http, HttpResponse } from "msw"
 import type {
   ApiError,
   ApplyProfileRequest,
+  ConnectRepoRequest,
+  Repo,
   CategoryWeights,
   Grade,
   HealthReport,
@@ -174,6 +176,10 @@ function advanceScan(
 // Applying replaces the workspace's single active profile in place; profiles are
 // not versioned. Held here rather than in fixtures.ts because it is mutable
 // server state, not sample data.
+// Connecting adds to the workspace, so the projects list is mutable state rather
+// than the fixture array. Seeded from the fixtures on every reset.
+let connected: Repo[] = [...mockRepos]
+
 let activeProfile: ScoreProfile =
   mockProfiles.find((p) => p.is_active) ?? mockProfiles[0]
 
@@ -212,6 +218,7 @@ export function resetMockBackend() {
   scans.clear()
   cancelRequested.clear()
   activeProfile = mockProfiles.find((p) => p.is_active) ?? mockProfiles[0]
+  connected = [...mockRepos]
 }
 
 // ── the endpoints ───────────────────────────────────────────────────────────
@@ -233,7 +240,73 @@ export function resetMockBackend() {
 // than hanging on a real network call.
 
 export const handlers = [
-  http.get("*/api/projects", () => HttpResponse.json(mockRepos)),
+  http.get("*/api/projects", () => HttpResponse.json(connected)),
+
+  // Connect a repository (FR-3). The four failure codes below are the ones the
+  // contract names, and each needs its own message on screen - "400 Bad Request"
+  // tells a user who pasted their own private repo nothing about what to do next.
+  http.post("*/api/projects", async ({ request }) => {
+    const { url } = (await request.json()) as ConnectRepoRequest
+
+    const fail = (status: number, code: ApiError["code"], detail: string) =>
+      HttpResponse.json({ detail, code } satisfies ApiError, { status })
+
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return fail(
+        400,
+        "INVALID_REPOSITORY_URL",
+        "That does not look like a repository URL.",
+      )
+    }
+    if (parsed.hostname !== "github.com" || parsed.pathname.split("/").length < 3) {
+      return fail(
+        400,
+        "INVALID_REPOSITORY_URL",
+        "That does not look like a repository URL.",
+      )
+    }
+
+    const [, owner, name] = parsed.pathname.replace(/\.git$/, "").split("/")
+
+    // Deterministic stand-ins so the UI can be built against every branch of the
+    // contract before the real backend exists.
+    if (name.startsWith("private-")) {
+      return fail(
+        400,
+        "REPOSITORY_NOT_PUBLIC",
+        "Only public repositories can be connected in this release. Private repositories require a GitHub App installation.",
+      )
+    }
+    if (name.startsWith("missing-")) {
+      return fail(
+        400,
+        "REPOSITORY_UNREACHABLE",
+        "That repository could not be reached. Check the URL and try again.",
+      )
+    }
+    if (connected.some((r) => r.owner === owner && r.name === name)) {
+      return fail(
+        409,
+        "ALREADY_CONNECTED",
+        "That repository is already connected to this workspace.",
+      )
+    }
+
+    const repo: Repo = {
+      id: `${owner}-${name}`,
+      name,
+      owner,
+      visibility: "public",
+      url,
+      default_branch: "main",
+      connected_at: new Date().toISOString(),
+    }
+    connected = [...connected, repo]
+    return HttpResponse.json(repo, { status: 201 })
+  }),
 
   http.get("*/api/repos/:repoId/branches", () =>
     HttpResponse.json(mockBranches),
