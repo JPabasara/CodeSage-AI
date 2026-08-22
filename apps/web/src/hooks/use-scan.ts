@@ -20,6 +20,10 @@ const IDLE: ScanStatus = { scan_id: "", phase: "idle", progress: 0 }
  */
 export function useScan(repoId: string, onComplete?: () => void) {
   const [status, setStatus] = useState<ScanStatus>(IDLE)
+  // True from the moment Stop is pressed until the scan actually reaches a
+  // terminal phase. The backend keeps reporting "running" in that window, so
+  // without this the button looks like it did nothing and users press it again.
+  const [stopping, setStopping] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   const clearTimer = useCallback(() => {
@@ -33,6 +37,7 @@ export function useScan(repoId: string, onComplete?: () => void) {
   const scan = useCallback(
     async (branch: string) => {
       clearTimer()
+      setStopping(false) // a fresh scan clears any leftover stopping state
       const started = await startScan(repoId, branch) // phase: "running", progress: 0
       setStatus(started)
       timer.current = setInterval(async () => {
@@ -46,6 +51,7 @@ export function useScan(repoId: string, onComplete?: () => void) {
           next.phase === "cancelled"
         ) {
           clearTimer()
+          setStopping(false)
           if (next.phase === "done") {
             toast.success("Scan complete")
             onComplete?.()
@@ -70,9 +76,16 @@ export function useScan(repoId: string, onComplete?: () => void) {
    * strand the UI on "Scanning…" forever.
    */
   const stop = useCallback(async () => {
-    const requested = await stopScan(repoId, status.scan_id)
-    setStatus(requested)
+    setStopping(true)
+    try {
+      setStatus(await stopScan(repoId, status.scan_id))
+    } catch {
+      // The request never landed, so nothing is going to stop. Release the flag
+      // rather than stranding the button on "Stopping…" forever.
+      setStopping(false)
+      toast.error("Couldn't stop the scan")
+    }
   }, [repoId, status.scan_id])
 
-  return { status, scan, stop }
+  return { status, stopping, scan, stop }
 }
