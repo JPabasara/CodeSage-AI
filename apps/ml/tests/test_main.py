@@ -37,3 +37,28 @@ def test_classify():
     assert "is_debt" in pred
     assert "category" in pred
     assert "confidence" in pred
+
+def test_risk():
+    payload = {
+        "files": [
+            {
+                "path": "src/main.py",
+                "additions": 10,
+                "deletions": 5,
+                "cyclomatic_complexity": 15,
+                "author_count": 2,
+                "commit_count": 5
+            }
+        ]
+    }
+    response = client.post("/risk", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "scores" in data
+    assert len(data["scores"]) == 1
+    assert "model_version" in data
+    
+    # Verify shape of first score
+    score = data["scores"][0]
+    assert "path" in score
+    assert "risk_score" in score
