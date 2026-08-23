@@ -1,7 +1,7 @@
 "use client"; // uses usePathname → must be a Client Component
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   FolderGit2,
   LayoutDashboard,
@@ -72,19 +72,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export function AppRail() {
   const pathname = usePathname();
-  const router = useRouter();
-
-  // `credentials: "include"` is what actually sends the session cookie: the API
-  // is on a different origin (port 8000 vs 3000), and the browser leaves cookies
-  // out of cross-origin requests unless asked. Without it the server sees no
-  // cookie, deletes nothing, and the user stays signed in.
-  async function signOut() {
-    await fetch(`${API_BASE}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-    router.push("/login");
-  }
 
   return (
     <Sidebar collapsible="icon">
@@ -116,11 +103,27 @@ export function AppRail() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            {/* stub for now — Phase 8+ turns this into a real menu (Sign out / Settings / Billing) */}
-            <SidebarMenuButton tooltip="Sign out" onClick={signOut}>
-              <LogOut />
-              <span>Sign out</span>
-            </SidebarMenuButton>
+            {/*
+              A form the browser submits, not a fetch — and that is the fix.
+
+              Sign-out has to end the session at Asgardeo too, and Asgardeo can only
+              clear its own cookie if the browser actually goes there. So the API
+              answers with a redirect and the browser must be free to follow it; a
+              background fetch stays on this page and cannot.
+
+              It also removes a quieter bug: the old code awaited a fetch and then
+              pushed to /login regardless, so a 401 looked exactly like success. A
+              form submit leaves no response to ignore. POST, not a link, because a
+              GET is prefetchable and ending a session must not fire on a guess.
+
+              Phase 8+ turns this into a real account menu.
+            */}
+            <form action={`${API_BASE}/api/auth/logout`} method="POST">
+              <SidebarMenuButton type="submit" tooltip="Sign out">
+                <LogOut />
+                <span>Sign out</span>
+              </SidebarMenuButton>
+            </form>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
