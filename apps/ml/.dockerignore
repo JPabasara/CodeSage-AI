@@ -1,0 +1,57 @@
+# Build context for apps/ml/Dockerfile.
+#
+# Owned by whoever does deployment, like the Dockerfile beside it — see the team
+# plan, §1. Nathasha: if something you need is missing from the image, ask
+# rather than editing this.
+#
+# ⚠️ THE `data/` LINE IS THE IMPORTANT ONE. Training data is not inference data.
+# The service loads model artifacts from a mounted volume (/models) and never
+# reads a dataset at run time, so shipping SATDAUG or D'Ambros into the build
+# context is megabytes of waiting for nothing. `data/raw/` is also a separate
+# git repository, which is its own reason to keep it out.
+
+# Datasets. Training happens offline; the image only answers questions.
+data
+
+# Trained artifacts. Mounted at /models at run time, deliberately NOT baked in,
+# so swapping a model is a restart rather than a rebuild (MAINT-05).
+models
+
+# Training code. The `training` extra is not installed in the image on purpose.
+training
+notebooks
+
+# Local virtualenvs.
+.venv
+venv
+env
+
+# Python bytecode and tool caches.
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Secrets and local settings.
+.env
+.env.*
+!.env.example
+
+# Tests are run by CI, not inside the image.
+tests
+
+# Editor and VCS.
+.git
+.gitignore
+.vscode
+.idea
+
+# Itself.
+Dockerfile
+.dockerignore
+
+.DS_Store

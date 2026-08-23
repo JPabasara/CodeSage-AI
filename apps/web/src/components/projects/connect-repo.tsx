@@ -5,53 +5,46 @@ import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+// The SRS specifies this panel exactly: "an example URL text box and a Connect
+// button with inline validation." There is deliberately no private-repository
+// option — connecting one needs a GitHub App installation and the SEC-04/SEC-06
+// authorization controls, which are v2. An earlier version of this component
+// advertised it as a disabled tab, which promised a feature two releases away.
 export type ConnectRepoProps = {
   onConnect?: (url: string) => void;
+  /** A connect request is in flight; the form is locked until it settles. */
+  busy?: boolean;
 };
 
-export function ConnectRepo({ onConnect }: Readonly<ConnectRepoProps>) {
+export function ConnectRepo({ onConnect, busy }: Readonly<ConnectRepoProps>) {
   const [url, setUrl] = useState("");
 
   const submit = () => {
     const trimmed = url.trim();
-    if (trimmed) onConnect?.(trimmed);
+    if (!trimmed || busy) return;
+    onConnect?.(trimmed);
     setUrl("");
   };
 
   return (
-    <Tabs defaultValue="public" className="w-full">
-      <TabsList>
-        <TabsTrigger value="public">Public URL</TabsTrigger>
-        <TabsTrigger value="private">Private (GitHub)</TabsTrigger>
-      </TabsList>
-
-      <TabsContent value="public">
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-        >
-          <Input
-            placeholder="https://github.com/owner/repo"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            aria-label="Repository URL"
-          />
-          <Button type="submit">
-            <Plus className="size-4" /> Connect
-          </Button>
-        </form>
-      </TabsContent>
-
-      <TabsContent value="private">
-        <p className="text-muted-foreground text-sm">
-          Connect the GitHub App to import your private repositories. (Coming in v1.1.)
-        </p>
-      </TabsContent>
-    </Tabs>
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <Input
+        placeholder="https://github.com/owner/repo"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        aria-label="Repository URL"
+        disabled={busy}
+      />
+      <Button type="submit" disabled={busy || !url.trim()}>
+        <Plus className="size-4" /> {busy ? "Connecting…" : "Connect"}
+      </Button>
+    </form>
   );
 }
