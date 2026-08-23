@@ -53,4 +53,8 @@ def load_risk_model() -> LoadedModel:
 def artifact_dir() -> Path:
     """Where versioned artifacts live. A mounted volume in production — models are
     not baked into the image, so replacing one does not require a rebuild."""
+    import os
+    env_dir = os.environ.get("CODESAGE_ML_ARTIFACT_DIR")
+    if env_dir:
+        return Path(env_dir)
     return Path(__file__).parent.parent.parent / "models"
