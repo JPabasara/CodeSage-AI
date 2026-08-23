@@ -170,10 +170,16 @@ Full detail in **[§6c](#6c-phase-3--finish-the-slice-then-polish)**.
 
 | # | Step | Ships as |
 |---|---|---|
+| **J3.0** | **Sign-out actually signs you out** — found at J2.9, see §6c | **PR A** |
 | J3.1 | D-CR7 — finding detail renders in place, not as a slide-over | PR A |
 | J3.2 | Read the session — `GET /api/auth/session` | PR A |
 | J3.3 | Route protection — `src/middleware.ts` | PR A |
+| **J3.5** | **Remove the Team (v2) entry** — no v2 signposts on screen | **PR A** |
 | J3.4 | Polish for the mid-evaluation — build guide §11.M | PR B |
+
+> **PR A is everything that changes what the user can do** — the sign-out fix, the session
+> read, route protection, the in-place detail layout, and the Team removal. **PR B is view
+> polish only.** Nothing in PR B may change behaviour.
 
 ---
 
@@ -962,9 +968,60 @@ sign in → projects → a dashboard → sign out.
 | 6 | Response has `access-control-allow-origin: https://codesageai.dev` | CORS is correct |
 | 7 | The page shows *"This endpoint is not implemented yet."* | The error envelope survives the trip |
 | 8 | Connect a repository | Also 501 until **C1.2**. The form, the validation and the messages are all live |
-| 9 | Sign out from the rail | Session really ends — re-open `/projects` and you are asked to sign in |
+| 9 | Sign out from the rail | ⚠️ **Cannot pass yet — see below.** Deferred to J3.0 |
 
-**Done when.** Steps 1–9 pass on the live URL, not on your machine.
+**Done when.** Steps 1–8 pass on the live URL, not on your machine. **Step 9 is deferred to
+J3.0** and is not a J2.9 blocker.
+
+#### Step 9 — what the walk found (23 Aug 2026)
+
+Walked in a private window on `https://codesageai.dev` against Neon. Steps 1–8 passed. Step 9
+did not.
+
+**The step was never passable as written.** It asks you to "re-open `/projects` and be asked to
+sign in" — but there is no `middleware.ts`, so `/projects` renders its shell whatever the session
+says. Step 9 silently depended on **J3.3**, which had not been built. That is a plan ordering
+mistake, not a deployment fault.
+
+**What the network trace actually proved.** The first read of this was wrong, and the correction
+matters because it changes what needs fixing. `POST /api/auth/logout` returned **204**, the
+request carried `cookie: codesage_session=ec196dda-…`, and the response carried
+`set-cookie: codesage_session=""; Max-Age=0; Path=/`. So the handler *ran*, the row *was* deleted
+and the cookie *was* cleared. There is **one** bug here, not two:
+
+| | What you see | What it actually is |
+|---|---|---|
+| ✅ | `GET /api/auth/session` → **501** | **Correct.** The endpoint is still a stub. J3.2 fixes it |
+| 🐛 | Clicking Sign in after Sign out goes straight to `/projects`, no Asgardeo screen | **Asgardeo is behaving correctly — we are not.** Sign-out deletes *our* session and never tells Asgardeo, so its SSO cookie survives. The next `/api/auth/login` is silently re-authenticated and a **new** session row is created. It *did* go through Asgardeo — in about 200 ms, invisibly. **This is the whole bug** |
+| ⚠️ | "The `session` row is still in Neon" | **Almost certainly the *new* row**, created by that silent re-authentication, not the old one surviving. Confirm with the query below before treating it as a defect |
+
+> **Read the table by row id, not by row count.** The session cookie *is* the row's primary key,
+> so the trace hands you the exact id to check. Query it directly, **before** clicking Sign in
+> again:
+>
+> ```sql
+> SELECT id, created_at FROM session WHERE id = 'ec196dda-fefd-454a-a4bc-33feb10ffe5f';
+> ```
+>
+> Zero rows means sign-out deleted correctly and everything else you saw was the silent re-auth.
+> A row means there is a second, separate defect and this write-up needs reopening.
+
+> **Say this part out loud, because it is a security bug and not a cosmetic one.** As shipped,
+> **"Sign out" does not sign you out.** On a shared or lab machine the next person clicks Sign in
+> and lands inside the previous user's account without a password prompt. It must be fixed before
+> the mid-evaluation, and it is **J3.0**.
+
+**A method note worth keeping.** "The row is still there" and "the row came back" look identical
+if you only count rows, and they have completely different causes. Whenever a trace and the
+database disagree, trust the trace and go find the id — a `204` with a `Cookie` request header
+and a `Set-Cookie` response header is proof the handler ran, and no amount of row-counting
+outweighs it.
+
+**Two things the same trace settled for free.** `sec-fetch-site: same-site` confirms
+`codesageai.dev` and `api.codesageai.dev` share a registrable domain, so a `SameSite=Lax` cookie
+*is* sent on a top-level form POST between them — which is exactly what the J3.0 fix depends on.
+And `access-control-allow-origin: https://codesageai.dev` with `allow-credentials: true` means
+CORS is correct and is not hiding anything.
 
 #### Expect 501, and do not chase it
 
@@ -1004,21 +1061,114 @@ work.
 
 ## 6c. Phase 3 — finish the slice, then polish
 
-Phase 2 closed the contract. Three things survived it that are **not polish**, and Phase 11 of the
-build guide says so itself: *"if it changes what the user can do, it is a feature."* All three do.
+Phase 2 closed the contract. Five things survived it that are **not polish**, and Phase 11 of the
+build guide says so itself: *"if it changes what the user can do, it is a feature."* All five do.
 
 Then, and only then, polish.
 
-| # | Step | Ships as | Done when |
-|---|---|---|---|
-| J3.1 | **D-CR7 — finding detail renders in place** | **PR A** | No `Sheet` in the dashboard; detail mode renders in place and survives a refresh |
-| J3.2 | **Read the session** — `GET /api/auth/session` | **PR A** | The rail shows who is signed in; a 401 sends you to `/login` |
-| J3.3 | **Route protection** — `src/middleware.ts` | **PR A** | A signed-out visit to `/projects` lands on `/login` |
-| J3.4 | **Polish for the mid-evaluation** — build guide §11.M | **PR B** | M1–M7 done, and the demo path walked on the live URL |
+| # | Step | Issue | Ships as | Done when |
+|---|---|---|---|---|
+| **J3.0** | **Sign-out actually signs you out** | [#71](https://github.com/JPabasara/CodeSage-AI/issues/71) | **PR A** | The session row is gone, the cookie is gone, and Asgardeo asks for credentials again |
+| J3.1 | **D-CR7 — finding detail renders in place** | [#66](https://github.com/JPabasara/CodeSage-AI/issues/66) | **PR A** | No `Sheet` in the dashboard; detail mode renders in place and survives a refresh |
+| J3.2 | **Read the session** — `GET /api/auth/session` | [#67](https://github.com/JPabasara/CodeSage-AI/issues/67) | **PR A** | The rail shows who is signed in; a 401 sends you to `/login` |
+| J3.3 | **Route protection** — `src/middleware.ts` | [#68](https://github.com/JPabasara/CodeSage-AI/issues/68) | **PR A** | A signed-out visit to `/projects` lands on `/login` |
+| **J3.5** | **Remove the Team (v2) entry** | [#72](https://github.com/JPabasara/CodeSage-AI/issues/72) | **PR A** | No `v2` badge anywhere; `/team` no longer exists |
+| J3.4 | **Polish for the mid-evaluation** — build guide §11.M | [#69](https://github.com/JPabasara/CodeSage-AI/issues/69) | **PR B** | M1–M7 done, and the demo path walked on the live URL |
 
 Full detail: **[frontend_build_stepbystep.md §10.7 and §11.M](frontend_build_stepbystep.md)**.
 
-### Why these three are not polish
+### J3.0 — sign-out: the bug J2.9 found
+
+Tracked as **[#71](https://github.com/JPabasara/CodeSage-AI/issues/71)**. One confirmed defect and
+four latent ones found next to it. J3.2 and J3.3 are the other half of the same story, so all
+three ship together in PR A.
+
+| | Defect | Status | Where |
+|---|---|---|---|
+| **B1** | Sign-out never ends the **Asgardeo** session, so the next sign-in is silent | **Confirmed on the live site.** This is the bug | `routers/auth.py` |
+| **B2** | The rail navigates to `/login` without checking the logout response — a 401 would look identical to success | Latent. Not what happened here (the call returned 204), but it is why the failure was misread for an hour | `app-rail.tsx` |
+| **B3** | Logout sits on the **protected** router: once a session expires you get 401 and can never clear the cookie | Latent. Fires the first time anyone signs out after an idle hour | `routers/__init__.py` |
+| **B6** | Expired session rows are ignored at read time but never deleted — the table grows forever | Latent | `services/auth.py` |
+| **B7** | `delete_cookie` omits the `samesite`/`secure` attributes `set_cookie` used | Cosmetic today — the trace shows the deletion working over HTTPS — but it should mirror | `routers/auth.py` |
+
+> **Fix all five in J3.0 anyway.** B2 and B3 are exactly the pair that made a one-line bug look
+> like two bugs: an unchecked response cannot report a failure, and a sign-out that needs a valid
+> session cannot recover from a stale one. They are cheap now and expensive during a demo.
+
+#### B1 — the shape of the fix
+
+The OIDC name for this is **RP-initiated logout**, and the important consequence is that
+**sign-out has to be a navigation, not a `fetch`.** The browser must physically visit Asgardeo
+for Asgardeo to clear its own cookie; a `fetch` stays on our page and cannot do it.
+
+So sign-out becomes symmetric with sign-in — a form the browser submits, rather than a button
+that calls an API in the background:
+
+```
+[Sign out] form POST → /api/auth/logout
+                       ├─ delete the session row
+                       ├─ clear the session cookie
+                       └─ 302 → {asgardeo}/oidc/logout
+                                   ?client_id=…
+                                   &post_logout_redirect_uri={frontend}/login
+                                        → Asgardeo clears its cookie
+                                        → 302 back to /login
+```
+
+**Decision (23 Aug): no `id_token_hint`, and therefore no migration.** The spec-ideal version
+passes the `id_token` back to Asgardeo so it logs out silently, but we do not store the token —
+adding it means a new column and an Alembic migration, and mid-evaluation week is the wrong week
+for a schema change. `client_id` + `post_logout_redirect_uri` is the supported alternative.
+
+> **The one thing to verify by hand, early.** Without `id_token_hint`, Asgardeo may show a
+> *"Do you want to log out?"* confirmation page before redirecting back. Test this on the live
+> site **the day PR A lands**, not on demo morning. If the page appears and cannot be turned off
+> in the console, the fallback is the deferred option: store the `id_token` on the session row
+> and pass it as `id_token_hint`. That is a one-column migration — cheap, just not free.
+
+**Register the logout redirect in the Asgardeo console before merging — tracked as
+[#73](https://github.com/JPabasara/CodeSage-AI/issues/73), and it blocks J3.0.** Add both
+`http://localhost:3000/login` and `https://codesageai.dev/login` to the application's allowed
+sign-out redirect URLs. Asgardeo rejects an unregistered `post_logout_redirect_uri` outright,
+and the symptom is an error page rather than a redirect.
+
+**While you are in there, confirm the local callback is registered too** —
+`http://localhost:8000/api/auth/callback`. It is the same console visit, and a local sign-in is
+what lets you test an auth change without a deploy. See the README for how to bring the stack up
+locally with mocking on or off.
+
+#### B3 — why sign-out moves to the public router
+
+Sign-out must be **idempotent**. Signing out twice, or signing out with an expired session, must
+still clear the cookie and still land you on `/login`. Today it is on `api_router`, which carries
+`Depends(get_current_user_id)`, so an expired session answers 401 and the user is left holding a
+stale cookie with no way to drop it. It moves to `public_router`: it identifies itself by the
+cookie it is about to destroy, so requiring a valid session first is backwards.
+
+**This is a contract edit, and it is deliberate.** `POST /api/auth/logout` in
+`docs/api/openapi.yaml` changes from **`204 No Content`** to **`302 Found`**, and moves to the
+public list. Update the contract, regenerate `apps/web/src/lib/types/api.ts`, and say so in the
+PR description — a silent contract change is exactly what §5.3 forbids.
+
+#### The checks that prove J3.0 is done
+
+Run these in a **private window**, in order. Every one of them fails today.
+
+| # | Check | Pass looks like |
+|---|---|---|
+| 1 | Sign in, then copy the `codesage_session` cookie value — **that is the row id** | A UUID |
+| 2 | Click Sign out | You land on `/login` |
+| 3 | `SELECT id FROM session WHERE id = '<that uuid>'`, before clicking anything else | **Zero rows** |
+| 4 | Click Sign in again | **Asgardeo asks for credentials.** No silent redirect |
+| 5 | DevTools → Application → Cookies | `codesage_session` is gone after step 2 |
+| 6 | Sign out **twice** (back button, click again) | Still lands on `/login`, no 401, no error |
+| 7 | Visit `/projects` directly after signing out | Redirected to `/login` — this is J3.3 proving itself |
+
+### Why these are not polish
+
+**J3.0 — "Sign out" does not sign you out.** It is the only item here that is a *security* defect
+rather than an unfinished one, and it is visible in ten seconds to anyone who tries it. Everything
+else on this list can be explained away during a demo; this one cannot.
 
 **J3.1 — the slide-over was supposed to be gone already.** CR-001 decided in July that finding
 detail renders **in place**, not as a slide-over: triage means reading many findings in sequence,
@@ -1042,6 +1192,18 @@ renders the page shell with an error inside it instead of redirecting to `/login
 > contents are unreadable from the edge. That is the correct split: the middleware is a redirect
 > for the common case, and the **API is the security boundary**, checking the session on every
 > request. A middleware check is never authorization.
+
+**J3.5 — the Team page advertises a feature that does not exist.** The left rail carries a `Team`
+item with a `v2` badge, pointing at a page whose entire content is *"Coming in v2 — roles and
+collaboration."* It is the same reasoning that moved private repositories to v2 in §2.1: an
+evaluator reads a nav item as a promise, and a promise we cannot demonstrate costs more than the
+space it fills. Nothing links to it, nothing depends on it, and removing it is a smaller diff than
+explaining it.
+
+Remove the nav entry, delete `src/app/(app)/team/page.tsx`, drop the now-unused `Users` icon
+import, and drop `SidebarMenuBadge` from the rail if nothing else uses it. **This is the only `v2`
+signpost left in the product** — `Repo.visibility` stays, because FR-3 records it from v1.0 and
+the projects list displays it per row.
 
 ### The polish, and what actually matters for the evaluation
 
