@@ -120,3 +120,32 @@ def install_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             content={"detail": exc.message, "code": exc.code},
         )
+
+    @app.exception_handler(NotImplementedError)
+    async def _not_built_yet(
+        request: Request, exc: NotImplementedError
+    ) -> JSONResponse:
+        """Every endpoint that is still a stub raises this. Answer in the contract's
+        envelope rather than letting it escape as an unhandled exception.
+
+        **This is a CORS fix as much as a tidiness one.** An unhandled exception is
+        caught by Starlette's ServerErrorMiddleware, which sits OUTSIDE
+        CORSMiddleware in the stack. Its `text/plain` 500 therefore carries no
+        `Access-Control-Allow-Origin`, so the browser blocks it and the frontend
+        sees a CORS failure instead of a 500 — which sends whoever is debugging it
+        to the CORS settings, which were correct all along.
+
+        Registering a handler for a *specific* exception type puts it on
+        ExceptionMiddleware, which runs INSIDE CORSMiddleware, so the response
+        gets its headers. Registering one for bare `Exception` does not work: that
+        goes to ServerErrorMiddleware and lands back outside. Verified, not assumed.
+
+        Delete this once no endpoint raises NotImplementedError any more.
+        """
+        return JSONResponse(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            content={
+                "detail": "This endpoint is not implemented yet.",
+                "code": "INTERNAL_ERROR",
+            },
+        )

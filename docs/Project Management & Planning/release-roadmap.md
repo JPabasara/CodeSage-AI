@@ -15,7 +15,7 @@
 > Consequence: the scoring profile is **five weights + one trust slider = six numbers**.
 >
 > **Four further reversals (12 Aug 2026)**, all recorded in
-> [the work plan and locked decisions](work-plan-and-locked-decisions.md):
+> [the work plan and locked decisions](work-plan-and-locked-decisions-after-progress-eval.md):
 > Lizard → **CK** (Java only) · GHPR → **D'Ambros** · GitHub OAuth → **Asgardeo**
 > with GitHub federated · the wire is **snake_case**.
 >
@@ -30,7 +30,7 @@
 > All six reversals are recorded in the **v1.1 revision-history rows of the SRS and
 > SAD themselves**, which is where a marker will look. A separate CR-002 document is
 > therefore not being written — see "Not doing" in
-> [the work plan and locked decisions](work-plan-and-locked-decisions.md).
+> [the work plan and locked decisions](work-plan-and-locked-decisions-after-progress-eval.md).
 
 ---
 
@@ -106,7 +106,6 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 
 ## 3. v1.1 — Depth · *"make each screen richer and interactive"*
 
-- **Private repos** via **GitHub App** installation (least-privilege, user picks which repos — auto-adds like SonarQube).
 - **Finding actions:** **Accept debt** (suppress from score), **Resolve**, **False-positive** — captured and stored (these signals become future ML training labels).
 - **Graduated rule severity** — `complex-function` at CCN 45 outranking the same rule at CCN 16 (v1.0 is flat per rule).
 - **Split the trust slider** into separate ML-1 and ML-2 dials, if users ask for it (v1.0 uses one dial for both).
@@ -118,6 +117,11 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 
 ## 4. v2.0 — Team tier · *"collaboration & automation"* (paid $10/user)
 
+- **Private repos** via **GitHub App** installation (least-privilege, user picks which
+  repos — auto-adds like SonarQube). Moved here from v1.1: its governing security
+  requirements, SRS **SEC-04** and **SEC-06** (repository authorization and revocation),
+  are both tagged **[v2]**, and the feature cannot ship ahead of the controls that
+  authorize it. SAD §"Private-repository authorization is v2".
 - **Multi-user workspaces / orgs** as real tenants.
 - **Team RBAC:** roles **org-admin / manager / developer / viewer**; **invitations**; **auto-shared projects** — a member sees every workspace project without re-connecting (see the RBAC note the team agreed).
 - **Multi-repo workspaces** + **workspace rollup** metrics.
@@ -147,7 +151,7 @@ A feature can be **"v1 product"** yet **"mocked in the current prototype"** (e.g
 | Full dashboard + scan history + trend | ✅ | ✅ | ✅ | Free |
 | Preset scoring profiles | ✅ | ✅ | ✅ | Free |
 | **Custom profile sliders** (5 category weights + trust) | **✅** | ✅ | ✅ | Free |
-| Private repos (GitHub App) | | ✅ | ✅ | Team |
+| Private repos (GitHub App) | | | ✅ | Team |
 | Finding actions (accept/resolve/FP) | | ✅ | ✅ | Free/Team |
 | Multi-repo workspace + rollup | | | ✅ | Team |
 | Team RBAC + invitations | | | ✅ | Team |

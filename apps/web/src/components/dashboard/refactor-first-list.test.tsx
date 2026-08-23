@@ -6,9 +6,9 @@ import { RefactorFirstList } from "@/components/dashboard/refactor-first-list";
 import type { Finding } from "@/lib/types";
 
 const findings: Finding[] = [
-  { fingerprint: "a", source: "rule", category: "code-design", severity: "low", file: "a.ts", line: 1, symbol: "x", reason: "low one", status: "open", priority: 2 },
-  { fingerprint: "b", source: "security", category: "security", severity: "critical", file: "b.ts", line: 2, symbol: "y", reason: "critical one", status: "open", priority: 40 },
-  { fingerprint: "c", source: "rule", category: "code-design", severity: "medium", file: "c.ts", line: 3, symbol: "z", reason: "medium one", status: "open", priority: 9 },
+  { fingerprint: "a", source: "rule", category: "code-design", severity: "low", file: "a.ts", line: 1, symbol: "x", reason: "low one", status: "open", priority: 2, pinned_by_floor: false },
+  { fingerprint: "b", source: "rule", category: "security", severity: "critical", file: "b.ts", line: 2, symbol: "y", reason: "critical one", status: "open", priority: 40, pinned_by_floor: false },
+  { fingerprint: "c", source: "rule", category: "code-design", severity: "medium", file: "c.ts", line: 3, symbol: "z", reason: "medium one", status: "open", priority: 9, pinned_by_floor: false },
 ];
 
 test("sorts findings by priority, highest first", () => {

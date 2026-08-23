@@ -145,7 +145,7 @@ weight at all.
 becomes a type error rather than a runtime surprise. Everything below follows from
 that. Step-by-step in Phase 10.6 of the
 [build guide](../../docs/Project%20Management%20&%20Planning/frontend_build_stepbystep.md);
-locked decisions in [the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md).
+locked decisions in [the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md).
 
 | What | From | To |
 |---|---|---|
@@ -161,7 +161,7 @@ locked decisions in [the work plan and locked decisions](../../docs/Project%20Ma
 Backend-for-Frontend: it performs the whole OIDC exchange and hands the browser an
 httpOnly session cookie, so the frontend holds no token and needs no identity SDK.
 Signing in is a link; signing out is one `POST`. See
-[the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions.md) step 3 and SAD §6.4.
+[the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md) step 3 and SAD §6.4.
 
 **`defect` is removed, reversing the 31 Jul decision.** The SATD corpus changed to
 **SATDAUG**, which carries no `defect_debt` label — so ML-1 cannot predict that
