@@ -1150,70 +1150,58 @@ cookie it is about to destroy, so requiring a valid session first is backwards.
 public list. Update the contract, regenerate `apps/web/src/lib/types/api.ts`, and say so in the
 PR description — a silent contract change is exactly what §5.3 forbids.
 
-#### The checks that prove J3.0 is done
+#### Manual checks — Janidu, after the code lands
 
-Run these in a **private window**, in order. Every one of them fails today.
+**The code for J3.0 is written and its automated tests pass.** These are the checks a machine
+cannot do for you: they need a real browser, a real Asgardeo, and a real database. Run them in a
+**private window**, in order, and **every one should pass**. If one does not, that is the bug —
+write down which number and stop there.
 
-| # | Check | Pass looks like |
+**Do [#73](https://github.com/JPabasara/CodeSage-AI/issues/73) first** — register the sign-out
+redirect URLs in the Asgardeo console. Check 4 cannot pass without it.
+
+| # | Check | Should look like | Tick |
+|---|---|---|---|
+| 1 | Sign in, then copy the `codesage_session` cookie value — **that is the row id** | A UUID | ☐ |
+| 2 | Click Sign out | You land on `/login` | ☐ |
+| 3 | `SELECT id FROM session WHERE id = '<that uuid>'`, before clicking anything else | **Zero rows** | ☐ |
+| 4 | Click Sign in again | **Asgardeo asks for your credentials.** No silent redirect | ☐ |
+| 5 | DevTools → Application → Cookies | `codesage_session` is gone after step 2 | ☐ |
+| 6 | Sign out **twice** (back button, then click again) | Still lands on `/login`, no 401, no error | ☐ |
+| 7 | Does Asgardeo show a *"Do you want to log out?"* page? | Note the answer either way — see below | ☐ |
+| 8 | Visit `/projects` directly after signing out | Still renders — **expected**, that is J3.3's job, not J3.0's | ☐ |
+
+**Check 4 is the one that matters.** Checks 1, 2, 3 and 5 already passed before this work — the
+old code deleted the row and cleared the cookie perfectly well. It was Asgardeo that never got
+told. Do not sign J3.0 off on a green check 3.
+
+**If check 7 says yes**, Asgardeo is showing its confirmation page because we do not send an
+`id_token_hint`. Two options, and it is your call: leave it (one extra click during the demo), or
+switch to the deferred fix — store the `id_token` on the session row and pass it as
+`id_token_hint`. That is one column and one migration. Record the answer on
+[#71](https://github.com/JPabasara/CodeSage-AI/issues/71) either way.
+
+### What each step is, in one line
+
+| # | What it is | Why now |
 |---|---|---|
-| 1 | Sign in, then copy the `codesage_session` cookie value — **that is the row id** | A UUID |
-| 2 | Click Sign out | You land on `/login` |
-| 3 | `SELECT id FROM session WHERE id = '<that uuid>'`, before clicking anything else | **Zero rows** |
-| 4 | Click Sign in again | **Asgardeo asks for credentials.** No silent redirect |
-| 5 | DevTools → Application → Cookies | `codesage_session` is gone after step 2 |
-| 6 | Sign out **twice** (back button, click again) | Still lands on `/login`, no 401, no error |
-| 7 | Visit `/projects` directly after signing out | Redirected to `/login` — this is J3.3 proving itself |
+| **J3.0** | Sign-out ends the Asgardeo session too, not just ours | "Sign out" currently does not sign you out. The only security defect on the list |
+| **J3.1** | Finding detail opens **in the page** instead of sliding over it | CR-001 decided this in July and it was never built. Polishing a panel you are about to delete is wasted work |
+| **J3.2** | The app asks the API who is signed in | Nothing calls `/api/auth/session`, so the app cannot show a name — or notice when the session expires |
+| **J3.3** | `middleware.ts` sends signed-out visitors to `/login` | No route is protected today. The 501s hide it; real data will not |
+| **J3.5** | Delete the Team (v2) nav item and its page | A nav item reads as a promise, and this one points at "Coming in v2" |
+| **J3.4** | Polish — see below | Last, because J3.1 changes the screen the polish lands on |
 
-### Why these are not polish
+> The middleware only checks that the cookie **exists** — it is `httpOnly`, so its contents cannot
+> be read at the edge. That is the right split: middleware is a redirect for the common case, and
+> **the API is the security boundary**, checking the session on every request. A middleware check
+> is never authorization.
 
-**J3.0 — "Sign out" does not sign you out.** It is the only item here that is a *security* defect
-rather than an unfinished one, and it is visible in ten seconds to anyone who tries it. Everything
-else on this list can be explained away during a demo; this one cannot.
+### The polish (PR B), in priority order
 
-**J3.1 — the slide-over was supposed to be gone already.** CR-001 decided in July that finding
-detail renders **in place**, not as a slide-over: triage means reading many findings in sequence,
-and an overlay blurs the file tree and costs a close-and-reopen every time. Phase 10.5 landed the
-rest of CR-001 — the `Source` collapse, the five category weights, the trust slider — but the
-layout change was never built. `finding-detail-panel.tsx` is still a `Sheet`.
-
-It touches **no types and no endpoints**. It is a container change, and CR-001 is explicit that it
-must come before polish: *polishing a slide-over you are about to delete is wasted work.*
-
-**J3.2 — nothing reads the session.** `GET /api/auth/session` has no caller anywhere in the app.
-So the product cannot say who is signed in, and — worse — when a session expires after an hour it
-cannot tell. Every request simply starts returning 401 and the user is stuck looking at an error
-box with no route back to sign-in.
-
-**J3.3 — no route is protected.** There is no `middleware.ts`. Visiting `/projects` signed out
-renders the page shell with an error inside it instead of redirecting to `/login`. Right now the
-501s disguise this; it becomes obvious the moment Chamodh's endpoints return real data.
-
-> The middleware can only check that the session cookie is **present** — it is `httpOnly`, so its
-> contents are unreadable from the edge. That is the correct split: the middleware is a redirect
-> for the common case, and the **API is the security boundary**, checking the session on every
-> request. A middleware check is never authorization.
-
-**J3.5 — the Team page advertises a feature that does not exist.** The left rail carries a `Team`
-item with a `v2` badge, pointing at a page whose entire content is *"Coming in v2 — roles and
-collaboration."* It is the same reasoning that moved private repositories to v2 in §2.1: an
-evaluator reads a nav item as a promise, and a promise we cannot demonstrate costs more than the
-space it fills. Nothing links to it, nothing depends on it, and removing it is a smaller diff than
-explaining it.
-
-Remove the nav entry, delete `src/app/(app)/team/page.tsx`, drop the now-unused `Users` icon
-import, and drop `SidebarMenuBadge` from the rail if nothing else uses it. **This is the only `v2`
-signpost left in the product** — `Repo.visibility` stays, because FR-3 records it from v1.0 and
-the projects list displays it per row.
-
-### The polish, and what actually matters for the evaluation
-
-Phase 11 in the build guide is long. §11.M is the cut that matters for the demo, in order of what
-breaks it hardest:
-
-1. **Loading / empty / error states** — the highest-value item by a wide margin. A blank panel
-   mid-scan reads as a crash
+1. **Loading / empty / error states** — by far the most valuable. A blank panel mid-scan reads as a crash
 2. **The Projects empty state** — the first screen after sign-in, and empty until a repo is connected
-3. **Dashboard legibility** — chart labels, grade colours that actually pass contrast
+3. **Dashboard legibility** — chart labels, and grade colours that actually pass contrast
 4. **Visible focus and a keyboard path** through the demo
 5. **1280 px laptop width** — test at projector resolution, not on your monitor
 6. **Copy pass** — no placeholder text anywhere

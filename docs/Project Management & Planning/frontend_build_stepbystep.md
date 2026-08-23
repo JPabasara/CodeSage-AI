@@ -1546,31 +1546,46 @@ allowed to destroy it is backwards.
 regenerate `src/lib/types/api.ts`, and state the change in the PR description. §5.3 freezes the
 contract precisely so that changes to it are announced rather than discovered.
 
-- [ ] `POST /api/auth/logout` moved to `public_router`
-- [ ] It deletes the session row, clears the cookie, and 302s to Asgardeo's `/oidc/logout`
-- [ ] It still succeeds with a missing, invalid or expired cookie — never 401
-- [ ] `delete_cookie` mirrors `set_cookie`'s `samesite` and `secure`
-- [ ] `load_valid_session` deletes the row when it finds one expired
-- [ ] The rail's Sign out is a **form POST**, not a `fetch` — no ignored response anywhere
-- [ ] `openapi.yaml` updated and types regenerated
-- [ ] Both logout redirect URLs registered in the Asgardeo console
+**Code — done 23 Aug 2026, tests green:**
 
-#### Done when — run these in a private window, in order
+- [x] `POST /api/auth/logout` moved to `public_router`
+- [x] It deletes the session row, clears the cookie, and 302s to Asgardeo's `/oidc/logout`
+- [x] It still succeeds with a missing, invalid or expired cookie — never 401
+- [x] `delete_cookie` mirrors `set_cookie`'s `samesite` and `secure`
+- [x] `load_valid_session` deletes the row when it finds one expired, and `get_current_user_id`
+      commits before refusing so the delete survives
+- [x] The rail's Sign out is a **form POST**, not a `fetch` — no ignored response anywhere
+- [x] `openapi.yaml` updated and `src/lib/types/api.ts` regenerated (`gen:types:check` passes)
+- [x] `apps/api/tests/unit/routers/test_auth_logout.py` — six tests covering B1, B3, B7 and the
+      unconfigured-server fallback
 
-Every one of these fails today.
+**Still yours to do by hand:**
 
-| # | Check | Pass looks like |
-|---|---|---|
-| 1 | Sign in, then copy the `codesage_session` cookie value — **that is the row id** | A UUID |
-| 2 | Click Sign out | You land on `/login` |
-| 3 | `SELECT id FROM session WHERE id = '<that uuid>'` — **before clicking anything else** | **Zero rows** |
-| 4 | Click Sign in again | **Asgardeo asks for credentials.** No silent redirect |
-| 5 | DevTools → Application → Cookies | `codesage_session` is gone after step 2 |
-| 6 | Sign out twice (Back, click again) | Still `/login`, no 401, no error |
-| 7 | Visit `/projects` directly after signing out | Redirected to `/login` — 10.7.3 proving itself |
+- [ ] Both logout redirect URLs registered in the Asgardeo console (#73)
+- [ ] The manual checks below, on the live site
 
-**Step 4 is the one that matters.** Steps 1–3 already pass today; step 4 is the bug. Do not
-declare J3.0 done on a green step 3.
+#### Manual checks — run these in a private window, in order
+
+The code and its automated tests are done. These need a real browser, a real Asgardeo and a real
+database, so they are yours to run. **Every one should pass.** If one does not, note the number
+and stop there.
+
+Do the Asgardeo console entries first — check 4 cannot pass without them.
+
+| # | Check | Should look like | Tick |
+|---|---|---|---|
+| 1 | Sign in, then copy the `codesage_session` cookie value — **that is the row id** | A UUID | ☐ |
+| 2 | Click Sign out | You land on `/login` | ☐ |
+| 3 | `SELECT id FROM session WHERE id = '<that uuid>'` — **before clicking anything else** | **Zero rows** | ☐ |
+| 4 | Click Sign in again | **Asgardeo asks for your credentials.** No silent redirect | ☐ |
+| 5 | DevTools → Application → Cookies | `codesage_session` is gone after step 2 | ☐ |
+| 6 | Sign out twice (Back, then click again) | Still `/login`, no 401, no error | ☐ |
+| 7 | Does Asgardeo show a *"Do you want to log out?"* page? | Note the answer either way | ☐ |
+| 8 | Visit `/projects` after signing out | Still renders — **expected**, that is 10.7.3's job | ☐ |
+
+**Check 4 is the one that matters.** Checks 1, 2, 3 and 5 passed *before* this work — the old code
+deleted the row and cleared the cookie perfectly well; Asgardeo was simply never told. Do not sign
+J3.0 off on a green check 3.
 
 ### 10.7.1 — D-CR7: finding detail renders in place, not as a slide-over
 
