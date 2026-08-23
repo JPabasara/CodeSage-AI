@@ -15,7 +15,7 @@ test("starts loading, then resolves the report for the branch", async () => {
   await waitFor(() => expect(result.current.loading).toBe(false))
 
   expect(result.current.error).toBeUndefined()
-  expect(result.current.data?.healthScore).toBe(72)
+  expect(result.current.data?.health_score).toBe(72)
   expect(result.current.data?.grade).toBe("B")
 })
 
@@ -25,13 +25,13 @@ test("refetches when the branch changes", async () => {
     { initialProps: { branch: "main" } },
   )
 
-  await waitFor(() => expect(result.current.data?.healthScore).toBe(72))
+  await waitFor(() => expect(result.current.data?.health_score).toBe(72))
 
   rerender({ branch: "develop" })
 
   // stale data is cleared immediately, then the new branch resolves
   expect(result.current.loading).toBe(true)
-  await waitFor(() => expect(result.current.data?.healthScore).toBe(66))
+  await waitFor(() => expect(result.current.data?.health_score).toBe(66))
 })
 
 test("surfaces an error for an unknown repo instead of throwing", async () => {
