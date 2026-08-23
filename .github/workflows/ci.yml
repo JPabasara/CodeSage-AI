@@ -152,14 +152,12 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]"
 
-      # apps/ml/tests currently holds only __init__.py, and pytest exits 5 —
-      # "no tests collected" — which would fail the job. Nathasha's A1.4 adds
-      # the real tests; until then, treat an empty suite as a pass rather than
-      # blocking the whole pipeline on work that is legitimately not done yet.
-      # Any OTHER non-zero exit is still a failure.
+      # The `|| [ $? -eq 5 ]` mask that used to be here treated "no tests
+      # collected" as a pass, because apps/ml/tests held only __init__.py. A1.4
+      # has landed, so the mask now only hides an accidentally empty suite —
+      # which is exactly the failure it would be most important to see.
       - name: Tests
-        run: |
-          pytest -q -rs || [ $? -eq 5 ]
+        run: pytest -q -rs
 
       - name: Ruff (advisory)
         run: ruff check . --exit-zero --output-format=concise
