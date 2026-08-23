@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 // Shared read-hook engine. Every data hook (useProjects, useHealthReport, …) is
 // a one-liner over this, so the { data, loading, error } shape and the
@@ -9,6 +9,15 @@ export interface QueryState<T> {
   data?: T
   loading: boolean
   error?: Error
+  /**
+   * Re-run the fetcher for the same key. Used after a write that changes what a
+   * read returns — connecting a repository, for instance.
+   *
+   * Deliberately does NOT flip `loading` back on: the key has not changed, so the
+   * existing data stays on screen while the new data is fetched. A list that
+   * blanked to skeletons every time you added a row would read as a bug.
+   */
+  reload: () => void
 }
 
 /**
@@ -32,6 +41,9 @@ export function useQuery<T>(
     data?: T
     error?: Error
   }>()
+  // Bumping this re-runs the effect without changing the key.
+  const [nonce, setNonce] = useState(0)
+  const reload = useCallback(() => setNonce((n) => n + 1), [])
 
   useEffect(() => {
     let alive = true
@@ -50,12 +62,13 @@ export function useQuery<T>(
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, nonce])
 
   const settled = result?.key === key
   return {
     data: settled ? result?.data : undefined,
     error: settled ? result?.error : undefined,
     loading: !settled,
+    reload,
   }
 }

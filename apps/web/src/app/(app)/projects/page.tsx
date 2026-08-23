@@ -1,16 +1,51 @@
 "use client"
 
+import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
+import { ApiRequestError, connectRepo } from "@/lib/api/client"
+import type { ErrorCode } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
 import { ProjectList } from "@/components/projects/project-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProjects } from "@/hooks/use-projects"
 
+// Each of these is a different thing for the user to DO about it, which is why
+// the contract gives them separate codes rather than one 400. A bare
+// "400 Bad Request" would leave someone who pasted their own private repository
+// with no idea what went wrong.
+const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
+  INVALID_REPOSITORY_URL: "That does not look like a repository URL.",
+  REPOSITORY_NOT_PUBLIC:
+    "Only public repositories can be connected in this release.",
+  REPOSITORY_UNREACHABLE:
+    "That repository could not be reached. Check the URL and try again.",
+  ALREADY_CONNECTED: "That repository is already connected.",
+}
+
 export default function ProjectsPage() {
   const router = useRouter()
   // Data now arrives over the (mock) network instead of a static import.
-  const { data: repos, loading, error } = useProjects()
+  const { data: repos, loading, error, reload } = useProjects()
+  const [connecting, setConnecting] = useState(false)
+
+  async function onConnect(url: string) {
+    setConnecting(true)
+    try {
+      const repo = await connectRepo(url)
+      reload() // the list is a separate read; it does not know about the write
+      toast.success(`Connected ${repo.owner}/${repo.name}`)
+    } catch (err) {
+      const code = err instanceof ApiRequestError ? err.code : undefined
+      toast.error(
+        (code && CONNECT_MESSAGE[code]) ??
+          (err instanceof Error ? err.message : "Couldn't connect that repository."),
+      )
+    } finally {
+      setConnecting(false)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
@@ -21,8 +56,7 @@ export default function ProjectsPage() {
         </p>
       </div>
 
-      {/* Connecting a repo needs a create endpoint (not in v1 mock) — wired later. */}
-      <ConnectRepo />
+      <ConnectRepo onConnect={onConnect} busy={connecting} />
 
       {error ? (
         <p className="text-destructive text-sm">
