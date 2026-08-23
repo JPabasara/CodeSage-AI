@@ -368,7 +368,7 @@ Because they share one mold, "static → mock → real" are painless **swaps**, 
 | Scoring profile — select a preset | `ScoreProfile` | **v1.0** (custom sliders = v1.1) |
 | Act on a finding (accept / resolve / false-positive) | `Finding.status`, `FindingStatus` | **v1.1** (view-only in v1.0) |
 | Standalone category-breakdown view | group / filter by `Category` | **v1.1** |
-| Private repos (GitHub App) | `Repo.visibility = "private"` | **v1.1** |
+| Private repos (GitHub App) | `Repo.visibility = "private"` | **v2** (the *field* is v1.0; connecting a private repo is v2) |
 | Card B per-node health (hover a file) | per-node `HealthPoint` series | **v2** |
 | Multi-repo workspace + rollup, Team / RBAC | `Workspace`, `Member`, `Role` | **v2** |
 
@@ -1391,6 +1391,96 @@ Neither exists in `lib/api/client.ts` yet:
 
 ---
 
+## Phase 10.7 — Finish the slice: in-place detail, session, route protection
+
+**Goal:** close the last three things that are **not polish**, so Phase 11 polishes a finished
+screen instead of one that is about to change shape.
+
+**Why this phase exists.** Phase 10.6 finished the contract work — every field, every endpoint,
+real sign-in. Three things survived it, and none of them belong in Phase 11 by that phase's own
+test: *"if it changes what the user can do, it is a feature."* All three change what the user
+can do.
+
+> **Ships as one PR.** The three are small, they touch different files, and they share one
+> theme: the app finally behaves like a signed-in application rather than a set of screens.
+
+### 10.7.1 — D-CR7: finding detail renders in place, not as a slide-over
+
+The one piece of **Phase 10.5 that was never built**. `finding-detail-panel.tsx` is still a
+`Sheet` — the slide-over CR-001 decided to remove.
+
+Selecting a finding switches the dashboard into **detail mode in place**:
+
+| Region | Dashboard mode | Detail mode |
+|---|---|---|
+| Left / main | Overall Health card + trend chart | **Finding detail** — evidence, reason, `file:line:symbol` |
+| Right | Hotspot file tree | Hotspot file tree, **auto-expanded, highlighting the finding's file** |
+| Bottom | *(part of the left column)* | **Refactor-First list, shrunk** — move between findings without closing |
+
+Closing restores the health card and the trend chart.
+
+*Why:* triage means reading many findings in sequence. A slide-over blurs the tree, costs a
+close-and-reopen per finding, and is too narrow for the [v1.1] snippet. This is master–detail —
+mail clients, IDEs, PR review — which is the right shape for that job.
+
+**Do this before Phase 11.** CR-001 says it plainly: *polishing a slide-over you are about to
+delete is wasted work.*
+
+- [ ] `DashboardView` renders detail mode in place; the `Sheet` is gone
+- [ ] The tree auto-expands and scrolls to reveal the selected file
+- [ ] The Refactor-First list stays visible and switches findings without a close
+- [ ] The selected finding lives in the URL as `?finding=<fingerprint>`, so refresh and Back work
+- [ ] `FindingDetailPanel` is reused, not rewritten — this is a container change
+
+**Scope guardrail:** a layout change, **not** a feature expansion. v1.0 stays view-only; accept /
+resolve / false-positive stay [v1.1]; the snippet stays [v1.1] — this only builds the space for it.
+It touches no types and no endpoints.
+
+### 10.7.2 — Read the session: `GET /api/auth/session`
+
+**Nothing calls it.** The one auth endpoint the frontend is meant to fetch, and there is no caller.
+
+Two consequences, both visible to an evaluator:
+
+1. The app cannot show **who is signed in** — no name, no avatar, nothing in the account menu.
+2. When a session expires (an hour idle, twelve hours absolute), the app cannot tell. Every call
+   just starts returning 401 with no explanation and no way back to sign-in.
+
+- [ ] `getSession()` in `src/lib/api/client.ts` → `GET /api/auth/session`, `credentials: "include"`
+- [ ] A `useSession()` hook over `useQuery`
+- [ ] The app rail shows the signed-in user's name (and avatar when present)
+- [ ] A 401 from any call sends the user to `/login` rather than rendering an error box
+
+*Why the 401 handler belongs here:* `ApiRequestError` already carries `code`, so
+`NOT_AUTHENTICATED` is a one-line branch. Without it an expired session looks like a broken app.
+
+### 10.7.3 — Route protection: `middleware.ts`
+
+There is no `middleware.ts`, so **no route is protected**. Visit `/projects` signed out and you get
+the page shell with an error inside it, instead of being sent to `/login`.
+
+This is currently disguised by every endpoint returning 501 — it will become obvious the moment
+Chamodh's endpoints land.
+
+- [ ] `src/middleware.ts` redirects to `/login` when the session cookie is absent
+- [ ] The matcher covers the `(app)` routes and excludes `/login`, `_next` and static assets
+- [ ] Signing out from the rail and pressing Back does not show a protected page
+
+> **The cookie is `httpOnly`, so the middleware can only check that it is PRESENT, never whether
+> it is valid.** That is fine and it is the right split: this is a redirect for the common case,
+> not a security boundary. The security boundary is the API, which checks the session on every
+> request — see `deps.get_current_user_id`. Never treat a middleware check as authorization.
+
+### Phase 10.7 — done when
+
+- [ ] No `Sheet` remains in the dashboard; detail mode renders in place and survives a refresh
+- [ ] The app rail shows who is signed in
+- [ ] A signed-out visit to `/projects` lands on `/login`
+- [ ] An expired session sends the user to `/login` instead of showing an error
+- [ ] Typecheck, lint, unit and E2E gates green
+
+---
+
 ## Phase 11 — Polish & Definition of Done
 
 **Goal:** take the working v1.0 slice from *"it demos"* to *"it looks and feels like a product"* — **without adding a single feature**.
@@ -1407,13 +1497,44 @@ Neither exists in `lib/api/client.ts` yet:
 
 ---
 
+### 11.M — The mid-evaluation cut (do these, in this order, if time is short)
+
+Phase 11 is large. For the mid-evaluation you do not need all of it — you need the parts an
+evaluator will actually hit in a ten-minute walkthrough. **These are ordered by what breaks a
+demo hardest.**
+
+| # | Do this | From | Why it matters on the day |
+|---|---|---|---|
+| **M1** | **Loading, empty and error states on every screen** | 11.2 | The single highest-value item. A blank panel during a scan reads as a crash. An empty Projects list with no message reads as data loss. The evaluator *will* see at least one of these |
+| **M2** | **The empty state on Projects** | 11.2 | The very first screen after sign-in, and it is empty until a repo is connected — so it is the first thing the evaluator ever sees |
+| **M3** | **Dashboard legibility** — chart axis labels, grade colours that pass contrast, the category chips readable | 11.4, 11.5 | The demo lives on this screen. Colour carries meaning here, so unreadable colour is lost meaning |
+| **M4** | **Visible focus + keyboard path through the demo** | 11.6 | Some evaluators navigate by keyboard, and an invisible focus ring looks broken to everyone |
+| **M5** | **1280 px laptop width** | 11.7 | Detail mode + tree + condensed list is the tightest layout in the product. Test it on a projector resolution, not your monitor |
+| **M6** | **Copy pass** — no lorem, no "TODO", no placeholder labels | 11.1 | Placeholder text is the cheapest thing to fix and the most obvious thing to spot |
+| **M7** | **Toast feedback on every write** | 11.8 | Connect, Apply, Scan, Stop. Silence after an action reads as "nothing happened" |
+
+**Two demo-specific checks that are not in the generic list:**
+
+- [ ] **The 501 story is presentable.** Until Chamodh's endpoints land, data calls return
+      `501 This endpoint is not implemented yet.` Make sure that renders as a calm message in the
+      error state from M1, not a raw error string or a blank screen. If the backend lands first,
+      this disappears on its own.
+- [ ] **Walk the whole demo path once on the live URL, on the projector.** Sign in → connect a
+      repository → open the dashboard → change the profile → open a finding → sign out. Anything
+      that looks wrong there is worth ten things that look wrong locally.
+
+> **Do not start 11.M before Phase 10.7 is merged.** M3, M4 and M5 all touch the dashboard, and
+> 10.7.1 changes its layout. Polishing the old layout is work you throw away.
+
+---
+
 ### 11.0 — Read first: the fence, the gap, and the audit
 
 #### The fence — what "polish" means here
 
 | ✅ In scope (v1.0, already built) | ❌ Out of scope (say no on purpose) |
 |---|---|
-| Login · Projects · Dashboard (top nav, branch, scan, Card A, Card B, Refactor-First list, finding detail, heat-map tree) | New features, or any v1.1/v2 field (finding actions, per-node Card B, private repos) |
+| Login · Projects · Dashboard (top nav, branch, scan, Card A, Card B, Refactor-First list, finding detail, heat-map tree) | New features, or any v1.1/v2 field (finding actions = v1.1; per-node Card B and private repos = v2) |
 | **States** (loading / empty / error), **affordances** (can I tell it's clickable?), **legibility** (contrast, chart labels), **keyboard**, **responsive**, **copy** | Redesigns, a different component library, a "real" tree/virtualisation lib |
 | Repo hygiene that affects a fresh clone or a screenshot | Animation for its own sake; anything that changes `@/lib/types` |
 

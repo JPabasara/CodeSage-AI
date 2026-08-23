@@ -2380,6 +2380,10 @@ Three questions. None of them blocks any step above.
 
 - Microservices — see SAD §2
 - A Next.js proxy tier — rejected in favour of FastAPI as the BFF
-- Private repositories, GitHub App, RBAC, webhooks — all v1.1 and later
+- Private repositories, GitHub App, RBAC, webhooks — **all v2**. Originally written as
+  "v1.1 and later", which is now misleading: the v1.1 revision of the SRS and SAD was
+  about Asgardeo, not about these features. They are gated by SRS **SEC-04**/**SEC-06**,
+  both tagged **[v2]**. The API contract stays at **1.0** even though it serves SRS v1.1
+  and SAD v1.1 — the document version and the contract version are not the same number
 - Writing CR-002 as a separate document — the v1.1 revision-history rows now carry the
   same information, in the deliverable itself
