@@ -31,7 +31,7 @@ from codesage_ml.schemas import (
 )
 from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 
-app = FastAPI(title="Code Sage ML API (Mock)", version="1.0.0")
+app = FastAPI(title="Code Sage AI — ML Inference", version="1.0.0")
 
 MOCK_VERSION = "mock-1.0.0"
 
@@ -63,7 +63,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
                 id=comment.id,
                 is_debt=is_debt,
                 category=cat,
-                confidence=round(random.uniform(0.5, 0.99), 2) if is_debt else 0.0
+                confidence=random.uniform(0.6, 0.99) if is_debt else 0.0,
             )
         )
         
@@ -85,7 +85,7 @@ def risk(body: RiskRequest) -> RiskResponse:
         scores.append(
             FileRisk(
                 path=file.path,
-                risk_score=round(random.uniform(0.0, 1.0), 2)
+                risk_score=random.uniform(0.0, 1.0)
             )
         )
         
@@ -93,13 +93,14 @@ def risk(body: RiskRequest) -> RiskResponse:
 @app.get("/version", response_model=VersionResponse)
 def version() -> VersionResponse:
     """Deployed model versions.
-    
-    Allows the orchestrator to snapshot which model produced an analysis without
-    parsing it out of every prediction list.
+
+    Recorded by the worker against every analysis attempt, so a snapshot always
+    identifies what produced it. Without this, trend points computed before and
+    after a retraining would be silently incomparable (AI-03, DBR-18).
     """
     return VersionResponse(
         satd_model_version=MOCK_VERSION,
-        risk_model_version=MOCK_VERSION,
+        risk_model_version=MOCK_VERSION
     )
 
 @app.get("/healthz")
