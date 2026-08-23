@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 // library can be swapped in later without touching anything outside this file.
 export interface FileTreeProps {
   nodes: TreeNode[];
-  colorFor: (node: TreeNode) => string; // heat-map tint from healthScore
+  colorFor: (node: TreeNode) => string; // heat-map tint from health_score
   onHoverNode?: (node: TreeNode | null) => void; // drives Card B later
   onSelectNode?: (node: TreeNode) => void; // opens finding detail / focuses file
   selectedPath?: string;
