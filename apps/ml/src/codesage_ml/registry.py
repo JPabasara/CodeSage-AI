@@ -33,7 +33,10 @@ def load_satd_model() -> LoadedModel:
     transformer would add training cost, inference latency and a GPU dependency to
     a service that must answer fast enough not to stretch a scan.
     """
-    raise NotImplementedError
+    import joblib
+    model_path = artifact_dir() / "satd_v1.joblib"
+    pipeline = joblib.load(model_path)
+    return LoadedModel(name="satd_classifier", version="v1.0", artifact=pipeline)
 
 
 @lru_cache
@@ -50,4 +53,4 @@ def load_risk_model() -> LoadedModel:
 def artifact_dir() -> Path:
     """Where versioned artifacts live. A mounted volume in production — models are
     not baked into the image, so replacing one does not require a rebuild."""
-    raise NotImplementedError
+    return Path(__file__).parent.parent.parent / "models"
