@@ -50,13 +50,13 @@ export function FindingDetailPanel({
                 <p>{finding.reason}</p>
               </section>
 
-              {finding.metricValue !== undefined && finding.threshold !== undefined ? (
+              {finding.metric_value !== undefined && finding.threshold !== undefined ? (
                 <section>
                   <h3 className="text-muted-foreground mb-1 text-xs font-medium uppercase">Evidence</h3>
                   <p>
-                    Measured <span className="font-semibold">{finding.metricValue}</span> · limit{" "}
+                    Measured <span className="font-semibold">{finding.metric_value}</span> · limit{" "}
                     <span className="font-semibold">{finding.threshold}</span>
-                    {finding.ruleId ? <span className="text-muted-foreground"> · rule {finding.ruleId}</span> : null}
+                    {finding.rule_id ? <span className="text-muted-foreground"> · rule {finding.rule_id}</span> : null}
                   </p>
                 </section>
               ) : null}

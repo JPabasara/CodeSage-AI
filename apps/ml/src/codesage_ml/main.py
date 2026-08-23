@@ -16,18 +16,27 @@ questions; it never learns.
 
 from __future__ import annotations
 
+import random
+
 from fastapi import FastAPI
 
+from codesage_ml.registry import load_satd_model
+from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 from codesage_ml.schemas import (
     ClassifyRequest,
     ClassifyResponse,
     CommentPrediction,
+    FileFeaturesIn,
+    FileRisk,
     RiskRequest,
     RiskResponse,
     VersionResponse,
 )
 
 app = FastAPI(title="Code Sage AI — ML Inference", version="1.0.0")
+
+#: Reported by endpoints until a trained artifact replaces this service.
+MOCK_VERSION = "mock-1.0.0"
 
 
 @app.post("/classify", response_model=ClassifyResponse)
@@ -45,8 +54,6 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
     Batched because a repository has tens of thousands of comments and a
     per-comment round trip would dominate scan time.
     """
-    from codesage_ml.registry import load_satd_model
-
     model_info = load_satd_model()
 
     if not body.comments:
@@ -81,7 +88,15 @@ def risk(body: RiskRequest) -> RiskResponse:
     and both sides import it, because a mismatch is silent: the model returns
     plausible numbers computed from the wrong columns.
     """
-    raise NotImplementedError
+    scores = []
+
+    for file in body.files:
+        # Keyed on the path, for the same reason as `/classify`: a file's score
+        # must not change because another scan happened to run at the same time.
+        rng = random.Random(file.path)
+        scores.append(FileRisk(path=file.path, risk_score=rng.uniform(0.0, 1.0)))
+
+    return RiskResponse(scores=scores, model_version=MOCK_VERSION)
 
 
 @app.get("/version", response_model=VersionResponse)
@@ -92,13 +107,11 @@ def version() -> VersionResponse:
     identifies what produced it. Without this, trend points computed before and
     after a retraining would be silently incomparable (AI-03, DBR-18).
     """
-    from codesage_ml.registry import load_satd_model
-
     satd_info = load_satd_model()
 
     return VersionResponse(
         satd_model_version=satd_info.version,
-        risk_model_version="not_implemented",
+        risk_model_version=MOCK_VERSION,
     )
 
 
