@@ -29,8 +29,11 @@ from codesage_ml.schemas import (
     FileRisk,
     VersionResponse,
 )
+from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 
-app = FastAPI(title="Code Sage AI — ML Inference", version="1.0.0")
+app = FastAPI(title="Code Sage ML API (Mock)", version="1.0.0")
+
+MOCK_VERSION = "mock-1.0.0"
 
 
 @app.post("/classify", response_model=ClassifyResponse)
@@ -49,9 +52,10 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
     per-comment round trip would dominate scan time.
     """
     predictions = []
-    categories = ["code-design", "requirement", "documentation", "test", None]
+    categories = list(DATASET_TO_CATEGORY.values()) + [None]
     
     for comment in body.comments:
+        random.seed(comment.id)
         cat = random.choice(categories)
         is_debt = cat is not None
         predictions.append(
@@ -63,7 +67,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
             )
         )
         
-    return ClassifyResponse(predictions=predictions, model_version="mock-1.0.0")
+    return ClassifyResponse(predictions=predictions, model_version=MOCK_VERSION)
 
 @app.post("/risk", response_model=RiskResponse)
 def risk(body: RiskRequest) -> RiskResponse:
@@ -77,6 +81,7 @@ def risk(body: RiskRequest) -> RiskResponse:
     """
     scores = []
     for file in body.files:
+        random.seed(file.path)
         scores.append(
             FileRisk(
                 path=file.path,
@@ -84,18 +89,17 @@ def risk(body: RiskRequest) -> RiskResponse:
             )
         )
         
-    return RiskResponse(scores=scores, model_version="mock-1.0.0")
+    return RiskResponse(scores=scores, model_version=MOCK_VERSION)
 @app.get("/version", response_model=VersionResponse)
 def version() -> VersionResponse:
     """Deployed model versions.
-
-    Recorded by the worker against every analysis attempt, so a snapshot always
-    identifies what produced it. Without this, trend points computed before and
-    after a retraining would be silently incomparable (AI-03, DBR-18).
+    
+    Allows the orchestrator to snapshot which model produced an analysis without
+    parsing it out of every prediction list.
     """
     return VersionResponse(
-        satd_model_version="mock-1.0.0",
-        risk_model_version="mock-1.0.0"
+        satd_model_version=MOCK_VERSION,
+        risk_model_version=MOCK_VERSION,
     )
 
 @app.get("/healthz")
