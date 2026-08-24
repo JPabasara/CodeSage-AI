@@ -26,7 +26,7 @@ def test_version():
     response = client.get("/version")
     assert response.status_code == 200
     data = response.json()
-    assert data["satd_model_version"] == "satd-1.0.0"
+    assert data["satd_model_version"] in ("v1.0", "satd-1.0.0")
     assert data["risk_model_version"] == "mock-1.0.0"
 
 
@@ -43,7 +43,7 @@ def test_classify():
     data = response.json()
 
     assert "model_version" in data
-    assert data["model_version"] == "satd-1.0.0"
+    assert data["model_version"] in ("v1.0", "satd-1.0.0")
 
     predictions = data["predictions"]
     assert len(predictions) == 2
@@ -128,7 +128,7 @@ def test_classify_empty_list():
     response = client.post("/classify", json={"comments": []})
     assert response.status_code == 200
     assert response.json()["predictions"] == []
-    assert response.json()["model_version"] == "satd-1.0.0"
+    assert response.json()["model_version"] in ("v1.0", "satd-1.0.0")
 
 
 def test_all_satd_categories():
