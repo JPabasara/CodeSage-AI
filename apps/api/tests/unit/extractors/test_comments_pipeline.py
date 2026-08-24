@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -75,6 +76,41 @@ def test_end_to_end_comment_extraction_to_classification():
     assert results[0].confidence == 0.95
 
 
+def test_satd_client_all_canonical_categories():
+    """Verify that all 4 predictable categories are correctly mapped to Category enum."""
+    comments = [
+        ExtractedComment(file_path="A.java", line=1, text="// code debt"),
+        ExtractedComment(file_path="B.java", line=2, text="// test debt"),
+        ExtractedComment(file_path="C.java", line=3, text="// doc debt"),
+        ExtractedComment(file_path="D.java", line=4, text="// req debt"),
+        ExtractedComment(file_path="E.java", line=5, text="// non debt"),
+    ]
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "predictions": [
+            {"id": "c_0", "is_debt": True, "category": "code-design", "confidence": 0.9},
+            {"id": "c_1", "is_debt": True, "category": "test", "confidence": 0.85},
+            {"id": "c_2", "is_debt": True, "category": "documentation", "confidence": 0.88},
+            {"id": "c_3", "is_debt": True, "category": "requirement", "confidence": 0.92},
+            {"id": "c_4", "is_debt": False, "category": None, "confidence": 0.99},
+        ],
+        "model_version": "satd-1.0.0",
+    }
+
+    with patch("httpx.post", return_value=mock_response):
+        results = classify(comments)
+
+    assert len(results) == 5
+    assert results[0].category == Category.CODE_DESIGN
+    assert results[1].category == Category.TEST
+    assert results[2].category == Category.DOCUMENTATION
+    assert results[3].category == Category.REQUIREMENT
+    assert results[4].category is None
+    assert results[4].is_debt is False
+
+
 def test_satd_client_handles_malformed_response_gracefully():
     """Verify client raises MLServiceUnavailable on malformed JSON or payload."""
     from codesage_api.errors import MLServiceUnavailable
@@ -102,4 +138,10 @@ def test_satd_client_handles_malformed_response_gracefully():
     with patch("httpx.post", return_value=mock_bad_schema):
         with pytest.raises(MLServiceUnavailable):
             classify(comments)
+
+    # Case 3: HTTP Network error (timeout/connection refusal)
+    with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
+        with pytest.raises(MLServiceUnavailable):
+            classify(comments)
+
 
