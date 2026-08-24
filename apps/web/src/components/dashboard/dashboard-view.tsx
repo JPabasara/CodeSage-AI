@@ -12,6 +12,7 @@ import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useBranches } from "@/hooks/use-branches"
 import { useHealthReport } from "@/hooks/use-health-report"
+import { useProjects } from "@/hooks/use-projects"
 import { useScan } from "@/hooks/use-scan"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
@@ -19,6 +20,13 @@ import { healthColor } from "@/lib/utils"
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // Data now arrives over the (mock) network instead of a static import.
   const { data: branches } = useBranches(repoId)
+
+  // `repo_id` is a uuid in the contract, so the top nav cannot just print it —
+  // "7c9e6679-7425-40de-…" is not a repository name. Look up the connected repo
+  // and fall back to the id only while the list is still loading.
+  const { data: repos } = useProjects()
+  const repo = repos?.find((r) => r.id === repoId)
+  const repoName = repo ? `${repo.owner}/${repo.name}` : repoId
 
   // A user pick wins; until then fall back to the repo's default branch, then
   // the first available one. Empty string only for the first render before
@@ -93,7 +101,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   return (
     <div className="flex h-full flex-col">
       <DashboardTopNav
-        repoName={repoId}
+        repoName={repoName}
         branches={branches ?? []}
         activeBranch={activeBranch}
         onBranchChange={setPickedBranch}

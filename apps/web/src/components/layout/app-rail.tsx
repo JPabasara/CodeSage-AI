@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { ApiRequestError } from "@/lib/api/client";
+import { DEMO_REPO_ID } from "@/lib/demo";
 import { useSession } from "@/hooks/use-session";
 
 type NavItem = {
@@ -41,14 +42,16 @@ const NAV: NavItem[] = [
     isActive: (p) => p.startsWith("/projects"),
   },
   {
-    // hardcoded id until Phase 9 wires the actually-selected project
-    href: "/dashboard/demo-repo",
+    // Hardcoded until a project picker exists; the rail has no way to know which
+    // project you last opened. It is the demo repository's real id, so it points
+    // at something the mock (and later the API) will actually serve.
+    href: `/dashboard/${DEMO_REPO_ID}`,
     label: "Dashboard",
     icon: LayoutDashboard,
     isActive: (p) => p.startsWith("/dashboard") && !p.endsWith("/history"),
   },
   {
-    href: "/dashboard/demo-repo/history",
+    href: `/dashboard/${DEMO_REPO_ID}/history`,
     label: "Scan History",
     icon: History,
     isActive: (p) => p.endsWith("/history"),
