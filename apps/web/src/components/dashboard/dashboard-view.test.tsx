@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
-import { mockFindings } from "@/lib/mocks/fixtures"
+import { DEMO_REPO_ID, mockFindings } from "@/lib/mocks/fixtures"
 
 // D-CR7 moved the selection into the URL, so a container test needs a router
 // that actually re-renders on navigate. This is a miniature one: a query string
@@ -30,7 +30,7 @@ const nav = vi.hoisted(() => {
 vi.mock("next/navigation", async () => {
   const { useSyncExternalStore } = await import("react")
   return {
-    usePathname: () => "/dashboard/demo-repo",
+    usePathname: () => `/dashboard/${DEMO_REPO_ID}`,
     useSearchParams: () => useSyncExternalStore(nav.subscribe, nav.read, nav.read),
     useRouter: () => ({ push: nav.navigate, replace: nav.navigate }),
   }
@@ -50,7 +50,7 @@ async function ready() {
 }
 
 test("selecting a finding swaps the health card for the detail, in place", async () => {
-  render(<DashboardView repoId="demo-repo" />)
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
   // by reason, not symbol: two fixtures share the symbol "charge()"
@@ -66,16 +66,16 @@ test("selecting a finding swaps the health card for the detail, in place", async
 })
 
 test("detail mode is driven by ?finding=, so a refresh restores it", async () => {
-  nav.navigate(`/dashboard/demo-repo?finding=${CRITICAL.fingerprint}`)
-  render(<DashboardView repoId="demo-repo" />)
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
 
   expect(await screen.findByLabelText("Finding detail")).toBeInTheDocument()
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
 })
 
 test("the tree highlights the selected finding's file", async () => {
-  nav.navigate(`/dashboard/demo-repo?finding=${CRITICAL.fingerprint}`)
-  render(<DashboardView repoId="demo-repo" />)
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
   await screen.findByLabelText("Finding detail")
 
   const tree = screen.getByLabelText("File health tree")
@@ -84,8 +84,8 @@ test("the tree highlights the selected finding's file", async () => {
 })
 
 test("closing restores the health card and the trend chart", async () => {
-  nav.navigate(`/dashboard/demo-repo?finding=${CRITICAL.fingerprint}`)
-  render(<DashboardView repoId="demo-repo" />)
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
   await screen.findByLabelText("Finding detail")
 
   await userEvent.click(screen.getByRole("button", { name: /close finding detail/i }))
@@ -95,7 +95,7 @@ test("closing restores the health card and the trend chart", async () => {
 })
 
 test("clicking a file in the tree opens that file's finding", async () => {
-  render(<DashboardView repoId="demo-repo" />)
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
   const tree = screen.getByLabelText("File health tree")
