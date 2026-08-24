@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   History,
   SlidersHorizontal,
-  Users,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -21,7 +20,6 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
@@ -33,7 +31,6 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   isActive: (pathname: string) => boolean;
-  badge?: string;
 };
 
 const NAV: NavItem[] = [
@@ -61,13 +58,6 @@ const NAV: NavItem[] = [
     label: "Profiles",
     icon: SlidersHorizontal,
     isActive: (p) => p.startsWith("/profiles"),
-  },
-  {
-    href: "/team",
-    label: "Team",
-    icon: Users,
-    badge: "v2",
-    isActive: (p) => p.startsWith("/team"),
   },
 ];
 
@@ -105,7 +95,6 @@ export function AppRail() {
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
-                    {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
                   </SidebarMenuItem>
                 );
               })}
