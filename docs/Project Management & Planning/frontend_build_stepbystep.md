@@ -42,7 +42,9 @@ Install tools ─► Scaffold app ─► Configure ─► Theme ─► Types (th
 | 9 | Wire the interactions (scan, branch, tree→graph, detail) | Build |
 | 10 | End-to-end tests (Playwright) | **Test** |
 | **10.5** | **CR-001 migration — contract, chips, profile sliders, in-place finding detail** | **Build/Test** |
-| 11 | Polish — states, a11y, contrast, responsive + Definition of Done | Build/**Test** |
+| **10.6** | **CR-002 migration — five categories, snake_case, real Asgardeo sign-in** | **Build** |
+| **10.7** | **Finish the slice — sign-out, in-place detail, session, route protection, Team removal** (**PR A**) | **Build/Test** |
+| 11 | Polish — states, a11y, contrast, responsive + Definition of Done (**PR B**) | Build/**Test** |
 | 12 | (Later) Swap mock → real backend | Build |
 
 ---
@@ -411,6 +413,10 @@ Because they share one mold, "static → mock → real" are painless **swaps**, 
 **Why this phase:** get the navigation skeleton solid *before* filling screens. In the App Router **folders are routes**, so this phase is mostly creating the right files plus one client component (the rail).
 
 > **Scope note (finalized).** The rail now has more destinations than the original two. **v1.0 rail:** Projects · Dashboard · Scan History · Profiles, plus an **Account** menu pinned to the bottom. **Team** is **v2** — add it as a disabled "Coming soon" stub or skip it. (See [release-roadmap.md](./release-roadmap.md).)
+>
+> **Superseded 23 Aug 2026 — see [10.7.4](#1074--remove-the-team-v2-entry).** The Team stub was
+> built, and it is now being **removed**: a rail item reads as a promise, and we cannot demonstrate
+> this one. Leave the rest of this phase as written — it is the record of how the rail was built.
 
 ### 6.0 The five App Router ideas you'll use (read once)
 1. **Folder = route.** A folder under `src/app/` with a `page.tsx` becomes a URL. `projects/page.tsx` → `/projects`.
@@ -1391,18 +1397,195 @@ Neither exists in `lib/api/client.ts` yet:
 
 ---
 
-## Phase 10.7 — Finish the slice: in-place detail, session, route protection
+## Phase 10.7 — Finish the slice: sign-out, in-place detail, session, route protection
 
-**Goal:** close the last three things that are **not polish**, so Phase 11 polishes a finished
+**Goal:** close the last five things that are **not polish**, so Phase 11 polishes a finished
 screen instead of one that is about to change shape.
 
 **Why this phase exists.** Phase 10.6 finished the contract work — every field, every endpoint,
-real sign-in. Three things survived it, and none of them belong in Phase 11 by that phase's own
-test: *"if it changes what the user can do, it is a feature."* All three change what the user
+real sign-in. Five things survived it, and none of them belong in Phase 11 by that phase's own
+test: *"if it changes what the user can do, it is a feature."* All five change what the user
 can do.
 
-> **Ships as one PR.** The three are small, they touch different files, and they share one
+> **Ships as one PR (PR A).** They are small, they touch different files, and they share one
 > theme: the app finally behaves like a signed-in application rather than a set of screens.
+> **Phase 11 is PR B and is view polish only** — nothing in it may change behaviour.
+
+| | Step | What it closes |
+|---|---|---|
+| **10.7.0** | **Sign-out actually signs you out** | The J2.9 bug — [#71](https://github.com/JPabasara/CodeSage-AI/issues/71) |
+| 10.7.1 | D-CR7 — finding detail renders in place | [#66](https://github.com/JPabasara/CodeSage-AI/issues/66) |
+| 10.7.2 | Read the session — `GET /api/auth/session` | [#67](https://github.com/JPabasara/CodeSage-AI/issues/67) |
+| 10.7.3 | Route protection — `middleware.ts` | [#68](https://github.com/JPabasara/CodeSage-AI/issues/68) |
+| **10.7.4** | **Remove the Team (v2) entry** | [#72](https://github.com/JPabasara/CodeSage-AI/issues/72) |
+
+### 10.7.0 — Sign-out actually signs you out
+
+**Found by walking J2.9 on 23 Aug 2026, in a private window.** Sign-out looked like it worked —
+you land back on `/login` — but nothing had ended: the `session` row survived in Neon, and
+clicking Sign in went straight back to `/projects` with no Asgardeo prompt at all.
+
+**Say the consequence plainly, because it drives the priority.** On a shared or lab machine,
+the next person clicks Sign in and lands inside the previous user's account. This is a security
+defect, not a rough edge, and it is the first thing to fix in PR A.
+
+#### The cause
+
+**We never tell Asgardeo anything.** `POST /api/auth/logout` deletes *our* session row. Asgardeo
+keeps its **own** SSO cookie in the browser, untouched. So the next `/api/auth/login` reaches
+`/oauth2/authorize`, Asgardeo recognises its own cookie, and redirects straight back with a fresh
+authorization code — no screen, no password, about 200 ms. Our callback then creates a **new**
+session row. That is Asgardeo behaving exactly as specified; the bug is ours, and its name is
+**RP-initiated logout**.
+
+#### What the trace proved, and the mistake worth not repeating
+
+The first diagnosis said the session row was surviving. It was not. The network trace showed:
+
+```
+POST https://api.codesageai.dev/api/auth/logout        →  204 No Content
+  request  cookie: codesage_session=ec196dda-fefd-454a-a4bc-33feb10ffe5f
+  response set-cookie: codesage_session=""; Max-Age=0; Path=/; SameSite=lax
+           access-control-allow-origin: https://codesageai.dev
+           access-control-allow-credentials: true
+```
+
+The handler ran, the row was deleted, the cookie was cleared. The row visible in Neon afterwards
+was the **new** one from the silent re-authentication.
+
+> **The method note.** *"The row is still there"* and *"the row came back"* look identical if you
+> count rows, and they have completely different causes. **The session cookie is the row's primary
+> key** — so when a trace and the database disagree, take the id out of the cookie and query it
+> directly, before touching anything else:
+>
+> ```sql
+> SELECT id, created_at FROM session WHERE id = '<the value from the Cookie header>';
+> ```
+
+**The same trace settled two design questions for free.** `sec-fetch-site: same-site` confirms
+`codesageai.dev` and `api.codesageai.dev` share a registrable domain — so a `SameSite=Lax` cookie
+**is** sent on a top-level form POST between them, which is precisely what the fix below relies
+on. And CORS is provably correct, so it is not hiding anything.
+
+#### The four latent defects found next to it
+
+None of these caused what you saw. All four are real, all four are cheap now, and **B2 and B3 are
+the pair that made a one-line bug look like two bugs for an hour:**
+
+```ts
+await fetch(`${API_BASE}/api/auth/logout`, { method: "POST", credentials: "include" })
+router.push("/login")   // runs on 401, on 500, on anything
+```
+
+A resolved `fetch` is not a successful one. Had the call returned 401 instead of 204, the UI would
+have looked *exactly the same*. An action that cannot report its own failure will eventually
+report someone else's.
+
+#### The fix: sign-out becomes a navigation, like sign-in
+
+The browser has to physically visit Asgardeo for Asgardeo to clear its own cookie. A `fetch`
+stays on our page and can never do that. So sign-out stops being a background call and becomes a
+**form the browser submits** — the mirror image of the sign-in `<a>` link:
+
+```
+[Sign out] form POST → /api/auth/logout
+                       ├─ delete the session row
+                       ├─ clear the session cookie
+                       └─ 302 → {asgardeo}/oidc/logout
+                                   ?client_id=…&post_logout_redirect_uri={frontend}/login
+                                        → Asgardeo clears its cookie
+                                        → 302 back to /login
+```
+
+A form POST is a top-level navigation, so the browser follows the 302 all the way out and back.
+It also removes Cause 2 by construction: there is no response left for the UI to ignore.
+
+> **Why a form and not `<a href>`.** A GET link is prefetchable and cacheable — a browser or a
+> link-scanner could sign the user out by touching the URL. Sign-out changes state, so it stays
+> a POST.
+
+**Decision (23 Aug): no `id_token_hint`, and therefore no migration.** The spec-ideal version
+passes the `id_token` back so Asgardeo logs out silently, but we do not store that token and
+adding it means a new column plus an Alembic migration. Mid-evaluation week is the wrong week for
+a schema change. `client_id` + `post_logout_redirect_uri` is the supported alternative.
+
+> ⚠️ **Verify on the live site the day this lands, not on demo morning.** Without `id_token_hint`,
+> Asgardeo may show a *"Do you want to log out?"* confirmation page before redirecting back. If it
+> appears and cannot be switched off in the console, the fallback is the deferred option: store
+> the `id_token` on the session row and pass it as `id_token_hint`. One column, one migration —
+> cheap, but not free, so find out early.
+
+**Before merging, register the logout redirect in the Asgardeo console —
+[#73](https://github.com/JPabasara/CodeSage-AI/issues/73).** Add both `http://localhost:3000/login`
+and `https://codesageai.dev/login` to the application's allowed sign-out redirect URLs. An
+unregistered `post_logout_redirect_uri` is rejected outright and shows an Asgardeo error page
+instead of redirecting.
+
+**Confirm the local callback in the same visit** — `http://localhost:8000/api/auth/callback`.
+A working local sign-in is what lets you test an auth change without a deploy; see the README for
+running the stack locally with mocking on or off.
+
+#### The five defects, and where each lives
+
+| | Defect | Status | Fix |
+|---|---|---|---|
+| **B1** | Sign-out never ends the Asgardeo session | **Confirmed live** | `routers/auth.py` — 302 to `/oidc/logout` |
+| **B2** | The rail ignores the logout response | Latent | `app-rail.tsx` — form POST, no `fetch` |
+| **B3** | Logout is on the protected router, so an expired session can never clear its cookie | Latent | `routers/__init__.py` — move to `public_router` |
+| **B6** | Expired session rows are ignored at read time but never deleted | Latent | `services/auth.py` — delete the row when `load_valid_session` finds it expired |
+| **B7** | `delete_cookie` omits the `samesite`/`secure` attributes `set_cookie` used | Cosmetic | `routers/auth.py` — mirror them |
+
+**B3 is why sign-out must be idempotent.** Signing out twice, or with an already-expired session,
+must still clear the cookie and still land on `/login`. Requiring a valid session before you are
+allowed to destroy it is backwards.
+
+#### This is a contract edit — do it visibly
+
+`POST /api/auth/logout` in `docs/api/openapi.yaml` changes from **`204 No Content`** to
+**`302 Found`**, and moves from the protected list to the public one. Update the contract,
+regenerate `src/lib/types/api.ts`, and state the change in the PR description. §5.3 freezes the
+contract precisely so that changes to it are announced rather than discovered.
+
+**Code — done 23 Aug 2026, tests green:**
+
+- [x] `POST /api/auth/logout` moved to `public_router`
+- [x] It deletes the session row, clears the cookie, and 302s to Asgardeo's `/oidc/logout`
+- [x] It still succeeds with a missing, invalid or expired cookie — never 401
+- [x] `delete_cookie` mirrors `set_cookie`'s `samesite` and `secure`
+- [x] `load_valid_session` deletes the row when it finds one expired, and `get_current_user_id`
+      commits before refusing so the delete survives
+- [x] The rail's Sign out is a **form POST**, not a `fetch` — no ignored response anywhere
+- [x] `openapi.yaml` updated and `src/lib/types/api.ts` regenerated (`gen:types:check` passes)
+- [x] `apps/api/tests/unit/routers/test_auth_logout.py` — six tests covering B1, B3, B7 and the
+      unconfigured-server fallback
+
+**Still yours to do by hand:**
+
+- [ ] Both logout redirect URLs registered in the Asgardeo console (#73)
+- [ ] The manual checks below, on the live site
+
+#### Manual checks — run these in a private window, in order
+
+The code and its automated tests are done. These need a real browser, a real Asgardeo and a real
+database, so they are yours to run. **Every one should pass.** If one does not, note the number
+and stop there.
+
+Do the Asgardeo console entries first — check 4 cannot pass without them.
+
+| # | Check | Should look like | Tick |
+|---|---|---|---|
+| 1 | Sign in, then copy the `codesage_session` cookie value — **that is the row id** | A UUID | ☐ |
+| 2 | Click Sign out | You land on `/login` | ☐ |
+| 3 | `SELECT id FROM session WHERE id = '<that uuid>'` — **before clicking anything else** | **Zero rows** | ☐ |
+| 4 | Click Sign in again | **Asgardeo asks for your credentials.** No silent redirect | ☐ |
+| 5 | DevTools → Application → Cookies | `codesage_session` is gone after step 2 | ☐ |
+| 6 | Sign out twice (Back, then click again) | Still `/login`, no 401, no error | ☐ |
+| 7 | Does Asgardeo show a *"Do you want to log out?"* page? | Note the answer either way | ☐ |
+| 8 | Visit `/projects` after signing out | Still renders — **expected**, that is 10.7.3's job | ☐ |
+
+**Check 4 is the one that matters.** Checks 1, 2, 3 and 5 passed *before* this work — the old code
+deleted the row and cleared the cookie perfectly well; Asgardeo was simply never told. Do not sign
+J3.0 off on a green check 3.
 
 ### 10.7.1 — D-CR7: finding detail renders in place, not as a slide-over
 
@@ -1471,12 +1654,35 @@ Chamodh's endpoints land.
 > not a security boundary. The security boundary is the API, which checks the session on every
 > request — see `deps.get_current_user_id`. Never treat a middleware check as authorization.
 
+### 10.7.4 — Remove the Team (v2) entry
+
+The left rail carries a `Team` item with a **`v2` badge**, pointing at a page whose entire content
+is *"Coming in v2 — roles and collaboration."*
+
+Remove it. The reasoning is the one that moved private repositories to v2: **an evaluator reads a
+nav item as a promise.** A promise we cannot demonstrate costs more than the space it fills, and
+during the evaluation it sits on screen for the whole demo. Nothing links to it and nothing
+depends on it, so removing it is a smaller diff than explaining it.
+
+- [ ] The `Team` entry is gone from `NAV` in `src/components/layout/app-rail.tsx`
+- [ ] `src/app/(app)/team/page.tsx` is deleted (the route no longer exists)
+- [ ] The `Users` icon import is dropped
+- [ ] `SidebarMenuBadge` is dropped from the rail if nothing else uses it — and the `badge` field
+      is dropped from the `NavItem` type if it is now unused
+- [ ] No test, fixture or E2E journey still navigates to `/team`
+
+> **`Repo.visibility` stays.** FR-3 records visibility from v1.0 and the projects list shows it
+> per row. What we are removing is a signpost to an absent feature, not the knowledge of whether
+> a repository is private. After this, **no `v2` badge remains anywhere in the product.**
+
 ### Phase 10.7 — done when
 
+- [ ] **Sign-out ends the session row, the cookie, and the Asgardeo session — all seven checks in 10.7.0 pass**
 - [ ] No `Sheet` remains in the dashboard; detail mode renders in place and survives a refresh
 - [ ] The app rail shows who is signed in
 - [ ] A signed-out visit to `/projects` lands on `/login`
 - [ ] An expired session sends the user to `/login` instead of showing an error
+- [ ] **No `Team` entry and no `v2` badge anywhere in the rail**
 - [ ] Typecheck, lint, unit and E2E gates green
 
 ---
@@ -1502,6 +1708,10 @@ Chamodh's endpoints land.
 Phase 11 is large. For the mid-evaluation you do not need all of it — you need the parts an
 evaluator will actually hit in a ten-minute walkthrough. **These are ordered by what breaks a
 demo hardest.**
+
+> **This is PR B, and it starts only after PR A (Phase 10.7) is merged.** PR B is view polish:
+> nothing in it changes behaviour, touches `@/lib/types`, or alters a route. Items M3–M5 all
+> touch the dashboard and 10.7.1 changes its layout, so starting early means doing them twice.
 
 | # | Do this | From | Why it matters on the day |
 |---|---|---|---|
@@ -1549,8 +1759,13 @@ Pick one, now, and write the choice here:
 | Option | What it costs | When it's right |
 |---|---|---|
 | **A — Build them** (recommended) | ~2–3 h total: Scan History = a `Table` of `ScanSummary` + a "Load" button; Profiles = a radio/`Select` of `ScoreProfile` presets. Both are read-only over hooks you already know how to write (`useQuery` one-liners). | You want the v1.0 claim to be true, and the demo to survive a click on every rail item. |
-| **B — Ship them as honest "Coming soon"** | ~15 min: a proper empty state (icon + one line + a disabled control), rail badge `soon`, same treatment as Team's `v2`. | The deadline is this week and the demo script never clicks them. |
+| **B — Ship them as honest "Coming soon"** | ~15 min: a proper empty state (icon + one line + a disabled control) and a rail badge `soon`. | The deadline is this week and the demo script never clicks them. |
 | **C — Hide the rail items** | ~5 min, but the roadmap now over-claims v1.0. | Never, unless you also amend the roadmap. |
+
+> **These two are not the same case as Team.** Scan History and Profiles are **v1.0** features we
+> owe the release, so hiding them makes the roadmap lie. Team is **v2** — we owe it nothing in
+> this release, which is why **10.7.4 removes it outright** rather than dressing it up. Judge a
+> placeholder by which release claims it.
 
 Everything from **11.1** onward assumes you've picked A or B. *(If A: build them first, then run them through 11.2–11.9 like every other view.)*
 

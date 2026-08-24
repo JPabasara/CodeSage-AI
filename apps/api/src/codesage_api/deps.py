@@ -35,6 +35,10 @@ def get_current_user_id(request: Request) -> uuid.UUID:
             session, request.cookies.get(get_settings().session_cookie_name)
         )
         if record is None:
+            # Commit before refusing. `load_valid_session` deletes the row when it
+            # finds one expired, and the `except` below rolls back — which would
+            # undo that delete on every single request and the row would never go.
+            session.commit()
             raise NotAuthenticated
         user_id = record.user_id
         # Stashed so get_workspace_id does not have to ask the database again.
