@@ -100,25 +100,106 @@ Adding Google or a username-and-password login later is a setting in the Asgarde
 console, not new code — which matters because v2 brings viewers and stakeholders who
 may not have GitHub accounts. Details: SRS §3.5 (SEC-17 to SEC-20) and SAD §6.4.
 
-## Getting started (frontend)
+## Running it locally
+
+There are three ways to run this, and **they are not interchangeable**. Pick by what you
+are trying to do:
+
+| You want to… | Use | Mocking |
+|---|---|---|
+| Work on a screen, a layout, the scan flow | **`pnpm dev`** with mocking **on** | MSW answers everything |
+| Test sign-in, sign-out, or a real endpoint | **`pnpm dev`** with mocking **off**, plus the backend in Docker | Real API |
+| Check the whole system as it deploys | **Docker Compose**, all six containers | Always off — see below |
+
+### The one thing that catches everyone
+
+`NEXT_PUBLIC_*` variables are **baked into the JavaScript at build time**, not read when
+the container starts. Next.js textually replaces every `process.env.NEXT_PUBLIC_*` with a
+string literal during `next build`. So:
+
+* in `pnpm dev`, editing `apps/web/.env.local` and restarting is enough;
+* in Docker, the value is already inside the image — changing it means
+  **`docker compose build web`**, not `docker compose restart web`.
+
+This was a real bug: the address sat in compose as `environment:` until 20 Aug 2026 and did
+nothing at all — every deployed image still pointed at `localhost:8000`.
+
+### 1 · Frontend only, mock backend (fastest loop)
+
+No database, no Python, no Docker. MSW intercepts every call in the browser.
 
 ```powershell
 cd apps/web
 pnpm install
-# create apps/web/.env.local with: NEXT_PUBLIC_API_MOCKING=enabled
 pnpm dev            # http://localhost:3000
 ```
 
-See **[apps/web/README.md](apps/web/README.md)** for full setup (including the
-required `.env.local`), the test/quality gates, and how the mock data layer works.
+`apps/web/.env.local` (gitignored — each teammate makes their own):
 
-## Getting started (full stack)
+```ini
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_API_MOCKING=enabled
+```
+
+**Sign-in and sign-out always go to the real API even with mocking on.** OIDC is a
+navigation — the browser physically leaves the page — and a service worker cannot intercept
+that. MSW passes through anything it has no handler for, so `/api/auth/*` reaches the backend
+either way. That is deliberate: it means you can test sign-in without giving up the mock data.
+
+### 2 · Real backend, frontend in dev (for auth and endpoint work)
+
+Backend in Docker, frontend on your machine so hot reload still works.
 
 ```powershell
 cd infra
-docker compose up -d              # postgres · redis · ml · api · worker · web
-docker compose up --scale worker=3   # three concurrent scans (PERF-07)
+docker compose up -d postgres redis ml api worker
 ```
+
+Then flip the flag in `apps/web/.env.local` and restart `pnpm dev`:
+
+```ini
+NEXT_PUBLIC_API_MOCKING=disabled
+```
+
+> **Expect 501s, and do not chase them.** Most endpoints are still stubs and answer
+> `501 This endpoint is not implemented yet.` — that is the whole chain working (routing,
+> CORS, the cookie, the session lookup) with nothing to return yet. Only `/api/auth/*` and
+> `/api/healthz` do real work today, which is exactly why this mode exists.
+
+Sign-in needs `http://localhost:8000/api/auth/callback` registered in the Asgardeo console,
+and `infra/.env` filled in — see the compose file's sign-in block.
+
+### 3 · The whole stack in Docker (closest to deployed)
+
+```powershell
+cd infra
+docker compose up -d                   # postgres · redis · ml · api · worker · web
+docker compose up --scale worker=3     # three concurrent scans (PERF-07)
+```
+
+`web` is on <http://localhost:3000>, `api` on <http://localhost:8000>. Postgres, Redis and
+`ml` stay on the private network and are **not** published — reach them through the
+containers:
+
+```powershell
+docker compose exec postgres psql -U codesage_owner codesage
+docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://ml:8001/healthz').read())"
+```
+
+**Mocking is always off here.** `apps/web/Dockerfile` hardcodes
+`ENV NEXT_PUBLIC_API_MOCKING=disabled`, so the image never ships the fake backend — there is
+no flag to flip. If you want mock data, use mode 1.
+
+To point the image somewhere other than localhost, set the build argument and rebuild:
+
+```powershell
+$env:CODESAGE_WEB_API_BASE_URL = "https://api.codesageai.dev"
+docker compose build web
+docker compose up -d web
+```
+
+See **[apps/web/README.md](apps/web/README.md)** for the test and quality gates, and how the
+mock data layer is put together.
 
 ## Status
 

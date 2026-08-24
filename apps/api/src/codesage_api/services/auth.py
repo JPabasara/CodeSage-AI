@@ -205,7 +205,15 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
 
     session = db.get(UserSession, session_id)
     now = datetime.now(timezone.utc)
-    if session is None or session.expires_at <= now:
+    if session is None:
+        return None
+    if session.expires_at <= now:
+        # Delete it rather than merely refusing it. An expired row can never be
+        # used again, and nothing else ever removes one: without this the table
+        # grows for the life of the deployment, one row per sign-in, and the only
+        # cleanup is a human remembering to run a DELETE. The caller must commit
+        # — see `deps.get_current_user_id`, which commits before it raises.
+        db.delete(session)
         return None
 
     settings = get_settings()

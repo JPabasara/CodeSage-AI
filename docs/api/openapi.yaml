@@ -192,23 +192,48 @@ paths:
     post:
       tags: [auth]
       operationId: sign_out
+      security: []
       summary: End the session
       description: |
-        Deletes the session **server-side** and clears the cookie, so the session is
-        invalid immediately (SEC-10).
+        Deletes the session **server-side**, clears the cookie, and redirects to
+        Asgardeo's sign-out endpoint, which clears its own SSO cookie and sends the
+        browser back to `/login` (SEC-10).
 
         This is why the session is server-side state rather than a self-contained
         JWT: a stateless token stays valid until it expires, and sign-out could not
         actually revoke it without a denylist — which is most of a session store
         anyway.
+
+        **This is a navigation, not a fetch** — like `/api/auth/login`. Deleting our
+        own session is not enough: Asgardeo keeps its own cookie, and it can only
+        clear it if the browser actually visits it. The frontend therefore submits a
+        `<form method="POST">` and lets the browser follow the redirect. A `fetch`
+        stays on the page and cannot complete the flow.
+
+        It stays a POST rather than a link because a GET is prefetchable, and
+        something that ends a session must not fire because a browser guessed at a
+        URL.
+
+        **No session required** — deliberately. Sign-out is idempotent: signing out
+        twice, or after the idle timeout, must still clear the cookie and still land
+        somewhere sensible. Demanding a live session before allowing you to end one
+        would leave the user holding a dead cookie with no way to drop it, so this
+        endpoint never answers 401.
       responses:
-        '204':
-          description: Signed out. The cookie is cleared.
+        '302':
+          description: |
+            Signed out. The cookie is cleared and the browser is sent to Asgardeo's
+            sign-out endpoint, which redirects on to `/login`.
+
+            If sign-in is not configured on the server, the redirect goes straight to
+            `/login`: the local session is gone either way, and an error page would be
+            a worse answer than the login screen.
           headers:
+            Location:
+              schema: { type: string, format: uri }
             Set-Cookie:
               schema: { type: string }
               example: codesage_session=; Max-Age=0; Path=/
-        '401': { $ref: '#/components/responses/NotAuthenticated' }
 
   # ══════════════════════════════════════════════════════════════════════════
   # PROJECTS  (SRS FR-3, FR-4)
