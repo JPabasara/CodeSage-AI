@@ -2,7 +2,8 @@
 
 Two routers, and the split is the security boundary. `public_router` is mounted
 without the sign-in check, because you obviously cannot require a session on the
-two endpoints whose job is to create one. Everything else goes on `router`.
+endpoints whose job is to create one — or, in sign-out's case, to destroy one.
+Everything else goes on `router`.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import hashlib
 import secrets
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
@@ -155,10 +156,69 @@ def current_user(
     raise NotImplementedError
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def sign_out(request: Request) -> Response:
-    """End the session and clear the cookie (SEC-10)."""
+def _post_logout_redirect() -> str:
+    """Where the browser ends up once everyone has forgotten the user.
+
+    Must be registered in the Asgardeo console as an allowed sign-out redirect
+    URL. Asgardeo refuses an unregistered one outright, and the symptom is an
+    error page instead of a redirect home.
+    """
+    return f"{get_settings().frontend_base_url}/login"
+
+
+def _idp_logout_url() -> str:
+    """Asgardeo's sign-out endpoint, or the login page if sign-in is not set up.
+
+    Unlike `begin_sign_in`, this never raises on a half-configured service.
+    Sign-out has already deleted the session by the time it is called, and
+    refusing to redirect would strand the user on an error page while actually
+    being signed out. A misconfigured server signs you out locally and says so
+    by going straight to the login page.
+
+    No `id_token_hint`: we do not store the id token, and adding it is a schema
+    change. `client_id` with `post_logout_redirect_uri` is the supported
+    alternative. The trade-off is that Asgardeo may show its own "do you want to
+    log out?" confirmation first.
+    """
     settings = get_settings()
+    if not settings.asgardeo_base_url or not settings.asgardeo_client_id:
+        return _post_logout_redirect()
+
+    query = urlencode(
+        {
+            "client_id": settings.asgardeo_client_id,
+            "post_logout_redirect_uri": _post_logout_redirect(),
+        }
+    )
+    return f"{settings.asgardeo_base_url}/oidc/logout?{query}"
+
+
+@public_router.post("/logout")
+def sign_out(request: Request) -> RedirectResponse:
+    """End the session here *and* at Asgardeo, then go to the login page (SEC-10).
+
+    **Deleting our own row is not signing out.** Asgardeo keeps its own SSO
+    cookie, so a user who signs out and clicks "Sign in" is re-authenticated
+    silently — no screen, no password — and gets a brand new session. On a shared
+    machine that hands the next person the previous account. Ending the session
+    at the identity provider as well is what OIDC calls RP-initiated logout, and
+    it is the whole reason this endpoint redirects instead of answering 204.
+
+    **Which is why sign-out is a navigation, not a fetch.** The browser has to
+    physically visit Asgardeo for Asgardeo to clear its cookie; a background
+    request stays on our page and cannot. The frontend submits a form, exactly as
+    sign-in is an `<a>` link. It stays a POST rather than a link because a GET is
+    prefetchable, and something that ends a session must not fire because a
+    browser guessed at a URL.
+
+    **Public, and deliberately so.** This is the one endpoint that must work
+    without a valid session. Signing out twice, or after the hour-long idle
+    timeout, still has to clear the cookie and still has to land somewhere
+    sensible — requiring a live session before you are allowed to end it leaves
+    the user holding a dead cookie with no way to drop it.
+    """
+    settings = get_settings()
+
     db = SessionLocal()
     try:
         auth_service.end_session(db, request.cookies.get(settings.session_cookie_name))
@@ -169,6 +229,15 @@ def sign_out(request: Request) -> Response:
     finally:
         db.close()
 
-    response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    response.delete_cookie(settings.session_cookie_name, path="/")
+    response = RedirectResponse(_idp_logout_url(), status_code=status.HTTP_302_FOUND)
+    # Same attributes the cookie was SET with. A browser matches on name, domain
+    # and path, so a mismatch here is not fatal today — but the pair should be
+    # read together, and a future domain-scoped cookie would not clear at all.
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
     return response
