@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./session"
 
 // Journey 2 — the headline interaction from Phase 9. No route guard in v1, so we
 // can go straight to the dashboard, independent of the login flow.

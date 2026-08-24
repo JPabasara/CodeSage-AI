@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./session"
 
 // Journey 3 — proves the branch re-scoping wire (Phase 9.5) in a real browser.
 test("switching branch re-scopes the health score", async ({ page }) => {
