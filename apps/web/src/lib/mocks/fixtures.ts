@@ -1,6 +1,23 @@
-// Realistic sample data shaped by the contract (@/lib/types). Used to build the
-// screens before any backend exists (Phase 7). Phase 8 serves this same data over
-// MSW; nothing here changes shape when the real API arrives.
+// ────────────────────────────────────────────────────────────────────────────
+// SAMPLE DATA, SHAPED BY THE CONTRACT
+//
+// Everything exported here is a valid `docs/api/openapi.yaml` payload — the same
+// bytes the real FastAPI backend will send. Component tests import these
+// directly; `handlers.ts` serves them (and re-derives them per profile) over MSW.
+//
+// Two rules keep this file honest:
+//
+//  1. IDs THAT THE CONTRACT TYPES AS `format: uuid` ARE REAL UUIDs. Slugs like
+//     "demo-repo" used to sit here, and they hid a whole class of bug: URL
+//     building, id comparison and routing all behave differently for an opaque
+//     36-character string than for a friendly word.
+//
+//  2. NO SCORE IS HAND-WRITTEN. `health_score`, `grade`, `delta`, every
+//     `priority`, every `debt_score` and the whole trend are produced by
+//     `scoring.ts` under the **Balanced** profile, because the contract says
+//     they are derived on read and never stored (FR-21). Typing a priority here
+//     would be inventing a number the backend would immediately contradict.
+// ────────────────────────────────────────────────────────────────────────────
 import type {
   Branch,
   CategoryBreakdownItem,
@@ -10,31 +27,58 @@ import type {
   Repo,
   ScanSummary,
   ScoreProfile,
+  Session,
   TreeNode,
-} from "@/lib/types";
+} from "@/lib/types"
+import { DEMO_REPO_ID } from "@/lib/demo"
+import { buildHealthReport, scanHistoryFor, SNAPSHOTS } from "./scoring"
 
-export const mockRepos: Repo[] = [
-  {
-    id: "demo-repo",
-    name: "acme-payments",
-    owner: "acme",
-    visibility: "public",
-    url: "https://github.com/acme/acme-payments",
-    default_branch: "main",
-    connected_at: "2026-07-10T09:00:00.000Z",
-    latest_health: { score: 72, grade: "B", delta: 3 },
-  },
-  {
-    id: "web-store",
-    name: "web-store",
-    owner: "acme",
-    visibility: "public",
-    url: "https://github.com/acme/web-store",
-    default_branch: "main",
-    connected_at: "2026-07-12T14:20:00.000Z",
-    latest_health: { score: 54, grade: "C", delta: -4 },
-  },
-];
+export { DEMO_REPO_ID }
+
+// ── identifiers ─────────────────────────────────────────────────────────────
+
+// DEMO_REPO_ID is defined in `@/lib/demo` and re-exported above: the app rail
+// needs it and must not import the mocks. One constant, two consumers.
+export const SECOND_REPO_ID = "b4f0a9d2-3c81-4e57-9f26-1d5a8b7c0e34"
+/** Connected but never scanned — the projects list must say so, not show a zero. */
+export const UNSCANNED_REPO_ID = "e3a1c58f-2b64-4d09-8a17-5c0f9e2d6b48"
+
+/**
+ * How much debt each repository carries, relative to the demo one. A mock needs
+ * *some* per-repo variation or every project shows the same score; this is the
+ * one knob that produces it, and it is mock-only — no contract field.
+ */
+export const REPO_DEBT_SCALE: Record<string, number> = {
+  [DEMO_REPO_ID]: 1.0,
+  [SECOND_REPO_ID]: 1.7,
+}
+
+/** A non-default branch carries more debt than the trunk. Also mock-only. */
+export const FEATURE_BRANCH_DEBT_SCALE = 1.2
+
+// ── auth ────────────────────────────────────────────────────────────────────
+
+/**
+ * Only `user_id` and `workspace_id` are guaranteed by the contract; the rest is
+ * display detail an identity provider may simply not have. `mockSessionMinimal`
+ * exists so the "no name, no email, no avatar" fallback is a path something
+ * actually exercises rather than a branch nobody has ever rendered.
+ */
+export const mockSession: Session = {
+  user_id: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
+  email: "janidu@example.com",
+  name: "Janidu Pabasara",
+  avatar_url: "https://avatars.githubusercontent.com/u/1024?v=4",
+  identity_provider: "github",
+}
+
+export const mockSessionMinimal: Session = {
+  user_id: "2c4a6e80-1b3d-4f57-9a80-c1d2e3f4a5b6",
+  workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
+}
+
+// ── branches ────────────────────────────────────────────────────────────────
 
 export const mockBranches: Branch[] = [
   {
@@ -49,245 +93,21 @@ export const mockBranches: Branch[] = [
     head_commit_sha: "b2c3d4e5f60718293a4b5c6d7e8f90123456789a",
     head_commit_at: "2026-07-21T11:05:00.000Z",
   },
-];
+  {
+    // Both nullable fields exercised: a branch GitHub has not given us a head
+    // commit for. The top nav must not print "null" or crash on the substring.
+    name: "release/2026.08",
+    is_default: false,
+    head_commit_sha: null,
+    head_commit_at: null,
+  },
+]
 
-// One critical hardcoded secret + one medium SATD TODO + code-design + a doc gap,
-// matching the backend worked example (payment_service). Varied severities so the
-// list + badges show every colour.
-export const mockFindings: Finding[] = [
-  {
-    fingerprint: "f-secret-1",
-    source: "rule",
-    category: "security",
-    severity: "critical",
-    file: "src/payments/payment_service.ts",
-    line: 42,
-    symbol: "charge()",
-    reason: "Hardcoded Stripe API key detected — move it to an environment variable.",
-    status: "open",
-    priority: 40.8,
-    pinned_by_floor: false,
-    rule_id: "hardcoded-secret",
-  },
-  {
-    fingerprint: "f-long-1",
-    source: "rule",
-    category: "code-design",
-    severity: "high",
-    file: "src/orders/order_controller.ts",
-    line: 5,
-    symbol: "OrderController",
-    reason: "order_controller.ts is 940 lines long (limit 800) — consider splitting the module.",
-    status: "open",
-    priority: 12.0,
-    pinned_by_floor: false,
-    rule_id: "large-file",
-    metric_value: 940,
-    threshold: 800,
-  },
-  {
-    fingerprint: "f-ccn-1",
-    source: "rule",
-    category: "code-design",
-    severity: "medium",
-    file: "src/payments/payment_service.ts",
-    line: 58,
-    symbol: "charge()",
-    reason: "charge() has cyclomatic complexity 18, over the limit of 15 — split it into smaller functions.",
-    status: "open",
-    priority: 9.3,
-    pinned_by_floor: false,
-    rule_id: "complex-function",
-    metric_value: 18,
-    threshold: 15,
-  },
-  {
-    fingerprint: "f-todo-1",
-    source: "satd",
-    category: "code-design",
-    severity: "medium",
-    file: "src/payments/payment_service.ts",
-    line: 12,
-    symbol: "module",
-    reason: "Self-admitted debt: 'TODO: temporary hack until v2 ships' — classified as code-design.",
-    status: "open",
-    priority: 5.1,
-    pinned_by_floor: false,
-  },
-  {
-    fingerprint: "f-doc-1",
-    source: "satd",
-    category: "documentation",
-    severity: "low",
-    file: "src/lib/utils.ts",
-    line: 3,
-    symbol: "formatDate()",
-    reason: "Self-admitted debt: 'FIXME: document the timezone handling' — classified as documentation.",
-    status: "open",
-    priority: 1.5,
-    pinned_by_floor: false,
-  },
-];
-
-// A tree with low/medium/high health_score nodes so the heat map shows red/amber/green.
-export const mockTree: TreeNode[] = [
-  {
-    path: "src",
-    name: "src",
-    type: "folder",
-    health_score: 68,
-    grade: "B",
-    debt_score: 40,
-    risk_score: 0.4,
-    children: [
-      {
-        path: "src/payments",
-        name: "payments",
-        type: "folder",
-        health_score: 34,
-        grade: "E",
-        debt_score: 61,
-        risk_score: 0.78,
-        children: [
-          {
-            path: "src/payments/payment_service.ts",
-            name: "payment_service.ts",
-            type: "file",
-            health_score: 28,
-            grade: "E",
-            debt_score: 61,
-            risk_score: 0.78,
-          },
-          {
-            path: "src/payments/stripe_client.ts",
-            name: "stripe_client.ts",
-            type: "file",
-            health_score: 74,
-            grade: "B",
-            debt_score: 9,
-            risk_score: 0.22,
-          },
-        ],
-      },
-      {
-        path: "src/orders",
-        name: "orders",
-        type: "folder",
-        health_score: 52,
-        grade: "C",
-        debt_score: 22,
-        risk_score: 0.5,
-        children: [
-          {
-            path: "src/orders/order_controller.ts",
-            name: "order_controller.ts",
-            type: "file",
-            health_score: 48,
-            grade: "D",
-            debt_score: 22,
-            risk_score: 0.55,
-          },
-        ],
-      },
-      {
-        path: "src/lib",
-        name: "lib",
-        type: "folder",
-        health_score: 88,
-        grade: "A",
-        debt_score: 3,
-        risk_score: 0.1,
-        children: [
-          {
-            path: "src/lib/utils.ts",
-            name: "utils.ts",
-            type: "file",
-            health_score: 85,
-            grade: "A",
-            debt_score: 3,
-            risk_score: 0.12,
-          },
-        ],
-      },
-    ],
-  },
-];
-
-const mockHistory: HealthPoint[] = [
-  { t: "2026-06-20T00:00:00.000Z", score: 61, commit_sha: "1111111" },
-  { t: "2026-06-30T00:00:00.000Z", score: 64 },
-  { t: "2026-07-08T00:00:00.000Z", score: 66 },
-  { t: "2026-07-15T00:00:00.000Z", score: 69 },
-  { t: "2026-07-22T00:00:00.000Z", score: 72 },
-];
-
-const mockCategoryBreakdown: CategoryBreakdownItem[] = [
-  { category: "code-design", count: 3, debt: 21 },
-  { category: "security", count: 1, debt: 40 },
-  { category: "documentation", count: 1, debt: 2 },
-];
-
-export const mockHealthReport: HealthReport = {
-  snapshot_id: "scan-2026-07-22",
-  repo_id: "demo-repo",
-  branch: "main",
-  commit_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
-  scanned_at: "2026-07-22T18:35:00.000Z",
-  health_score: 72,
-  grade: "B",
-  delta: 3,
-  profile: "Balanced",
-  red_issue_count: 2, // critical + high
-  history: mockHistory,
-  tree: mockTree,
-  file_scores: [
-    { file: "src/payments/payment_service.ts", debt_score: 61, risk_score: 0.78 },
-    { file: "src/orders/order_controller.ts", debt_score: 22, risk_score: 0.55 },
-    { file: "src/lib/utils.ts", debt_score: 3, risk_score: 0.12 },
-  ],
-  findings: mockFindings,
-  category_breakdown: mockCategoryBreakdown,
-};
-
-export const mockScanHistory: ScanSummary[] = [
-  {
-    snapshot_id: "snap-2026-07-22",
-    scan_id: "scan-2026-07-22",
-    branch: "main",
-    commit_sha: "a1b2c3d",
-    scanned_at: "2026-07-22T18:35:00.000Z",
-    health_score: 72,
-    grade: "B",
-    delta: 3,
-    finding_count: 5,
-  },
-  {
-    snapshot_id: "snap-2026-07-15",
-    scan_id: "scan-2026-07-15",
-    branch: "main",
-    commit_sha: "9f8e7d6",
-    scanned_at: "2026-07-15T10:00:00.000Z",
-    health_score: 69,
-    grade: "B",
-    delta: 3,
-    finding_count: 6,
-  },
-  {
-    snapshot_id: "snap-2026-07-08",
-    scan_id: "scan-2026-07-08",
-    branch: "main",
-    commit_sha: "5c4b3a2",
-    scanned_at: "2026-07-08T10:00:00.000Z",
-    health_score: 66,
-    grade: "C",
-    delta: 2,
-    finding_count: 7,
-  },
-];
+// ── profiles ────────────────────────────────────────────────────────────────
 
 export const mockProfiles: ScoreProfile[] = [
   {
-    id: "balanced",
+    id: "5f2b8c14-9d63-4a07-b1e8-3c4d5e6f7a80",
     name: "Balanced",
     weights: {
       security: 1.0,
@@ -298,10 +118,10 @@ export const mockProfiles: ScoreProfile[] = [
     },
     trust_s: 0.5,
     is_preset: true,
-    is_active: true, // Balanced is the default for every new workspace
+    is_active: true, // Balanced is seeded active for every new workspace
   },
   {
-    id: "security-first",
+    id: "6a3c9d25-0e74-4b18-c2f9-4d5e6f7a8b91",
     name: "Security-first",
     weights: {
       security: 3.0,
@@ -315,7 +135,7 @@ export const mockProfiles: ScoreProfile[] = [
     is_active: false,
   },
   {
-    id: "delivery-speed",
+    id: "7b4d0e36-1f85-4c29-d30a-5e6f7a8b9c02",
     name: "Delivery-speed",
     weights: {
       security: 1.5,
@@ -328,4 +148,101 @@ export const mockProfiles: ScoreProfile[] = [
     is_preset: true,
     is_active: false,
   },
-];
+]
+
+/** The workspace default. Every fixture below is scored under this. */
+export const balancedProfile =
+  mockProfiles.find((p) => p.is_active) ?? mockProfiles[0]
+
+// ── the dashboard payload ───────────────────────────────────────────────────
+
+/**
+ * The report for one repo + branch, under Balanced. `handlers.ts` calls the same
+ * builder with the *live* active profile, which is what makes applying a profile
+ * visibly re-rank the Refactor-First list.
+ */
+export function reportFor(
+  repoId: string,
+  branch: string,
+  isDefaultBranch: boolean,
+  profile: ScoreProfile = balancedProfile,
+  snapshotId?: string,
+): HealthReport {
+  const branchInfo = mockBranches.find((b) => b.name === branch)
+  return buildHealthReport({
+    repoId,
+    branch,
+    commitSha: branchInfo?.head_commit_sha ?? SNAPSHOTS[SNAPSHOTS.length - 1].commit_sha,
+    debtScale:
+      (REPO_DEBT_SCALE[repoId] ?? 1) *
+      (isDefaultBranch ? 1 : FEATURE_BRANCH_DEBT_SCALE),
+    profile,
+    snapshotId,
+  })
+}
+
+// ── projects ────────────────────────────────────────────────────────────────
+
+/**
+ * `latest_health` is a DERIVED hint, so it is computed rather than typed — and
+ * it is **absent** on `octo-cli`, which has never been scanned. Absent is not
+ * the same as a score of zero, and the projects list renders the two
+ * differently ("Not scanned yet" versus a grade).
+ */
+function latestHealthFor(repoId: string) {
+  const report = reportFor(repoId, "main", true)
+  return { score: report.health_score, grade: report.grade, delta: report.delta }
+}
+
+export const mockRepos: Repo[] = [
+  {
+    id: DEMO_REPO_ID,
+    name: "acme-payments",
+    owner: "acme",
+    visibility: "public",
+    url: "https://github.com/acme/acme-payments",
+    default_branch: "main",
+    connected_at: "2026-07-10T09:00:00.000Z",
+    latest_health: latestHealthFor(DEMO_REPO_ID),
+  },
+  {
+    id: SECOND_REPO_ID,
+    name: "web-store",
+    owner: "acme",
+    visibility: "public",
+    url: "https://github.com/acme/web-store",
+    default_branch: "main",
+    connected_at: "2026-07-12T14:20:00.000Z",
+    latest_health: latestHealthFor(SECOND_REPO_ID),
+  },
+  {
+    id: UNSCANNED_REPO_ID,
+    name: "octo-cli",
+    owner: "acme",
+    // Private repositories cannot be CONNECTED in v1.0, but visibility is
+    // recorded and displayed from v1.0 (FR-3) — so the badge needs a private row
+    // to render at least once.
+    visibility: "private",
+    url: "https://github.com/acme/octo-cli",
+    default_branch: "trunk",
+    connected_at: "2026-08-19T07:45:00.000Z",
+    // no latest_health: connected, never successfully scanned
+  },
+]
+
+/** acme-payments @ main, under Balanced — what the demo dashboard shows. */
+export const mockHealthReport: HealthReport = reportFor(DEMO_REPO_ID, "main", true)
+
+// Convenience re-exports, so a component test can grab exactly the slice it
+// needs without reaching into the report and without a second source of truth.
+export const mockFindings: Finding[] = mockHealthReport.findings
+export const mockTree: TreeNode[] = mockHealthReport.tree
+export const mockHistory: HealthPoint[] = mockHealthReport.history
+export const mockCategoryBreakdown: CategoryBreakdownItem[] =
+  mockHealthReport.category_breakdown
+
+export const mockScanHistory: ScanSummary[] = scanHistoryFor(
+  balancedProfile,
+  "main",
+  1,
+)
