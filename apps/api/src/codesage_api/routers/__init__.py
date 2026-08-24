@@ -2,8 +2,12 @@ from fastapi import APIRouter
 
 from codesage_api.routers import auth, branches, health, profiles, projects, scans, system
 
-# No sign-in required. Only the two endpoints whose job is to create a session,
-# plus the liveness probe. These three, and nothing else, are marked public in
+# No sign-in required. The two endpoints whose job is to create a session, the
+# one whose job is to destroy it, and the liveness probe. Sign-out belongs here
+# because it must be idempotent: signing out twice, or after the idle timeout,
+# still has to clear the cookie, and demanding a live session before allowing you
+# to end one leaves the user holding a dead cookie with no way to drop it.
+# These four, and nothing else, are marked `security: []` in
 # docs/api/openapi.yaml — so the contract and the code agree.
 public_router = APIRouter(prefix="/api")
 public_router.include_router(auth.public_router)
