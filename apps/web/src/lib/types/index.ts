@@ -91,6 +91,21 @@ export interface ApiError {
   errors?: { field: string; detail: string }[]; // VALIDATION_FAILED only
 }
 
+// ── Session: who is signed in (GET /api/auth/session) ───────────────────────
+
+/**
+ * Only `user_id` and `workspace_id` are guaranteed. Everything else comes from
+ * the identity provider and may be absent — render a fallback, never assume.
+ */
+export interface Session {
+  user_id: string;
+  workspace_id: string;
+  email?: string | null;
+  name?: string | null;
+  avatar_url?: string | null;
+  identity_provider?: string | null;
+}
+
 // ── Finding: one row in the Refactor-First list ─────────────────────────────
 
 export interface Finding {

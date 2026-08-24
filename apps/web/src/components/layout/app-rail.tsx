@@ -1,7 +1,8 @@
 "use client"; // uses usePathname → must be a Client Component
 
+import { useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   FolderGit2,
   LayoutDashboard,
@@ -24,6 +25,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { ApiRequestError } from "@/lib/api/client";
+import { useSession } from "@/hooks/use-session";
 
 type NavItem = {
   href: string;
@@ -72,6 +75,17 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export function AppRail() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session, error } = useSession();
+
+  // The API is the actual security boundary (SEC-10) — this is a UX fallback so
+  // a signed-out visitor is not left staring at a shell with nothing on it,
+  // whether or not the session has simply expired underneath them.
+  useEffect(() => {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      router.push("/login");
+    }
+  }, [error, router]);
 
   return (
     <Sidebar collapsible="icon">
@@ -102,6 +116,16 @@ export function AppRail() {
 
       <SidebarFooter>
         <SidebarMenu>
+          {session ? (
+            <SidebarMenuItem>
+              <div
+                className="text-muted-foreground truncate px-2 py-1.5 text-xs"
+                title={session.email ?? undefined}
+              >
+                {session.name ?? session.email ?? "Signed in"}
+              </div>
+            </SidebarMenuItem>
+          ) : null}
           <SidebarMenuItem>
             {/*
               A form the browser submits, not a fetch — and that is the fix.
