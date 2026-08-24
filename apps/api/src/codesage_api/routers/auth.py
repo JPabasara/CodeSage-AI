@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
+import uuid
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -19,8 +20,9 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
+from codesage_api.db.models import User
 from codesage_api.db.session import SessionLocal
-from codesage_api.deps import get_current_user_id, get_db
+from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
 from codesage_api.errors import MisconfiguredSignIn
 from codesage_api.schemas.auth import SessionOut
 from codesage_api.services import auth as auth_service
@@ -149,11 +151,25 @@ def _back_to_login(reason: str) -> RedirectResponse:
 
 @router.get("/session", response_model=SessionOut)
 def current_user(
-    user_id=Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
     db: DbSession = Depends(get_db),
 ) -> SessionOut:
-    """Who is signed in. The only auth endpoint the frontend calls with fetch."""
-    raise NotImplementedError
+    """Who is signed in. The only auth endpoint the frontend calls with fetch.
+
+    `user_id` and `workspace_id` are already proven by `get_current_user_id` — a
+    request that reached this line has a valid session row naming both. The one
+    piece still to fetch is the display info that lives on the user row itself.
+    """
+    user = db.get_one(User, user_id)
+    return SessionOut(
+        user_id=str(user_id),
+        workspace_id=str(workspace_id),
+        email=user.email,
+        name=user.display_name,
+        avatar_url=user.avatar_url,
+        identity_provider=user.identity_provider,
+    )
 
 
 def _post_logout_redirect() -> str:
