@@ -62,8 +62,14 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
     texts = [c.text for c in body.comments]
     preds = model_info.artifact.predict(texts)
 
+    if hasattr(model_info.artifact, "predict_proba"):
+        probs = model_info.artifact.predict_proba(texts)
+        confidences = probs.max(axis=1)
+    else:
+        confidences = [1.0] * len(texts)
+
     predictions = []
-    for comment, pred in zip(body.comments, preds):
+    for comment, pred, conf in zip(body.comments, preds, confidences):
         is_debt = (pred != "non_debt")
         category = pred if is_debt else None
         predictions.append(
@@ -71,7 +77,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
                 id=comment.id,
                 is_debt=is_debt,
                 category=category,
-                confidence=1.0,
+                confidence=float(conf),
             )
         )
 

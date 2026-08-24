@@ -52,8 +52,15 @@ def load_satd_model() -> LoadedModel:
     import joblib
     model_path = artifact_dir() / "satd_v1.joblib"
     if model_path.exists():
-        pipeline = joblib.load(model_path)
-        return LoadedModel(name="satd_classifier", version="v1.0", artifact=pipeline)
+        loaded = joblib.load(model_path)
+        if isinstance(loaded, dict) and "pipeline" in loaded:
+            return LoadedModel(
+                name="satd_classifier", 
+                version=loaded.get("version", "v1.0"), 
+                artifact=loaded["pipeline"]
+            )
+        else:
+            return LoadedModel(name="satd_classifier", version="v1.0", artifact=loaded)
 
     return LoadedModel(name="satd_classifier", version="v1.0", artifact=_FallbackPipeline())
 
