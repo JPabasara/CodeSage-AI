@@ -145,10 +145,10 @@ def test_all_satd_categories():
     predictions = {p["id"]: p for p in data["predictions"]}
 
     assert predictions["cat_doc"]["is_debt"] is True
-    assert predictions["cat_doc"]["category"] in ["documentation_debt", "code/design_debt"]
+    assert predictions["cat_doc"]["category"] in ["documentation", "code-design"]
 
     assert predictions["cat_test"]["is_debt"] is True
-    assert predictions["cat_test"]["category"] in ["test_debt", "code/design_debt"]
+    assert predictions["cat_test"]["category"] in ["test", "code-design"]
 
 
 def test_security_category_never_predicted():

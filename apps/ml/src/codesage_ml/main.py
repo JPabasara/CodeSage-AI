@@ -71,7 +71,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
     predictions = []
     for comment, pred, conf in zip(body.comments, preds, confidences):
         is_debt = (pred != "non_debt")
-        category = pred if is_debt else None
+        category = DATASET_TO_CATEGORY.get(pred, pred) if is_debt else None
         predictions.append(
             CommentPrediction(
                 id=comment.id,
