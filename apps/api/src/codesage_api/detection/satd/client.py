@@ -11,10 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codesage_api.extractors.comments import ExtractedComment
-from codesage_api.scoring.enums import Category
-
-
 import httpx
 
 from codesage_api.config import get_settings
@@ -22,16 +18,6 @@ from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.scoring.enums import Category
 
-CATEGORY_MAP: dict[str, Category] = {
-    "code/design_debt": Category.CODE_DESIGN,
-    "code-design": Category.CODE_DESIGN,
-    "requirement_debt": Category.REQUIREMENT,
-    "requirement": Category.REQUIREMENT,
-    "documentation_debt": Category.DOCUMENTATION,
-    "documentation": Category.DOCUMENTATION,
-    "test_debt": Category.TEST,
-    "test": Category.TEST,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,28 +52,27 @@ def classify(comments: list[ExtractedComment]) -> list[SATDResult]:
     try:
         response = httpx.post(url, json=payload, timeout=30.0)
         response.raise_for_status()
-    except (httpx.HTTPError, Exception) as exc:
-        raise MLServiceUnavailable(f"Failed to connect to ML service: {exc}") from exc
+        data = response.json()
+        predictions = data.get("predictions", [])
 
-    data = response.json()
-    predictions = data.get("predictions", [])
+        results: list[SATDResult] = []
+        for pred in predictions:
+            cid = pred["id"]
+            comment = comment_map[cid]
+            is_debt = pred["is_debt"]
+            cat_str = pred.get("category")
+            category = Category(cat_str) if (is_debt and cat_str) else None
+            confidence = float(pred.get("confidence", 1.0))
 
-    results: list[SATDResult] = []
-    for pred in predictions:
-        cid = pred["id"]
-        comment = comment_map[cid]
-        is_debt = pred["is_debt"]
-        cat_str = pred.get("category")
-        category = CATEGORY_MAP.get(cat_str) if cat_str else None
-        confidence = float(pred.get("confidence", 1.0))
-
-        results.append(
-            SATDResult(
-                comment=comment,
-                is_debt=is_debt,
-                category=category,
-                confidence=confidence,
+            results.append(
+                SATDResult(
+                    comment=comment,
+                    is_debt=is_debt,
+                    category=category,
+                    confidence=confidence,
+                )
             )
-        )
 
-    return results
+        return results
+    except Exception as exc:
+        raise MLServiceUnavailable(f"Failed to communicate with ML service: {exc}") from exc

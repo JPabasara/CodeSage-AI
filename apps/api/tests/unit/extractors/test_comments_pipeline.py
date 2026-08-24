@@ -48,7 +48,7 @@ def test_end_to_end_comment_extraction_to_classification():
         ExtractedComment(file_path="Account.java", line=2, text="// TODO: fix memory leak when closing socket")
     ]
 
-    # Mock HTTP call to ML inference container
+    # Mock HTTP call to ML inference container returning canonical category
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
@@ -56,11 +56,11 @@ def test_end_to_end_comment_extraction_to_classification():
             {
                 "id": "c_0",
                 "is_debt": True,
-                "category": "code/design_debt",
-                "confidence": 1.0,
+                "category": "code-design",
+                "confidence": 0.95,
             }
         ],
-        "model_version": "v1.0",
+        "model_version": "satd-1.0.0",
     }
 
     with patch("httpx.post", return_value=mock_response):
@@ -72,4 +72,34 @@ def test_end_to_end_comment_extraction_to_classification():
     assert results[0].comment == comments[0]
     assert results[0].is_debt is True
     assert results[0].category == Category.CODE_DESIGN
-    assert results[0].confidence == 1.0
+    assert results[0].confidence == 0.95
+
+
+def test_satd_client_handles_malformed_response_gracefully():
+    """Verify client raises MLServiceUnavailable on malformed JSON or payload."""
+    from codesage_api.errors import MLServiceUnavailable
+
+    comments = [
+        ExtractedComment(file_path="Account.java", line=2, text="// TODO: fix memory leak")
+    ]
+
+    # Case 1: Malformed JSON that raises ValueError / JSONDecodeError
+    mock_bad_json = MagicMock()
+    mock_bad_json.status_code = 200
+    mock_bad_json.json.side_effect = ValueError("Invalid JSON")
+
+    with patch("httpx.post", return_value=mock_bad_json):
+        with pytest.raises(MLServiceUnavailable):
+            classify(comments)
+
+    # Case 2: Missing expected fields in prediction object
+    mock_bad_schema = MagicMock()
+    mock_bad_schema.status_code = 200
+    mock_bad_schema.json.return_value = {
+        "predictions": [{"malformed_key": 123}]
+    }
+
+    with patch("httpx.post", return_value=mock_bad_schema):
+        with pytest.raises(MLServiceUnavailable):
+            classify(comments)
+
