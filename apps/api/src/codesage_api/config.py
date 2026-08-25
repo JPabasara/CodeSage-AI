@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     session_absolute_hours: int = 12
     # Cookie is sent over HTTPS only. Set to false for plain http on localhost.
     cookie_secure: bool = True
+    # Which hosts the browser sends the session cookie to.
+    #
+    # Empty means HOST-ONLY: the cookie belongs to whichever host set it, and to
+    # nothing else. That is right for localhost, where the API and the frontend
+    # share `localhost`, and wrong in production, where the API is on
+    # `api.codesageai.dev` and the site is on `codesageai.dev`. A host-only
+    # cookie there is invisible to the frontend, including to `middleware.ts`,
+    # which then bounces every signed-in visitor straight back to /login.
+    #
+    # Set it to the PARENT domain in production - ".codesageai.dev" - so both
+    # hosts receive it. Buying one domain for both halves is what makes this
+    # possible; it is also what lets SameSite stay Lax.
+    cookie_domain: str = ""
 
     # Signs the short-lived cookie that carries `state` and `code_verifier`
     # between the redirect out to Asgardeo and the redirect back.
