@@ -35,7 +35,7 @@ openapi: 3.1.0
 
 info:
   title: Code Sage AI API
-  version: 1.0.0
+  version: 1.0.1
   summary: Technical-debt analytics for a connected Git repository.
   description: |
     The REST surface behind the Code Sage AI dashboard.
