@@ -155,11 +155,9 @@ def test_a_server_error_from_asgardeo_is_an_outage(
 class _Capture(logging.Handler):
     """Collect records straight off one logger.
 
-    NOT pytest's `caplog`, deliberately. `caplog` hangs its handler on the ROOT
-    logger, and `configure_logging` does `root.handlers = [handler]`, which
-    throws it away. `create_app()` calls that, so whether caplog sees anything
-    depends on which tests ran first: green locally, red on CI, for no reason
-    visible in the test.
+    NOT pytest's `caplog`. `caplog` hangs its handler on the ROOT logger, and
+    `configure_logging` does `root.handlers = [handler]`, which throws it away.
+    `create_app()` calls that, so what caplog sees depends on test order.
 
     Listening to the one logger under test has no such ordering problem.
     """
@@ -174,16 +172,26 @@ class _Capture(logging.Handler):
 
 @pytest.fixture
 def sign_in_logs() -> "Iterator[_Capture]":
+    """Listen to the sign-in logger, whatever else has happened to logging.
+
+    `disabled` is reset explicitly. Alembic's `env.py` runs `fileConfig`, which
+    used to silence every `codesage_api.*` logger for the rest of the process,
+    so this test passed on a laptop with no Docker and failed on CI, where the
+    integration tests run a migration first. `env.py` no longer does that, and
+    this line means no future logging change can make this test lie either.
+    """
     logger = logging.getLogger("codesage_api.services.auth")
     capture = _Capture()
-    previous_level = logger.level
+    previous_level, previously_disabled = logger.level, logger.disabled
     logger.setLevel(logging.WARNING)
+    logger.disabled = False
     logger.addHandler(capture)
     try:
         yield capture
     finally:
         logger.removeHandler(capture)
         logger.setLevel(previous_level)
+        logger.disabled = previously_disabled
 
 
 def test_the_refusal_is_logged_without_leaking_the_body(
