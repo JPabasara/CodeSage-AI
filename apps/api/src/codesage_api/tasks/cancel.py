@@ -21,6 +21,10 @@ to end. The gain is that "cancelled" always means the database is in a clean sta
 
 from __future__ import annotations
 
+import shutil
+
+from codesage_api.tasks import progress
+
 
 class ScanCancelled(Exception):
     """Raised at a stage boundary when the cancel flag is set.
@@ -35,7 +39,8 @@ def check(attempt_id: str) -> None:
 
     Called between stages, never inside finalization.
     """
-    raise NotImplementedError
+    if progress.is_cancel_requested(attempt_id):
+        raise ScanCancelled
 
 
 def cleanup(attempt_id: str, clone_dir: str | None) -> None:
@@ -45,4 +50,6 @@ def cleanup(attempt_id: str, clone_dir: str | None) -> None:
     cancelled** — a worker that leaked one clone per cancelled scan would fill its
     disk and take out every subsequent scan on that container.
     """
-    raise NotImplementedError
+    if clone_dir is not None:
+        shutil.rmtree(clone_dir, ignore_errors=True)
+    progress.clear(attempt_id)
