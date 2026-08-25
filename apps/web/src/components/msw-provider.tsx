@@ -10,7 +10,10 @@ import { useEffect, useState } from "react"
 // fetch() before the worker is intercepting, and that request would escape to
 // the real network (and fail). We wait until the worker is ready, then render.
 export function MswProvider({ children }: { children: React.ReactNode }) {
-  const on = process.env.NEXT_PUBLIC_API_MOCKING === "enabled"
+  // "enabled" mocks the data endpoints; "e2e" additionally mocks auth so a
+  // headless browser never has to complete an OIDC flow. See lib/mocks/browser.
+  const mocking = process.env.NEXT_PUBLIC_API_MOCKING
+  const on = mocking === "enabled" || mocking === "e2e"
 
   // When mocking is off, there is nothing to wait for → render immediately.
   const [ready, setReady] = useState(!on)

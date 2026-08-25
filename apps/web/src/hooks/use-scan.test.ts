@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 
 import { useScan } from "./use-scan"
+import { DEMO_REPO_ID } from "@/lib/mocks/fixtures"
 
 // The scan is timer-driven (poll every 600ms), so drive it with FAKE timers for
 // determinism. The MSW Node server + resetMockBackend() already run in
@@ -14,7 +15,7 @@ afterEach(() => vi.useRealTimers())
 
 test("start → polls until done, then calls onComplete once", async () => {
   const onComplete = vi.fn()
-  const { result } = renderHook(() => useScan("demo-repo", onComplete))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID, onComplete))
 
   await act(async () => {
     await result.current.scan("main")
@@ -32,7 +33,7 @@ test("start → polls until done, then calls onComplete once", async () => {
 })
 
 test("stop only REQUESTS cancellation - the scan is still running", async () => {
-  const { result } = renderHook(() => useScan("demo-repo"))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID))
 
   await act(async () => {
     await result.current.scan("main")
@@ -49,7 +50,7 @@ test("stop only REQUESTS cancellation - the scan is still running", async () => 
 })
 
 test("the next poll after stop reports cancelled, never idle or done", async () => {
-  const { result } = renderHook(() => useScan("demo-repo"))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID))
 
   await act(async () => {
     await result.current.scan("main")
@@ -66,7 +67,7 @@ test("the next poll after stop reports cancelled, never idle or done", async () 
 })
 
 test("polling stops once a scan is cancelled", async () => {
-  const { result } = renderHook(() => useScan("demo-repo"))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID))
 
   await act(async () => {
     await result.current.scan("main")
@@ -87,7 +88,7 @@ test("polling stops once a scan is cancelled", async () => {
 
 test("stop pressed during finalize is too late - the scan still completes", async () => {
   const onComplete = vi.fn()
-  const { result } = renderHook(() => useScan("demo-repo", onComplete))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID, onComplete))
 
   await act(async () => {
     await result.current.scan("main")
@@ -115,7 +116,7 @@ test("stop pressed during finalize is too late - the scan still completes", asyn
 })
 
 test("stopping is true only between the Stop press and the terminal phase", async () => {
-  const { result } = renderHook(() => useScan("demo-repo"))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID))
 
   await act(async () => {
     await result.current.scan("main")
@@ -137,7 +138,7 @@ test("stopping is true only between the Stop press and the terminal phase", asyn
 })
 
 test("stopping is released when a too-late Stop ends in done", async () => {
-  const { result } = renderHook(() => useScan("demo-repo"))
+  const { result } = renderHook(() => useScan(DEMO_REPO_ID))
 
   await act(async () => {
     await result.current.scan("main")
