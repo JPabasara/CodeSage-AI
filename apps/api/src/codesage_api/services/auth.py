@@ -10,6 +10,7 @@ a random id. Two things follow from that, and both are the point:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -28,8 +29,32 @@ from codesage_api.db.models import (
     Workspace,
 )
 from codesage_api.db.rls import set_workspace_context
-from codesage_api.errors import NotAuthenticated, UpstreamUnavailable
+from codesage_api.errors import (
+    NotAuthenticated,
+    SignInFailed,
+    UpstreamUnavailable,
+)
 from codesage_api.scoring.config_loader import get_presets
+
+logger = logging.getLogger(__name__)
+
+# The OAuth error codes that mean "the browser's request was bad", not "Asgardeo
+# is down". Both are terminal for this attempt and neither is worth retrying, so
+# they must not be dressed up as a temporary outage.
+_CLIENT_SIDE_GRANT_ERRORS = {"invalid_grant", "invalid_request", "expired_token"}
+
+
+def _oauth_error(response: httpx.Response) -> str | None:
+    """The `error` field of an OAuth error body, if there is one.
+
+    Only this field is read, never the whole body: an error body can echo the
+    client secret back, and a log is as bad a place for that as a response is.
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    return payload.get("error") if isinstance(payload, dict) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +76,7 @@ def exchange_code_for_identity(code: str, code_verifier: str) -> IdentityClaims:
     when it returns. Nothing about it ever reaches the browser (SEC-09).
     """
     settings = get_settings()
+    stage = "token"
     try:
         with httpx.Client(timeout=15.0) as client:
             token_response = client.post(
@@ -66,16 +92,38 @@ def exchange_code_for_identity(code: str, code_verifier: str) -> IdentityClaims:
             token_response.raise_for_status()
             access_token = token_response.json()["access_token"]
 
+            stage = "userinfo"
             user_response = client.get(
                 f"{settings.asgardeo_base_url}/oauth2/userinfo",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             user_response.raise_for_status()
             claims = user_response.json()
+    except httpx.HTTPStatusError as exc:
+        # Asgardeo answered, and said no. WHICH no matters: a spent or expired
+        # code is the browser's problem and retrying cannot help, while a 5xx
+        # really is an outage. Answering 503 to both sent us hunting a service
+        # failure that was never happening.
+        error = _oauth_error(exc.response)
+        logger.warning(
+            "sign-in %s call rejected by the identity provider: HTTP %s, oauth error %r",
+            stage,
+            exc.response.status_code,
+            error,
+        )
+        if error in _CLIENT_SIDE_GRANT_ERRORS:
+            raise SignInFailed from exc
+        raise UpstreamUnavailable from exc
     except (httpx.HTTPError, KeyError, ValueError) as exc:
-        # Deliberately swallows the upstream detail: it can carry the client
-        # secret back in an error body, and SEC-16 keeps that out of our
-        # responses. The full exception is still logged.
+        # Could not reach Asgardeo at all, or it answered with something that was
+        # not the shape we expect. The exception TYPE is safe to log; the body is
+        # not, because an error body can echo the client secret back (SEC-16).
+        logger.warning(
+            "sign-in %s call failed before a usable answer: %s: %s",
+            stage,
+            type(exc).__name__,
+            exc,
+        )
         raise UpstreamUnavailable from exc
 
     return IdentityClaims(
