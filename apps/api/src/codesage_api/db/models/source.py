@@ -3,7 +3,15 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Double, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Double,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -15,7 +23,7 @@ if TYPE_CHECKING:
     from codesage_api.db.models.ml import BugRiskPrediction, SATDPrediction
 
 
-def values(enum: type[CodeSymbolType] | type[FileTreeNodeType]) -> list[str]:
+def values(enum: type[CodeSymbolType | FileTreeNodeType]) -> list[str]:
     return [item.value for item in enum]
 
 
@@ -75,7 +83,7 @@ class StaticMetric(UUIDPrimaryKey, Base):
 class ProcessMetric(UUIDPrimaryKey, Base):
     __tablename__ = "process_metric"
     source_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_file.id", ondelete="CASCADE"), unique=True)
-    churn: Mapped[float] = mapped_column(Double)
+    commits_90d: Mapped[int] = mapped_column(Integer)
     author_count: Mapped[int] = mapped_column(Integer)
     file_age: Mapped[float] = mapped_column(Double)
     recency: Mapped[float] = mapped_column(Double)

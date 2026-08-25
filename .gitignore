@@ -38,3 +38,5 @@ out/
 # ── Editors and operating systems ───────────────────────────────────────────
 # Claude Code local config (per-machine permission approvals, etc.) — not shared.
 .claude/
+# Third-party analyzer binaries are installed locally and copied into the worker image.
+apps/api/vendor/*.jar

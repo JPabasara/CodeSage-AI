@@ -1,36 +1,16 @@
-"""ScoringEngine — the pure function at the centre of the architecture.
-
-Stored findings + stored per-file facts + the active profile  →  every number the
-dashboard displays. Nothing here is ever written back (SRS FR-21).
-
-**Where this is called from.** The API process, on the READ path, every time the
-dashboard is requested. Never by a Celery worker: the write path ends at "persist
-the snapshot" (SAD Figure 5). The import-linter contract `workers never score` in
-pyproject.toml enforces that mechanically.
-
-**Why it is pure.** Four requirements collapse into this one property:
-
-  * FR-20 promises a profile change re-scores instantly with no re-scan. Only
-    possible if no score was stored in the first place.
-  * FR-21 keeps snapshots append-only, which the trend chart depends on. A stored
-    score would have to be UPDATEd when a weight moved, breaking that.
-  * SP-11 requires the scoring path to be exactly testable — this function runs
-    against the TC-11 fixture with no database at all.
-  * SP-8 keeps thresholds in configuration; a Python function reads config
-    naturally, while a SQL view would turn recalibration into a migration.
-
-**Why the arithmetic is in Python and not SQL.** The formula has five factors,
-bounded ranges and a visibility-floor override; expressed in SQL it becomes hard
-to read and harder to change. If read latency ever becomes a *measured* problem,
-the fix is to have Postgres pre-aggregate the per-(category, source) sums — at most
-5 × 2 = 10 groups — and still apply the weights here, keeping the formula in one
-testable place. SAD §9 states this explicitly as an optimisation to consider only
-on evidence; it is not part of the v1.0 design.
-"""
-
 from __future__ import annotations
-
-from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
+from codesage_api.scoring import formula
+from codesage_api.scoring.enums import Category
+from codesage_api.scoring.floor import apply_visibility_floor
+from codesage_api.scoring.models import (
+    CategoryBreakdownItem,
+    FileFacts,
+    Profile,
+    ScoredFile,
+    ScoredFinding,
+    ScoringFinding,
+    ScoringResult
+)
 
 
 def score(
@@ -39,35 +19,103 @@ def score(
     profile: Profile,
     kloc: float,
 ) -> ScoringResult:
-    """Derive priorities, file debt, health, grade and the category breakdown.
+    debt_by_file: dict[str, float] = {
+        file_path: 0.0 for file_path in file_facts
+    }
 
-    Args:
-        findings: stored OPEN findings for one snapshot. In v1.0 every finding is
-            open (FR-17c); the filter exists because FR-11 sums *open* priorities
-            and v1.1 will start moving findings off that status.
-        file_facts: per-file risk_score and commits_90d, keyed by path.
-        profile: the workspace's active profile, already clamped on write.
-        kloc: snapshot size, for the health denominator.
+    debt_by_category: dict[Category, float] = {
+        category: 0.0 for category in Category
+    }
 
-    Steps:
-        1. priority per finding                    → formula.finding_priority
-        2. Σ per file                              → file debt, then the tree tint
-        3. Σ over files ÷ (k × KLOC)               → repo health, then grade
-        4. group by category                       → the breakdown pie
-        5. pin critical security findings          → floor.apply_visibility_floor
+    count_by_category: dict[Category, int] = {
+        category: 0 for category in Category
+    }
 
-    A file present in `file_facts` but carrying no findings scores zero debt and
-    renders green, even at risk 0.95. That is required by FR-10: every point of
-    debt must trace to a finding a user can open. Risk stays visible as its own
-    badge rather than inventing debt with no clickable line.
-    """
-    raise NotImplementedError
+    scored_findings: list[ScoredFinding] = []
+
+    for finding in findings:
+        facts = file_facts[finding.file]
+
+        priority = formula.finding_priority(
+            finding=finding,
+            facts=facts,
+            profile=profile,
+        )
+
+        scored_findings.append(
+            ScoredFinding(
+                finding= finding,
+                priority= priority
+            )
+        )
 
 
-def aggregate_subtree(files: list[str], result: ScoringResult) -> float:
-    """Re-aggregate health for a folder from the file scores already derived.
+        debt_by_file[finding.file] += priority
+        debt_by_category[finding.category] += priority
+        count_by_category[finding.category] += 1
 
-    Drill-in is a sum over numbers that are already in memory — no re-scan, no
-    second query. Repo health is this same aggregation at the root.
-    """
-    raise NotImplementedError
+
+        scored_findings.sort(
+        key=lambda item: (
+            -item.priority,
+            item.finding.fingerprint,
+        )
+    )
+    scored_findings = apply_visibility_floor(scored_findings)
+
+    scored_files: list[ScoredFile] = []
+
+    for file_path, facts in sorted(file_facts.items()):
+        debt_score = debt_by_file[file_path]
+        file_kloc = facts.loc / 1000.0
+
+        file_health = formula.repo_health(
+            total_debt=debt_score,
+            kloc=file_kloc,
+        )
+
+        scored_files.append(
+            ScoredFile(
+                file=file_path,
+                debt_score=debt_score,
+                risk_score=facts.risk_score,
+                health_score=file_health,
+            )
+        )
+
+    category_breakdown = [
+          CategoryBreakdownItem(
+              category=category,
+              count=count_by_category[category],
+              debt=debt_by_category[category],
+          )
+          for category in Category
+      ]
+
+    total_debt = sum(debt_by_file.values())
+    health_score = formula.repo_health(
+          total_debt=total_debt,
+          kloc=kloc,
+      )
+    health_grade = formula.grade(health_score)
+
+    return ScoringResult(
+          findings=tuple(scored_findings),
+          files=tuple(scored_files),
+          breakdown=tuple(category_breakdown),
+          health_score=health_score,
+          grade=health_grade.value,
+      )
+
+
+def aggregate_subtree(
+    files: list[str],
+    result: ScoringResult,
+) -> float:
+    selected_files = set(files)
+
+    return sum(
+        scored_file.debt_score
+        for scored_file in result.files
+        if scored_file.file in selected_files
+    )
