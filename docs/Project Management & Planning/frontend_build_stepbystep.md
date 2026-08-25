@@ -1852,11 +1852,11 @@ export const metadata: Metadata = {
 | View | Loading | Empty | Error |
 |---|---|---|---|
 | Projects | ✅ 2 skeleton bars | ✅ copy exists in `ProjectList` | ⚠️ raw `error.message`, no retry |
-| Dashboard | ⚠️ 3 blocks, wrong shape (A4) | ❌ none | ⚠️ raw `error.message`, no retry (A5) |
+| Dashboard | ⚠️ 3 blocks, wrong shape (A4) | ✅ *fixed in 11.2a* — "No scans yet" + a reachable Scan button | ⚠️ raw `error.message`, no retry (A5) — but 404 now routes to the empty state (11.2a) |
 | Refactor-First list | n/a (parent) | ⚠️ "No findings for this filter." — same copy for *filtered-to-nothing* and *clean repo* | n/a |
 | File tree | n/a (parent) | ❌ none | n/a |
 | Card B (history) | n/a | ❌ none — an empty `history[]` renders an empty plot area | n/a |
-| Branch `Select` | ⚠️ shows a blank trigger while branches load | ❌ none | ❌ silent |
+| Branch `Select` | ✅ *fixed in 11.2a* — placeholder + disabled until branches land | ❌ none | ❌ silent |
 | Scan History / Profiles | — | — | — *(depends on 11.0's A/B choice)* |
 
 **a) Skeletons must be the *shape* of what's coming (A4).** *Why:* a skeleton's job is to reserve the layout so content doesn't jump when it lands. Three stacked bars replaced by a two-column grid is worse than no skeleton. Mirror the real grid:
@@ -1924,6 +1924,75 @@ Map the statuses you can actually produce (`404` → not found · `5xx` → "The
 
 **✅ Micro-check:** in DevTools set the network to *Offline* and reload `/projects` → error card + **Retry**; go back Online, click Retry → data. Visit `/dashboard/nope` → "We couldn't find that repository," not `404 Not Found`.
 **💾** `git commit -m "polish(web): loading/empty/error states + retry"`
+
+---
+
+### 11.2a — J-CR9: the never-scanned repository (the top nav must outlive the report)
+
+> **Raised by Chamodh, 25 Aug 2026, testing on `main`.** Connect a brand-new repository from the
+> Projects board, select it, and the dashboard opens blank — *and there is no top navigation panel,
+> so there is no way to start the first scan.* This is 11.2's matrix (`Dashboard · Empty · ❌ none`)
+> showing up as a hard dead end rather than a cosmetic gap, so it is fixed here rather than left to
+> the generic pass.
+
+**The defect, precisely.** `GET /api/repos/:id/health?branch=…` answers **404 `NOT_FOUND`** for a
+branch that has never been scanned. That is the contract's documented first-run state — *"the client
+renders the empty state, not an error"* — not a failure. But `DashboardView` rendered
+`<DashboardTopNav>` **inside** the success branch, after two early returns (`if (error)`,
+`if (loading || !report)`). So the 404 took the whole screen down, including the **Scan** button —
+the one control that would produce the snapshot the screen is waiting for. A closed loop: no
+snapshot → no nav → no scan → no snapshot.
+
+**The rule this establishes:** *chrome renders from the route, content renders from the data.* The
+top nav depends on `repoId` and `branches`, never on `report`. Only the body below it swaps.
+
+**Five edits, all frontend — no API file is touched (that endpoint is Chamodh's).**
+
+| # | File | Change |
+|---|---|---|
+| 1 | `components/dashboard/dashboard-view.tsx` | Hoist `<DashboardTopNav>` above the early returns; the four states (loading · never-scanned · error · report) become a `body()` below it |
+| 2 | `components/dashboard/dashboard-view.tsx` | Branch a 404 `NOT_FOUND` to an **empty state**, everything else to the error treatment |
+| 3 | `components/layout/dashboard-topnav.tsx` | `lastCommitSha` / `scannedAt` become optional → renders **"Never scanned"** instead of `Invalid Date` (and `shortSha(undefined)` no longer throws) |
+| 4 | `components/layout/dashboard-topnav.tsx` | Branch `Select` gets a placeholder and is disabled while `branches` is empty — 11.2's *"shows a blank trigger while branches load"* row |
+| 5 | `components/dashboard/dashboard-view.tsx` | `useScan(repoId, reload)` — pass `useHealthReport`'s `reload` as `onComplete` |
+
+**Why #5 belongs in the same change.** `useScan`'s docstring always said the dashboard passes
+`onComplete` "to refetch the health report (9.3)", but it was never wired and `reload` was
+destructured nowhere. Without it, fixes 1–4 give the user a Scan button that appears to do nothing:
+the scan runs, completes, and the empty state stays until a manual refresh. The first scan is
+exactly the case where nothing else would trigger a refetch, because the branch has not changed.
+
+```tsx
+// dashboard-view.tsx — the shape after the fix
+const { data: report, loading, error, reload } = useHealthReport(repoId, activeBranch)
+const { ... } = useScan(repoId, reload)                       // (5)
+const neverScanned = error instanceof ApiRequestError && error.code === "NOT_FOUND"   // (2)
+
+return (
+  <div className="flex h-full flex-col">
+    <DashboardTopNav … lastCommitSha={report?.commit_sha} scannedAt={report?.scanned_at} />  // (1)(3)
+    {body()}                                                  // loading | empty | error | report
+  </div>
+)
+```
+
+**Tests that lock it in** (`dashboard-view.test.tsx`, four new — 99 → 103):
+
+- a never-scanned repo still renders the nav, the **Scan** button and the branch `Select`
+- the empty state reads *"No scans yet"*, **not** the error copy
+- with no snapshot the nav reads *"Never scanned"*, never `Invalid Date`
+- a **500** still renders as an error — the empty state must not swallow real failures
+- finishing the first scan refetches and the empty state fills in *(this one fails if #5 is reverted — verified)*
+
+**✅ Micro-check:** connect a repository you have never scanned → the dashboard opens with the nav,
+the branch selector and a **Scan** button, over a *"No scans yet"* body. Press **Scan**; when it
+completes the dashboard populates with no page reload.
+**💾** `git commit -m "fix(web): keep the dashboard top nav above the report (J-CR9)"`
+
+> **Note for Phase 12 / Chamodh's endpoint.** The real `GET /repos/{id}/health` is still
+> `raise NotImplementedError` → **500**, so against the live API this renders the *error* state, not
+> the empty one. The frontend is correct as written; the empty state switches on the moment the
+> endpoint returns a proper **404** for an unscanned branch. Worth confirming when the two halves meet.
 
 ---
 
