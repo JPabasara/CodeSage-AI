@@ -20,6 +20,8 @@
 
 # next.js
 /.next/
+# the isolated build dir Playwright's dev server uses (see next.config.ts)
+/.next-e2e/
 /out/
 
 # production
@@ -37,6 +39,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …except the template. A new teammate cannot guess NEXT_PUBLIC_API_MOCKING's
+# three modes from an empty directory.
+!.env.example
 
 # vercel
 .vercel

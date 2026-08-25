@@ -1,13 +1,13 @@
 "use client"; // uses usePathname → must be a Client Component
 
+import { useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   FolderGit2,
   LayoutDashboard,
   History,
   SlidersHorizontal,
-  Users,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -20,17 +20,18 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { ApiRequestError } from "@/lib/api/client";
+import { DEMO_REPO_ID } from "@/lib/demo";
+import { useSession } from "@/hooks/use-session";
 
 type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   isActive: (pathname: string) => boolean;
-  badge?: string;
 };
 
 const NAV: NavItem[] = [
@@ -41,14 +42,16 @@ const NAV: NavItem[] = [
     isActive: (p) => p.startsWith("/projects"),
   },
   {
-    // hardcoded id until Phase 9 wires the actually-selected project
-    href: "/dashboard/demo-repo",
+    // Hardcoded until a project picker exists; the rail has no way to know which
+    // project you last opened. It is the demo repository's real id, so it points
+    // at something the mock (and later the API) will actually serve.
+    href: `/dashboard/${DEMO_REPO_ID}`,
     label: "Dashboard",
     icon: LayoutDashboard,
     isActive: (p) => p.startsWith("/dashboard") && !p.endsWith("/history"),
   },
   {
-    href: "/dashboard/demo-repo/history",
+    href: `/dashboard/${DEMO_REPO_ID}/history`,
     label: "Scan History",
     icon: History,
     isActive: (p) => p.endsWith("/history"),
@@ -59,19 +62,23 @@ const NAV: NavItem[] = [
     icon: SlidersHorizontal,
     isActive: (p) => p.startsWith("/profiles"),
   },
-  {
-    href: "/team",
-    label: "Team",
-    icon: Users,
-    badge: "v2",
-    isActive: (p) => p.startsWith("/team"),
-  },
 ];
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export function AppRail() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session, error } = useSession();
+
+  // The API is the actual security boundary (SEC-10) — this is a UX fallback so
+  // a signed-out visitor is not left staring at a shell with nothing on it,
+  // whether or not the session has simply expired underneath them.
+  useEffect(() => {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      router.push("/login");
+    }
+  }, [error, router]);
 
   return (
     <Sidebar collapsible="icon">
@@ -91,7 +98,6 @@ export function AppRail() {
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
-                    {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
                   </SidebarMenuItem>
                 );
               })}
@@ -102,6 +108,16 @@ export function AppRail() {
 
       <SidebarFooter>
         <SidebarMenu>
+          {session ? (
+            <SidebarMenuItem>
+              <div
+                className="text-muted-foreground truncate px-2 py-1.5 text-xs"
+                title={session.email ?? undefined}
+              >
+                {session.name ?? session.email ?? "Signed in"}
+              </div>
+            </SidebarMenuItem>
+          ) : null}
           <SidebarMenuItem>
             {/*
               A form the browser submits, not a fetch — and that is the fix.

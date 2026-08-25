@@ -91,6 +91,21 @@ export interface ApiError {
   errors?: { field: string; detail: string }[]; // VALIDATION_FAILED only
 }
 
+// ── Session: who is signed in (GET /api/auth/session) ───────────────────────
+
+/**
+ * Only `user_id` and `workspace_id` are guaranteed. Everything else comes from
+ * the identity provider and may be absent — render a fallback, never assume.
+ */
+export interface Session {
+  user_id: string;
+  workspace_id: string;
+  email?: string | null;
+  name?: string | null;
+  avatar_url?: string | null;
+  identity_provider?: string | null;
+}
+
 // ── Finding: one row in the Refactor-First list ─────────────────────────────
 
 export interface Finding {
@@ -125,8 +140,18 @@ export interface Finding {
 
 export interface FileScore {
   file: string;
-  debt_score: number; // Σ finding priorities (+ ml term); higher = worse
-  risk_score: number; // ML-2 bug-proneness, 0–1 (badge + tree tint + ranking boost)
+  /** Σ of the priorities of this file's open findings. Derived, never stored.
+   *  CR-001 D-CR5 removed the additive ML term: risk is a MULTIPLIER now. */
+  debt_score: number;
+  /**
+   * ML-2 bug-proneness, 0–1 — a STORED fact, not derived.
+   *
+   * Required but nullable, and the difference matters: `null` means the ML
+   * service was unreachable when this snapshot was taken, so no estimate
+   * exists. `0.0` means "measured, and this file looks safe". Render `null` as
+   * "not assessed", never as a zero-risk badge.
+   */
+  risk_score: number | null;
 }
 
 // ── File-tree node: heat map now; per-node Card B scope later ───────────────
@@ -191,11 +216,13 @@ export interface ScanStatus {
   scan_id: string;
   phase: ScanPhase;
   progress: number; // 0–100 (meaningful when phase === "running")
-  branch?: string;
-  commit_sha?: string; // the commit this scan is analysing
-  started_at?: string;
-  finished_at?: string;
-  error?: string;
+  // All nullable in the contract, not merely absent: a queued scan has no
+  // finished_at, and the API sends null rather than omitting the key.
+  branch?: string | null;
+  commit_sha?: string | null; // the commit this scan is analysing
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null; // present only when phase === "error" (SP-13)
 }
 
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──
@@ -217,7 +244,7 @@ export interface ScanSummary {
 export interface HealthPoint {
   t: string; // ISO timestamp of the scan/commit
   score: number;
-  commit_sha?: string;
+  commit_sha?: string | null;
 }
 
 // ── Category pie slice (health card + category-breakdown view) ──────────────
