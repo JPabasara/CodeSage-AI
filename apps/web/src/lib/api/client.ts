@@ -17,6 +17,7 @@ import type {
   ScanStatus,
   ScanSummary,
   ScoreProfile,
+  Session,
 } from "@/lib/types"
 
 // Empty in dev (same-origin, so MSW's service worker sees the request). Phase 12
@@ -71,11 +72,19 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-// Sign-in and sign-out are deliberately NOT here. Sign-in is a plain <a> link in
-// the login page — the browser has to leave the page for OIDC, so it cannot be a
-// fetch. Sign-out is a POST from the app rail.
+// Sign-in and sign-out are deliberately NOT here — both are navigations, not
+// fetches (see the login page's <a> and the app rail's sign-out <form>).
+// `getSession` is the one auth endpoint the client calls with fetch, and it is
+// how the app decides whether to render the dashboard or bounce to sign-in.
 
 // ── reads ────────────────────────────────────────────────────────────────────
+
+/** Who is signed in — 401 means there is no valid session. */
+export function getSession(): Promise<Session> {
+  return fetch(`${API_BASE}/api/auth/session`, {
+    credentials: "include",
+  }).then(json<Session>)
+}
 
 /**
  * Connect a public repository by URL (FR-3).
