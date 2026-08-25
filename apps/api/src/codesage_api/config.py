@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # ── Broker: API enqueues, workers consume (SAD §6) ──────────────────────
     redis_url: str = "redis://localhost:6379/0"
 
+    # Optional for public repositories, but raises the GitHub REST rate limit.
+    github_token: str = ""
+
     # ── ML inference (SAD §7) — called by workers only, never by the API ────
     ml_service_url: str = "http://localhost:8001"
     # Exceeding this budget is not a scan failure: the pipeline completes with
