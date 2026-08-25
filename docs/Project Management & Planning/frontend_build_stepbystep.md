@@ -1703,38 +1703,52 @@ depends on it, so removing it is a smaller diff than explaining it.
 
 ---
 
-### 11.M — The mid-evaluation cut (do these, in this order, if time is short)
+### 11.M — The mid-evaluation cut (P0–P7, in this order)
 
 Phase 11 is large. For the mid-evaluation you do not need all of it — you need the parts an
-evaluator will actually hit in a ten-minute walkthrough. **These are ordered by what breaks a
-demo hardest.**
+evaluator will actually hit in a ten-minute walkthrough.
 
-> **This is PR B, and it starts only after PR A (Phase 10.7) is merged.** PR B is view polish:
-> nothing in it changes behaviour, touches `@/lib/types`, or alters a route. Items M3–M5 all
-> touch the dashboard and 10.7.1 changes its layout, so starting early means doing them twice.
+> **Re-ordered 25 Aug 2026, after re-running the 11.0 audit against the shipped code.** The old
+> M1–M7 list assumed things that are no longer true: five audit rows are now done (A1, A3, A9, A10,
+> plus the branch-select and dashboard-empty rows from **11.2a**), one row turned out to be a
+> functional bug rather than polish (**A7** — below `md` the app has no navigation at all), and one
+> new row appeared (**A25** — Scan History is still a placeholder). The order below is what is left,
+> sequenced by *what blocks the next step*, not by audit number.
 
-| # | Do this | From | Why it matters on the day |
+**This is PR B.** PR A (Phase 10.7 / J3.0–J3.5) is merged, the contract is frozen, and every step
+below is view-layer only. Nothing blocks the start.
+
+| # | Step | Audit rows | From | Why here in the order |
+|---|---|---|---|---|
+| **P0** | **Add `pnpm verify`** to `package.json` so the plan's gate command exists | A26 | 11.1 | Every step below ends with the gate. Make the gate real first. Two minutes |
+| **P1** | **Format the repo — alone, one commit, zero behaviour change** | A2 | 11.1 | 97 files. Do it *before* anything else or every later diff is 900 lines nobody can review |
+| **P2** | **Navigation bugs** — mount a `SidebarTrigger`; stop the rail hardcoding `DEMO_REPO_ID` | A7, A8 | 11.3 | **Not polish.** Below `md` there is no way to navigate at all, and "Dashboard" jumps to a *different* repo than the one on screen. Ship these as a fix, not in the polish PR |
+| **P3** | **Build the Scan History page** | A25 | 11.0 decision | **A feature, not polish** — its own issue, its own commit. Do it before P4 so it goes through the state trio with every other view instead of being retro-fitted |
+| **P4** | **The state trio + Retry** — `useQuery` refetch, one shared `ErrorState`, the remaining empty states | A4, A5, A6 | 11.2 | The biggest single win, and the only step that touches a hook every view shares. Everything after it is per-view |
+| **P5** | **Colour that carries meaning** — pie palette + legend, grade and severity contrast, `.dark` tokens, coloured delta | A16, A17, A18, A19, A20 | 11.5 | The demo lives on the dashboard, and colour *is* the meaning there. Unreadable colour is lost meaning |
+| **P6** | **Keyboard and screen readers** — focusable Refactor-First rows, `aria-live` on scan progress, per-route titles | A12, A22, A23 | 11.6 | The core triage flow is mouse-only today, so a keyboard evaluator cannot use the product at all |
+| **P7** | **Legibility and responsive** — ranked list, heat-map legend + score, relative timestamps, chart axis, silent tree click, 1280 px | A11, A13, A14, A15, A21, A24 | 11.4, 11.7 | Finish-line detail. Ends with the **11.10 sign-off table** filled in |
+
+**Grouping into PRs** — P2 and P3 change behaviour, so they do not belong in a polish PR:
+
+| PR | Contains | Issue | Title |
 |---|---|---|---|
-| **M1** | **Loading, empty and error states on every screen** | 11.2 | The single highest-value item. A blank panel during a scan reads as a crash. An empty Projects list with no message reads as data loss. The evaluator *will* see at least one of these |
-| **M2** | **The empty state on Projects** | 11.2 | The very first screen after sign-in, and it is empty until a repo is connected — so it is the first thing the evaluator ever sees |
-| **M3** | **Dashboard legibility** — chart axis labels, grade colours that pass contrast, the category chips readable | 11.4, 11.5 | The demo lives on this screen. Colour carries meaning here, so unreadable colour is lost meaning |
-| **M4** | **Visible focus + keyboard path through the demo** | 11.6 | Some evaluators navigate by keyboard, and an invisible focus ring looks broken to everyone |
-| **M5** | **1280 px laptop width** | 11.7 | Detail mode + tree + condensed list is the tightest layout in the product. Test it on a projector resolution, not your monitor |
-| **M6** | **Copy pass** — no lorem, no "TODO", no placeholder labels | 11.1 | Placeholder text is the cheapest thing to fix and the most obvious thing to spot |
-| **M7** | **Toast feedback on every write** | 11.8 | Connect, Apply, Scan, Stop. Silence after an action reads as "nothing happened" |
+| **B1** | P0, P1 | [#86](https://github.com/JPabasara/CodeSage-AI/issues/86) | `chore(web): add pnpm verify and format the repo` |
+| **B2** | P2 | [#87](https://github.com/JPabasara/CodeSage-AI/issues/87) | `fix(web): make navigation reachable and repo-correct` |
+| **B3** | P3 | [#88](https://github.com/JPabasara/CodeSage-AI/issues/88) | `feat(web): scan history page` |
+| **B4** | P4 → P7 | [#69](https://github.com/JPabasara/CodeSage-AI/issues/69) | `polish(web): v1.0 Definition of Done` |
 
 **Two demo-specific checks that are not in the generic list:**
 
-- [ ] **The 501 story is presentable.** Until Chamodh's endpoints land, data calls return
-      `501 This endpoint is not implemented yet.` Make sure that renders as a calm message in the
-      error state from M1, not a raw error string or a blank screen. If the backend lands first,
-      this disappears on its own.
+- [ ] **The 501/500 story is presentable.** Until Chamodh's endpoints land, data calls fail. Make
+      sure that renders as a calm message from P4's `ErrorState`, not a raw error string or a blank
+      screen. **Note the J-CR9 interaction (11.2a):** `GET /repos/{id}/health` is still
+      `NotImplementedError` → **500**, so a never-scanned repo shows the *error* state rather than
+      the *empty* one until the endpoint returns a proper **404**. Agree this with Chamodh before
+      the demo — connecting a fresh repo is the most likely first thing an evaluator does.
 - [ ] **Walk the whole demo path once on the live URL, on the projector.** Sign in → connect a
-      repository → open the dashboard → change the profile → open a finding → sign out. Anything
-      that looks wrong there is worth ten things that look wrong locally.
-
-> **Do not start 11.M before Phase 10.7 is merged.** M3, M4 and M5 all touch the dashboard, and
-> 10.7.1 changes its layout. Polishing the old layout is work you throw away.
+      repository → open the dashboard → **click every rail item** → change the profile → open a
+      finding → sign out. Anything that looks wrong there is worth ten things that look wrong locally.
 
 ---
 
@@ -1767,7 +1781,27 @@ Pick one, now, and write the choice here:
 > this release, which is why **10.7.4 removes it outright** rather than dressing it up. Judge a
 > placeholder by which release claims it.
 
-Everything from **11.1** onward assumes you've picked A or B. *(If A: build them first, then run them through 11.2–11.9 like every other view.)*
+#### ✅ DECISION (25 Aug 2026) — **Option A, and half of it is already done**
+
+**Profiles was built** during Phase 10.5/10.6 and is no longer a placeholder: 215 lines, five
+weights plus the trust slider, covered by `profiles.spec.ts` including *"applying a profile re-ranks
+the dashboard with no re-scan (FR-21)"*. So the A/B/C choice now applies to **Scan History only**.
+
+**Scan History is built (Option A).** It is a `Table` of `ScanSummary` plus a `useQuery` one-liner,
+and every piece it needs already exists: the mock endpoint (`*/api/repos/:repoId/scans`), the fixture
+(`mockScanHistory`), and the client function (`getScanHistory`). The 2–3 h estimate above was for
+both pages; with Profiles done the remaining half is about **an hour**.
+
+*Why A and not B:* the demo script has an evaluator clicking every rail item, Scan History is a
+**v1.0** claim in the roadmap, and the data layer is already there. Shipping "Coming soon" over a
+working endpoint would be inventing a gap we do not have.
+
+> **It is a feature, not polish** — by this phase's own test (*"if it changes what the user can do,
+> it is a feature"*). So it gets its own issue and its own commit, and only then goes through
+> 11.2–11.9 like every other view.
+
+Everything from **11.1** onward assumes the decision above. Scan History is built at **P3**, after
+the navigation bugs and before the state trio.
 
 #### The audit — what's actually wrong today
 
@@ -1775,16 +1809,16 @@ Found by reading the shipped code, not by guessing. **★★★** = an evaluator
 
 | # | Finding | Where | Fix in |
 |---|---|---|---|
-| A1 | Browser tab still reads **"Create Next App"** (title + description untouched) | [layout.tsx](../../apps/web/src/app/layout.tsx) ★★★ | 11.1 |
-| A2 | **44 files fail `prettier --check`** — Phase 6/7 files use semicolons, `.prettierrc.json` says `semi: false` | `src/**` ★★ | 11.1 |
-| A3 | No **`.env.example`** — a fresh clone has no `NEXT_PUBLIC_API_MOCKING`, so the app renders **no data at all** (known trap, flagged in Phase 8) | `apps/web/` ★★★ | 11.1 |
+| ~~A1~~ | ~~Browser tab reads "Create Next App"~~ **✅ done** — `title: "Code Sage AI"` | [layout.tsx](../../apps/web/src/app/layout.tsx) | 11.1 |
+| A2 | **97 files fail `prettier --check`** (re-measured 25 Aug — it was 44; three phases of new code since) | `src/**` ★★ | 11.1 · **P1** |
+| ~~A3~~ | ~~No `.env.example`~~ **✅ done** — committed, README updated | `apps/web/` | 11.1 |
 | A4 | Dashboard **loading skeleton doesn't match the layout** it replaces → content jumps on arrival | [dashboard-view.tsx](../../apps/web/src/components/dashboard/dashboard-view.tsx) ★★ | 11.2 |
 | A5 | **Error states print raw HTTP** — an unknown repo shows *"Couldn't load this dashboard: 404 Not Found"*, and there's **no Retry** | dashboard-view · projects/page ★★★ | 11.2 |
 | A6 | **No empty states** for: zero findings, zero branches, empty history, empty tree | dashboard components ★★ | 11.2 |
 | A7 | **No `SidebarTrigger` anywhere** → below `md` the rail becomes a Sheet that **cannot be opened**, and there's no collapse affordance on desktop | [app-rail.tsx](../../apps/web/src/components/layout/app-rail.tsx) / [(app)/layout.tsx](<../../apps/web/src/app/(app)/layout.tsx>) ★★★ | 11.3 |
 | A8 | Rail **hardcodes `/dashboard/demo-repo`** → "Dashboard" jumps to a *different* repo than the one you're viewing | app-rail.tsx ★★★ | 11.3 |
-| A9 | **Account** footer button is a dead stub (looks pressable, does nothing) | app-rail.tsx ★★ | 11.3 |
-| A10 | Top nav shows the **repo id** (`demo-repo`) while Projects showed **`acme/acme-payments`** — the app calls the same thing two names | [dashboard-topnav.tsx](../../apps/web/src/components/layout/dashboard-topnav.tsx) ★★★ | 11.4 |
+| ~~A9~~ | ~~Account footer button is a dead stub~~ **✅ done** — removed; the rail footer now shows the signed-in user (J3.2) | app-rail.tsx | 11.3 |
+| ~~A10~~ | ~~Top nav shows the repo id, Projects shows the name~~ **✅ done** — `DashboardView` looks the repo up and passes `owner/name` | [dashboard-topnav.tsx](../../apps/web/src/components/layout/dashboard-topnav.tsx) | 11.4 |
 | A11 | "Last analyzed **7/22/2026, 6:35:00 PM**" — an absolute machine timestamp where humans want *"2 hours ago"* | dashboard-topnav.tsx ★★ | 11.4 |
 | A12 | **Refactor-First rows are mouse-only** — `<TableRow onClick>` with no `tabIndex`/key handler → the core triage flow is unreachable by keyboard | [refactor-first-list.tsx](../../apps/web/src/components/dashboard/refactor-first-list.tsx) ★★★ | 11.6 |
 | A13 | The list **never says it's ranked** (no priority column, no count) — "Refactor **first**" is the product's whole thesis and the UI doesn't show the ordering | refactor-first-list.tsx ★★★ | 11.4 |
@@ -1800,7 +1834,19 @@ Found by reading the shipped code, not by guessing. **★★★** = an evaluator
 | A23 | **No per-route page titles** — every tab says the same thing | `src/app/**` ★ | 11.3 |
 | A24 | **No responsive check has ever been run** below `lg`; the tree column has no max-height, the 4-column table squeezes | dashboard grid ★★ | 11.7 |
 
-**How to work it:** top to bottom (11.1 unblocks the diffs, 11.2 is the biggest win), **one commit per sub-phase**, gates green before each commit. If you run out of time, everything ★★★ is the real floor — ★★/★ can slip to v1.1 without embarrassment.
+**Re-audited 25 Aug 2026.** Five rows above are struck through because they are done. Two rows were
+added below, and one changed severity: **A7 is a functional bug, not a nicety** — below `md` the app
+has no navigation at all, so it is grouped with A8 and pulled to the front.
+
+| # | Finding (added 25 Aug) | Where | Fix in |
+|---|---|---|---|
+| A25 | **Scan History is still `(Placeholder.)`** and is reachable from the rail — a v1.0 claim the UI does not honour | [history/page.tsx](<../../apps/web/src/app/(app)/dashboard/[repoId]/history/page.tsx>) ★★★ | **P3** (see the 11.0 decision) |
+| A26 | The plan's gate command is `pnpm verify`, but `package.json` only has `test:all` — doc and repo disagree | [package.json](../../apps/web/package.json) ★ | **P1** |
+
+**How to work it:** follow the **P0–P7 order in 11.M**, not the numeric order of the audit rows —
+the two diverged once J-CR9 landed and the re-audit moved things. **One commit per step**, gates green
+before each commit. If you run out of time, everything ★★★ is the real floor — ★★/★ can slip to v1.1
+without embarrassment.
 
 ---
 
@@ -1993,6 +2039,56 @@ completes the dashboard populates with no page reload.
 > `raise NotImplementedError` → **500**, so against the live API this renders the *error* state, not
 > the empty one. The frontend is correct as written; the empty state switches on the moment the
 > endpoint returns a proper **404** for an unscanned branch. Worth confirming when the two halves meet.
+
+---
+
+### 11.2b — P3: build the Scan History page (the last placeholder)
+
+> **Decision recorded in 11.0 (25 Aug 2026): Option A, build it.** This is the last
+> `(Placeholder.)` string in the app and it is reachable from the rail, so an evaluator clicking
+> through the nav lands on it. It is **a feature, not polish** — its own issue, its own commit,
+> its own PR (**B3**).
+
+**Everything it needs already exists.** Nothing new goes into `@/lib/types`, no mock handler is
+written, no fixture is invented:
+
+| Piece | Already there |
+|---|---|
+| Endpoint | `*/api/repos/:repoId/scans` in [handlers.ts](../../apps/web/src/lib/mocks/handlers.ts) — returns `[]` for an unscanned repo, which is the empty state for free |
+| Fixture | `mockScanHistory` / `scanHistoryFor(profile, branch, scale)` in `fixtures.ts` |
+| Client | `getScanHistory(repoId)` in [client.ts](../../apps/web/src/lib/api/client.ts) |
+| Types | `ScanSummary` in `@/lib/types` |
+| Route | `app/(app)/dashboard/[repoId]/history/page.tsx` — exists, currently 11 lines of placeholder |
+
+**The build, in three parts:**
+
+1. **A hook.** `useScanHistory(repoId)` — a `useQuery` one-liner, the same shape as
+   `useHealthReport`. Read [use-health-report.ts](../../apps/web/src/hooks/use-health-report.ts)
+   and copy it.
+2. **The page.** A `Table` of `ScanSummary` rows: scanned-at, branch, short commit sha, score,
+   grade, delta. Reuse `shortSha` and `healthColor` from `lib/utils` — the grade chip must look
+   the same here as on the dashboard, or the app reads as two products.
+3. **The states.** Loading skeleton, empty (*"No scans yet — run one from the dashboard."*, with a
+   link back), error. It ships with the trio already done rather than waiting for P4.
+
+> **Rows are derived under the *currently active* profile**, exactly like the dashboard and the
+> trend chart. The mock already does this (`scanHistoryFor(activeProfile, …)`), so switching a
+> profile re-ranks this page too. Do not cache a score into the row.
+
+**Two things to get right, both already decided elsewhere:**
+
+- **Deltas are per branch** (the contract: *"Trends and deltas are per branch"*). The page is
+  scoped by the `[repoId]` route, and the branch belongs to each row — do not add a second branch
+  picker that can disagree with the dashboard's.
+- **Clicking a row is v1.1, not v1.0.** `?snapshot_id=` already works on the health endpoint
+  (`handlers.test.ts`: *"loads that stored snapshot instead of the newest (FR-19)"*), so the
+  temptation is real. Resist it: this phase adds no features beyond the page itself.
+
+**Tests:** a component test for the three states, and one E2E that clicks **Scan History** in the
+rail and sees rows — the click that an evaluator will actually make.
+
+**✅ Micro-check:** click every rail item in turn. None of them reaches the word *"Placeholder"*.
+**💾** `git commit -m "feat(web): scan history page"`
 
 ---
 
