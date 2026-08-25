@@ -136,6 +136,10 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
         samesite="lax",              # another website cannot make the browser send it
         max_age=settings.session_idle_minutes * 60,
         path="/",
+        # Empty in local development, ".codesageai.dev" in production. Without it
+        # the cookie is host-only on the API, and the frontend - which is a
+        # different host - never sees it. See `Settings.cookie_domain`.
+        domain=settings.cookie_domain or None,
     )
     response.delete_cookie(HANDSHAKE_COOKIE, path="/api/auth")
     return response
@@ -247,11 +251,13 @@ def sign_out(request: Request) -> RedirectResponse:
 
     response = RedirectResponse(_idp_logout_url(), status_code=status.HTTP_302_FOUND)
     # Same attributes the cookie was SET with. A browser matches on name, domain
-    # and path, so a mismatch here is not fatal today — but the pair should be
-    # read together, and a future domain-scoped cookie would not clear at all.
+    # and path, so `domain` is not optional here: a domain-scoped cookie deleted
+    # without naming that domain is not deleted at all, and the user stays signed
+    # in with a cookie nothing can clear.
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",
+        domain=settings.cookie_domain or None,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
