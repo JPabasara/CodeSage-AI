@@ -83,6 +83,7 @@ services:
       CODESAGE_MIGRATION_DATABASE_URL: postgresql+psycopg://codesage_owner:devpassword@postgres:5432/codesage
       CODESAGE_REDIS_URL: redis://redis:6379/0
       CODESAGE_ML_SERVICE_URL: http://ml:8001
+      CODESAGE_GITHUB_TOKEN: ${CODESAGE_GITHUB_TOKEN:-}
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
       CODESAGE_SECRET_KEY: dev-only-change-me
       # ── Sign-in. The two blank ones come from infra/.env, which is never
