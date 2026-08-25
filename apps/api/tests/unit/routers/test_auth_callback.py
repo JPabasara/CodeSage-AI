@@ -14,6 +14,9 @@ authorization code is single use and a reload replays a spent one.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -149,10 +152,44 @@ def test_a_server_error_from_asgardeo_is_an_outage(
         _exchange_against(monkeypatch, broken)
 
 
+class _Capture(logging.Handler):
+    """Collect records straight off one logger.
+
+    NOT pytest's `caplog`, deliberately. `caplog` hangs its handler on the ROOT
+    logger, and `configure_logging` does `root.handlers = [handler]`, which
+    throws it away. `create_app()` calls that, so whether caplog sees anything
+    depends on which tests ran first: green locally, red on CI, for no reason
+    visible in the test.
+
+    Listening to the one logger under test has no such ordering problem.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture
+def sign_in_logs() -> "Iterator[_Capture]":
+    logger = logging.getLogger("codesage_api.services.auth")
+    capture = _Capture()
+    previous_level = logger.level
+    logger.setLevel(logging.WARNING)
+    logger.addHandler(capture)
+    try:
+        yield capture
+    finally:
+        logger.removeHandler(capture)
+        logger.setLevel(previous_level)
+
+
 def test_the_refusal_is_logged_without_leaking_the_body(
     settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
+    sign_in_logs: _Capture,
 ) -> None:
     """The reason has to reach the logs, and the body must not.
 
@@ -172,10 +209,10 @@ def test_the_refusal_is_logged_without_leaking_the_body(
         request=request,
     )
 
-    with caplog.at_level("WARNING"), pytest.raises(UpstreamUnavailable):
+    with pytest.raises(UpstreamUnavailable):
         _exchange_against(monkeypatch, refused)
 
-    logged = caplog.text
+    logged = " ".join(record.getMessage() for record in sign_in_logs.records)
     assert "invalid_client" in logged, "the reason must reach the logs"
     assert "401" in logged
     assert "token" in logged, "which of the two calls failed"
