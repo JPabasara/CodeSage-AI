@@ -61,6 +61,16 @@ class RepositoryUnreachable(CodeSageError):
     message = "That repository could not be reached. Check the URL and try again."
 
 
+class RepositoryAlreadyConnected(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "ALREADY_CONNECTED"
+    message = "That repository is already connected to this workspace."
+
+
+class RepositoryMissingDefaultBranch(CodeSageError):
+    message = "The connected repository has no default branch."
+
+
 class RateLimited(CodeSageError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "RATE_LIMITED"
