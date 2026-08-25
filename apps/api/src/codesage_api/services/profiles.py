@@ -1,21 +1,48 @@
-"""ScoringProfileService — apply and resolve profiles (SRS FR-20).
-
-The whole write path for a profile change lives here, and it is six numbers.
-"""
-
 from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from codesage_api.db.models import ScoringProfile
 from codesage_api.scoring.models import Profile
+from codesage_api.scoring.enums import Category
 
+def get_active(
+    session: Session,
+    workspace_id: uuid.UUID,
+) -> Profile:
+    statement = select(ScoringProfile).where(
+        ScoringProfile.workspace_id == workspace_id,
+        ScoringProfile.is_active.is_(True),
+    )
 
-def get_active(session: Session, workspace_id: uuid.UUID) -> Profile:
-    """Resolve the active profile for the read path."""
-    raise NotImplementedError
+    stored_profile = session.execute(
+        statement
+    ).scalar_one_or_none()
+
+    if stored_profile is None:
+        raise RuntimeError(
+            "Workspace does not have an active scoring profile."
+        )
+
+    return Profile(
+        weights={
+            Category.SECURITY:
+                stored_profile.security_weight,
+            Category.CODE_DESIGN:
+                stored_profile.code_design_weight,
+            Category.REQUIREMENT:
+                stored_profile.requirement_weight,
+            Category.DOCUMENTATION:
+                stored_profile.documentation_weight,
+            Category.TEST:
+                stored_profile.test_weight,
+        },
+        s=stored_profile.trust_slider,
+        name=stored_profile.name,
+    )
 
 
 def apply(

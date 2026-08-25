@@ -17,6 +17,13 @@ silently kills the next scan of the same attempt.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
+from redis import Redis
+from redis.exceptions import RedisError
+
+from codesage_api.config import get_settings
+
 PROGRESS_KEY = "codesage:scan:{attempt_id}:progress"
 CANCEL_KEY = "codesage:scan:{attempt_id}:cancel"
 
@@ -24,27 +31,62 @@ CANCEL_KEY = "codesage:scan:{attempt_id}:cancel"
 KEY_TTL_SECONDS = 6 * 60 * 60
 
 
+@lru_cache
+def _client() -> Redis:
+    return Redis.from_url(
+        get_settings().redis_url,
+        decode_responses=True,
+        socket_connect_timeout=0.5,
+        socket_timeout=0.5,
+    )
+
+
 def publish_progress(attempt_id: str, percent: int) -> None:
     """Publish 0–100 for the polling client. Called at each stage boundary."""
-    raise NotImplementedError
+    bounded = max(0, min(100, int(percent)))
+    try:
+        _client().set(
+            PROGRESS_KEY.format(attempt_id=attempt_id),
+            bounded,
+            ex=KEY_TTL_SECONDS,
+        )
+    except RedisError:
+        return
 
 
 def read_progress(attempt_id: str) -> int:
     """Current percentage, or 0 if the key is gone. Never raises — a missing
     percentage must not turn a status poll into a 500."""
-    raise NotImplementedError
+    try:
+        value = _client().get(PROGRESS_KEY.format(attempt_id=attempt_id))
+        return max(0, min(100, int(value))) if value is not None else 0
+    except (RedisError, TypeError, ValueError):
+        return 0
 
 
 def request_cancel(attempt_id: str) -> None:
     """Set the cancel flag and return. Does not stop the worker."""
-    raise NotImplementedError
+    _client().set(
+        CANCEL_KEY.format(attempt_id=attempt_id),
+        "1",
+        ex=KEY_TTL_SECONDS,
+    )
 
 
 def is_cancel_requested(attempt_id: str) -> bool:
     """Checked by the worker BETWEEN pipeline stages, never during finalization."""
-    raise NotImplementedError
+    try:
+        return _client().get(CANCEL_KEY.format(attempt_id=attempt_id)) == "1"
+    except RedisError:
+        return False
 
 
 def clear(attempt_id: str) -> None:
     """Drop both keys once the attempt reaches a terminal phase."""
-    raise NotImplementedError
+    try:
+        _client().delete(
+            PROGRESS_KEY.format(attempt_id=attempt_id),
+            CANCEL_KEY.format(attempt_id=attempt_id),
+        )
+    except RedisError:
+        return

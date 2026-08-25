@@ -21,6 +21,8 @@ structural. A sentence in the SRS is no longer sufficient — it has to be code.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from codesage_api.scoring.enums import Category, Severity
 from codesage_api.scoring.models import ScoredFinding
 
@@ -42,9 +44,14 @@ def apply_visibility_floor(ranked: list[ScoredFinding]) -> list[ScoredFinding]:
     Returns a new list; relative order is preserved within both groups, and
     `pinned_by_floor` is set so the UI can explain why a row sits where it does
     rather than appearing to contradict its own priority number.
-
-    TEAM TODO (SRS TC-24): test this with the security weight at its 0.1 minimum
-    and a delivery-speed profile — the assertion is that the finding is still at
-    index 0, not merely present.
     """
-    raise NotImplementedError
+    pinned: list[ScoredFinding] = []
+    remaining: list[ScoredFinding] = []
+
+    for finding in ranked:
+        if is_floored(finding):
+            pinned.append(replace(finding, pinned_by_floor=True))
+        else:
+            remaining.append(finding)
+
+    return pinned + remaining

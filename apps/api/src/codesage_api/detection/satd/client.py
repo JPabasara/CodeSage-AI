@@ -11,8 +11,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import httpx
+
+from codesage_api.config import get_settings
+from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.scoring.enums import Category
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,13 +33,46 @@ def classify(comments: list[ExtractedComment]) -> list[SATDResult]:
 
     Batched rather than per-comment because a large repository has tens of
     thousands of comments and the round-trip cost would dominate the scan.
-
-    Every result is returned, including `is_debt = False` ones. Those produce no
-    finding but are still stored as SATDPrediction rows, which is what lets the
-    FR-25 evaluation run against real traffic instead of only the held-out set.
-
-    Raises MLServiceUnavailable if the inference container does not answer within
-    the configured budget. The caller degrades rather than fails: the snapshot is
-    persisted with rule findings only (SAD §6 decision 11).
     """
-    raise NotImplementedError
+    if not comments:
+        return []
+
+    settings = get_settings()
+    url = f"{settings.ml_service_url.rstrip('/')}/classify"
+
+    # Map ExtractedComment list to payload items with indexed IDs
+    comment_map = {f"c_{i}": comment for i, comment in enumerate(comments)}
+    payload = {
+        "comments": [
+            {"id": cid, "text": comment.text}
+            for cid, comment in comment_map.items()
+        ]
+    }
+
+    try:
+        response = httpx.post(url, json=payload, timeout=30.0)
+        response.raise_for_status()
+        data = response.json()
+        predictions = data.get("predictions", [])
+
+        results: list[SATDResult] = []
+        for pred in predictions:
+            cid = pred["id"]
+            comment = comment_map[cid]
+            is_debt = pred["is_debt"]
+            cat_str = pred.get("category")
+            category = Category(cat_str) if (is_debt and cat_str) else None
+            confidence = float(pred.get("confidence", 1.0))
+
+            results.append(
+                SATDResult(
+                    comment=comment,
+                    is_debt=is_debt,
+                    category=category,
+                    confidence=confidence,
+                )
+            )
+
+        return results
+    except Exception as exc:
+        raise MLServiceUnavailable(f"Failed to communicate with ML service: {exc}") from exc

@@ -6,25 +6,32 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from codesage_api.db.base import Base, UUIDPrimaryKey
-from codesage_api.db.enums import RepositoryConnectionStatus, RepositoryPlatform, RepositoryVisibility
+from codesage_api.db.base import Base, TimestampMixin, UUIDPrimaryKey
+from codesage_api.db.enums import (
+    RepositoryConnectionStatus,
+    RepositoryPlatform,
+    RepositoryVisibility,
+)
 
 if TYPE_CHECKING:
     from codesage_api.db.models.analysis import AnalysisAttempt
     from codesage_api.db.models.tenancy import Workspace
 
 
-def values(enum: type[RepositoryPlatform] | type[RepositoryVisibility] | type[RepositoryConnectionStatus]) -> list[str]:
+def values(
+    enum: type[RepositoryPlatform | RepositoryVisibility | RepositoryConnectionStatus],
+) -> list[str]:
     return [item.value for item in enum]
 
 
-class Repository(UUIDPrimaryKey, Base):
+class Repository(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "repository"
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspace.id", ondelete="CASCADE"), index=True)
     source_platform: Mapped[RepositoryPlatform] = mapped_column(Enum(RepositoryPlatform, name="repository_platform", values_callable=values))
     external_repository_id: Mapped[str] = mapped_column(String(100), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    owner: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(String(1000), nullable=False)
     visibility: Mapped[RepositoryVisibility] = mapped_column(Enum(RepositoryVisibility, name="repository_visibility", values_callable=values))
     connection_status: Mapped[RepositoryConnectionStatus] = mapped_column(Enum(RepositoryConnectionStatus, name="repository_connection_status", values_callable=values))
