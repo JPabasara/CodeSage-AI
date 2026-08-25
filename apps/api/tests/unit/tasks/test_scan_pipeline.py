@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from codesage_api.db.enums import AnalysisStatus
+from codesage_api.db.enums import AnalysisStatus, Severity
 from codesage_api.db.repositories.attempts import WorkerScanInput
 from codesage_api.extractors.pipeline import ExtractionResult
 from codesage_api.tasks.cancel import ScanCancelled
@@ -18,11 +18,13 @@ from codesage_api.tasks.scan_pipeline import PipelineResults, run_scan
 @patch("codesage_api.tasks.scan_pipeline.detect")
 @patch("codesage_api.tasks.scan_pipeline.extract")
 @patch("codesage_api.tasks.scan_pipeline.clone_at_commit")
+@patch("codesage_api.tasks.scan_pipeline.rules.list_definitions")
 @patch("codesage_api.tasks.scan_pipeline.attempts.begin_for_worker")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
 def test_task_runs_clone_extract_detect_and_finalize_in_order(
     session_scope: Mock,
     begin: Mock,
+    list_definitions: Mock,
     clone: Mock,
     extract: Mock,
     detect: Mock,
@@ -37,6 +39,14 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     begin.return_value = WorkerScanInput(
         "https://github.com/example/repo.git", "a" * 40
     )
+    stored_rule = SimpleNamespace(
+        rule_id="large-file",
+        category_id="code-design",
+        severity=Severity.LOW,
+        threshold=800.0,
+        message_template="Large {file}",
+    )
+    list_definitions.return_value = [stored_rule]
     clone.return_value = SimpleNamespace(
         path=tmp_path,
         commit_sha="a" * 40,
@@ -51,6 +61,10 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     clone.assert_called_once()
     extract.assert_called_once()
     detect.assert_called_once()
+    detector_rules = detect.call_args.args[1]
+    assert len(detector_rules) == 1
+    assert detector_rules[0].rule_id == "large-file"
+    assert detector_rules[0].threshold == 800.0
     finalize.assert_called_once_with(
         attempt_id,
         workspace_id,
@@ -64,11 +78,13 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
 @patch("codesage_api.tasks.scan_pipeline._set_terminal")
 @patch("codesage_api.tasks.scan_pipeline.extract", side_effect=RuntimeError)
 @patch("codesage_api.tasks.scan_pipeline.clone_at_commit")
+@patch("codesage_api.tasks.scan_pipeline.rules.list_definitions")
 @patch("codesage_api.tasks.scan_pipeline.attempts.begin_for_worker")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
 def test_task_records_a_durable_error_when_a_stage_fails(
     session_scope: Mock,
     begin: Mock,
+    list_definitions: Mock,
     clone: Mock,
     _extract: Mock,
     terminal: Mock,
@@ -82,6 +98,7 @@ def test_task_records_a_durable_error_when_a_stage_fails(
     begin.return_value = WorkerScanInput(
         "https://github.com/example/repo.git", "a" * 40
     )
+    list_definitions.return_value = []
     clone.return_value = SimpleNamespace(
         path=tmp_path,
         commit_sha="a" * 40,
@@ -106,11 +123,13 @@ def test_task_records_a_durable_error_when_a_stage_fails(
     side_effect=[None, ScanCancelled],
 )
 @patch("codesage_api.tasks.scan_pipeline.clone_at_commit")
+@patch("codesage_api.tasks.scan_pipeline.rules.list_definitions")
 @patch("codesage_api.tasks.scan_pipeline.attempts.begin_for_worker")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
 def test_task_records_cancelled_and_cleans_clone(
     session_scope: Mock,
     begin: Mock,
+    list_definitions: Mock,
     clone: Mock,
     _check: Mock,
     terminal: Mock,
@@ -123,6 +142,7 @@ def test_task_records_cancelled_and_cleans_clone(
     begin.return_value = WorkerScanInput(
         "https://github.com/example/repo.git", "a" * 40
     )
+    list_definitions.return_value = []
     clone.return_value = SimpleNamespace(
         path=tmp_path,
         commit_sha="a" * 40,

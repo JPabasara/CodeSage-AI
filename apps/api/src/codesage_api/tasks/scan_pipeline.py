@@ -29,11 +29,11 @@ from codesage_api.db.models import (
     SourceLocation,
     StaticMetric,
 )
-from codesage_api.db.repositories import attempts
+from codesage_api.db.repositories import attempts, rules
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
 from codesage_api.detection.rules.engine import DetectedFinding, detect
-from codesage_api.detection.rules.registry import get_rules
+from codesage_api.detection.rules.registry import from_stored
 from codesage_api.extractors.pipeline import ExtractionResult, extract
 from codesage_api.logging import get_logger, scan_context
 from codesage_api.tasks import cancel, progress
@@ -91,6 +91,7 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
                 scan_input = attempts.begin_for_worker(
                     session, workspace_uuid, attempt_uuid
                 )
+                stored_rules = rules.list_definitions(session)
             if scan_input is None:
                 logger.error("Scan attempt was not found in its workspace")
                 return
@@ -116,7 +117,16 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
 
             findings = detect(
                 extracted.static_metrics,
-                list(get_rules()),
+                [
+                    from_stored(
+                        rule_id=rule.rule_id,
+                        category_id=rule.category_id,
+                        severity=rule.severity.value,
+                        threshold=rule.threshold,
+                        message_template=rule.message_template,
+                    )
+                    for rule in stored_rules
+                ],
                 cloned.path,
             )
             progress.publish_progress(attempt_id, 80)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +27,7 @@ class DetectedFinding:
     fingerprint: str
 
 
-_RULE_ACCESSORS = {
+_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {
     "complex-function": lambda item: item.cyclomatic_complexity,
     "long-method": lambda item: float(item.longest_method_lines),
     "deep-nesting": lambda item: float(item.max_nesting_depth),
@@ -48,11 +49,11 @@ def _metric_findings(
         symbol = Path(item.path).stem
         for rule in rules:
             accessor = _RULE_ACCESSORS.get(rule.rule_id)
-            if rule.mechanism != "metric" or accessor is None:
+            if accessor is None:
                 continue
             value = accessor(item)
             threshold = rule.threshold
-            if threshold is None or value <= threshold:
+            if value <= threshold:
                 continue
             findings.append(
                 DetectedFinding(
@@ -69,7 +70,7 @@ def _metric_findings(
                         value=value,
                         threshold=threshold,
                     ),
-                    evidence=f"{rule.metric_name}={value:g}",
+                    evidence=f"{rule.rule_id}={value:g}",
                     measured_value=value,
                     threshold=threshold,
                     fingerprint=rule_fingerprint(rule.rule_id, item.path, symbol),
@@ -81,7 +82,7 @@ def _metric_findings(
 def _pattern_findings(
     repository_path: Path, rules: list[RuleDefinition]
 ) -> list[DetectedFinding]:
-    by_id = {rule.rule_id: rule for rule in rules if rule.mechanism == "pattern"}
+    by_id = {rule.rule_id: rule for rule in rules}
     findings: list[DetectedFinding] = []
     for path in sorted(repository_path.rglob("*.java")):
         if ".git" in path.parts:

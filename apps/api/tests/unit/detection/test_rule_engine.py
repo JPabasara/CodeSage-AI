@@ -1,8 +1,20 @@
 from pathlib import Path
 
 from codesage_api.detection.rules.engine import detect
-from codesage_api.detection.rules.registry import get_rules
+from codesage_api.detection.rules.registry import RuleDefinition
 from codesage_api.extractors.ck_metrics import FileMetrics
+from codesage_api.scoring.enums import Category, Severity
+
+
+def _rules() -> list[RuleDefinition]:
+    return [
+        RuleDefinition("complex-function", Category.CODE_DESIGN, Severity.MEDIUM, "complex", 15),
+        RuleDefinition("long-method", Category.CODE_DESIGN, Severity.MEDIUM, "long", 80),
+        RuleDefinition("deep-nesting", Category.CODE_DESIGN, Severity.MEDIUM, "deep", 4),
+        RuleDefinition("large-file", Category.CODE_DESIGN, Severity.LOW, "large", 800),
+        RuleDefinition("hardcoded-secret", Category.SECURITY, Severity.CRITICAL, "Secret in {symbol}", 0),
+        RuleDefinition("sql-concat", Category.SECURITY, Severity.HIGH, "SQL in {symbol}", 0),
+    ]
 
 
 def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) -> None:
@@ -24,7 +36,7 @@ def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) ->
         )
     ]
 
-    findings = detect(metrics, list(get_rules()), tmp_path)
+    findings = detect(metrics, _rules(), tmp_path)
 
     assert {item.rule_id for item in findings} == {
         "complex-function",
@@ -42,4 +54,4 @@ def test_rules_do_not_emit_findings_below_thresholds(tmp_path: Path) -> None:
     (tmp_path / "Small.java").write_text("class Small {}", encoding="utf-8")
     metrics = [FileMetrics("Small.java", 10, 1, 0, 0, 0)]
 
-    assert detect(metrics, list(get_rules()), tmp_path) == []
+    assert detect(metrics, _rules(), tmp_path) == []
