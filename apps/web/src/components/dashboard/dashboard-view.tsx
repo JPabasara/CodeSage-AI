@@ -10,6 +10,7 @@ import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
@@ -38,7 +39,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     branches?.[0]?.name ??
     ""
 
-  const { data: report, loading, error } = useHealthReport(repoId, activeBranch)
+  const { data: report, loading, error, reload } = useHealthReport(repoId, activeBranch)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
   const {
@@ -46,7 +47,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     stopping,
     scan: runScan,
     stop: stopScan,
-  } = useScan(repoId)
+  } = useScan(repoId, reload)
 
   // D-CR7: the selected finding lives in the URL, not in component state, so a
   // refresh restores detail mode and Back closes it. The fingerprint is stable
@@ -76,46 +77,53 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
   const closeFinding = () => router.push(pathname, { scroll: false })
 
-  // Minimal loading/error handling so the swap is safe; Phase 11 adds the full
-  // skeleton/empty/error treatment per the Definition of Done.
-  if (error) {
-    return (
-      <div className="text-destructive p-6 text-sm">
-        Couldn’t load this dashboard: {error.message}
-      </div>
-    )
-  }
+  // A branch that has never been scanned answers 404 NOT_FOUND. That is the
+  // documented first-run state — "the client renders the empty state, not an
+  // error" — not a failure, so it must not take the whole screen down with it.
+  const neverScanned =
+    error instanceof ApiRequestError && error.code === "NOT_FOUND"
 
-  if (loading || !report) {
-    return (
-      <div className="space-y-4 p-4">
-        <Skeleton className="h-12 w-full" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
+  // J-CR9: the top nav renders ABOVE this, always. It used to live inside the
+  // success branch, so a freshly connected repository — no snapshot, so 404 —
+  // hit the error return and lost the very Scan button that would produce the
+  // first snapshot. Only the body below swaps.
+  const body = () => {
+    if (loading) {
+      return (
+        <div className="space-y-4 p-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
         </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  return (
-    <div className="flex h-full flex-col">
-      <DashboardTopNav
-        repoName={repoName}
-        branches={branches ?? []}
-        activeBranch={activeBranch}
-        onBranchChange={setPickedBranch}
-        lastCommitSha={report.commit_sha}
-        scannedAt={report.scanned_at}
-        scan={{
-          phase: scanStatus.phase,
-          progress: scanStatus.progress,
-          stopping,
-          onScan: () => runScan(activeBranch),
-          onStop: stopScan,
-        }}
-      />
+    if (neverScanned) {
+      return (
+        <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center text-sm">
+          <p className="text-foreground font-medium">No scans yet</p>
+          <p>
+            {activeBranch
+              ? `Nothing has been analyzed on ${activeBranch} yet.`
+              : "This repository has not been analyzed yet."}{" "}
+            Run your first scan to see its health.
+          </p>
+        </div>
+      )
+    }
 
+    if (error) {
+      return (
+        <div className="text-destructive p-6 text-sm">
+          Couldn’t load this dashboard: {error.message}
+        </div>
+      )
+    }
+
+    if (!report) return null
+
+    return (
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2">
         <div className="flex min-h-0 flex-col gap-4">
           {/* The one region that swaps. Everything else stays put, which is the
@@ -159,6 +167,28 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           />
         </div>
       </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <DashboardTopNav
+        repoName={repoName}
+        branches={branches ?? []}
+        activeBranch={activeBranch}
+        onBranchChange={setPickedBranch}
+        lastCommitSha={report?.commit_sha}
+        scannedAt={report?.scanned_at}
+        scan={{
+          phase: scanStatus.phase,
+          progress: scanStatus.progress,
+          stopping,
+          onScan: () => runScan(activeBranch),
+          onStop: stopScan,
+        }}
+      />
+
+      {body()}
     </div>
   )
 }
