@@ -27,6 +27,10 @@ EXPECTED_PRODUCT_PATHS = {
 }
 
 
+def test_openapi_uses_the_contract_title() -> None:
+    assert create_app().openapi()["info"]["title"] == "Code Sage AI API"
+
+
 def test_openapi_contains_every_srs_endpoint() -> None:
     paths = create_app().openapi()["paths"]
     for path, methods in EXPECTED_PRODUCT_PATHS.items():

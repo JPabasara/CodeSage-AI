@@ -52,6 +52,10 @@ def get_branch(
 def find_active_for_branch(
     session: Session, branch_id: uuid.UUID
 ) -> AnalysisAttempt | None:
+    """
+    check the database to see if there is a queued or running task fo the requested repo.
+    
+    """
     return session.scalar(
         select(AnalysisAttempt)
         .where(
