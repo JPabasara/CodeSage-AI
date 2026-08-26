@@ -18,6 +18,12 @@ from codesage_api.db.models import (
     Snapshot,
 )
 
+ENGINE_VERSION_IDENTIFIER = "codesage-v2"
+ENGINE_TOOL_VERSIONS: dict[str, object] = {
+    "ck": "0.7.0",
+    "pydriller": "2.10",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class WorkerScanInput:
@@ -77,17 +83,17 @@ def find_latest_completed(
 def get_or_create_engine_version(session: Session) -> AnalysisEngineVersion:
     version = session.scalar(
         select(AnalysisEngineVersion).where(
-            AnalysisEngineVersion.version_identifier == "codesage-v1"
+            AnalysisEngineVersion.version_identifier == ENGINE_VERSION_IDENTIFIER
         )
     )
     if version is not None:
         return version
 
     version = AnalysisEngineVersion(
-        version_identifier="codesage-v1",
-        tool_versions={},
+        version_identifier=ENGINE_VERSION_IDENTIFIER,
+        tool_versions=ENGINE_TOOL_VERSIONS.copy(),
         rule_set_version="v1",
-        extraction_logic_version="v1",
+        extraction_logic_version="v2",
     )
     session.add(version)
     session.flush()
