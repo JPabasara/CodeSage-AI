@@ -139,7 +139,22 @@ pnpm dev            # http://localhost:3000
 ```ini
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 NEXT_PUBLIC_API_MOCKING=enabled
+NEXT_PUBLIC_SESSION_COOKIE_NAME=codesage_session
 ```
+
+> ⚠️ **You will land on `/login` and be unable to leave — and MSW cannot help.** Since J3.3,
+> `src/middleware.ts` redirects any visitor without a session cookie. Middleware runs on the
+> **server, before the page is sent**; a service worker lives in the browser and cannot intercept
+> it. Measured: `GET /projects` → `307 → /login`; with `Cookie: codesage_session=fake` → `200`.
+>
+> **To work offline with no backend at all:** set `NEXT_PUBLIC_API_MOCKING=e2e` (this also mocks
+> `/api/auth/session`) and add a cookie by hand in DevTools → Application → Cookies →
+> `http://localhost:3000`, named `codesage_session`, any value. The cookie is `httpOnly`, so the
+> middleware can only check that it *exists* — a seeded one is exactly what it sees after a real
+> sign-in. This is what Playwright does; see `apps/web/e2e/session.ts`.
+>
+> Full detail, including what each mode can and cannot prove:
+> **[the three ways to run it](docs/Project%20Management%20&%20Planning/deployment-implementation-log.md#reference--the-three-ways-to-run-it-and-what-each-one-can-prove)**.
 
 **Sign-in and sign-out always go to the real API even with mocking on.** OIDC is a
 navigation — the browser physically leaves the page — and a service worker cannot intercept
@@ -161,10 +176,15 @@ Then flip the flag in `apps/web/.env.local` and restart `pnpm dev`:
 NEXT_PUBLIC_API_MOCKING=disabled
 ```
 
-> **Expect 501s, and do not chase them.** Most endpoints are still stubs and answer
-> `501 This endpoint is not implemented yet.` — that is the whole chain working (routing,
-> CORS, the cookie, the session lookup) with nothing to return yet. Only `/api/auth/*` and
-> `/api/healthz` do real work today, which is exactly why this mode exists.
+> **Updated 26 Aug 2026 — most endpoints are real now.** `/api/projects`, `/api/repos/*`
+> (branches, health, scans) and `/api/auth/*` all do real work. **Three still answer 501** —
+> `GET /api/profiles`, `GET /api/profiles/active`, `PUT /api/profiles/active` — so the Profiles
+> screen works only in mode 1. `/readyz` and `/version` answer **501**; they are unfinished stubs
+> and the health endpoint is `/api/healthz`.
+>
+> **Scans work as of 26 Aug 2026** — the Dockerfile fetches and verifies the CK jar itself, so
+> `docker compose build api` is all you need.
+> And scan a **Java** repository: v1.0 analyses Java only.
 
 Sign-in needs `http://localhost:8000/api/auth/callback` registered in the Asgardeo console,
 and `infra/.env` filled in — see the compose file's sign-in block.
@@ -199,7 +219,12 @@ docker compose up -d web
 ```
 
 See **[apps/web/README.md](apps/web/README.md)** for the test and quality gates, and how the
-mock data layer is put together.
+mock data layer is put together, and **[infra/README.md](infra/README.md)** for the stack itself —
+what is published, where the passwords come from, and the two database roles.
+
+For the full comparison — what each of the three modes proves, what it *cannot* prove, and the
+list of endpoints that cannot be tested locally — read
+**[the three ways to run it](docs/Project%20Management%20&%20Planning/deployment-implementation-log.md#reference--the-three-ways-to-run-it-and-what-each-one-can-prove)**.
 
 ## Status
 

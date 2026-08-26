@@ -4,7 +4,826 @@
 
 What this file is: a plain record of **what was changed, why, and how to check it still works**. Written so a teammate who has never opened a Dockerfile can follow it. Newest entry at the top.
 
-New to Docker Compose? Start with **[Reference — Docker Compose, explained](#reference--docker-compose-explained)** at the foot of this file: the private network, where the passwords come from, and what changes in production.
+**Trying to run it, not change it?** Go straight to **[Reference — the three ways to run it, and what each one can prove](#reference--the-three-ways-to-run-it-and-what-each-one-can-prove)**: frontend with MSW, the whole stack in Docker, the live site — and the list of what cannot be tested locally.
+
+New to Docker Compose? **[Reference — Docker Compose, explained](#reference--docker-compose-explained)** at the foot of this file covers the private network, where the passwords come from, and what changes in production.
+
+---
+
+## Entry 5 — 26 Aug 2026 — Phase 4 (finish the deployment) — **PLAN, nothing ticked yet**
+
+**Plan reference:** [team plan §6, Phase 4 (J4.1–J4.6)](team-plan-to-mid-evaluation.md#phase-4--finish-the-deployment-wed-26-aug-onward).
+
+Entries 1–4 got `api` and `web` live. This entry is the rest: the two containers that were
+never started, and turning "green CI" into "green CI *deploys*". **Written before doing it**, so
+every step below is an instruction, not a record. Come back and mark each one when it is done.
+
+> **Everything under "What is broken before you start" was verified against the code on
+> 26 Aug 2026, not assumed.** The commands used are given, so anyone can re-run them.
+
+### What is missing
+
+| Gap | What it costs today |
+|---|---|
+| `worker` is **stopped** on Railway | Entry 4 stopped it because every Celery task was `raise NotImplementedError`. **That is no longer true** — `tasks/scan_pipeline.py` is real code now. Press **Scan** on the live site today and the job is accepted, written to Upstash, and nothing ever picks it up. The scan sits at 0% forever |
+| `ml` was **never deployed** | Nothing classifies comments and nothing measures risk. See the honest note in Step 4 — this costs less than it sounds like, for a reason that is itself a problem |
+| **No CD** | A merge to `main` builds and publishes three images and then stops. A human has to open Railway and click Redeploy. §10 of the team plan asks for this and it was never done |
+| ~~**Branch protection has a hole in it**~~ **— DONE 26 Aug** |
+| **Migrations are a laptop step** | `alembic upgrade head` has only ever been run by hand, from one machine, against Neon. Nothing in the pipeline runs it |
+
+---
+
+### What is broken before you start — three findings
+
+Do not skip to Step 3. Deploying the worker on top of these produces a service that starts,
+reports healthy, accepts jobs, and fails every one of them.
+
+#### Finding 1 — **the published `api` image has no CK jar.** This is the blocker
+
+`apps/api/Dockerfile` copies the whole `vendor/` directory to `/opt/ck/` and sets
+`CODESAGE_CK_JAR=/opt/ck/ck.jar`. But the jar is **gitignored** — root `.gitignore` line 42 is
+`apps/api/vendor/*.jar` — so `vendor/` in a fresh checkout holds exactly one file, `README.md`.
+
+CI checks out the repository fresh. So **every image CI has ever published has an empty
+`/opt/ck/`** — and so does every local `docker compose build`.
+
+```bash
+# Both print only README.md / an empty directory today
+ls apps/api/vendor/
+docker run --rm --entrypoint sh ghcr.io/jpabasara/codesage-ai/api:latest -c 'ls -l /opt/ck/'
+```
+
+What that does at run time — `extractors/ck_metrics.py`:
+
+```python
+jar = ck_jar or Path(get_settings().ck_jar)
+if not jar.exists():
+    raise CKExtractionError(f"CK jar was not found at {jar}.")
+```
+
+`run_scan` catches it in its broad `except Exception`, writes phase `error` and the message
+*"The repository could not be analysed."* onto the attempt row, and moves on. **The user sees a
+scan that failed for no stated reason.** The real cause is only in the worker log.
+
+**Nobody has noticed because the tests cannot see it.** `tests/unit/extractors/test_ck_metrics.py`
+has two tests and both are structurally blind to this:
+
+| Test | What it does | Why it cannot catch this |
+|---|---|---|
+| `test_ck_csv_is_aggregated_per_file` | `jar.touch()` — an **empty file** — then monkeypatches `subprocess.run` to write the CSVs itself | Java never runs. It proves the CSV aggregation, not that CK exists |
+| `test_missing_ck_jar_has_a_clear_failure` | Passes a path that does not exist and asserts the error message | It proves the failure is *well-worded*. It never asks whether the real jar is present |
+
+Both pass `ck_jar=` explicitly, so **neither reads `settings.ck_jar`** and neither ever looks at
+`/opt/ck/`. The one thing that would catch it — "does the built image contain a runnable CK?" — is
+not asked anywhere. CI is green and proves nothing about this.
+
+Worth fixing alongside Step 2: a single smoke test that runs `java -jar $CODESAGE_CK_JAR` inside
+the built image would have turned this into a red tick on 20 August.
+
+`apps/api/vendor/README.md` also says to fetch the jar from
+`github.com/mauricioaniche/ck/releases`. **That page is empty** — the project publishes tags but
+no release assets (`gh api repos/mauricioaniche/ck/releases` → `[]`). The jar lives on Maven
+Central instead.
+
+**The fix is Step 2.**
+
+#### Finding 2 — `CODESAGE_MIGRATION_DATABASE_URL` is missing from `apps/api/.env.example`
+
+Every other setting is there. This one is not, and it is the one Step 5 needs. §9 of the team
+plan says that file is the checklist that makes redeploying-from-scratch possible — a missing row
+is exactly the failure it exists to prevent. Its absence has already caused one bug: J0.4,
+Entry 2. Add it.
+
+#### Finding 3 — nothing in the API calls the ML service
+
+`detection/satd/client.py` (ML-1) is fully written. `detection/risk/client.py` (ML-2) is
+`raise NotImplementedError`. **Neither is imported by the scan pipeline:**
+
+```bash
+grep -rEn "detection\.satd|detection\.risk" apps/api/src/codesage_api/tasks/
+# → no matches
+```
+
+`scan_pipeline.py` imports `detection.rules.engine` and nothing else from `detection/`. Its own
+docstring describes a stage 3 that runs "ML-1 and ML-2" — that stage was never wired up.
+
+So deploying `ml` gives a service that answers correctly and that **nothing ever asks**. It is
+still worth deploying (Step 4 says why), but be honest about what it buys.
+
+---
+
+### Step 1 — Fix the required checks on the existing ruleset (J0.8)
+
+> **Correction, 26 Aug 2026.** An earlier draft of this entry said branch protection was never
+> set up. **That was wrong**, and the mistake is worth recording because it is easy to repeat:
+> `gh api repos/{owner}/{repo}/branches/main/protection` returns `404 Branch not protected` even
+> when a **ruleset** is active and enforcing. That endpoint only reports *classic* branch
+> protection. Rulesets live at `gh api repos/{owner}/{repo}/rulesets`. **A 404 from the classic
+> endpoint is not evidence that `main` is unprotected.**
+
+#### What is already in place
+
+Ruleset **`main-branch-protection-with-packages`** (id `21084626`), created 20 Aug 2026,
+`enforcement: active`, targeting `~DEFAULT_BRANCH`, with **no bypass actors** — nobody, including
+the repository owner, can merge around it.
+
+| Rule | Setting | Verdict |
+|---|---|---|
+| `deletion` | on | ✅ `main` cannot be deleted |
+| `non_fast_forward` | on | ✅ no force-pushes to `main` |
+| `pull_request` | `required_approving_review_count: 1` | ✅ one human approval, as intended |
+| | `require_extra_approval_for_unattributed_changes: true` | ✅ |
+| | `dismiss_stale_reviews_on_push: false` | ⚠️ see below |
+| `required_status_checks` | `strict_required_status_checks_policy: true` | ✅ a branch must be current with `main` before merging |
+| | 4 contexts required | ⚠️ **this is the defect** |
+
+#### The defect: one of the four required contexts is ambiguous
+
+The required contexts are:
+
+```
+web — tests, types, contract, lint      ✅ static, unique
+api — tests, layer check                ✅ static, unique
+ml — tests                              ✅ static, unique
+images — build                          ⚠️ ONE name, THREE check runs
+```
+
+`images` is a three-leg matrix (`web`, `api`, `ml`) and every leg reported under the *same* name.
+When several check runs share a name, GitHub resolves the requirement against one of them — so a
+**failing `ml` image build could sit behind a passing `web` image build and the merge would still
+be allowed.** The gate looks green and is not.
+
+It was also fragile in a second way: the name was built from an expression that appended
+`" and publish"` on `main`, so the check was called `images — build` on a pull request and
+`images — build and publish` on `main`. Requiring the `main` spelling would have blocked every
+pull request forever.
+
+**Both are fixed by the one-line change already made to `.github/workflows/ci.yml`:**
+
+```diff
+   images:
+-    name: images — build${{ github.event_name == 'push' && ' and publish' || '' }}
++    name: images — ${{ matrix.name }}
+```
+
+Three static, unique names — `images — web`, `images — api`, `images — ml` — identical on a pull
+request and on `main`, each naming the folder that failed.
+
+#### One PUT does it, and the ordering trap is avoidable
+
+An earlier draft of this step prescribed a three-move dance — drop the images context, merge the
+rename, add the three new ones back — because `images — build` stops existing the moment the
+rename merges, and a name that does not exist blocks every pull request forever.
+
+**That dance is unnecessary.** The rename pull request *itself* produces `images — web`,
+`images — api` and `images — ml`, so requiring all six **while that pull request is open** is
+satisfied immediately by its own run. One PUT, no window in which `main` is under-protected.
+
+The three folder jobs keep their names throughout, so they never stop being enforced.
+
+#### The command
+
+```bash
+RS="$LOCALAPPDATA/Temp/rs.json"
+gh api repos/JPabasara/CodeSage-AI/rulesets/21084626 > "$RS"
+
+RS_WIN="$RS" python - <<'PY'
+import json, os, subprocess
+
+CORRECT = [
+    "web — tests, types, contract, lint",
+    "api — tests, layer check",
+    "ml — tests",
+    "images — web",
+    "images — api",
+    "images — ml",
+]
+
+rs = json.load(open(os.environ['RS_WIN'], encoding='utf-8'))
+for rule in rs['rules']:
+    if rule['type'] == 'required_status_checks':
+        rule['parameters']['required_status_checks'] = [
+            {"context": c, "integration_id": 15368} for c in CORRECT
+        ]
+
+body = {k: rs[k] for k in ('name','target','enforcement','conditions','rules','bypass_actors')}
+payload = json.dumps(body, ensure_ascii=True)
+assert payload.isascii()
+
+subprocess.run(['gh','api','-X','PUT','repos/JPabasara/CodeSage-AI/rulesets/21084626',
+                '--input','-'], input=payload.encode('ascii'), check=True)
+PY
+```
+
+`integration_id: 15368` is GitHub Actions, matching the contexts that were already there. It pins
+each requirement to a check reported by Actions, so no other app can satisfy it.
+
+#### ⚠️ Two encoding traps that cost an hour on 26 Aug — do not repeat them
+
+Both bit while doing exactly this, and both are invisible until a pull request hangs.
+
+**1. `/tmp` is not shared between Git Bash and Windows Python.** `gh ... > /tmp/rs.json` in MINGW
+writes somewhere Windows Python cannot open, and the script dies with `FileNotFoundError`. Use
+`$LOCALAPPDATA/Temp`, as above.
+
+**2. `json.load(open(path))` decodes as cp1252 on Windows, not UTF-8** — and **every one of our
+check names contains an em dash**. `—` (UTF-8 `e2 80 94`) is read as `â€"`, and writing that back
+stores the double-encoded `c3 a2 e2 82 ac e2 80 9d`. The result: three required checks under names
+no job will ever report, and a pull request stuck on *"Expected — Waiting for status to be
+reported"* with every real check green.
+
+**Why it was not obvious.** Printing the mangled string to a cp1252 console encodes `â€"` straight
+back to `e2 80 94`, which the terminal renders as `—`. It reads as correct on screen while being
+wrong in the API. Checking it by eye confirms nothing.
+
+Two habits close both off:
+
+- read with `encoding='utf-8'` explicitly, and **rebuild the context list from literals** rather
+  than repairing strings that may already be mangled;
+- send the body as `json.dumps(body, ensure_ascii=True).encode('ascii')`, so the payload is pure
+  ASCII with `—` escapes and no stdin encoding can touch it.
+
+**Verify at the byte level, never by printing:**
+
+```bash
+RS="$LOCALAPPDATA/Temp/rs.json"
+gh api repos/JPabasara/CodeSage-AI/rulesets/21084626 > "$RS"
+python -c "
+import os
+raw = open(os.environ['LOCALAPPDATA']+'/Temp/rs.json','rb').read()
+print('corrupted:', b'Ã¢â¬â' in raw)
+print('correct:  ', b'â' in raw)"
+```
+
+Expect `corrupted: False` and `correct: True`.
+
+#### Confirm the pull request actually unblocked
+
+```bash
+gh pr view <n> --json mergeStateStatus,reviewDecision
+```
+
+`CLEAN` means every rule is satisfied. **`BLOCKED` while all checks are green and the review is in
+is not a stale cache** — that was the first guess on 26 Aug and it was wrong. It means a required
+context name does not match any check being reported. Compare the two lists byte for byte:
+
+```bash
+gh api repos/JPabasara/CodeSage-AI/rulesets/21084626   --jq '.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context'
+gh pr view <n> --json statusCheckRollup --jq '.statusCheckRollup[].name'
+```
+
+#### One setting worth changing while you are here
+
+`dismiss_stale_reviews_on_push: false` means **an approval survives any later push to the branch.**
+Someone approves a one-line change, more commits land, and it merges on the strength of a review
+of code nobody read. With `require_last_push_approval` also `false`, nothing catches it.
+
+Turning it on costs a re-approval whenever a branch changes after review, which on a three-person
+team is a small price:
+
+```bash
+gh api repos/JPabasara/CodeSage-AI/rulesets/21084626 > /tmp/rs.json
+
+python - <<'PY'
+import json, subprocess
+rs = json.load(open('/tmp/rs.json'))
+for rule in rs['rules']:
+    if rule['type'] == 'pull_request':
+        rule['parameters']['dismiss_stale_reviews_on_push'] = True
+body = {k: rs[k] for k in ('name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors')}
+subprocess.run(['gh', 'api', '-X', 'PUT',
+                'repos/JPabasara/CodeSage-AI/rulesets/21084626',
+                '--input', '-'], input=json.dumps(body), text=True, check=True)
+PY
+```
+
+#### Know this before Step 6
+
+**One required approval and no bypass actors means `main` moves only when a second person is
+available.** That is the correct setting and it should stay — but under auto-deploy it also means
+a production hotfix needs someone else awake. If that ever bites during the evaluation window, the
+fix is to add yourself as a **bypass actor** (`Settings → Rules → main-branch-protection-with-packages`),
+use it, and remove it afterwards — deliberately, and visibly, rather than by weakening the rule
+permanently.
+
+---
+
+### Step 2 — Put the CK jar into the image (J4.1) — **DONE 26 Aug 2026**
+
+The jar must not go into git — 16 MB of build output, and the `.gitignore` rule is right. It is
+instead **fetched during the build**, pinned and checksummed, so CI, a laptop and Railway all get
+identical bytes and there is nothing to remember to do.
+
+#### What changed
+
+| File | Change |
+|---|---|
+| `apps/api/Dockerfile` | `# syntax=docker/dockerfile:1.7` as line 1; `COPY vendor/ /opt/ck/` replaced by a pinned, checksummed `ADD`; a `RUN` that executes CK and greps its usage line |
+| `apps/api/.dockerignore` | `vendor/` excluded — nothing copies it now, and a hand-downloaded jar would put 16 MB back into every build context |
+| `apps/api/vendor/README.md` | Rewritten. Its download instructions pointed at an empty releases page, and the folder is no longer read by the build |
+
+```dockerfile
+# syntax=docker/dockerfile:1.7      ← MUST be line 1. A comment above it and Docker
+                                    #  silently ignores it, and --checksum stops working.
+ENV CODESAGE_CK_JAR=/opt/ck/ck.jar
+ADD --chmod=0644 --checksum=sha256:2ddfdc275b6b59c2033e03253c4fec511c338fe494a10b70f651bc039a72c74d     https://repo1.maven.org/maven2/com/github/mauricioaniche/ck/0.7.0/ck-0.7.0-jar-with-dependencies.jar     /opt/ck/ck.jar
+
+RUN java -jar "$CODESAGE_CK_JAR" 2>&1 | grep -q "^Usage java -jar ck.jar"
+```
+
+Three details, each of which was checked rather than assumed:
+
+- **`--chmod=0644`.** `ADD` defaults to **0600, root-only**. This image has no `USER` directive so
+  root reads it either way — but the `web` image already runs as a non-root user, and the day
+  anyone hardens this one the same way, a 0600 jar becomes an unreadable jar and every scan fails
+  on a permission error that looks nothing like its cause.
+- **The `RUN` smoke test cannot use the exit code.** CK with no arguments prints its usage and
+  **exits 1**. So the assertion is `grep`, whose status is the pipeline's, and which only succeeds
+  on the real usage line. This proves the JRE can *execute* the jar, not merely that a file of the
+  right size landed.
+- **Maven Central, not GitHub.** `gh api repos/mauricioaniche/ck/releases` returns `[]` — the
+  project publishes tags but no release assets. A Maven Central coordinate is immutable, so version
+  + digest means the build gets exactly this file or fails.
+
+#### Verified, not assumed
+
+| Check | Result |
+|---|---|
+| `docker build apps/api` | Succeeds |
+| `ls -l /opt/ck/ck.jar` in the built image | `-rw-r--r-- root root 16052728` |
+| `sha256sum` in the image | `2ddfdc27…72c74d` — matches the pin exactly |
+| `java -jar $CODESAGE_CK_JAR` in the image | Prints CK's usage line — the JRE runs it |
+| `vendor/README.md` inside the image | **Absent** — `/opt/ck/` holds only `ck.jar` |
+| **A wrong checksum fails the build** | Built a throwaway Dockerfile with a zeroed digest → `ERROR: failed to solve: digest mismatch`, exit 1. **The gate genuinely gates** |
+
+That last row is the one that matters. An unverified pin is decoration; this one was made to fail
+on purpose, once, so we know it can.
+
+#### Still owed
+
+`AnalysisEngineVersion.ck_version` should record `"0.7.0"`, the same string the Dockerfile pins.
+Without it, REL-10's *"same revision, consistent results"* is a claim nothing can check —
+historical snapshots would be silently incomparable across a CK bump. **Chamodh**, one field.
+
+#### Commands
+
+```bash
+docker build -t api-ckcheck apps/api
+docker run --rm --entrypoint sh api-ckcheck -c 'ls -l /opt/ck/ck.jar && sha256sum /opt/ck/ck.jar'
+docker run --rm --entrypoint sh api-ckcheck -c 'java -jar "$CODESAGE_CK_JAR" 2>&1 | head -1'
+docker rmi api-ckcheck
+```
+
+Expect 16,052,728 bytes, the digest above, and CK's usage line.
+
+---
+
+### Found while verifying Step 2 — `main` could not migrate at all
+
+Not a deployment change, but it blocked Step 2's end-to-end check and it was broken **on `main`**,
+for everyone, so it belongs in the record.
+
+`docker compose up -d` on a clean volume failed at the `migrate` service, exit 255:
+
+```
+UserWarning: Revision 20260825_0002 is present more than once
+FAILED: Multiple head revisions are present for given argument 'head'
+```
+
+**Cause.** Two pull requests each added a migration and each numbered it `20260825_0002`:
+
+| File | Came in with |
+|---|---|
+| `20260825_0002_membership_definer_lookup.py` | [#83](https://github.com/JPabasara/CodeSage-AI/pull/83) `fix/login/freeze` |
+| `20260825_0002_seed_security_rules.py` | [#81](https://github.com/JPabasara/CodeSage-AI/pull/81) `integrate/repo-health` |
+
+Both were green. Both merged. Neither conflicted, because they are *different files* — git had no
+reason to object. The collision is in a value *inside* them, and git does not read revision ids.
+
+**Why CI did not catch it.** The backend tests build their schema from ORM metadata, not by
+running the migration chain, so a broken chain is invisible to them. It surfaces only when someone
+actually migrates — a teammate on a clean clone, or the Railway pre-deploy command in Step 5. From
+the outside it reads as a database outage.
+
+**The fix — renumbered into a line:**
+
+```
+20260812_0001  complete_erd
+20260825_0002  membership_definer_lookup     ← deliberately left alone
+20260825_0003  seed_security_rules           ← was 0002
+20260825_0004  repository_metadata           ← was 0003
+```
+
+**`membership_definer_lookup` keeps `0002` on purpose.** It is the live sign-in fix, so it is the
+one most likely already applied to Neon. Renumbering an *applied* revision leaves the database's
+`alembic_version` pointing at an id no file declares, and the next migration fails with something
+far more confusing than this. The two that moved both landed on 26 Aug and are almost certainly
+nowhere yet.
+
+Safe to reorder because they are independent: the membership migration touches `membership`, the
+other two touch `process_metric`, `rule_definition` and `repository`. Both moved migrations also
+guard their DDL with `inspect()` checks and use `ON CONFLICT DO NOTHING`, so re-running them is a
+no-op rather than an error.
+
+**Verified after the fix:**
+
+```
+Running upgrade 20260812_0001 -> 20260825_0002, Let the sign-in workspace lookup see MEMBERSHIP.
+Running upgrade 20260825_0002 -> 20260825_0003, Align process facts and seed security rules.
+Running upgrade 20260825_0003 -> 20260825_0004, Add repository metadata.
+
+alembic_version = 20260825_0004      27 tables      all six containers healthy
+/api/healthz 200   ·   /api/projects 401 signed out   ·   /  307 → /login
+```
+
+#### The fix un-skipped the six RLS tests — and two of them were broken
+
+**This is the good news buried in the incident.** Entry 3 flagged, under *"the most important thing
+on this page"*, that six Row-Level Security tests reported as **skipped** while the suite showed
+green. Those tests are the ones proving one workspace cannot read another's data.
+
+`tests/integration/test_rls.py` builds its schema by running the real migrations —
+`command.upgrade(config, "head")` against a throwaway Postgres container. With two heads on `main`
+that call raised, the fixture gave up, and the tests skipped. **The chain being broken was hiding
+the security suite.**
+
+Repairing the chain made them run for the first time, and CI immediately went red — correctly. Two
+genuine defects, neither related to the migration numbering:
+
+**1. `NotNullViolation` on `theme_preference`.**
+
+```
+null value in column "theme_preference" of relation "app_user" violates not-null constraint
+```
+
+The column is `nullable=False` with `default=Theme.SYSTEM` — an **ORM-level** default, not a
+`server_default`. SQLAlchemy fills it in only when a row is inserted through the ORM; this test
+uses raw SQL, which goes straight past it. `test_database_constraints.py` already passes
+`"theme_preference": "system"` for exactly this reason. Fixed by spelling it out.
+
+> **Worth Chamodh's judgement:** a `NOT NULL` column whose only default lives on the mapping is a
+> trap for every raw statement — migrations, backfills, `psql`. Adding
+> `server_default=text("'system'")` and a one-line migration would close it at the database. Not
+> done here, because it changes the schema and `apps/api` is his.
+
+**2. `permission denied for function app_workspace_for_user`.**
+
+The initial migration deliberately locks that function down:
+
+```sql
+REVOKE EXECUTE ON FUNCTION app_workspace_for_user(uuid) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION app_workspace_for_user(uuid) TO codesage_app;
+```
+
+But the fixture connects as `codesage_rls_test_app`, a *different* role, and hand-granted itself
+table privileges only. So the test role had a privilege set the real deployment does not have, and
+lacked one it does.
+
+Fixed with `GRANT codesage_app TO codesage_rls_test_app` — membership, so the fixture inherits
+whatever the migration grants, now and later, rather than maintaining a second copy of production's
+grant list that drifts from it.
+
+**Verified locally:** `8 passed` in `test_rls.py` — running, not skipping — and `112 passed,
+2 xfailed` for the whole suite, with `lint-imports` reporting 3 contracts kept, 0 broken.
+
+#### The guard, added to CI
+
+`.github/workflows/ci.yml`, in the `api` job, immediately after Install:
+
+```yaml
+- name: Migration chain has exactly one head
+  run: |
+    out="$(alembic heads 2>&1)"
+    echo "$out"
+    if printf '%s' "$out" | grep -q "present more than once"; then
+      echo "::error::Two migrations declare the same revision id."
+      exit 1
+    fi
+    n="$(alembic heads 2>/dev/null | grep -c .)"
+    if [ "$n" -ne 1 ]; then
+      echo "::error::Expected exactly one Alembic head, found $n."
+      exit 1
+    fi
+```
+
+`alembic heads` reads the versions directory and opens no database connection, so it needs no
+services and costs a fraction of a second.
+
+**Both failure modes were reproduced before trusting it**, by dropping a throwaway migration into
+`alembic/versions/` and deleting it again:
+
+| Injected | `alembic heads` | Caught by |
+|---|---|---|
+| A second migration with the same `down_revision` | 2 lines | the count check |
+| A second migration with the same **revision id** — the real bug | 2 lines **and** `present more than once` | both checks |
+
+A guard that has never been made to fail is a guess.
+
+> **This is the second time on this page that a green tick proved nothing.** The other is the CK
+> jar (Finding 1). Both have the same shape: CI checked what the code *says* and never checked what
+> the artefact *does*. Worth remembering when adding the next check.
+
+---
+
+### Step 3 — Deploy `worker` (J4.2)
+
+The service still exists on Railway with its variables and settings intact — Entry 4 removed the
+*deployment*, not the service. If it is still there this is a Redeploy plus new variables. If it
+was deleted, create it from the table below.
+
+| Setting | Value |
+|---|---|
+| Image | `ghcr.io/jpabasara/codesage-ai/api:latest` — **the same image as `api`** |
+| Start command | `celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1` |
+| Domain, port, health check | **none** — it serves no HTTP |
+| Volume | **none.** Clones are throwaway scratch; paid storage is for the database only (§9) |
+
+⚠️ **The variable list in team plan §6a Step 7 is now out of date.** It says *"only
+`CODESAGE_DATABASE_URL` and `CODESAGE_REDIS_URL`. Nothing else is needed."* That was true when
+every task was a stub. A worker that really clones and analyses needs more:
+
+```
+CODESAGE_DATABASE_URL=postgresql+psycopg://codesage_app:PASS@ep-xxxx-pooler.region.aws.neon.tech/neondb?sslmode=require
+CODESAGE_REDIS_URL=rediss://...upstash.io:6379?ssl_cert_reqs=required
+CODESAGE_ML_SERVICE_URL=http://ml.railway.internal:8001
+CODESAGE_ML_TIMEOUT_SECONDS=30
+CODESAGE_GITHUB_TOKEN=<a read-only PAT>
+CODESAGE_LOG_LEVEL=INFO
+```
+
+Four notes on those:
+
+- **`CODESAGE_CLONE_DIR` and `CODESAGE_CK_JAR` are deliberately absent.** Both are `ENV` lines in
+  the Dockerfile, so the image already carries the right values. Setting them here would only
+  create a second place to get them wrong.
+- **`CODESAGE_ML_SERVICE_URL` is Railway's private address**, and it only works after Step 4.
+  Until then leave it unset: the default `http://localhost:8001` fails fast, which is exactly the
+  degraded mode the pipeline is designed around.
+- **`?ssl_cert_reqs=required`** on the Redis URL. Without it Celery warns *"Secure redis scheme
+  specified (rediss) with no ssl options"* and does not verify the certificate (Entry 4).
+- **`CODESAGE_GITHUB_TOKEN`** is optional but wanted: it lifts the anonymous GitHub rate limit
+  from 60 requests/hour, which a demo can exhaust. A classic PAT with **no scopes ticked** —
+  public repository metadata needs no permission at all.
+
+**Memory.** A clone plus CK plus PyDriller on a real repository is not small. Start at **1 GB**
+and watch the first real scan. Railway kills a container that exceeds its limit and the scan dies
+with it, which looks exactly like a code bug and is not one.
+
+**Concurrency stays at 1.** Each scan needs its own clone and its own ~2 GB. PERF-07's three
+concurrent analyses is `--scale worker=3` locally and a replica count on Railway — a dashboard
+number, not a code change. Do **not** raise `--concurrency` instead; that puts three clones inside
+one container's disk.
+
+**Done when:** the worker's deployment log shows `celery@… ready` and a connection to Upstash
+rather than a retry loop.
+
+---
+
+### Step 4 — Deploy `ml` (J4.3)
+
+**Read Finding 3 first.** Nothing calls this service today. Deploy it anyway, for three reasons
+worth being able to say out loud:
+
+1. It is one of the four containers in the SAD's deployment view. A deployment view that does not
+   match the deployment is a defect in the document, not a detail.
+2. It proves the image CI publishes actually runs somewhere other than a laptop — which is the
+   entire point of §5.
+3. The moment Chamodh wires stage 3 into `scan_pipeline.py`, the address is already there and
+   already correct. Nobody has to deploy anything under pressure.
+
+| Setting | Value |
+|---|---|
+| Image | `ghcr.io/jpabasara/codesage-ai/ml:latest` |
+| Port | `8001` |
+| Health check path | `/healthz` |
+| Public domain | **none** — workers reach it privately |
+| Start command | `uvicorn codesage_ml.main:app --host :: --port 8001` |
+| Variables | none required |
+
+⚠️ **The start-command override is not optional, and it is the thing that will cost an hour if it
+is missed.** Railway's private network is **IPv6-only**. The image's own `CMD` binds
+`--host 0.0.0.0`, which is IPv4 — so the service starts, its health check may even pass, and every
+call from the worker to `ml.railway.internal` is refused. Binding `::` accepts both, so nothing
+else has to change. *(Confirm against Railway's current private-networking docs before blaming the
+code — if they have changed this, the plain image works as-is.)*
+
+**Do not attach a volume for `/models`.** The image declares `VOLUME ["/models"]` and
+`CODESAGE_ML_ARTIFACT_DIR=/models`, and `apps/ml/models/` in git holds only `.gitkeep` — trained
+artifacts are gitignored (`models/*.joblib`). So on Railway that directory is empty, and:
+
+| Endpoint | Behaviour with no artifact |
+|---|---|
+| `GET /healthz` | `{"status":"ok"}` |
+| `GET /version` | answers, reporting `v1.0` / `mock-1.0.0` |
+| `POST /classify` | **falls back to `_FallbackPipeline`** in `registry.py` — a keyword matcher on "todo", "fixme", "doc", "test". Not the trained model |
+| `POST /risk` | returns **deterministic pseudo-random numbers** seeded on the file path, tagged `mock-1.0.0` |
+
+That is not a failure — `load_satd_model()` is written to degrade this way on purpose. But
+**`/classify` answering 200 does not mean the trained model is deployed.** Read `model_version` in
+the response body, not the status code.
+
+Getting the real SATD model up there is a separate job: train from `apps/ml/training/satd`,
+produce `satd_v1.joblib`, and put it somewhere the container can read — a Railway volume mounted
+at `/models`, or baked into a variant image. **Nathasha's call, and it needs
+[model-evaluation-notes.md](model-evaluation-notes.md) read first**, because the first training
+run's numbers were not real. Not a Phase 4 step.
+
+Once `ml` is up, set `CODESAGE_ML_SERVICE_URL=http://ml.railway.internal:8001` on **`worker`** —
+not on `api`, which never performs inference — and raise `CODESAGE_ML_TIMEOUT_SECONDS` back to
+`30` from the `5` that Phase 1 set while `ml` was absent.
+
+> **A bug to hand to Chamodh while you are in there.** `detection/satd/client.py` calls
+> `httpx.post(url, json=payload, timeout=30.0)` — a hardcoded literal. It never reads
+> `settings.ml_timeout_seconds`, so the variable we set on Railway does nothing for the one call
+> it was added for. One line.
+
+---
+
+### Step 5 — Make migrations part of the deploy (J4.4)
+
+Today `alembic upgrade head` runs from a laptop. Under auto-deploy that is a bug waiting to
+happen: merge a migration, the new code deploys in three minutes, and it queries a column that
+does not exist.
+
+**Use Railway's pre-deploy command on the `api` service.** It runs to completion *before* the new
+version takes traffic, so a failed migration aborts the deploy instead of half-applying itself
+underneath a live site.
+
+| Setting | Value |
+|---|---|
+| Pre-deploy command (`api` service **only**) | `alembic upgrade head` |
+
+Then add the variable that command needs, which the `api` service does **not** currently have:
+
+```
+CODESAGE_MIGRATION_DATABASE_URL=postgresql+psycopg://codesage_owner:PASS@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
+```
+
+Three things about that line, every one of which has already cost this project time:
+
+1. **The `-pooler` host must NOT be used here.** Alembic needs a connection of its own; the pooler
+   is for the API's many short requests. Use the direct endpoint — the same one Phase 1 step 5
+   used.
+2. **`postgresql+psycopg://`, never `postgresql://`.** The image ships psycopg 3; the bare prefix
+   makes SQLAlchemy load psycopg2, which is not installed. Entry 4, fault 2.
+3. **End the URL at `?sslmode=require`.** Entry 4, fault 1 — an `&` was lost and the resulting
+   `channel_binding` value killed the process on its first query.
+
+**`codesage_owner`, not `codesage_app`** — and that is the whole reason two roles exist.
+`codesage_app` cannot create tables and must not be able to, because Row-Level Security is
+silently ignored for a table's owner.
+
+**Do not put the pre-deploy command on `worker`.** Both services run the same image, and two of
+them racing `alembic upgrade head` against one database is a lock fight for no benefit.
+
+Add the row to `apps/api/.env.example` too (Finding 2), so the checklist is true again.
+
+---
+
+### Step 6 — Auto-deploy on `main` (J4.5)
+
+> §10 of the team plan puts a condition on this and it is worth repeating: **do it *after* the
+> first manual deploy works.** It does — Entries 1–4 are that. Automating something nobody has
+> done by hand only hides the failure.
+
+**Not** by pointing Railway at the GitHub repository. That makes Railway build the code itself,
+which throws away the images CI publishes and means the thing deployed is not the thing that was
+tested. The whole of §5 is that the artefact CI built is the artefact that runs.
+
+So: CI publishes the images, then tells Railway to pull them.
+
+#### 6a — A Railway token, as a repository secret
+
+The repository currently has **no secrets at all** (`gh secret list` → empty). Create a **project
+token** in Railway (project → Settings → Tokens), scoped to the `production` environment, then:
+
+```bash
+gh secret set RAILWAY_TOKEN
+```
+
+A *project* token, not a personal one: it can only touch this project, and it does not stop
+working when a person rotates their own credentials or leaves.
+
+#### 6b — A `deploy` job at the end of `.github/workflows/ci.yml`
+
+```yaml
+  # ── Deploy (J4.5) ──────────────────────────────────────────────────────────
+  # Runs ONLY on main, and only after the images it deploys actually exist.
+  # Every service runs `:latest` from GHCR, so a redeploy re-pulls the image the
+  # `images` job has just published.
+  deploy:
+    name: deploy — Railway
+    runs-on: ubuntu-latest
+    needs: [images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # A GitHub Environment, so the token is scoped to it and every deploy is
+    # listed on the repository's Deployments tab — a free audit trail.
+    environment: production
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - name: Install the Railway CLI
+        run: npm i -g @railway/cli
+
+      # api FIRST and alone: its pre-deploy command runs `alembic upgrade head`,
+      # and the schema must be migrated before a worker starts reading it. If
+      # this step fails the ones below never run — which is the point.
+      - name: Deploy api (runs migrations)
+        run: railway redeploy --service api --yes
+
+      - name: Deploy worker
+        run: railway redeploy --service worker --yes
+
+      - name: Deploy web
+        run: railway redeploy --service web --yes
+
+      # ml has no schema dependency and nothing calls it yet, so a failure here
+      # must not paint the whole deploy red.
+      - name: Deploy ml
+        continue-on-error: true
+        run: railway redeploy --service ml --yes
+```
+
+Add `deployments: write` to the workflow's top-level `permissions:` block if you keep the
+`environment:` key.
+
+⚠️ **Verify the CLI flags before trusting this.** `railway redeploy --service <name> --yes` is the
+documented shape, but Railway's CLI moves. Run `railway redeploy --help` once, locally, and fix
+the job to match — rather than debugging it through five pushes to `main`.
+
+⚠️ **And verify the redeploy actually re-pulls.** A service pinned to `:latest` should resolve a
+fresh digest on redeploy, but "should" is not "does". After the first automatic deploy, open the
+`api` deployment log and confirm the pulled **digest** differs from the previous deployment's. If
+it does not, pin the services to the immutable tag instead — CI already publishes
+`type=sha,format=long`, so `ghcr.io/jpabasara/codesage-ai/api:sha-<commit>` always exists — and
+change the job to set each service's image rather than redeploy it.
+
+#### 6c — GHCR must be pullable
+
+Packages published by Actions default to **private**. `api` and `web` already deploy from GHCR so
+this is solved for those two, but **confirm `ml` is the same before Step 4** — otherwise the
+service sits in `Deploying` with an authentication error that reads like a network problem.
+
+Repository → Packages → each package → Package settings → visibility public, *or* give Railway a
+GHCR pull credential.
+
+---
+
+### Step 7 — Verify, in this order (J4.6)
+
+Not "it looks up". Each of these can pass while the next one fails.
+
+| # | Check | Expected |
+|---|---|---|
+| 1 | `https://api.codesageai.dev/api/healthz` | `{"status":"ok"}` |
+| 2 | `https://api.codesageai.dev/api/projects` **in a private window** | **401** `NOT_AUTHENTICATED`. Never skip this — a 200 here means every workspace's data is readable by anyone with the address |
+| 3 | Sign in at `https://codesageai.dev` | Lands on `/projects` and the list loads. No 401 — J2.7 fixed that |
+| 4 | Worker deployment log | `celery@… ready`, connected to Upstash |
+| 5 | Connect a small **Java** repository and press Scan | Progress moves **past 25%**. 25% is where the CK step begins — a failure there means Step 2 did not take |
+| 6 | The scan reaches `done` | A snapshot exists and the dashboard renders a grade |
+| 7 | From the worker container, `GET http://ml.railway.internal:8001/healthz` | `{"status":"ok"}` — proves Step 4's IPv6 bind |
+| 8 | Merge a trivial commit to `main` | CI goes green, the `deploy` job runs, and the Railway deployment log shows a **new image digest** |
+
+Check 5 is what this whole entry exists for. Use a **Java** repository: v1.0 analyses Java only
+(`analysed_extensions` is `[".java"]`), so a Python repository scans successfully and finds
+nothing — which looks like a bug and is not one.
+
+---
+
+### Money
+
+Entry 4 measured ~25¢/day for `api` + `web` + `worker`. Four containers running continuously is
+roughly **$12–20/month**, matching §9's estimate.
+
+The spending cap stays at **$15**, and it is a safety net, not a budget. Control the money by
+controlling *when things run*, never by lowering the cap — a hard limit reached mid-demo stops the
+services.
+
+The cheapest honest arrangement for the run-up to the evaluation:
+
+- `api` and `web` — **up**, continuously. The site has to answer.
+- `worker` — **up** from now on. It is no longer dead weight; it *is* the scan.
+- `ml` — **start it for the demo, stop it afterwards.** Nothing calls it (Finding 3), so it is the
+  one container whose absence changes nothing.
+- **Do not enable Serverless / App Sleeping before the evaluation.** A first request that takes
+  several seconds to wake reads as "the site is broken".
+
+---
+
+### What Phase 4 does *not* fix
+
+Better said out loud than asked about:
+
+| Still true after Phase 4 | Whose |
+|---|---|
+| `GET /api/profiles`, `GET /api/profiles/active`, `PUT /api/profiles/active` are `raise NotImplementedError` → **501**. The Profiles screen works only against MSW | Chamodh |
+| `/readyz` and `/version` are stubs → **501** (`install_exception_handlers` turns `NotImplementedError` into the contract envelope). Still never a health-check target | Chamodh |
+| ML-1 and ML-2 are not wired into the scan pipeline (Finding 3) | Chamodh |
+| `detection/risk/client.py` is `raise NotImplementedError` | Chamodh |
+| The deployed `ml` answers `/classify` from a keyword fallback, not the trained model | Nathasha |
+| Playwright never runs in CI — the `web` job runs `pnpm test:run`, which is vitest only. The end-to-end suite is a local gate | Janidu |
+| `ruff` is advisory on `apps/api` (31 findings, Entry 3) | Chamodh |
+| Six RLS tests still skip, because the test database never runs `01-init.sql` (Entry 3) | Chamodh |
 
 ---
 
@@ -295,6 +1114,8 @@ So it runs and prints its findings, but does not block.
 
 ### ⚠️ The most important thing on this page
 
+> **RESOLVED 26 Aug 2026 — see Entry 5.** The cause was not only `conftest.py`. `test_rls.py` builds its schema by running the migrations, and `main` had two Alembic heads, so the upgrade raised and the fixture gave up. Repairing the chain made all six run; two then failed on real defects (a missing `theme_preference` and a missing function GRANT), both since fixed. **8 passed.**
+
 **Six security tests are not actually running.** They report as "skipped", and the reason they print is misleading:
 
 > *"Docker/PostgreSQL is unavailable"*
@@ -392,6 +1213,13 @@ This is not tidiness. CI has no warm context and would have paid that transfer o
 
 ### `/readyz` returns 500 — expected, not a defect
 
+> **Superseded 22 Aug 2026 — it is now 501, not 500.** Commit `8fe16f9` registered a handler for
+> `NotImplementedError` (`errors.py::install_exception_handlers`), so every stub answers **501** in
+> the contract's error envelope instead of escaping as an unhandled 500. That was a CORS fix as much
+> as a tidiness one — an unhandled exception is caught outside `CORSMiddleware`, so its response
+> carries no `Access-Control-Allow-Origin` and the browser reports a CORS failure instead of the
+> real error. **The conclusion below is unchanged: never point a health check at `/readyz`.**
+
 `GET /readyz` answers `Internal Server Error`. It is a stub: `routers/system.py` line 38 is `raise NotImplementedError`, and `/version` on line 44 is the same. The docstring describes what it will check one day; the body was never written.
 
 Leave it alone:
@@ -400,7 +1228,7 @@ Leave it alone:
 - `/api/healthz` is the health endpoint the plan actually ticks (§5), and J1.7 checks that one;
 - `apps/api/` is Chamodh's. Writing a real readiness probe is backend work.
 
-> **⚠️ Carry this into J1.** Point Railway's healthcheck at **`/api/healthz`**, never `/readyz`. Railway would see 500 and refuse to route traffic to a container that is working perfectly.
+> **⚠️ Carry this into J1.** Point Railway's healthcheck at **`/api/healthz`**, never `/readyz`. Railway would see the error status (500 when this was written, 501 since 22 Aug) and refuse to route traffic to a container that is working perfectly.
 
 `/api/healthz` and `/readyz` differ on purpose: `healthz` checks only that the process is alive, so a database blip cannot make an orchestrator restart a healthy API. That is why the compose healthcheck uses it.
 
@@ -635,6 +1463,301 @@ Worth being able to say out loud at the evaluation, because "why is the frontend
 J0.3 onwards: run all six containers together, then CI, image publishing, and branch protection.
 
 *(J0.3 and J0.4 landed the same day — see Entry 2 above. Remaining: J0.5 CI, J0.6 build all three images in CI, J0.7 publish to GHCR, J0.8 branch protection.)*
+
+---
+
+# Reference — the three ways to run it, and what each one can prove
+
+*Written 26 Aug 2026, for Chamodh and Nathasha as much as for Janidu. Not a log entry — this is
+the page to send someone who says "how do I check this works?". Every claim here was checked
+against the running code on 26 Aug 2026.*
+
+There are three ways to run Code Sage AI. **They are not interchangeable, and each one can prove
+things the others cannot.** Picking the wrong one is how you end up debugging a problem that does
+not exist.
+
+| | 1 · Frontend + MSW | 2 · Docker Compose | 3 · The live site |
+|---|---|---|---|
+| **What runs** | one Next.js dev server | six containers on your laptop | Railway + Neon + Upstash |
+| **What you need installed** | Node + pnpm | Docker Desktop | a browser |
+| **Start-up** | ~10 seconds | ~90 seconds, first build ~6 minutes | none |
+| **Data you see** | invented fixtures | whatever the real API returns | real |
+| **Good for** | screens, layout, states, the scan animation | the API, the database, the worker, RLS | cookies, HTTPS, the demo |
+| **Cannot prove** | anything about the backend | anything about HTTPS or cross-site cookies | nothing much — but it costs money and everyone sees your mistakes |
+
+---
+
+## 1 · Frontend only, with MSW
+
+**What it is.** One Next.js dev server. No Python, no Docker, no database. MSW (Mock Service
+Worker) is a script the browser runs in the background — `apps/web/public/mockServiceWorker.js` —
+that sits between the page and the network and answers `fetch()` calls itself, from the fixtures in
+`apps/web/src/lib/mocks/`. Nothing leaves your machine.
+
+```powershell
+cd apps/web
+pnpm install
+pnpm dev              # http://localhost:3000
+```
+
+`apps/web/.env.local` — gitignored, so each person makes their own. Copy `.env.example`:
+
+```ini
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_API_MOCKING=enabled
+NEXT_PUBLIC_SESSION_COOKIE_NAME=codesage_session
+```
+
+### ⚠️ The thing that will stop you in the first thirty seconds
+
+**You will land on `/login` and be unable to leave.** This is not a bug and it is not MSW failing.
+
+Since J3.3 there is a `src/middleware.ts` that redirects any visitor with no session cookie
+straight to `/login`. Middleware runs **on the server, before the page is sent** — a service worker
+lives in the browser and cannot possibly intercept it. So MSW is irrelevant here: no cookie, no
+app.
+
+Measured on 26 Aug 2026 against a dev server on port 3199:
+
+```
+GET /              →  307  →  /login
+GET /projects      →  307  →  /login
+GET /projects      with header `Cookie: codesage_session=fake`   →  200
+```
+
+**Any value works.** The cookie is `httpOnly`, so the edge cannot read its contents — the
+middleware checks only that it *exists*. That is the correct design (the API is the real security
+boundary, SEC-10), and it is exactly what makes the workaround safe.
+
+### Two ways past it — pick by what you are doing
+
+**(a) Working on screens, offline, no backend at all — use `e2e` mode.**
+
+```ini
+NEXT_PUBLIC_API_MOCKING=e2e
+```
+
+`e2e` mocks the data endpoints **and** `/api/auth/session`, so the rail shows a signed-in user
+without any API existing. Then hand yourself a cookie once, in DevTools → Application → Cookies →
+`http://localhost:3000`:
+
+```
+name:  codesage_session
+value: local-dev
+```
+
+Refresh. The whole app opens. This is precisely what Playwright does — see `e2e/session.ts`,
+which seeds the same cookie for the same reason.
+
+**(b) Testing a real sign-in — use `enabled` mode and run the backend.**
+
+```ini
+NEXT_PUBLIC_API_MOCKING=enabled
+```
+
+`enabled` mocks every *data* endpoint but deliberately lets `/api/auth/session` **pass through** to
+the real API — which is the only way to test a genuine Asgardeo sign-in while keeping the mock
+dashboard. You need the API running (mode 2, `docker compose up -d postgres redis api`) and
+`http://localhost:8000/api/auth/callback` registered in the Asgardeo console.
+
+The difference in one line, from `src/lib/mocks/browser.ts`:
+
+| Mode | Data endpoints | `/api/auth/session` |
+|---|---|---|
+| `enabled` | mocked | **passed through to the real API** |
+| `e2e` | mocked | **mocked**, honouring the seeded cookie |
+| `disabled` | real | real |
+
+### Sign-in can never be mocked, in any mode
+
+A service worker can intercept `fetch()`. It **cannot** intercept a full-page navigation — a click
+that makes the browser leave the page entirely. OIDC is exactly that: the browser physically
+travels to Asgardeo and comes back.
+
+This is why the sign-in button is a plain `<a href>` and never a `fetch` (J2.6), and why
+`src/app/(auth)/login/page.tsx` falls back to `http://localhost:8000` while
+`src/lib/api/client.ts` falls back to `""`. Empty means *same origin*, so the worker sees the
+request and can fake it. An absolute address means *really go to the backend*.
+
+### What mode 1 proves, and what it cannot
+
+| Proves | Cannot prove |
+|---|---|
+| Every screen, every layout, light and dark | That any endpoint exists |
+| Loading / empty / error states — the fixtures can return anything | That the contract in `docs/api/openapi.yaml` matches what the API sends |
+| The scan state machine end to end, including Stop | That a scan actually works |
+| Keyboard and screen-reader behaviour | Anything about cookies, CORS, HTTPS or the database |
+
+> A green mode-1 app tells you the **frontend** is correct. It tells you nothing at all about the
+> other two thirds of the system — by design. That is what let the frontend get built before the
+> backend answered.
+
+---
+
+## 2 · The whole stack in Docker Compose
+
+**What it is.** Six containers on your laptop: `postgres`, `redis`, `ml`, `migrate`, `api`,
+`worker`, `web`. Closest thing to the deployment that does not cost money.
+
+```powershell
+cd infra
+docker compose build
+docker compose up -d          # allow ~90s: the worker's start_period alone is 45s
+docker compose ps             # everything should say (healthy)
+```
+
+`web` is on <http://localhost:3000>, `api` on <http://localhost:8000>. **Nothing else is
+published** — `postgres`, `redis` and `ml` are on the private network with no door to the outside.
+Reach them through a container:
+
+```powershell
+docker compose exec postgres psql -U codesage_owner codesage
+docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://ml:8001/healthz').read())"
+```
+
+You also need `infra/.env` — gitignored, copied from `infra/.env.example`, holding the Asgardeo
+client id and secret. Everything else has a working fake value committed in
+`docker-compose.yml`, on purpose. See `infra/README.md`.
+
+**Mocking is always off here, and there is no flag to flip.** `apps/web/Dockerfile` hardcodes
+`ENV NEXT_PUBLIC_API_MOCKING=disabled`, and `.dockerignore` excludes `.env*` so `.env.local` never
+reaches the build. Both are deliberate: an image built with mocking on would demo beautifully and
+prove nothing. If you want mock data, use mode 1.
+
+### To scan something, two things must be true
+
+**a. The CK jar must be in the image.** Until Entry 5 Step 2 lands, `apps/api/vendor/` is empty in
+a fresh clone and every scan ends in phase `error` with *"The repository could not be analysed."*
+Interim fix on your own machine — download the jar into `apps/api/vendor/ck.jar` and
+`docker compose build api`:
+
+```
+https://repo1.maven.org/maven2/com/github/mauricioaniche/ck/0.7.0/ck-0.7.0-jar-with-dependencies.jar
+```
+
+**b. Use a Java repository.** `analysed_extensions` is `[".java"]` — v1.0 analyses Java only,
+because CK is a Java-only extractor. A Python repository scans *successfully* and finds nothing,
+which looks like a failure and is not.
+
+### Three commands worth memorising
+
+| You changed | Run |
+|---|---|
+| a Dockerfile or app source | `docker compose up -d --build` |
+| `environment:` in compose | `docker compose up -d` |
+| **`NEXT_PUBLIC_API_BASE_URL`** | `docker compose build web` — **a restart is not enough** |
+
+Three concurrent scans (PERF-07): `docker compose up -d --scale worker=3`.
+
+### What mode 2 proves, and what it cannot
+
+| Proves | Cannot prove |
+|---|---|
+| Every real endpoint, with real data from a real Postgres | Anything about **HTTPS** — it is plain http throughout |
+| Migrations apply cleanly from nothing | The **`Secure`** cookie flag: compose sets `CODESAGE_COOKIE_SECURE=false`, because plain http can never carry a Secure cookie |
+| The worker: clone, CK, PyDriller, rules, finalize | **Cross-site cookies.** Locally `web` and `api` are both `localhost`, so a host-only cookie just works. Live they are `codesageai.dev` and `api.codesageai.dev`, and the cookie needs `CODESAGE_COOKIE_DOMAIN=.codesageai.dev` |
+| Row-Level Security and tenant isolation | **CORS in anger.** `CODESAGE_CORS_ORIGINS` is `["http://localhost:3000"]` here and the browser is lenient about same-host ports |
+| That the private network works — nothing is exposed that should not be | Neon's **pooled vs direct** endpoints, `sslmode=require`, `channel_binding` |
+| Sign-in, if Asgardeo has the localhost callback registered | Upstash's `rediss://` TLS and `?ssl_cert_reqs=required` |
+
+> **This is the single most valuable row in this document.** Every one of Phase 1's three
+> deployment failures (Entry 4) and the cookie-domain bug were in the right-hand column. They are
+> *structurally* invisible in compose — not because nobody looked, but because the conditions
+> that trigger them do not exist on a laptop.
+
+---
+
+## 3 · The live site
+
+| | Address |
+|---|---|
+| Site | `https://codesageai.dev` |
+| Backend | `https://api.codesageai.dev` |
+| Database | Neon, `ap-southeast-1` |
+| Broker | Upstash Redis, `ap-southeast-1` |
+| Services | Railway `codesageai/production` |
+
+Nothing to install. Sign in and use it.
+
+**What only the live site can prove:** HTTPS and certificates; `Secure` + `SameSite=Lax` cookies
+across two hostnames; CORS between two real origins; Neon's pooler under real latency; Upstash TLS;
+that the *published image* — not your local build — actually runs; and that a custom domain is
+routing to the right port. (A **502** on `codesageai.dev` while the `*.up.railway.app` address
+works means the domain lost its explicit port. Entry 4.)
+
+**What is confusing about it:** a failed deployment leaves the **previous** container serving. So
+`/api/healthz` returning 200 proves the *old* build is alive and says nothing about the change you
+just pushed. **Trust the deployment badge, not the URL.**
+
+After any restart, check in this order:
+
+1. `https://api.codesageai.dev/api/healthz` → `{"status":"ok"}`
+2. `https://api.codesageai.dev/api/projects` **in a private window** → **401**. Never skip it
+3. `https://codesageai.dev` → sign in → `/projects` renders with data
+4. `https://codesageai.dev` returns a page, not a 502
+
+---
+
+## What cannot be tested locally — the actual list
+
+Two different questions get muddled here. Keep them apart.
+
+### A. Not testable locally because the *environment* is different
+
+These are properties of being deployed. No amount of local work reaches them.
+
+| # | What | Why it is invisible locally | Where it bit us |
+|---|---|---|---|
+| 1 | The **`Secure`** cookie flag | Plain http cannot carry a Secure cookie, so compose sets `CODESAGE_COOKIE_SECURE=false` | — |
+| 2 | **Cookie domain across two hosts** | `web` and `api` are both `localhost` locally, so a host-only cookie works. Live it must be `.codesageai.dev` or `middleware.ts` bounces every signed-in visitor back to `/login` | commit `ff27d8e` |
+| 3 | **CORS between real origins** | Same reason. `credentials: "include"` plus `CODESAGE_CORS_ORIGINS` only matter when the origins genuinely differ | J2.7, Entry 4 |
+| 4 | **HTTPS, certificates, DNS, the apex CNAME** | There is no TLS locally | Entry 4: the `_railway-verify` TXT record |
+| 5 | **Custom-domain port mapping** | Compose publishes ports directly | Entry 4: 502 on the custom domain |
+| 6 | **Neon**: pooled vs direct endpoints, `sslmode=require`, `channel_binding` | Local Postgres is one plain container | Entry 4, faults 1 and 2 |
+| 7 | **Upstash**: `rediss://` TLS, `?ssl_cert_reqs=required` | Local Redis is plain `redis://` | Entry 4 |
+| 8 | **Railway's IPv6-only private network** | Compose's private network is IPv4, so `--host 0.0.0.0` works locally and fails there | Entry 5, Step 4 |
+| 9 | **The published image itself** | Compose *builds* from your working tree; Railway *pulls* what CI built. A file that is gitignored exists for you and not for CI | Entry 5, Finding 1 — the CK jar |
+| 10 | **`CODESAGE_CORS_ORIGINS` parsing** | It must be JSON — `["https://codesageai.dev"]`. Plain text kills the process at import | Entry 4, fault 3 |
+| 11 | **Real Asgardeo sign-in against the deployed callback** | The console's redirect list is per-address. A localhost callback proves nothing about the live one | J1.10 |
+| 12 | **The deployed model artifact** | `apps/ml/models/` is empty in git; what a deployed `ml` loads depends on what is mounted there | Entry 5, Step 4 |
+
+> Rows 2, 3, 6, 7 and 9 all share one shape: **something that is a single thing locally becomes two
+> things in production.** One host becomes two hosts. One database container becomes a pooler and a
+> direct endpoint. Your working tree becomes a git checkout. That is the whole category.
+
+### B. Not testable *anywhere* yet, because the code is not written
+
+Different problem. These fail identically on a laptop and on the live site — do not go looking for
+an environment cause.
+
+| Endpoint | Answers | Owner |
+|---|---|---|
+| `GET /api/profiles` | **501** | Chamodh |
+| `GET /api/profiles/active` | **501** | Chamodh |
+| `PUT /api/profiles/active` | **501** | Chamodh |
+| `GET /readyz` | **501** — an unfinished stub. **Never point a health check at it**; use `/api/healthz` | Chamodh |
+| `GET /version` | **501** — same | Chamodh |
+
+**So the Profiles screen only works in mode 1.** Against a real API, locally or live, it 501s. That
+is the single biggest gap between "the demo works" and "the product works", and it is worth knowing
+before someone clicks Profiles in front of an evaluator.
+
+Also not wired, though nothing returns an error for it: **ML-1 and ML-2 are never called by the
+scan pipeline** (Entry 5, Finding 3). A scan produces rule findings only. No SATD findings appear,
+and every `risk_score` is 0.0 — which is the documented degraded mode, so it looks entirely normal.
+
+### C. Testable locally, and easy to assume otherwise
+
+Worth stating, because people skip these:
+
+- **Row-Level Security and tenant isolation** — fully testable in compose, and much easier to
+  inspect there than on Neon.
+- **The worker, end to end** — clone, CK, PyDriller, rules, finalize. Once the jar is in place,
+  mode 2 exercises everything the live worker does.
+- **Migrations from nothing** — `docker compose down -v` then up is a truer test than Neon, because
+  Neon is never empty.
+- **Sign-in** — a real Asgardeo round trip works against `localhost:8000`, provided that callback
+  is registered in the console.
 
 ---
 
