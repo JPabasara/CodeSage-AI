@@ -10,8 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 
 from pydriller import Repository  # type: ignore[import-untyped]
+
+from codesage_api.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,14 +50,17 @@ def extract_process_metrics(
     anchor_date: datetime,
 ) -> list[FileProcessMetrics]:
     """Mine numeric file history, anchored to the scanned commit's date."""
+    started = perf_counter()
     files = _java_files(repository_path)
     histories = {path: _History(set(), set()) for path in files}
     window_start = anchor_date - timedelta(days=90)
+    commits_inspected = 0
 
     for commit in Repository(
         str(repository_path),
         to_commit=commit_sha,
     ).traverse_commits():
+        commits_inspected += 1
         changed_at = commit.committer_date
         if changed_at > anchor_date:
             continue
@@ -88,4 +96,14 @@ def extract_process_metrics(
                 recency_days=max(0.0, (anchor_date - last).total_seconds() / 86400),
             )
         )
+    logger.info(
+        "Repository history extraction completed",
+        extra={
+            "event": "stage_completed",
+            "stage": "history-extraction",
+            "duration_ms": round((perf_counter() - started) * 1000),
+            "commits_inspected": commits_inspected,
+            "files_measured": len(results),
+        },
+    )
     return results

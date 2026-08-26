@@ -9,6 +9,14 @@ from contextlib import contextmanager
 
 _scan_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("scan_id", default=None)
 
+_OBSERVABILITY_FIELDS = (
+    "event",
+    "stage",
+    "duration_ms",
+    "commits_inspected",
+    "files_measured",
+)
+
 
 @contextmanager
 def scan_context(scan_id: str) -> Iterator[None]:
@@ -30,6 +38,9 @@ class _JsonFormatter(logging.Formatter):
         }
         if (scan_id := _scan_id.get()) is not None:
             payload["scan_id"] = scan_id
+        for field in _OBSERVABILITY_FIELDS:
+            if hasattr(record, field):
+                payload[field] = getattr(record, field)
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload)

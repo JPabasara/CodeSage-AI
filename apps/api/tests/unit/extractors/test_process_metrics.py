@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -44,13 +45,16 @@ _COMMITS = [
 ]
 
 
-def test_process_window_is_anchored_to_scanned_commit(monkeypatch, tmp_path: Path) -> None:
+def test_process_window_is_anchored_to_scanned_commit(
+    monkeypatch, tmp_path: Path, caplog
+) -> None:
     source = tmp_path / "src" / "A.java"
     source.parent.mkdir()
     source.write_text("class A {}", encoding="utf-8")
     monkeypatch.setattr("codesage_api.extractors.process_metrics.Repository", _Repository)
 
-    metrics = extract_process_metrics(tmp_path, "scanned-sha", _ANCHOR)
+    with caplog.at_level(logging.INFO):
+        metrics = extract_process_metrics(tmp_path, "scanned-sha", _ANCHOR)
 
     assert _Repository.last_path == str(tmp_path)
     assert _Repository.last_kwargs == {"to_commit": "scanned-sha"}
@@ -60,6 +64,12 @@ def test_process_window_is_anchored_to_scanned_commit(monkeypatch, tmp_path: Pat
     assert metrics[0].author_count == 3
     assert metrics[0].file_age_days == 120
     assert metrics[0].recency_days == 5
+    summary = next(
+        record for record in caplog.records if record.msg == "Repository history extraction completed"
+    )
+    assert summary.stage == "history-extraction"
+    assert summary.commits_inspected == 3
+    assert summary.files_measured == 1
 
 
 def test_unmodified_checked_out_file_receives_zero_metrics(monkeypatch, tmp_path: Path) -> None:
