@@ -114,7 +114,7 @@ test("the repo id in the URL is the contract's uuid, not a slug", async ({
   )
 })
 
-test("the rail's hardcoded demo id matches the fixture", () => {
+test("the rail's fallback demo id matches the fixture", () => {
   // Two copies of a UUID, edited in one place, is a silent 404 on the demo path.
   // This guard is cheap and it fails the moment they diverge.
   const demo = readFileSync("src/lib/demo.ts", "utf8")
