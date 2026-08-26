@@ -6,9 +6,10 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from codesage_api.db.models import Finding, Snapshot, SourceFile
+from codesage_api.db.models import Finding, Snapshot, SnapshotScore, SourceFile
 from codesage_api.db.repositories import dashboard as dashboard_repository
 from codesage_api.errors import NotFound
 from codesage_api.schemas import (
@@ -21,6 +22,7 @@ from codesage_api.schemas import (
     TreeNodeOut,
 )
 from codesage_api.scoring import formula
+from codesage_api.scoring.cache import SCORING_ENGINE_VERSION, profile_fingerprint
 from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
@@ -41,6 +43,91 @@ class _Tree:
     path: str
     file_path: str | None = None
     children: dict[str, _Tree] = field(default_factory=dict)
+
+
+def prepare_snapshot_score(
+    session: Session,
+    snapshot: Snapshot,
+    profile: Profile,
+) -> tuple[SnapshotScore, bool]:
+    """Read score state or create a pending row without calculating it."""
+    fingerprint = profile_fingerprint(profile)
+    cached = session.scalar(
+        select(SnapshotScore).where(
+            SnapshotScore.snapshot_id == snapshot.id,
+            SnapshotScore.profile_fingerprint == fingerprint,
+            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+        )
+    )
+    if cached is not None:
+        if cached.status == "error":
+            cached.status = "pending"
+            cached.failure_information = None
+            cached.started_at = None
+            cached.completed_at = None
+            return cached, True
+        return cached, False
+    cached = SnapshotScore(
+        snapshot_id=snapshot.id,
+        profile_fingerprint=fingerprint,
+        scoring_engine_version=SCORING_ENGINE_VERSION,
+        status="pending",
+    )
+    session.add(cached)
+    session.flush()
+    return cached, True
+
+
+def calculate_snapshot_score(
+    session: Session,
+    workspace_id: uuid.UUID,
+    cached: SnapshotScore,
+    profile: Profile,
+) -> None:
+    """Hydrate facts and fill one prepared cache row."""
+    hydrated = dashboard_repository.get_snapshot_for_scoring(
+        session, workspace_id, cached.snapshot_id
+    )
+    if hydrated is None:
+        raise NotFound
+    scored = _score_snapshot(hydrated, profile)
+    cached.health_score = scored.result.health_score
+    cached.grade = scored.result.grade
+    cached.debt_score = sum(item.debt_score for item in scored.result.files)
+    cached.kloc = sum(item.loc for item in scored.file_facts.values()) / 1000.0
+
+
+def build_latest_health_hint(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    profile: Profile,
+) -> tuple[tuple[SnapshotScore, float] | None, list[SnapshotScore]]:
+    refs = dashboard_repository.list_latest_completed_snapshot_refs(
+        session, workspace_id, repository_id, branch, limit=2
+    )
+    if not refs:
+        return None, []
+    pending: list[SnapshotScore] = []
+    prepared: list[SnapshotScore] = []
+    for ref in refs:
+        cached, created = prepare_snapshot_score(session, ref, profile)
+        prepared.append(cached)
+        if created:
+            pending.append(cached)
+    latest = prepared[0]
+    if latest.status != "ready" or latest.health_score is None:
+        return None, pending
+    previous = prepared[1] if len(prepared) > 1 else None
+    delta = (
+        latest.health_score - previous.health_score
+        if previous is not None
+        and previous.status == "ready"
+        and previous.health_score is not None
+        else 0.0
+    )
+    return (latest, delta), pending
 
 
 def _metric_value(source_file: SourceFile, name: str) -> float:
@@ -216,25 +303,42 @@ def build_health_report(
     branch: str,
     snapshot_id: uuid.UUID | None = None,
 ) -> HealthReportOut:
-    profile, snapshots = _load_scored(session, workspace_id, repository_id, branch)
-    current_index = len(snapshots) - 1
+    profile = profiles.get_active(session, workspace_id)
+    refs = dashboard_repository.list_completed_snapshot_refs(
+        session, workspace_id, repository_id, branch
+    )
+    if not refs:
+        raise NotFound
+    selected_index = len(refs) - 1
     if snapshot_id is not None:
-        current_index = next(
-            (
-                index
-                for index, item in enumerate(snapshots)
-                if item.snapshot.id == snapshot_id
-            ),
-            -1,
+        selected_index = next(
+            (index for index, item in enumerate(refs) if item.id == snapshot_id), -1
         )
-        if current_index < 0:
+        if selected_index < 0:
             raise NotFound
-    current = snapshots[current_index]
-    previous_score = (
-        snapshots[current_index - 1].result.health_score
-        if current_index > 0
+    hydrated = dashboard_repository.get_snapshot_for_scoring(
+        session, workspace_id, refs[selected_index].id
+    )
+    if hydrated is None:
+        raise NotFound
+    current = _score_snapshot(hydrated, profile)
+
+    fingerprint = profile_fingerprint(profile)
+    cached_rows = session.scalars(
+        select(SnapshotScore).where(
+            SnapshotScore.snapshot_id.in_([item.id for item in refs]),
+            SnapshotScore.profile_fingerprint == fingerprint,
+            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+            SnapshotScore.status == "ready",
+        )
+    ).all()
+    cached_by_snapshot = {item.snapshot_id: item for item in cached_rows}
+    previous = (
+        cached_by_snapshot.get(refs[selected_index - 1].id)
+        if selected_index > 0
         else None
     )
+    previous_score = previous.health_score if previous is not None else None
     delta = current.result.health_score - previous_score if previous_score is not None else 0.0
     findings = _finding_outputs(current)
 
@@ -254,11 +358,20 @@ def build_health_report(
         model_version=_model_version(current.snapshot),
         history=[
             HealthPointOut(
-                t=item.snapshot.scan_time.isoformat(),
-                score=item.result.health_score,
-                commit_sha=item.snapshot.commit_sha,
+                t=ref.scan_time.isoformat(),
+                score=(
+                    current.result.health_score
+                    if ref.id == current.snapshot.id
+                    else cached_by_snapshot[ref.id].health_score
+                ),
+                commit_sha=ref.commit_sha,
             )
-            for item in snapshots
+            for ref in refs
+            if ref.id == current.snapshot.id
+            or (
+                ref.id in cached_by_snapshot
+                and cached_by_snapshot[ref.id].health_score is not None
+            )
         ],
         tree=_tree(current),
         file_scores=[

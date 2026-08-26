@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import Mock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from sqlalchemy.orm import Session
 
 from codesage_api.db.enums import (
     AnalysisStatus,
@@ -28,6 +30,26 @@ from codesage_api.errors import NotFound
 from codesage_api.scoring.enums import Category, Grade
 from codesage_api.scoring.models import Profile
 from codesage_api.services import dashboard
+
+
+def test_snapshot_score_cache_hit_does_not_hydrate_snapshot(monkeypatch) -> None:
+    snapshot = SimpleNamespace(id=uuid.uuid4())
+    cached = SimpleNamespace(health_score=81.0, grade="B", status="ready")
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = cached
+    hydrate = MagicMock(side_effect=AssertionError("cache hit hydrated snapshot"))
+    monkeypatch.setattr(
+        dashboard.dashboard_repository,
+        "get_snapshot_for_scoring",
+        hydrate,
+    )
+    profile = Profile(weights={category: 1.0 for category in Category}, s=0.5)
+
+    result, created = dashboard.prepare_snapshot_score(session, snapshot, profile)
+
+    assert result is cached
+    assert created is False
+    hydrate.assert_not_called()
 
 
 def _profile() -> Profile:
@@ -127,9 +149,11 @@ def _snapshot(
 
 
 @patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
-@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshots")
+@patch("codesage_api.services.dashboard.dashboard_repository.get_snapshot_for_scoring")
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_report_scores_latest_snapshot_and_builds_history(
     list_snapshots: Mock,
+    get_snapshot: Mock,
     _active_profile: Mock,
 ) -> None:
     now = datetime(2026, 8, 25, tzinfo=UTC)
@@ -138,9 +162,14 @@ def test_health_report_scores_latest_snapshot_and_builds_history(
     )
     current = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
     list_snapshots.return_value = [previous, current]
+    get_snapshot.return_value = current
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = [
+        SimpleNamespace(snapshot_id=previous.id, health_score=100.0)
+    ]
 
     report = dashboard.build_health_report(
-        Mock(), uuid.uuid4(), uuid.uuid4(), "main"
+        session, uuid.uuid4(), uuid.uuid4(), "main"
     )
 
     assert report.snapshot_id == str(current.id)
@@ -156,9 +185,11 @@ def test_health_report_scores_latest_snapshot_and_builds_history(
 
 
 @patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
-@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshots")
+@patch("codesage_api.services.dashboard.dashboard_repository.get_snapshot_for_scoring")
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_can_select_a_past_snapshot(
     list_snapshots: Mock,
+    get_snapshot: Mock,
     _active_profile: Mock,
 ) -> None:
     now = datetime(2026, 8, 25, tzinfo=UTC)
@@ -167,9 +198,12 @@ def test_health_can_select_a_past_snapshot(
         scanned_at=now + timedelta(days=1), commit_sha="b" * 40, with_finding=True
     )
     list_snapshots.return_value = [previous, current]
+    get_snapshot.return_value = previous
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
 
     report = dashboard.build_health_report(
-        Mock(), uuid.uuid4(), uuid.uuid4(), "main", previous.id
+        session, uuid.uuid4(), uuid.uuid4(), "main", previous.id
     )
 
     assert report.snapshot_id == str(previous.id)
@@ -177,8 +211,11 @@ def test_health_can_select_a_past_snapshot(
     assert report.delta == 0.0
 
 
-@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshots")
-def test_no_completed_snapshot_is_not_found(list_snapshots: Mock) -> None:
+@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_no_completed_snapshot_is_not_found(
+    list_snapshots: Mock, _active_profile: Mock
+) -> None:
     list_snapshots.return_value = []
 
     with pytest.raises(NotFound):
