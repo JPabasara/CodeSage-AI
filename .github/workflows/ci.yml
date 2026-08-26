@@ -234,9 +234,12 @@ jobs:
       # way they do locally.
       - uses: docker/setup-buildx-action@v3
 
-      # Only on main. A pull request neither needs nor is allowed to publish.
+      # Not from a pull request. `!= 'pull_request'` rather than a list of
+      # events, because a fork PR gets a read-only token and *cannot* push — that
+      # is the case that must stay excluded. A manual run on main publishes, so
+      # `workflow_dispatch` is a real "publish and deploy now" button.
       - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -256,11 +259,11 @@ jobs:
             type=sha,format=long
             type=ref,event=pr
 
-      - name: Build${{ github.event_name == 'push' && ' and push' || '' }} ${{ matrix.name }}
+      - name: Build${{ github.event_name != 'pull_request' && ' and push' || '' }} ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Without this every run reinstalls from scratch. pnpm alone spends
@@ -290,7 +293,13 @@ jobs:
     name: deploy — Railway
     runs-on: ubuntu-latest
     needs: [images]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # `workflow_dispatch` is included deliberately: on 26 Aug GitHub produced no
+    # push event at all for a merge to main, and there was no way to deploy
+    # without one. Run workflow → main is now the manual path, and it publishes
+    # fresh images first (see the images job) so it deploys something real.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     # Scopes the token to this environment and lists every deploy on the
     # repository's Deployments tab — a free audit trail.
     environment: production
