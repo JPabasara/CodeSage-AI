@@ -101,6 +101,33 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]"
 
+      # THE CHEAPEST CHECK ON THIS PAGE, and it is here because its absence cost
+      # a broken `main`. On 25 Aug PR #83 and PR #81 each added a migration
+      # numbered `20260825_0002`. Both were green, both merged, and the result
+      # was a revision graph with two heads and a duplicated id — so
+      # `alembic upgrade head` refused to run at all.
+      #
+      # Nothing else notices. The tests use a schema built from ORM metadata,
+      # not from the migration chain, so a broken chain is invisible until
+      # someone actually migrates: a teammate on a clean clone, or the Railway
+      # pre-deploy command (J4.4). It reads as a database outage.
+      #
+      # `alembic heads` touches no database — it reads the versions directory —
+      # so this costs a fraction of a second and needs no services.
+      - name: Migration chain has exactly one head
+        run: |
+          out="$(alembic heads 2>&1)"
+          echo "$out"
+          if printf '%s' "$out" | grep -q "present more than once"; then
+            echo "::error::Two migrations declare the same revision id."
+            exit 1
+          fi
+          n="$(alembic heads 2>/dev/null | grep -c .)"
+          if [ "$n" -ne 1 ]; then
+            echo "::error::Expected exactly one Alembic head, found $n. Two branches added a migration in parallel — renumber the newer one to follow the older."
+            exit 1
+          fi
+
       # THE ARCHITECTURE TEST. `lint-imports` enforces the SAD's layering rules:
       # scoring stays pure, workers never score, dependencies point downward
       # only. None of that is visible to a reviewer reading a single file, which
@@ -164,7 +191,22 @@ jobs:
 
   # ── Images (J0.6 build, J0.7 publish) ──────────────────────────────────────
   images:
-    name: images — build${{ github.event_name == 'push' && ' and publish' || '' }}
+    # ⚠️ THIS NAME MUST BE STATIC AND UNIQUE PER MATRIX LEG, and both halves of
+    # that matter to branch protection:
+    #
+    #   STATIC — it used to read `images — build${{ ... 'and publish' ... }}`, so
+    #   the check was called "images — build" on a pull request and "images —
+    #   build and publish" on main. A ruleset requires a check BY NAME, and a
+    #   name that only exists on main can never be satisfied by a pull request.
+    #
+    #   UNIQUE — all three legs shared one name, so "images — build" was three
+    #   check runs called the same thing. When names collide GitHub resolves the
+    #   requirement against one of them, so a failing `ml` build could sit behind
+    #   a passing `web` build and the merge would still be allowed.
+    #
+    # `images — web` / `images — api` / `images — ml` are stable across events
+    # and name the failing folder on sight, like the three jobs above.
+    name: images — ${{ matrix.name }}
     runs-on: ubuntu-latest
     # Do not spend registry space or six minutes of runner time on a commit
     # whose tests are already red.

@@ -1073,7 +1073,7 @@ Then, and only then, polish.
 | J3.2 | **Read the session** — `GET /api/auth/session` | [#67](https://github.com/JPabasara/CodeSage-AI/issues/67) | **PR A** | The rail shows who is signed in; a 401 sends you to `/login` |
 | J3.3 | **Route protection** — `src/middleware.ts` | [#68](https://github.com/JPabasara/CodeSage-AI/issues/68) | **PR A** | A signed-out visit to `/projects` lands on `/login` |
 | **J3.5** | **Remove the Team (v2) entry** | [#72](https://github.com/JPabasara/CodeSage-AI/issues/72) | **PR A** | No `v2` badge anywhere; `/team` no longer exists |
-| J3.4 | **Polish for the mid-evaluation** — build guide §11.M | [#69](https://github.com/JPabasara/CodeSage-AI/issues/69) | **PR B** | M1–M7 done, and the demo path walked on the live URL |
+| J3.4 | **Finish the frontend** — build guide §11.M, now **P0–P7** | [#86](https://github.com/JPabasara/CodeSage-AI/issues/86) · [#87](https://github.com/JPabasara/CodeSage-AI/issues/87) · [#88](https://github.com/JPabasara/CodeSage-AI/issues/88) · [#69](https://github.com/JPabasara/CodeSage-AI/issues/69) | **PR B1–B4** | P0–P7 done, the §11.10 sign-off table filled in, and the demo path walked on the live URL |
 
 Full detail: **[frontend_build_stepbystep.md §10.7 and §11.M](frontend_build_stepbystep.md)**.
 
@@ -1197,45 +1197,58 @@ switch to the deferred fix — store the `id_token` on the session row and pass 
 > **the API is the security boundary**, checking the session on every request. A middleware check
 > is never authorization.
 
-### The polish (PR B), in priority order
+### PR B — what is left, in order (re-planned 25 Aug 2026)
 
-0. **J-CR9 — the never-scanned repository** ✅ *done, 25 Aug* — see below. Promoted above item 1
-   because it is not polish: it is a dead end on the demo path
-1. **Loading / empty / error states** — by far the most valuable. A blank panel mid-scan reads as a crash
-2. **The Projects empty state** — the first screen after sign-in, and empty until a repo is connected
-3. **Dashboard legibility** — chart labels, and grade colours that actually pass contrast
-4. **Visible focus and a keyboard path** through the demo
-5. **1280 px laptop width** — test at projector resolution, not on your monitor
-6. **Copy pass** — no placeholder text anywhere
-7. **Toast feedback on every write** — Connect, Apply, Scan, Stop
+PR A is merged and every J3.0–J3.5 row above is done and covered by E2E. Re-running the build
+guide's audit against the shipped code changed the picture, so the old seven-item polish list is
+replaced by this:
 
-#### J-CR9 — the dashboard top nav must outlive the report
+- **five items are already done** — A1 metadata, A3 `.env.example`, A9 the dead Account stub, A10
+  the repo-id-vs-name mismatch, and the branch-select + dashboard-empty rows fixed by J-CR9
+- **one item is not polish at all** — below `md` the app has **no navigation**, because nothing
+  ever mounts a `SidebarTrigger`. It ships as a fix, not in the polish PR
+- **one item is a feature** — Scan History is still the word *"(Placeholder.)"* on a rail item
+- **Profiles is already built**, so the old "two placeholder pages" problem is now one
 
-**Found by Chamodh while testing `main`, 25 Aug 2026.** Connect a brand-new repository, select it,
-and the dashboard opens blank with **no top navigation panel — so no way to start the first scan**.
+| # | Step | Ships as | Why here |
+|---|---|---|---|
+| **P0** | Add `pnpm verify` to `package.json` | **B1** | The plan's gate command does not exist yet. Two minutes |
+| **P1** | Format the repo, alone, one commit | **B1** | 97 files fail `prettier --check`. Do it first or every later diff is unreviewable |
+| **P2** | Navigation bugs: `SidebarTrigger`, and stop the rail hardcoding the demo repo id | **B2** | No navigation below `md`, and "Dashboard" jumps to the wrong repo. Behaviour, not polish |
+| **P3** | Build the Scan History page | **B3** | A v1.0 claim the UI does not honour. Endpoint, fixture and client already exist, so it is about an hour |
+| **P4** | Loading / empty / error trio + a working Retry | **B4** | The biggest win, and the only step that touches a hook every view shares |
+| **P5** | Colour that carries meaning: pie palette + legend, grade and severity contrast, coloured delta | **B4** | The demo lives on the dashboard and colour *is* the meaning there |
+| **P6** | Keyboard and screen readers: focusable list rows, `aria-live`, per-route titles | **B4** | The core triage flow is mouse-only, so a keyboard evaluator cannot use the product |
+| **P7** | Legibility and responsive, then the sign-off table | **B4** | Finish-line detail |
 
-A branch that has never been scanned makes `GET /repos/:id/health` answer **404 `NOT_FOUND`** (the
-contract's first-run state, not a failure). `DashboardView` rendered the top nav *inside* the success
-branch, so that 404 took the **Scan** button down with it: no snapshot → no nav → no scan → no
-snapshot. Fixed frontend-only, in five edits — the nav is now hoisted above the loading/error
-returns, a 404 renders an empty state instead of the error copy, the nav's snapshot metadata became
-optional (*"Never scanned"* rather than `Invalid Date`), the branch selector got a placeholder, and
-`useScan`'s `onComplete` was finally wired to the report's `reload` so the first scan populates the
-screen. Four new tests; suite 99 → 103, all green, plus 50 E2E.
+Four PRs, because P2 and P3 change behaviour and do not belong in a polish PR:
 
-**No API file was touched — the health endpoint is Chamodh's.** One thing to settle when the two
-halves meet: `GET /repos/{id}/health` is still `raise NotImplementedError`, so it returns **500**,
-and the frontend renders the *error* state. The empty state switches on as soon as the endpoint
-returns a proper **404** for an unscanned branch. Worth agreeing on before the demo — an evaluator
-connecting a fresh repo is the most likely first action.
+| PR | Steps | Issue | Title |
+|---|---|---|---|
+| B1 | P0, P1 | [#86](https://github.com/JPabasara/CodeSage-AI/issues/86) | `chore(web): add pnpm verify and format the repo` |
+| B2 | P2 | [#87](https://github.com/JPabasara/CodeSage-AI/issues/87) | `fix(web): make navigation reachable and repo-correct` |
+| B3 | P3 | [#88](https://github.com/JPabasara/CodeSage-AI/issues/88) | `feat(web): scan history page` |
+| B4 | P4–P7 | [#69](https://github.com/JPabasara/CodeSage-AI/issues/69) | `polish(web): v1.0 Definition of Done` |
 
-Full write-up: [frontend_build_stepbystep.md § 11.2a](frontend_build_stepbystep.md).
+**#86, #87 and #88 are new (created 25 Aug).** #69 was one issue covering all of Phase 11; it has
+been narrowed to the polish steps P4–P7, because P1 is a chore that must land alone, P2 is a
+behaviour bug and P3 is a feature. None of those three belong in a polish PR.
 
-Plus one demo-specific check: **make the 501 render as a calm message**, not a raw error string.
-Until the backend lands, that is what an evaluator sees on every data call.
+#### Scan History — decision recorded
 
-> **Do not start the polish before PR A is merged.** Items 3, 4 and 5 all touch the dashboard, and
-> J3.1 changes its layout.
+**Build it (Option A).** The build guide asked for an A/B/C choice on the two placeholder pages and
+it was never written down. Profiles got built in the meantime, so only Scan History is left. The
+mock endpoint (`*/api/repos/:repoId/scans`), the fixture (`mockScanHistory`) and the client function
+(`getScanHistory`) all already exist, so this is a `Table` plus a `useQuery` one-liner. The demo
+script has an evaluator clicking every rail item, and Scan History is a v1.0 claim in the roadmap —
+shipping "Coming soon" over a working endpoint would invent a gap we do not have.
+
+Full detail: **[frontend_build_stepbystep.md §11.M, §11.2b](frontend_build_stepbystep.md)**.
+
+> **One thing to settle with Chamodh before the demo.** `GET /repos/{id}/health` is still
+> `raise NotImplementedError` → **500**, so a never-scanned repository renders the *error* state
+> rather than the *empty* one that J-CR9 added. The frontend is correct as written; the empty state
+> switches on when the endpoint returns a proper **404** for an unscanned branch.
 
 ---
 
@@ -1667,6 +1680,13 @@ Columns: `Backlog` · `This week` · `In progress` · `In review` · `Done`
 | 46 | Automatic redeploy when `main` changes | Janidu | Backlog | infra |
 | 47 | Update the Gantt chart | Janidu | M4 | docs |
 | 48 | Write the mid-evaluation document | all | M4 | docs |
+| 49 | Add `pnpm verify`, then format the repo (#86) | Janidu | M4 | web |
+| 50 | Navigation unreachable below `md`; rail jumps to the wrong repo (#87) | Janidu | M4 | web, bug, demo-critical |
+| 51 | Build the Scan History page (#88) | Janidu | M4 | web |
+
+> **Rows 49–51 added 25 Aug 2026.** They came out of #69 when the frontend audit was re-run: a
+> chore that must land alone, a behaviour bug, and a feature. #69 keeps only the polish (P4–P7).
+> The numbers in this table are row numbers, not issue numbers — the issue is in brackets.
 
 
 ---
