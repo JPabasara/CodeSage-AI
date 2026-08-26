@@ -28,7 +28,9 @@ dependencies = [
     # Java grammar only, matching the CK constraint.
     "tree-sitter>=0.23",
     "tree-sitter-java>=0.23",
-    "pydriller>=2.6",
+    # Process metrics are persisted as reproducible scan facts. Keep this exact
+    # version aligned with AnalysisEngineVersion.tool_versions.
+    "pydriller==2.10",
     # NOTE: CK is not listed. It is a Java jar run as a subprocess, installed into
     # the image by the Dockerfile (CODESAGE_CK_JAR). There is no pip package.
 ]
