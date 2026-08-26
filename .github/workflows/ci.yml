@@ -164,7 +164,22 @@ jobs:
 
   # ── Images (J0.6 build, J0.7 publish) ──────────────────────────────────────
   images:
-    name: images — build${{ github.event_name == 'push' && ' and publish' || '' }}
+    # ⚠️ THIS NAME MUST BE STATIC AND UNIQUE PER MATRIX LEG, and both halves of
+    # that matter to branch protection:
+    #
+    #   STATIC — it used to read `images — build${{ ... 'and publish' ... }}`, so
+    #   the check was called "images — build" on a pull request and "images —
+    #   build and publish" on main. A ruleset requires a check BY NAME, and a
+    #   name that only exists on main can never be satisfied by a pull request.
+    #
+    #   UNIQUE — all three legs shared one name, so "images — build" was three
+    #   check runs called the same thing. When names collide GitHub resolves the
+    #   requirement against one of them, so a failing `ml` build could sit behind
+    #   a passing `web` build and the merge would still be allowed.
+    #
+    # `images — web` / `images — api` / `images — ml` are stable across events
+    # and name the failing folder on sight, like the three jobs above.
+    name: images — ${{ matrix.name }}
     runs-on: ubuntu-latest
     # Do not spend registry space or six minutes of runner time on a commit
     # whose tests are already red.
