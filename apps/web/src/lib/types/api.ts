@@ -203,7 +203,7 @@ export interface paths {
          *     card, the category breakdown, the trend, the Refactor-First list, the data
          *     behind the finding detail, and the hotspot tree.
          *
-         *     **Every score here is computed on this request** under the workspace's
+         *     **Every score here is derived for this request** under the workspace's
          *     active profile — `health_score`, `grade`, `delta`, each finding's
          *     `priority`, each file's `debt_score`, and the whole trend line. None is read
          *     from a column (FR-21). A profile change therefore re-ranks everything with
