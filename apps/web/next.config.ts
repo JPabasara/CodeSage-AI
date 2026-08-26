@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
   // Emit `.next/standalone/server.js` — a self-contained server bundled with
@@ -14,6 +14,6 @@ const nextConfig: NextConfig = {
   // build directory, so the E2E one gets its own via NEXT_DIST_DIR. Unset in
   // every other context, which leaves the default `.next` exactly as it was.
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
-};
+}
 
-export default nextConfig;
+export default nextConfig

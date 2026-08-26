@@ -39,7 +39,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     branches?.[0]?.name ??
     ""
 
-  const { data: report, loading, error, reload } = useHealthReport(repoId, activeBranch)
+  const {
+    data: report,
+    loading,
+    error,
+    reload,
+  } = useHealthReport(repoId, activeBranch)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
   const {
@@ -71,9 +76,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // push, not replace: Back should leave detail mode, the way it does in a mail
   // client. scroll: false keeps the dashboard where it is as the region swaps.
   const openFinding = (finding: Finding) =>
-    router.push(`${pathname}?finding=${encodeURIComponent(finding.fingerprint)}`, {
-      scroll: false,
-    })
+    router.push(
+      `${pathname}?finding=${encodeURIComponent(finding.fingerprint)}`,
+      {
+        scroll: false,
+      },
+    )
 
   const closeFinding = () => router.push(pathname, { scroll: false })
 
@@ -129,7 +137,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           {/* The one region that swaps. Everything else stays put, which is the
               whole point of D-CR7: the tree and the list remain usable. */}
           {detailMode ? (
-            <FindingDetailPanel finding={selectedFinding} onClose={closeFinding} />
+            <FindingDetailPanel
+              finding={selectedFinding}
+              onClose={closeFinding}
+            />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <OverallHealthCard
@@ -145,7 +156,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
           {/* Shrunk, not hidden, in detail mode — moving to the next finding is
               one click, with no close-and-reopen. */}
-          <div className={detailMode ? "min-h-0 flex-1 overflow-y-auto" : undefined}>
+          <div
+            className={
+              detailMode ? "min-h-0 flex-1 overflow-y-auto" : undefined
+            }
+          >
             <RefactorFirstList
               findings={report.findings}
               onSelect={openFinding}

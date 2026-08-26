@@ -38,7 +38,8 @@ vi.mock("next/navigation", async () => {
   const { useSyncExternalStore } = await import("react")
   return {
     usePathname: () => `/dashboard/${DEMO_REPO_ID}`,
-    useSearchParams: () => useSyncExternalStore(nav.subscribe, nav.read, nav.read),
+    useSearchParams: () =>
+      useSyncExternalStore(nav.subscribe, nav.read, nav.read),
     useRouter: () => ({ push: nav.navigate, replace: nav.navigate }),
   }
 })
@@ -61,7 +62,9 @@ test("selecting a finding swaps the health card for the detail, in place", async
   await ready()
 
   // by reason, not symbol: two fixtures share the symbol "charge()"
-  await userEvent.click(screen.getByRole("row", { name: /hardcoded stripe api key/i }))
+  await userEvent.click(
+    screen.getByRole("row", { name: /hardcoded stripe api key/i }),
+  )
 
   const detail = await screen.findByLabelText("Finding detail")
   expect(within(detail).getByText(CRITICAL.reason)).toBeInTheDocument()
@@ -69,7 +72,9 @@ test("selecting a finding swaps the health card for the detail, in place", async
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   // …and the list is still there, so the next finding is one click away
-  expect(screen.getByRole("heading", { name: /refactor first/i })).toBeInTheDocument()
+  expect(
+    screen.getByRole("heading", { name: /refactor first/i }),
+  ).toBeInTheDocument()
 })
 
 test("detail mode is driven by ?finding=, so a refresh restores it", async () => {
@@ -95,9 +100,13 @@ test("closing restores the health card and the trend chart", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await screen.findByLabelText("Finding detail")
 
-  await userEvent.click(screen.getByRole("button", { name: /close finding detail/i }))
+  await userEvent.click(
+    screen.getByRole("button", { name: /close finding detail/i }),
+  )
 
-  await waitFor(() => expect(screen.getByText("Code Health")).toBeInTheDocument())
+  await waitFor(() =>
+    expect(screen.getByText("Code Health")).toBeInTheDocument(),
+  )
   expect(screen.queryByLabelText("Finding detail")).not.toBeInTheDocument()
 })
 
@@ -106,10 +115,14 @@ test("clicking a file in the tree opens that file's finding", async () => {
   await ready()
 
   const tree = screen.getByLabelText("File health tree")
-  await userEvent.click(within(tree).getByRole("button", { name: /order_controller\.ts/i }))
+  await userEvent.click(
+    within(tree).getByRole("button", { name: /order_controller\.ts/i }),
+  )
 
   const detail = await screen.findByLabelText("Finding detail")
-  expect(within(detail).getByText(/order_controller\.ts:\d+/)).toBeInTheDocument()
+  expect(
+    within(detail).getByText(/order_controller\.ts:\d+/),
+  ).toBeInTheDocument()
 })
 
 // ── J-CR9: the never-scanned repository ─────────────────────────────────────
@@ -123,7 +136,9 @@ test("a never-scanned repo still gets the top nav, so a scan can be started", as
 
   // the empty state, not the error treatment
   expect(await screen.findByText(/no scans yet/i)).toBeInTheDocument()
-  expect(screen.queryByText(/couldn’t load this dashboard/i)).not.toBeInTheDocument()
+  expect(
+    screen.queryByText(/couldn’t load this dashboard/i),
+  ).not.toBeInTheDocument()
 
   // …and the controls that produce the first snapshot are on screen
   expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
@@ -148,7 +163,9 @@ test("a real failure still reads as an error, not as an empty state", async () =
   )
   render(<DashboardView repoId={DEMO_REPO_ID} />)
 
-  expect(await screen.findByText(/couldn’t load this dashboard/i)).toBeInTheDocument()
+  expect(
+    await screen.findByText(/couldn’t load this dashboard/i),
+  ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
   // the nav survives this too — switching branch is the obvious recovery
   expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
@@ -161,7 +178,10 @@ test("finishing the first scan refetches the report, so the empty state fills in
       scanned
         ? HttpResponse.json(mockHealthReport)
         : HttpResponse.json(
-            { detail: "This branch has not been scanned yet.", code: "NOT_FOUND" },
+            {
+              detail: "This branch has not been scanned yet.",
+              code: "NOT_FOUND",
+            },
             { status: 404 },
           ),
     ),
@@ -180,6 +200,8 @@ test("finishing the first scan refetches the report, so the empty state fills in
 
   // Without useScan's onComplete wired to the report's reload(), this never
   // arrives and the empty state sits there until a manual refresh.
-  expect(await screen.findByText("Code Health", {}, { timeout: 4000 })).toBeInTheDocument()
+  expect(
+    await screen.findByText("Code Health", {}, { timeout: 4000 }),
+  ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })

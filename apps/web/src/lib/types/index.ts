@@ -27,7 +27,7 @@
  * only); the risk model produces no Finding at all. The client's only job is to
  * map this string to a colour token (`severityColor`). SRS FR-8.1.
  */
-export type Severity = "critical" | "high" | "medium" | "low";
+export type Severity = "critical" | "high" | "medium" | "low"
 
 /**
  * WHICH DETECTOR produced the finding (orthogonal to `Category`). **Exactly two
@@ -38,7 +38,7 @@ export type Severity = "critical" | "high" | "medium" | "low";
  * no `ml-risk` source either — the risk model scores files, it never emits a
  * Finding (see `FileScore.risk_score`).
  */
-export type Source = "rule" | "satd";
+export type Source = "rule" | "satd"
 
 /** WHAT TYPE of debt it is (orthogonal to `Source`). Must equal SATD dataset labels. */
 export type Category =
@@ -46,17 +46,17 @@ export type Category =
   | "requirement" // SATD
   | "documentation" // SATD
   | "test" // SATD
-  | "security"; // rule engine (security patterns: secrets, SQL concat, eval/exec)
+  | "security" // rule engine (security patterns: secrets, SQL concat, eval/exec)
 
 /**
  * v1.0 is view-only: every finding is `open`. The later values exist now because
  * FR-11 sums *open* finding priorities — the filter needs something to filter on.
  * The v1.1 accept / resolve / false-positive actions will set them.
  */
-export type FindingStatus = "open" | "accepted" | "resolved" | "false-positive";
+export type FindingStatus = "open" | "accepted" | "resolved" | "false-positive"
 
 //A to E grades are used to indicate the overall health of a repo or file. A is the best, E is the worst.
-export type Grade = "A" | "B" | "C" | "D" | "E";
+export type Grade = "A" | "B" | "C" | "D" | "E"
 
 // ── Errors ──────────────────────────────────────────────────────────────────
 
@@ -77,18 +77,18 @@ export type ErrorCode =
   | "VALIDATION_FAILED"
   | "RATE_LIMITED"
   | "UPSTREAM_UNAVAILABLE"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
 
 /** The body of `POST /api/projects`. */
 export interface ConnectRepoRequest {
-  url: string; // a PUBLIC repository URL
+  url: string // a PUBLIC repository URL
 }
 
 /** Every non-2xx response body. `code` is required, not decorative. */
 export interface ApiError {
-  detail: string; // a human-readable sentence naming what failed
-  code: ErrorCode;
-  errors?: { field: string; detail: string }[]; // VALIDATION_FAILED only
+  detail: string // a human-readable sentence naming what failed
+  code: ErrorCode
+  errors?: { field: string; detail: string }[] // VALIDATION_FAILED only
 }
 
 // ── Session: who is signed in (GET /api/auth/session) ───────────────────────
@@ -98,51 +98,51 @@ export interface ApiError {
  * the identity provider and may be absent — render a fallback, never assume.
  */
 export interface Session {
-  user_id: string;
-  workspace_id: string;
-  email?: string | null;
-  name?: string | null;
-  avatar_url?: string | null;
-  identity_provider?: string | null;
+  user_id: string
+  workspace_id: string
+  email?: string | null
+  name?: string | null
+  avatar_url?: string | null
+  identity_provider?: string | null
 }
 
 // ── Finding: one row in the Refactor-First list ─────────────────────────────
 
 export interface Finding {
-  fingerprint: string; // stable id across scans (deduplication + track a finding over time)
-  source: Source;
-  category: Category;
-  severity: Severity;
-  file: string;
-  line: number;
-  symbol?: string | null; // the function/class it sits on; null for file-scoped rules
-  reason: string; // one-line TEMPLATE explanation — the anti-noise differentiator (§8)
+  fingerprint: string // stable id across scans (deduplication + track a finding over time)
+  source: Source
+  category: Category
+  severity: Severity
+  file: string
+  line: number
+  symbol?: string | null // the function/class it sits on; null for file-scoped rules
+  reason: string // one-line TEMPLATE explanation — the anti-noise differentiator (§8)
 
-  status: FindingStatus; // v1: read-only, backend-set (default "open"); user actions are v1.1
+  status: FindingStatus // v1: read-only, backend-set (default "open"); user actions are v1.1
 
   /** Derived on this request under the active profile; the list arrives sorted by it. */
-  priority: number;
+  priority: number
   /**
    * True when the critical-security visibility floor (FR-24) is what keeps this row
    * visible, rather than its computed priority. Lets the UI explain why a finding is
    * present even at the minimum `security` weight of 0.1.
    */
-  pinned_by_floor: boolean;
+  pinned_by_floor: boolean
 
-  rule_id?: string | null; // rule findings: which rule fired
-  metric_value?: number | null; // rule findings: measured value (e.g. CCN 18)
-  threshold?: number | null; // rule findings: the limit crossed (e.g. 15)
-  comment_text?: string | null; // SATD findings: the developer's own words, as evidence
-  confidence?: number | null; // SATD findings: ML-1's confidence in the category, 0–1
+  rule_id?: string | null // rule findings: which rule fired
+  metric_value?: number | null // rule findings: measured value (e.g. CCN 18)
+  threshold?: number | null // rule findings: the limit crossed (e.g. 15)
+  comment_text?: string | null // SATD findings: the developer's own words, as evidence
+  confidence?: number | null // SATD findings: ML-1's confidence in the category, 0–1
 }
 
 // ── Per-file scores: power the heat map + hotspot ranking ───────────────────
 
 export interface FileScore {
-  file: string;
+  file: string
   /** Σ of the priorities of this file's open findings. Derived, never stored.
    *  CR-001 D-CR5 removed the additive ML term: risk is a MULTIPLIER now. */
-  debt_score: number;
+  debt_score: number
   /**
    * ML-2 bug-proneness, 0–1 — a STORED fact, not derived.
    *
@@ -151,49 +151,49 @@ export interface FileScore {
    * exists. `0.0` means "measured, and this file looks safe". Render `null` as
    * "not assessed", never as a zero-risk badge.
    */
-  risk_score: number | null;
+  risk_score: number | null
 }
 
 // ── File-tree node: heat map now; per-node Card B scope later ───────────────
 
 export interface TreeNode {
-  path: string; // "src/lib/api/client.ts"
-  name: string; // "client.ts"
-  type: "file" | "folder";
-  health_score: number; // 0–100 → heat-map colour (folders = aggregate of children)
-  grade: Grade;
-  debt_score: number;
-  risk_score?: number | null; // 0–1; absent when ML was unreachable (degraded mode)
-  children?: TreeNode[] | null; // folders only
+  path: string // "src/lib/api/client.ts"
+  name: string // "client.ts"
+  type: "file" | "folder"
+  health_score: number // 0–100 → heat-map colour (folders = aggregate of children)
+  grade: Grade
+  debt_score: number
+  risk_score?: number | null // 0–1; absent when ML was unreachable (degraded mode)
+  children?: TreeNode[] | null // folders only
 }
 
 // ── Repo: 1 repo = 1 project in v1 ──────────────────────────────────────────
 
 export interface Repo {
-  id: string;
-  name: string;
-  owner: string;
-  visibility: "public" | "private"; // recorded from v1.0; CONNECTING a private repo is v2
-  url: string;
-  default_branch: string;
-  connected_at: string; // ISO
-  latest_health?: LatestHealth | null; // Projects-list hint
+  id: string
+  name: string
+  owner: string
+  visibility: "public" | "private" // recorded from v1.0; CONNECTING a private repo is v2
+  url: string
+  default_branch: string
+  connected_at: string // ISO
+  latest_health?: LatestHealth | null // Projects-list hint
 }
 
 /** The health hint on a projects-list row. */
 export interface LatestHealth {
-  score: number;
-  grade: Grade;
-  delta: number;
+  score: number
+  grade: Grade
+  delta: number
 }
 
 // ── Branch ──────────────────────────────────────────────────────────────────
 
 export interface Branch {
-  name: string;
-  is_default: boolean;
-  head_commit_sha?: string | null; // full; UI shows short (first 7)
-  head_commit_at?: string | null; // ISO
+  name: string
+  is_default: boolean
+  head_commit_sha?: string | null // full; UI shows short (first 7)
+  head_commit_at?: string | null // ISO
 }
 
 // ── Scan lifecycle: drives the Scan button state machine ────────────────────
@@ -205,65 +205,60 @@ export interface Branch {
  * stopped can never be mistaken for one that completed, or for one that never ran.
  */
 export type ScanPhase =
-  | "idle"
-  | "queued"
-  | "running"
-  | "done"
-  | "error"
-  | "cancelled";
+  "idle" | "queued" | "running" | "done" | "error" | "cancelled"
 
 export interface ScanStatus {
-  scan_id: string;
-  phase: ScanPhase;
-  progress: number; // 0–100 (meaningful when phase === "running")
+  scan_id: string
+  phase: ScanPhase
+  progress: number // 0–100 (meaningful when phase === "running")
   // All nullable in the contract, not merely absent: a queued scan has no
   // finished_at, and the API sends null rather than omitting the key.
-  branch?: string | null;
-  commit_sha?: string | null; // the commit this scan is analysing
-  started_at?: string | null;
-  finished_at?: string | null;
-  error?: string | null; // present only when phase === "error" (SP-13)
+  branch?: string | null
+  commit_sha?: string | null // the commit this scan is analysing
+  started_at?: string | null
+  finished_at?: string | null
+  error?: string | null // present only when phase === "error" (SP-13)
 }
 
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──
 
 export interface ScanSummary {
-  snapshot_id: string; // the stored snapshot; what the dashboard reads
-  scan_id: string; // the attempt that produced it
-  branch: string;
-  commit_sha: string;
-  scanned_at: string; // ISO
-  finding_count: number;
-  health_score: number;
-  grade: Grade;
-  delta: number;
+  snapshot_id: string // the stored snapshot; what the dashboard reads
+  scan_id: string // the attempt that produced it
+  branch: string
+  commit_sha: string
+  scanned_at: string // ISO
+  finding_count: number
+  health_score: number
+  grade: Grade
+  delta: number
 }
 
 // ── Trend chart point (repo scope in v1; per-node later) ────────────────────
 
 export interface HealthPoint {
-  t: string; // ISO timestamp of the scan/commit
-  score: number;
-  commit_sha?: string | null;
+  t: string // ISO timestamp of the scan/commit
+  score: number
+  commit_sha?: string | null
 }
 
 // ── Category pie slice (health card + category-breakdown view) ──────────────
 
 export interface CategoryBreakdownItem {
-  category: Category;
-  count: number; // number of findings in this category
-  debt: number; // summed debt contribution (for a debt-weighted pie)
+  category: Category
+  count: number // number of findings in this category
+  debt: number // summed debt contribution (for a debt-weighted pie)
 }
 
 // ── Scoring profile ─────────────────────────────────────────────────────────
 
 /** One weight per category — five numbers, each clamped to 0.1–3.0. */
 export interface CategoryWeights {
-  security: number;
-  code_design: number;
-  requirement: number;
-  documentation: number;
-  test: number;
+  security: number
+  code_design: number
+  requirement: number
+  documentation: number
+  test: number
 }
 
 /**
@@ -272,9 +267,9 @@ export interface CategoryWeights {
  * dropped response cannot leave a half-applied profile.
  */
 export interface ApplyProfileRequest {
-  name?: string | null; // records which preset the values came from; omit for custom
-  weights: CategoryWeights;
-  trust_s: number;
+  name?: string | null // records which preset the values came from; omit for custom
+  weights: CategoryWeights
+  trust_s: number
 }
 
 /**
@@ -283,15 +278,15 @@ export interface ApplyProfileRequest {
  * value the server would have to correct; they are a usability affordance, not the
  * rule.
  */
-export const WEIGHT_MIN = 0.1;
-export const WEIGHT_MAX = 3.0;
-export const TRUST_MIN = 0;
-export const TRUST_MAX = 1;
+export const WEIGHT_MIN = 0.1
+export const WEIGHT_MAX = 3.0
+export const TRUST_MIN = 0
+export const TRUST_MAX = 1
 
 export interface ScoreProfile {
-  id: string;
-  name: string; // "Balanced" | "Security-first" | "Delivery-speed" | a custom name
-  weights: CategoryWeights;
+  id: string
+  name: string // "Balanced" | "Security-first" | "Delivery-speed" | a custom name
+  weights: CategoryWeights
   /**
    * The trust slider `s`. `0` = trust the model, `1` = trust the rules. Scoring
    * derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it (FR-11).
@@ -299,42 +294,42 @@ export interface ScoreProfile {
    * Security findings are excluded: `source_trust` is fixed at 1.0 for the
    * `security` category, so no position of this slider can de-weight them.
    */
-  trust_s: number;
-  is_preset: boolean; // presets are read-only templates that seed the sliders
-  is_active: boolean; // at most one active profile per workspace (DB-enforced)
+  trust_s: number
+  is_preset: boolean // presets are read-only templates that seed the sliders
+  is_active: boolean // at most one active profile per workspace (DB-enforced)
 }
 
 // ── HealthReport: the full dashboard payload for one branch snapshot ─────────
 
 export interface HealthReport {
-  snapshot_id: string;
-  repo_id: string;
-  branch: string;
-  commit_sha: string; // last commit analysed (UI shows short)
-  scanned_at: string; // ISO
-  health_score: number; // 0–100
-  grade: Grade;
-  delta: number; // vs the previous snapshot
-  red_issue_count: number; // critical/high count for the health-card summary
-  profile: string; // active scoring profile name, labelled on the trend chart
-  model_version?: string | null; // which ML model produced this; null in degraded mode
-  history: HealthPoint[]; // trend chart (repo scope)
-  tree: TreeNode[]; // heat-map file tree
-  file_scores: FileScore[];
-  findings: Finding[]; // Refactor-First list
-  category_breakdown: CategoryBreakdownItem[]; // the pie
+  snapshot_id: string
+  repo_id: string
+  branch: string
+  commit_sha: string // last commit analysed (UI shows short)
+  scanned_at: string // ISO
+  health_score: number // 0–100
+  grade: Grade
+  delta: number // vs the previous snapshot
+  red_issue_count: number // critical/high count for the health-card summary
+  profile: string // active scoring profile name, labelled on the trend chart
+  model_version?: string | null // which ML model produced this; null in degraded mode
+  history: HealthPoint[] // trend chart (repo scope)
+  tree: TreeNode[] // heat-map file tree
+  file_scores: FileScore[]
+  findings: Finding[] // Refactor-First list
+  category_breakdown: CategoryBreakdownItem[] // the pie
 }
 
 // ── v2 — teams & RBAC. Seam only; NOT built in v1 (see roadmap). ────────────
 
-export type Role = "org-admin" | "manager" | "developer" | "viewer"; // v2
+export type Role = "org-admin" | "manager" | "developer" | "viewer" // v2
 export interface Member {
-  user_id: string;
-  name: string;
-  role: Role;
+  user_id: string
+  name: string
+  role: Role
 } // v2
 export interface Workspace {
-  id: string;
-  name: string;
-  members: Member[];
+  id: string
+  name: string
+  members: Member[]
 } // v2

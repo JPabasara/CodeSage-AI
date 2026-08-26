@@ -172,7 +172,8 @@ export function reportFor(
   return buildHealthReport({
     repoId,
     branch,
-    commitSha: branchInfo?.head_commit_sha ?? SNAPSHOTS[SNAPSHOTS.length - 1].commit_sha,
+    commitSha:
+      branchInfo?.head_commit_sha ?? SNAPSHOTS[SNAPSHOTS.length - 1].commit_sha,
     debtScale:
       (REPO_DEBT_SCALE[repoId] ?? 1) *
       (isDefaultBranch ? 1 : FEATURE_BRANCH_DEBT_SCALE),
@@ -191,7 +192,11 @@ export function reportFor(
  */
 function latestHealthFor(repoId: string) {
   const report = reportFor(repoId, "main", true)
-  return { score: report.health_score, grade: report.grade, delta: report.delta }
+  return {
+    score: report.health_score,
+    grade: report.grade,
+    delta: report.delta,
+  }
 }
 
 export const mockRepos: Repo[] = [
@@ -231,7 +236,11 @@ export const mockRepos: Repo[] = [
 ]
 
 /** acme-payments @ main, under Balanced — what the demo dashboard shows. */
-export const mockHealthReport: HealthReport = reportFor(DEMO_REPO_ID, "main", true)
+export const mockHealthReport: HealthReport = reportFor(
+  DEMO_REPO_ID,
+  "main",
+  true,
+)
 
 // Convenience re-exports, so a component test can grab exactly the slice it
 // needs without reaching into the report and without a second source of truth.

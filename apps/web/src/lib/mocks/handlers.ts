@@ -204,7 +204,8 @@ export function resetMockBackend() {
 
 // ── profile application ─────────────────────────────────────────────────────
 
-const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
+const clamp = (n: number, lo: number, hi: number) =>
+  Math.min(hi, Math.max(lo, n))
 
 const WEIGHT_KEYS: (keyof CategoryWeights)[] = [
   "security",
@@ -302,7 +303,9 @@ export const handlers = [
   // contract names, and each needs its own message on screen — "400 Bad Request"
   // tells a user who pasted their own private repo nothing about what to do next.
   http.post("*/api/projects", async ({ request }) => {
-    const body = (await request.json().catch(() => null)) as ConnectRepoRequest | null
+    const body = (await request
+      .json()
+      .catch(() => null)) as ConnectRepoRequest | null
     if (!body || typeof body.url !== "string") {
       return HttpResponse.json(
         {
@@ -315,7 +318,11 @@ export const handlers = [
     }
 
     const invalid = () =>
-      fail(400, "INVALID_REPOSITORY_URL", "That does not look like a repository URL.")
+      fail(
+        400,
+        "INVALID_REPOSITORY_URL",
+        "That does not look like a repository URL.",
+      )
 
     let parsed: URL
     try {
@@ -325,7 +332,10 @@ export const handlers = [
     }
     if (parsed.hostname !== "github.com") return invalid()
 
-    const segments = parsed.pathname.replace(/\.git$/, "").split("/").filter(Boolean)
+    const segments = parsed.pathname
+      .replace(/\.git$/, "")
+      .split("/")
+      .filter(Boolean)
     if (segments.length < 2) return invalid()
     const [owner, name] = segments
 
@@ -452,13 +462,17 @@ export const handlers = [
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
 
-    const body = (await request.json().catch(() => null)) as { branch?: string } | null
+    const body = (await request.json().catch(() => null)) as {
+      branch?: string
+    } | null
     if (!body || typeof body.branch !== "string") {
       return HttpResponse.json(
         {
           detail: "The request could not be processed.",
           code: "VALIDATION_FAILED",
-          errors: [{ field: "branch", detail: "Input should be a valid string." }],
+          errors: [
+            { field: "branch", detail: "Input should be a valid string." },
+          ],
         } satisfies ApiError,
         { status: 422 },
       )
@@ -558,7 +572,8 @@ export const authHandlers = [
     // The real API answers 401 when the session cookie is missing, and the app
     // rail redirects to /login on that — the behaviour a route-protection test
     // needs to be able to trigger.
-    const name = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "codesage_session"
+    const name =
+      process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "codesage_session"
     if (!cookies[name]) {
       return fail(401, "NOT_AUTHENTICATED", "Sign in to continue.")
     }

@@ -40,7 +40,9 @@ export default function ProjectsPage() {
       const code = err instanceof ApiRequestError ? err.code : undefined
       toast.error(
         (code && CONNECT_MESSAGE[code]) ??
-          (err instanceof Error ? err.message : "Couldn't connect that repository."),
+          (err instanceof Error
+            ? err.message
+            : "Couldn't connect that repository."),
       )
     } finally {
       setConnecting(false)
