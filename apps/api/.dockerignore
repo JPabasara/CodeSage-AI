@@ -49,3 +49,9 @@ Dockerfile
 .dockerignore
 
 .DS_Store
+
+# vendor/ — no longer copied into the image. The CK jar is fetched and checksummed
+# by the Dockerfile itself (J4.1), so anything left in here is a local artefact.
+# Without this line a hand-downloaded ck.jar adds 16 MB to every build context,
+# which is the exact problem this file was created to solve (log Entry 2).
+vendor/

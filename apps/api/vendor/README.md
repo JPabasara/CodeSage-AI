@@ -1,35 +1,71 @@
 # vendor/
 
-Third-party binaries used by local development. Binaries in this directory are
-ignored by Git and are not used by the Docker build.
+Third-party binaries that are not Python packages, so `pip` cannot fetch them.
 
-## ck.jar
+**Nothing in here is committed, and as of 26 Aug 2026 nothing in here is needed either.**
 
-CK measures Java source metrics such as lines of code, complexity, nesting depth,
-and method counts (SRS FR-7). The worker runs it as a separate Java process.
+## ck.jar — now fetched by the Dockerfile, not by you
 
-The Dockerfile downloads the published CK 0.7.0 fat JAR from Maven Central during
-its disposable `ck-fetch` stage. That release is pinned to upstream commit
-`54c21707a7a27a9511dba9a97d19c3554a5a44ac`, and Docker verifies this SHA-256:
+CK measures Java source: lines of code, complexity, nesting depth, method counts (SRS FR-7). It is
+a Java program the worker runs as a separate process, which is why the image installs a JRE.
 
-```text
-2ddfdc275b6b59c2033e03253c4fec511c338fe494a10b70f651bc039a72c74d
+**You do not download it any more.** `apps/api/Dockerfile` fetches it during the build, pinned to
+an exact version and verified against a SHA-256:
+
+```dockerfile
+ADD --checksum=sha256:2ddfdc275b6b59c2033e03253c4fec511c338fe494a10b70f651bc039a72c74d \
+    https://repo1.maven.org/maven2/com/github/mauricioaniche/ck/0.7.0/ck-0.7.0-jar-with-dependencies.jar \
+    /opt/ck/ck.jar
 ```
 
-The build stops if the downloaded bytes do not match. Only the verified JAR is
-copied to `/opt/ck/ck.jar` in the runtime image; download tools and intermediate
-files are discarded. `CODESAGE_CK_JAR=/opt/ck/ck.jar` tells the scan worker where
-to find it.
+`CODESAGE_CK_JAR=/opt/ck/ck.jar` points at it, and the next line of the Dockerfile runs the jar and
+greps for its usage string — so a build that cannot execute CK fails, instead of producing an image
+whose scans die at run time.
 
-Consequently, a clean checkout needs no manually downloaded JAR. A local
-`vendor/ck.jar` is useful only when running the worker directly outside Docker.
+### Why it changed
 
-## Upgrading CK
+This folder used to hold `ck.jar`, downloaded by hand, and the Dockerfile did `COPY vendor/ /opt/ck/`.
 
-1. Select a released CK tag and record the commit to which the tag resolves.
-2. Download its `jar-with-dependencies` artifact and calculate its SHA-256.
-3. Update `CK_VERSION`, `CK_COMMIT`, and `CK_SHA256` together in the Dockerfile.
-4. Rebuild the image and run the extraction and end-to-end scan tests.
+That quietly did not work. `apps/api/vendor/*.jar` is gitignored — correctly, it is 16 MB of build
+output that does not belong in git history — so a fresh checkout has no jar. **CI checks out
+fresh.** Every image CI published therefore had an empty `/opt/ck/`, and any scan run from one
+failed in `extractors/ck_metrics.py` with:
 
-Never update only the URL or disable the checksum check. Historical scan results
-must remain attributable to a known analysis-engine version.
+```
+CK jar was not found at /opt/ck/ck.jar
+```
+
+`run_scan` catches that, writes phase `error` and the message *"The repository could not be
+analysed."*, and moves on — so the visible symptom was a scan that failed for no stated reason,
+with the real cause only in the worker log. The build was green the whole time, because nothing
+asked.
+
+Full write-up: **[deployment log, Entry 5, Finding 1 and Step 2](../../../docs/Project%20Management%20&%20Planning/deployment-implementation-log.md#step-2--the-published-image-could-not-run-a-scan)**.
+
+### Why Maven Central and not GitHub
+
+The old instructions here said to take `ck-0.7.0-jar-with-dependencies.jar` from
+<https://github.com/mauricioaniche/ck/releases>. **That page is empty** — the project publishes
+tags but no release assets (`gh api repos/mauricioaniche/ck/releases` returns `[]`). Maven Central
+carries the same artifact and, unlike a release asset, a published coordinate there is immutable —
+so a pinned version plus a digest means the build gets exactly that file or fails loudly.
+
+### Bumping the version
+
+The version and the checksum live on adjacent lines in the Dockerfile and **must be changed
+together**:
+
+```bash
+curl -sLO https://repo1.maven.org/maven2/com/github/mauricioaniche/ck/<new>/ck-<new>-jar-with-dependencies.jar
+sha256sum ck-<new>-jar-with-dependencies.jar
+```
+
+Then record the same version string on `AnalysisEngineVersion.ck_version`. A floating version
+silently invalidates historical comparisons — REL-10 claims "same revision, consistent results",
+and that claim is only checkable if the engine version is written down next to the results.
+
+## Do you ever need a jar in here?
+
+Only to unblock yourself on a branch that predates this change, or to test a CK version before
+pinning it. Put it at `apps/api/vendor/ck.jar` and mount or copy it deliberately; the Dockerfile no
+longer reads this directory at all.
