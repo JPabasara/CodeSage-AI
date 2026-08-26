@@ -13,7 +13,31 @@
 # the image to save ~180 MB would cost the shared domain model. Revisit if image
 # size becomes a real constraint.
 
+# CK 0.7.0 is tag `ck-0.7.0` at this exact upstream commit. Fetching the
+# published fat JAR avoids Maven timestamps making locally built output differ.
+# The checksum makes the build fail closed if the URL serves different bytes.
+FROM alpine:3.22 AS ck-fetch
+
+ARG CK_VERSION=0.7.0
+ARG CK_COMMIT=54c21707a7a27a9511dba9a97d19c3554a5a44ac
+ARG CK_SHA256=2ddfdc275b6b59c2033e03253c4fec511c338fe494a10b70f651bc039a72c74d
+
+RUN apk add --no-cache ca-certificates curl \
+    && curl --fail --location --silent --show-error \
+        --retry 5 --retry-all-errors --retry-delay 2 \
+        "https://repo1.maven.org/maven2/com/github/mauricioaniche/ck/${CK_VERSION}/ck-${CK_VERSION}-jar-with-dependencies.jar" \
+        --output /ck.jar \
+    && echo "${CK_SHA256}  /ck.jar" | sha256sum -c
+
 FROM python:3.12-slim AS base
+
+ARG CK_VERSION=0.7.0
+ARG CK_COMMIT=54c21707a7a27a9511dba9a97d19c3554a5a44ac
+ARG CK_SHA256=2ddfdc275b6b59c2033e03253c4fec511c338fe494a10b70f651bc039a72c74d
+
+LABEL org.codesage.ck.version="${CK_VERSION}" \
+      org.codesage.ck.source-commit="${CK_COMMIT}" \
+      org.codesage.ck.sha256="${CK_SHA256}"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -26,22 +50,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # ── CK ──────────────────────────────────────────────────────────────────────
-# CK is a Java program, not a pip package, so it is not in requirements.txt and
-# cannot be. The jar is not committed either — it is ~10 MB of build output that
-# does not belong in git history — so it is fetched once into `vendor/` and
-# copied in here. See apps/api/vendor/README.md.
-#
-# The whole directory is copied rather than one named file, so the image still
-# builds on a machine that has not fetched the jar yet. Only the worker needs
-# it, and only once the scan pipeline stops being stubs; the API container runs
-# perfectly well without it.
-#
-# TEAM TODO: pin an exact CK release and record the same version string on
-# AnalysisEngineVersion.ck_version, so REL-10's "same revision, consistent results"
-# claim is actually checkable. A floating version silently invalidates historical
-# comparisons.
+# CK is not a pip package. The first stage downloads the release tied to the
+# pinned upstream commit and verifies its SHA-256. Only the verified JAR is
+# copied here; curl and the download stage do not enter the runtime image.
+# See apps/api/vendor/README.md for the controlled upgrade procedure.
 ENV CODESAGE_CK_JAR=/opt/ck/ck.jar
-COPY vendor/ /opt/ck/
+COPY --from=ck-fetch /ck.jar /opt/ck/ck.jar
 
 WORKDIR /app
 
