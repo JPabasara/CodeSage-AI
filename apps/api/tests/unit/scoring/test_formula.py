@@ -31,16 +31,16 @@ def test_base_points_are_the_appendix_c_values() -> None:
 
 
 def test_churn_factor_is_bounded_1_to_2() -> None:
-    assert formula.churn_factor(FileFacts("a.java", 0.0, 0)) == 1.0
-    assert formula.churn_factor(FileFacts("a.java", 0.0, 20)) == 2.0
+    assert formula.churn_factor(FileFacts("a.java", 0.0, 0,1000)) == 1.0
+    assert formula.churn_factor(FileFacts("a.java", 0.0, 20,1000)) == 2.0
     # Saturates: 100 commits is not worth more than 20.
-    assert formula.churn_factor(FileFacts("a.java", 0.0, 100)) == 2.0
+    assert formula.churn_factor(FileFacts("a.java", 0.0, 100,1000)) == 2.0
 
 
 def test_risk_factor_is_bounded_1_to_2_5(balanced: Profile) -> None:
-    assert formula.risk_factor(FileFacts("a.java", 0.0, 0), balanced) == 1.0
+    assert formula.risk_factor(FileFacts("a.java", 0.0, 0, 1000), balanced) == 1.0
     trusting_model = Profile(weights=balanced.weights, s=0.0)  # ml_trust = 1.5
-    assert formula.risk_factor(FileFacts("a.java", 1.0, 0), trusting_model) == 2.5
+    assert formula.risk_factor(FileFacts("a.java", 1.0, 0, 1000), trusting_model) == 2.5
 
 
 def test_trust_slider_default_position_is_neutral(balanced: Profile) -> None:
@@ -77,8 +77,8 @@ def test_ml_boost_cannot_invert_the_severity_ranking() -> None:
     finding must still rank below a Critical one in a cold, safe file.
     """
     p = Profile(weights={c: 1.0 for c in Category}, s=0.0)
-    hot = FileFacts("hot.java", risk_score=1.0, commits_90d=100)
-    cold = FileFacts("cold.java", risk_score=0.0, commits_90d=0)
+    hot = FileFacts("hot.java", risk_score=1.0, commits_90d=100, loc=1000)
+    cold = FileFacts("cold.java", risk_score=0.0, commits_90d=0, loc=1000)
 
     low = ScoringFinding("a", Source.RULE, Category.CODE_DESIGN, Severity.LOW, "hot.java")
     critical = ScoringFinding("b", Source.RULE, Category.CODE_DESIGN, Severity.CRITICAL, "cold.java")

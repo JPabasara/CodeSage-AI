@@ -1,8 +1,126 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from codesage_api.detection.fingerprint import rule_fingerprint
+from codesage_api.detection.reasons import render_rule_reason
 from codesage_api.detection.rules.registry import RuleDefinition
 from codesage_api.extractors.ck_metrics import FileMetrics
+from codesage_api.scoring.enums import Category, Severity
 
 
-def detect(files: list[FileMetrics], rules: list[RuleDefinition]) -> list[dict]:
-    raise NotImplementedError
+@dataclass(frozen=True, slots=True)
+class DetectedFinding:
+    file_path: str
+    line: int
+    symbol: str
+    rule_id: str
+    category: Category
+    severity: Severity
+    description: str
+    evidence: str | None
+    measured_value: float | None
+    threshold: float | None
+    fingerprint: str
+
+
+_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {
+    "complex-function": lambda item: item.cyclomatic_complexity,
+    "long-method": lambda item: float(item.longest_method_lines),
+    "deep-nesting": lambda item: float(item.max_nesting_depth),
+    "large-file": lambda item: float(item.loc),
+}
+_SECRET = re.compile(
+    r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\b\s*=\s*[\"']([^\"']{8,})[\"']"
+)
+_SQL_CONCAT = re.compile(
+    r"(?i)[\"']\s*(select|insert|update|delete)\b[^\"']*[\"']\s*\+"
+)
+
+
+def _metric_findings(
+    files: list[FileMetrics], rules: list[RuleDefinition]
+) -> list[DetectedFinding]:
+    findings: list[DetectedFinding] = []
+    for item in files:
+        symbol = Path(item.path).stem
+        for rule in rules:
+            accessor = _RULE_ACCESSORS.get(rule.rule_id)
+            if accessor is None:
+                continue
+            value = accessor(item)
+            threshold = rule.threshold
+            if value <= threshold:
+                continue
+            findings.append(
+                DetectedFinding(
+                    file_path=item.path,
+                    line=1,
+                    symbol=symbol,
+                    rule_id=rule.rule_id,
+                    category=rule.category,
+                    severity=rule.severity,
+                    description=render_rule_reason(
+                        rule.message_template,
+                        symbol=symbol,
+                        file=item.path,
+                        value=value,
+                        threshold=threshold,
+                    ),
+                    evidence=f"{rule.rule_id}={value:g}",
+                    measured_value=value,
+                    threshold=threshold,
+                    fingerprint=rule_fingerprint(rule.rule_id, item.path, symbol),
+                )
+            )
+    return findings
+
+
+def _pattern_findings(
+    repository_path: Path, rules: list[RuleDefinition]
+) -> list[DetectedFinding]:
+    by_id = {rule.rule_id: rule for rule in rules}
+    findings: list[DetectedFinding] = []
+    for path in sorted(repository_path.rglob("*.java")):
+        if ".git" in path.parts:
+            continue
+        relative = path.relative_to(repository_path).as_posix()
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1
+        ):
+            matches = (
+                ("hardcoded-secret", _SECRET.search(line)),
+                ("sql-concat", _SQL_CONCAT.search(line)),
+            )
+            for rule_id, match in matches:
+                rule = by_id.get(rule_id)
+                if rule is None or match is None:
+                    continue
+                symbol = match.group(1)
+                findings.append(
+                    DetectedFinding(
+                        file_path=relative,
+                        line=line_number,
+                        symbol=symbol,
+                        rule_id=rule.rule_id,
+                        category=rule.category,
+                        severity=rule.severity,
+                        description=rule.message_template.format(symbol=symbol),
+                        evidence=None,
+                        measured_value=None,
+                        threshold=None,
+                        fingerprint=rule_fingerprint(rule.rule_id, relative, symbol),
+                    )
+                )
+    return findings
+
+
+def detect(
+    files: list[FileMetrics],
+    rules: list[RuleDefinition],
+    repository_path: Path,
+) -> list[DetectedFinding]:
+    return _metric_findings(files, rules) + _pattern_findings(repository_path, rules)

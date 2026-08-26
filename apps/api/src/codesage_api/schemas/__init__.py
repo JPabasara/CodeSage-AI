@@ -21,24 +21,25 @@ from codesage_api.schemas.health import (
     TreeNodeOut,
 )
 from codesage_api.schemas.profile import ScoreProfileIn, ScoreProfileOut
-from codesage_api.schemas.repo import ConnectRepoIn, RepoOut
+from codesage_api.schemas.repo import ConnectRepoIn, LatestHealthOut, RepoOut
 from codesage_api.schemas.scan import ScanStatusOut, ScanSummaryOut, StartScanIn
 
 __all__ = [
-    "BranchOut",
     "ApiModel",
+    "BranchOut",
     "CategoryBreakdownItemOut",
     "ConnectRepoIn",
     "FileScoreOut",
     "FindingOut",
     "HealthPointOut",
     "HealthReportOut",
+    "LatestHealthOut",
     "RepoOut",
     "ScanStatusOut",
     "ScanSummaryOut",
-    "SessionOut",
     "ScoreProfileIn",
     "ScoreProfileOut",
+    "SessionOut",
     "StartScanIn",
     "TreeNodeOut",
 ]

@@ -61,6 +61,22 @@ class RepositoryUnreachable(CodeSageError):
     message = "That repository could not be reached. Check the URL and try again."
 
 
+class RepositoryAlreadyConnected(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "ALREADY_CONNECTED"
+    message = "That repository is already connected to this workspace."
+
+
+class RepositoryMissingDefaultBranch(CodeSageError):
+    message = "The connected repository has no default branch."
+
+
+class RateLimited(CodeSageError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "RATE_LIMITED"
+    message = "GitHub's request limit has been reached. Please try again later."
+
+
 class ScanAlreadyRunning(CodeSageError):
     status_code = status.HTTP_409_CONFLICT
     code = "SCAN_ALREADY_RUNNING"
@@ -93,6 +109,27 @@ class UpstreamUnavailable(CodeSageError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "UPSTREAM_UNAVAILABLE"
     message = "A service we depend on is temporarily unavailable. Please try again."
+
+
+class SignInFailed(CodeSageError):
+    """Asgardeo refused to complete this sign-in, and retrying will not help.
+
+    Separate from `UpstreamUnavailable` because the two need opposite responses.
+    An outage is temporary and "please try again" is true. A spent authorization
+    code, an expired one, or a mismatched client is terminal for this attempt:
+    the only way forward is to start sign-in again.
+
+    Calling both of them 503 cost us an afternoon. "A service we depend on is
+    temporarily unavailable" sent us looking for a service failure while Asgardeo
+    was up the whole time and simply saying no.
+
+    The callback catches this and sends the browser back to /login, so the status
+    below is only what an escaped one would produce.
+    """
+
+    status_code = status.HTTP_401_UNAUTHORIZED
+    code = "NOT_AUTHENTICATED"
+    message = "Sign-in could not be completed. Please sign in again."
 
 
 class MisconfiguredSignIn(CodeSageError):

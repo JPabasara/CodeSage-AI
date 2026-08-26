@@ -5,15 +5,26 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+import uuid
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+
+from codesage_api.deps import get_db, get_workspace_id
 from codesage_api.schemas import ScanStatusOut, ScanSummaryOut, StartScanIn
+from codesage_api.services import analysis
 
 router = APIRouter(prefix="/repos/{repo_id}", tags=["scans"])
 
 
 @router.post("/scan", response_model=ScanStatusOut, status_code=status.HTTP_202_ACCEPTED)
-def start_scan(repo_id: str, body: StartScanIn) -> ScanStatusOut:
+def start_scan(
+    repo_id: uuid.UUID,
+    body: StartScanIn,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> ScanStatusOut:
     """Start a scan; return a scan identifier and phase immediately.
 
     **The API answers before the work begins.** It inserts the AnalysisAttempt row,
@@ -33,11 +44,16 @@ def start_scan(repo_id: str, body: StartScanIn) -> ScanStatusOut:
     attempt leaves a row with no Snapshot, and comparing against one would make the
     system skip the work and then serve a snapshot that was never written.
     """
-    raise NotImplementedError
+    return analysis.start(db, workspace_id, repo_id, body.branch)
 
 
 @router.get("/scan/{scan_id}", response_model=ScanStatusOut)
-def get_scan_status(repo_id: str, scan_id: str) -> ScanStatusOut:
+def get_scan_status(
+    repo_id: uuid.UUID,
+    scan_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> ScanStatusOut:
     """Poll phase and progress. Called once per second while a scan is active.
 
     **Reads from two places, deliberately.** `phase` comes from PostgreSQL and the
@@ -50,11 +66,16 @@ def get_scan_status(repo_id: str, scan_id: str) -> ScanStatusOut:
     Polling rather than WebSockets or SSE is a v1.0 decision: it gives continuous
     progress without the deployment complexity of a second protocol.
     """
-    raise NotImplementedError
+    return analysis.get_status(db, workspace_id, repo_id, scan_id)
 
 
 @router.post("/scan/{scan_id}/stop", response_model=ScanStatusOut)
-def stop_scan(repo_id: str, scan_id: str) -> ScanStatusOut:
+def stop_scan(
+    repo_id: uuid.UUID,
+    scan_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> ScanStatusOut:
     """Cancel a running scan.
 
     **Cancellation is cooperative, not forced.** This endpoint does not stop the
@@ -71,14 +92,19 @@ def stop_scan(repo_id: str, scan_id: str) -> ScanStatusOut:
     already using, because the worker writes `cancelled` to the same row the status
     endpoint reads. No separate notification path is needed.
     """
-    raise NotImplementedError
+    return analysis.cancel(db, workspace_id, repo_id, scan_id)
 
 
 @router.get("/scans", response_model=list[ScanSummaryOut])
-def list_scan_history(repo_id: str, branch: str | None = None) -> list[ScanSummaryOut]:
+def list_scan_history(
+    repo_id: uuid.UUID,
+    branch: str,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> list[ScanSummaryOut]:
     """Past snapshots for the active project and branch (FR-19).
 
     Each row: date, commit SHA, health score, grade, delta, finding count. The last
     three are derived under the active profile, not read from a column.
     """
-    raise NotImplementedError
+    return analysis.get_history(db, workspace_id, repo_id, branch)

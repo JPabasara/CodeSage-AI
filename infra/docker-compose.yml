@@ -29,6 +29,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -53,6 +56,17 @@ services:
       start_period: 20s
     # Not published. Workers call it by service name.
 
+  migrate:
+    build:
+      context: ../apps/api
+    command: alembic upgrade head
+    environment:
+      CODESAGE_MIGRATION_DATABASE_URL: postgresql+psycopg://codesage_owner:devpassword@postgres:5432/codesage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: ../apps/api
@@ -69,6 +83,7 @@ services:
       CODESAGE_MIGRATION_DATABASE_URL: postgresql+psycopg://codesage_owner:devpassword@postgres:5432/codesage
       CODESAGE_REDIS_URL: redis://redis:6379/0
       CODESAGE_ML_SERVICE_URL: http://ml:8001
+      CODESAGE_GITHUB_TOKEN: ${CODESAGE_GITHUB_TOKEN:-}
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
       CODESAGE_SECRET_KEY: dev-only-change-me
       # ── Sign-in. The two blank ones come from infra/.env, which is never
@@ -95,8 +110,8 @@ services:
       retries: 5
       start_period: 20s
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
@@ -104,11 +119,14 @@ services:
     build:
       context: ../apps/api
     command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1
+    init: true
+    stop_grace_period: 30s
     environment:
       CODESAGE_DATABASE_URL: postgresql+psycopg://codesage_app:devpassword@postgres:5432/codesage
       CODESAGE_REDIS_URL: redis://redis:6379/0
       CODESAGE_ML_SERVICE_URL: http://ml:8001
       CODESAGE_CLONE_DIR: /var/tmp/codesage-clones
+      CODESAGE_CK_JAR: /opt/ck/ck.jar
     volumes:
       # ~2 GB of scratch per concurrent scan. A named volume rather than the
       # container's writable layer, so a large clone cannot bloat the image layer.
@@ -126,8 +144,8 @@ services:
       retries: 5
       start_period: 45s
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     # Concurrency scales by replicas, not threads: each scan needs its own clone
@@ -156,4 +174,5 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
   clones:

@@ -34,6 +34,12 @@ def rls_database() -> Iterator[tuple[Engine, Engine, uuid.UUID, uuid.UUID]]:
             owner_engine = create_engine(owner_url, poolclass=NullPool)
 
             with owner_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "CREATE ROLE codesage_app "
+                        "NOSUPERUSER NOCREATEDB NOCREATEROLE"
+                    )
+                )
                 connection.execute(text(f"CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}' NOSUPERUSER"))
 
             old_migration_url = os.environ.get("CODESAGE_MIGRATION_DATABASE_URL")
@@ -67,9 +73,12 @@ def rls_database() -> Iterator[tuple[Engine, Engine, uuid.UUID, uuid.UUID]]:
                 connection.execute(
                     text(
                         "INSERT INTO repository "
-                        "(id, workspace_id, source_platform, external_repository_id, name, url, visibility, connection_status) "
-                        "VALUES (:ra, :wa, 'github', 'repo-a', 'A', 'https://example.test/a', 'public', 'connected'), "
-                        "(:rb, :wb, 'github', 'repo-b', 'B', 'https://example.test/b', 'public', 'connected')"
+                        "(id, workspace_id, source_platform, external_repository_id, "
+                        "name, owner, url, visibility, connection_status) "
+                        "VALUES (:ra, :wa, 'github', 'repo-a', 'A', 'owner-a', "
+                        "'https://example.test/a', 'public', 'connected'), "
+                        "(:rb, :wb, 'github', 'repo-b', 'B', 'owner-b', "
+                        "'https://example.test/b', 'public', 'connected')"
                     ),
                     {"ra": repository_a, "wa": workspace_a, "rb": repository_b, "wb": workspace_b},
                 )
