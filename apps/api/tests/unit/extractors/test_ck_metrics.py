@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from codesage_api.extractors.ck_metrics import (
@@ -16,6 +17,7 @@ def test_ck_csv_is_aggregated_per_file(monkeypatch, tmp_path: Path) -> None:
     jar.touch()
 
     def fake_run(command, **kwargs):
+        assert command[-1].endswith(os.sep)
         output = Path(command[-1])
         (output / "class.csv").write_text(
             "file,loc,wmc,maxNestedBlocksQty,totalMethodsQty\n"

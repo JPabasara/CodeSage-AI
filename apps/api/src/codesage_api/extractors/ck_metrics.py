@@ -8,6 +8,7 @@ before the tool is wired up.
 from __future__ import annotations
 
 import csv
+import os
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -72,7 +73,10 @@ def extract_ck_metrics(
                     "false",
                     "0",
                     "false",
-                    str(output),
+                    # CK treats this argument as a filename prefix, not a
+                    # directory. The separator makes it emit class.csv and
+                    # method.csv inside our temporary output directory.
+                    f"{output}{os.sep}",
                 ],
                 check=True,
                 capture_output=True,
