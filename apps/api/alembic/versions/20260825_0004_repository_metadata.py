@@ -1,7 +1,7 @@
 """Add repository metadata required by the project contract.
 
-Revision ID: 20260825_0003
-Revises: 20260825_0002
+Revision ID: 20260825_0004
+Revises: 20260825_0003
 """
 
 from collections.abc import Sequence
@@ -9,8 +9,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20260825_0003"
-down_revision: str | None = "20260825_0002"
+revision: str = "20260825_0004"
+down_revision: str | None = "20260825_0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
