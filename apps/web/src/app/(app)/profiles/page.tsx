@@ -20,14 +20,33 @@ import {
 // The five categories, in the order they are shown. Keyed off CategoryWeights so
 // adding a sixth category to the contract breaks this list at compile time rather
 // than silently rendering four sliders.
-const WEIGHT_ROWS: { key: keyof CategoryWeights; label: string; hint: string }[] =
-  [
-    { key: "security", label: "Security", hint: "Secrets, SQL concatenation, eval" },
-    { key: "code_design", label: "Code design", hint: "Complexity, long files, duplication" },
-    { key: "requirement", label: "Requirement", hint: "Self-admitted missing behaviour" },
-    { key: "documentation", label: "Documentation", hint: "Missing or stale docs" },
-    { key: "test", label: "Test", hint: "Missing or disabled tests" },
-  ]
+const WEIGHT_ROWS: {
+  key: keyof CategoryWeights
+  label: string
+  hint: string
+}[] = [
+  {
+    key: "security",
+    label: "Security",
+    hint: "Secrets, SQL concatenation, eval",
+  },
+  {
+    key: "code_design",
+    label: "Code design",
+    hint: "Complexity, long files, duplication",
+  },
+  {
+    key: "requirement",
+    label: "Requirement",
+    hint: "Self-admitted missing behaviour",
+  },
+  {
+    key: "documentation",
+    label: "Documentation",
+    hint: "Missing or stale docs",
+  },
+  { key: "test", label: "Test", hint: "Missing or disabled tests" },
+]
 
 /** The six numbers the user is editing, before Apply sends them. */
 type Draft = { weights: CategoryWeights; trust_s: number }
@@ -70,7 +89,9 @@ export default function ProfilesPage() {
   // Balanced would mislabel the stored profile.
   const matchedPreset =
     weights && trustS !== undefined
-      ? (presets ?? []).find((p) => sameNumbers(p, { weights, trust_s: trustS }))
+      ? (presets ?? []).find((p) =>
+          sameNumbers(p, { weights, trust_s: trustS }),
+        )
       : undefined
 
   function seedFrom(preset: ScoreProfile) {
@@ -132,7 +153,10 @@ export default function ProfilesPage() {
       <section className="space-y-2">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-sm font-medium">Start from a preset</h2>
-          <span className="text-muted-foreground text-xs" data-testid="profile-label">
+          <span
+            className="text-muted-foreground text-xs"
+            data-testid="profile-label"
+          >
             {matchedPreset ? matchedPreset.name : "Custom"}
           </span>
         </div>
@@ -157,9 +181,14 @@ export default function ProfilesPage() {
             <div className="flex items-baseline justify-between gap-4">
               <label htmlFor={`weight-${key}`} className="text-sm">
                 {label}
-                <span className="text-muted-foreground ml-2 text-xs">{hint}</span>
+                <span className="text-muted-foreground ml-2 text-xs">
+                  {hint}
+                </span>
               </label>
-              <span className="text-sm tabular-nums" data-testid={`value-${key}`}>
+              <span
+                className="text-sm tabular-nums"
+                data-testid={`value-${key}`}
+              >
                 {weights[key].toFixed(1)}
               </span>
             </div>
@@ -197,9 +226,7 @@ export default function ProfilesPage() {
           max={TRUST_MAX}
           step={0.05}
           value={[trustS]}
-          onValueChange={([v]) =>
-            setDraft({ weights, trust_s: v })
-          }
+          onValueChange={([v]) => setDraft({ weights, trust_s: v })}
         />
         <p className="text-muted-foreground text-xs">
           Security findings are excluded — no position of this slider can

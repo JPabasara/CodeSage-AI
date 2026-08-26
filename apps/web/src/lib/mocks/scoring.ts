@@ -82,7 +82,11 @@ function riskFactor(risk: number | null | undefined): number {
  * `security` category, so no position of the trust slider can de-weight them.
  * That is mechanism 2 of the critical-security floor (FR-24).
  */
-function sourceTrust(source: Source, category: Category, trustS: number): number {
+function sourceTrust(
+  source: Source,
+  category: Category,
+  trustS: number,
+): number {
   if (category === "security") return 1.0
   return source === "rule" ? 0.5 + trustS : 1.5 - trustS
 }
@@ -172,7 +176,8 @@ export const FINDING_FACTS: FindingFact[] = [
     file: "src/api/legacy_gateway.ts",
     line: 154,
     symbol: "handle()",
-    reason: "User input reaches eval() — an attacker controls what this executes.",
+    reason:
+      "User input reaches eval() — an attacker controls what this executes.",
     status: "open",
     pinned_by_floor: true,
     rule_id: "dangerous-eval",
@@ -326,15 +331,24 @@ export const TREE_SHAPE: ShapeNode[] = [
         path: "src/orders",
         name: "orders",
         children: [
-          { path: "src/orders/order_controller.ts", name: "order_controller.ts" },
-          { path: "src/orders/order_repository.ts", name: "order_repository.ts" },
+          {
+            path: "src/orders/order_controller.ts",
+            name: "order_controller.ts",
+          },
+          {
+            path: "src/orders/order_repository.ts",
+            name: "order_repository.ts",
+          },
         ],
       },
       {
         path: "src/payments",
         name: "payments",
         children: [
-          { path: "src/payments/payment_service.ts", name: "payment_service.ts" },
+          {
+            path: "src/payments/payment_service.ts",
+            name: "payment_service.ts",
+          },
           { path: "src/payments/stripe_client.ts", name: "stripe_client.ts" },
         ],
       },
@@ -491,7 +505,8 @@ export function buildTree(fileScores: FileScore[]): TreeNode[] {
     const fileHealth = built.flatMap((b) => b.fileHealth)
     const debt = round1(built.reduce((sum, b) => sum + b.node.debt_score, 0))
     const health = clampScore(
-      fileHealth.reduce((sum, h) => sum + h, 0) / Math.max(1, fileHealth.length),
+      fileHealth.reduce((sum, h) => sum + h, 0) /
+        Math.max(1, fileHealth.length),
     )
     return {
       node: {
@@ -519,7 +534,9 @@ export function buildTree(fileScores: FileScore[]): TreeNode[] {
  * slice and an empty slice mean different things, and the legend should stay
  * stable as the profile changes.
  */
-export function categoryBreakdown(findings: Finding[]): CategoryBreakdownItem[] {
+export function categoryBreakdown(
+  findings: Finding[],
+): CategoryBreakdownItem[] {
   const CATEGORIES: Category[] = [
     "security",
     "code-design",

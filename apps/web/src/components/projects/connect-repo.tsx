@@ -1,10 +1,10 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { Plus } from "lucide-react";
+import { useState } from "react"
+import { Plus } from "lucide-react"
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 // The SRS specifies this panel exactly: "an example URL text box and a Connect
 // button with inline validation." There is deliberately no private-repository
@@ -12,27 +12,27 @@ import { Input } from "@/components/ui/input";
 // authorization controls, which are v2. An earlier version of this component
 // advertised it as a disabled tab, which promised a feature two releases away.
 export type ConnectRepoProps = {
-  onConnect?: (url: string) => void;
+  onConnect?: (url: string) => void
   /** A connect request is in flight; the form is locked until it settles. */
-  busy?: boolean;
-};
+  busy?: boolean
+}
 
 export function ConnectRepo({ onConnect, busy }: Readonly<ConnectRepoProps>) {
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState("")
 
   const submit = () => {
-    const trimmed = url.trim();
-    if (!trimmed || busy) return;
-    onConnect?.(trimmed);
-    setUrl("");
-  };
+    const trimmed = url.trim()
+    if (!trimmed || busy) return
+    onConnect?.(trimmed)
+    setUrl("")
+  }
 
   return (
     <form
       className="flex items-center gap-2"
       onSubmit={(e) => {
-        e.preventDefault();
-        submit();
+        e.preventDefault()
+        submit()
       }}
     >
       <Input
@@ -46,5 +46,5 @@ export function ConnectRepo({ onConnect, busy }: Readonly<ConnectRepoProps>) {
         <Plus className="size-4" /> {busy ? "Connecting…" : "Connect"}
       </Button>
     </form>
-  );
+  )
 }
