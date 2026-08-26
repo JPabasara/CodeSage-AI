@@ -1,7 +1,7 @@
 """Let the sign-in workspace lookup actually see MEMBERSHIP.
 
-Revision ID: 20260825_0004
-Revises: 20260825_0003
+Revision ID: 20260825_0002
+Revises: 20260812_0001
 
 THE BUG THIS FIXES: the second sign-in, and every one after it, answered
 401 NOT_AUTHENTICATED from `/api/auth/callback`.
@@ -58,8 +58,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "20260825_0004"
-down_revision: str | None = "20260825_0003"
+revision: str = "20260825_0002"
+down_revision: str | None = "20260812_0001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
