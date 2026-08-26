@@ -1,11 +1,3 @@
-"""FastAPI application factory — the API container's entrypoint.
-
-    uvicorn codesage_api.main:app
-
-The worker container runs the *same image* with a different command; see
-`worker.py`.
-"""
-
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -36,9 +28,6 @@ def create_app() -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
-
-    # The frontend is served from its own container and origin, so CORS is a real
-    # requirement rather than a development convenience. Credentials are allowed
     # because the session travels as a cookie.
     app.add_middleware(
         CORSMiddleware,
