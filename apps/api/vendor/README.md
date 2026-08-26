@@ -40,7 +40,7 @@ analysed."*, and moves on — so the visible symptom was a scan that failed for 
 with the real cause only in the worker log. The build was green the whole time, because nothing
 asked.
 
-Full write-up: **[deployment log, Entry 5, Finding 1 and Step 2](../../../docs/Project%20Management%20&%20Planning/deployment-implementation-log.md#step-2--put-the-ck-jar-into-the-image-j41--done-26-aug-2026)**.
+Full write-up: **[deployment log, Entry 5, Finding 1 and Step 2](../../../docs/Project%20Management%20&%20Planning/deployment-implementation-log.md#step-2--the-published-image-could-not-run-a-scan)**.
 
 ### Why Maven Central and not GitHub
 
