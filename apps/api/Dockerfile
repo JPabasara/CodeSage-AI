@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Code Sage AI — backend image.
 #
 # ONE image, TWO entrypoints (SAD §7 deployment view):
@@ -27,21 +28,51 @@ RUN apt-get update \
 
 # ── CK ──────────────────────────────────────────────────────────────────────
 # CK is a Java program, not a pip package, so it is not in requirements.txt and
-# cannot be. The jar is not committed either — it is ~10 MB of build output that
-# does not belong in git history — so it is fetched once into `vendor/` and
-# copied in here. See apps/api/vendor/README.md.
+# cannot be. It is FETCHED HERE, at build time, rather than copied from vendor/.
 #
-# The whole directory is copied rather than one named file, so the image still
-# builds on a machine that has not fetched the jar yet. Only the worker needs
-# it, and only once the scan pipeline stops being stubs; the API container runs
-# perfectly well without it.
+# WHY THIS CHANGED (J4.1, 26 Aug 2026). It used to be `COPY vendor/ /opt/ck/`,
+# with the jar downloaded by hand into apps/api/vendor/. But `apps/api/vendor/*.jar`
+# is gitignored — correctly; it is 16 MB of build output that does not belong in
+# git history — so a fresh checkout has no jar, and CI checks out fresh.
 #
-# TEAM TODO: pin an exact CK release and record the same version string on
-# AnalysisEngineVersion.ck_version, so REL-10's "same revision, consistent results"
-# claim is actually checkable. A floating version silently invalidates historical
-# comparisons.
+# The result: every image CI published had an EMPTY /opt/ck/, and every scan run
+# from one died in ck_metrics.py with "CK jar was not found at /opt/ck/ck.jar".
+# The build stayed green throughout, because nothing asked. See the deployment
+# log, Entry 5, Finding 1.
+#
+# Fetching it here means the jar is in the image by construction: CI, a laptop and
+# Railway all get the identical bytes, and there is nothing to remember to do.
+#
+# PINNED AND CHECKSUMMED. Maven Central rather than GitHub, because the CK project
+# publishes tags but no release assets — github.com/mauricioaniche/ck/releases is
+# empty. A Maven Central coordinate is immutable, so a version plus a digest means
+# the build either gets exactly this file or fails loudly.
+#
+# ⚠️ THE VERSION AND THE CHECKSUM MUST BE CHANGED TOGETHER. To bump CK, take the
+# new URL, download it, `sha256sum` it, and update both lines. Then record the same
+# version string on AnalysisEngineVersion.ck_version — that is what makes REL-10's
+# "same revision, consistent results" claim checkable rather than aspirational.
+#
+# ck 0.7.0 · sha256 verified 26 Aug 2026 against Maven Central's published .sha1
+#
+# --chmod=0644 because ADD defaults to 0600 root-only. This image has no USER
+# directive today, so root reads it either way — but the web image already runs as
+# a non-root user, and the day anyone hardens this one the same way, a 0600 jar
+# becomes an unreadable jar and every scan fails on a permission error that looks
+# nothing like its cause. One flag now, instead of that afternoon later.
 ENV CODESAGE_CK_JAR=/opt/ck/ck.jar
-COPY vendor/ /opt/ck/
+ADD --chmod=0644 --checksum=sha256:2ddfdc275b6b59c2033e03253c4fec511c338fe494a10b70f651bc039a72c74d \
+    https://repo1.maven.org/maven2/com/github/mauricioaniche/ck/0.7.0/ck-0.7.0-jar-with-dependencies.jar \
+    /opt/ck/ck.jar
+
+# Prove the JRE can actually RUN the jar, not merely that a file of the right size
+# landed. Costs about a second, and turns "the deployed worker cannot scan" from a
+# runtime mystery into a failed build.
+#
+# CK with no arguments prints its usage and exits 1, so the exit code cannot be the
+# assertion — the pipeline's status is grep's, and grep only succeeds on the real
+# usage line.
+RUN java -jar "$CODESAGE_CK_JAR" 2>&1 | grep -q "^Usage java -jar ck.jar"
 
 WORKDIR /app
 

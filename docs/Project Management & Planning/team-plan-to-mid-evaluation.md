@@ -110,10 +110,14 @@ This is why deployment work comes before frontend work, and why it does not bloc
 | Database migration is a step you can run | ✅ alembic |
 | A health endpoint for the platform to check | ✅ `/api/healthz` |
 | Services keep nothing in memory | ✅ sessions live in the database |
-| **Web image builds** | ❌ Phase 0 |
-| **Frontend API address is configurable** | ❌ Phase 0 |
-| **CI** | ❌ Phase 0 |
-| **Images published** | ❌ Phase 0 |
+| Web image builds | ✅ Phase 0 (log Entry 1) |
+| Frontend API address is configurable | ✅ Phase 0 — a build argument, not a runtime setting |
+| CI | ✅ Phase 0 (log Entry 3) |
+| Images published | ✅ Phase 0 — `ghcr.io/jpabasara/codesage-ai/{web,api,ml}` |
+| **The published `api` image can actually run a scan** | ❌ **Phase 4** — the CK jar is gitignored, so `/opt/ck/` is empty in every published image (log Entry 5, Finding 1) |
+| **All four containers deployed** | ❌ **Phase 4** — `worker` stopped, `ml` never started |
+| **A merge to `main` deploys** | ❌ **Phase 4** — CI stops at "images published" |
+| **A red pull request cannot be merged** | ⚠️ **Phase 4** — a ruleset enforces this, but one of its four required checks covers three matrix legs under one name, so a failing image build can pass unnoticed |
 
 ---
 
@@ -180,6 +184,40 @@ Full detail in **[§6c](#6c-phase-3--finish-the-slice-then-polish)**.
 > **PR A is everything that changes what the user can do** — the sign-out fix, the session
 > read, route protection, the in-place detail layout, and the Team removal. **PR B is view
 > polish only.** Nothing in PR B may change behaviour.
+
+### Phase 4 — finish the deployment (Wed 26 Aug onward)
+
+Phase 1 deployed two of the four containers and left the pipeline stopping at "images
+published". This phase closes both gaps. **Full step-by-step, with the three code findings that
+must be fixed first: [deployment log, Entry 5](deployment-implementation-log.md#entry-5--26-aug-2026--phase-4-finish-the-deployment--plan-nothing-ticked-yet).**
+
+Why now: Entry 4 stopped the `worker` because every Celery task was `raise NotImplementedError`.
+`tasks/scan_pipeline.py` is real code today, so **the live site currently accepts a scan and
+never runs it** — the job goes into Upstash and nothing picks it up.
+
+| # | Step | Done when |
+|---|---|---|
+| **J0.8** ✅ | **Fix the required checks on the existing ruleset** — done 26 Aug 2026. `images — build` was one required name covering three matrix legs, so a failing image build could hide behind a passing one | **Done.** Six contexts required: the three folder jobs plus `images — web`, `images — api`, `images — ml`. Review count 1, strict on, no bypass actors. Two Windows encoding traps hit on the way — recorded in Entry 5, Step 1 |
+| **J4.1** ✅ | Put the CK jar **into the image**, pinned and checksummed | **Done 26 Aug.** `ADD --chmod=0644 --checksum=sha256:…` fetches ck 0.7.0 from Maven Central, and a `RUN` executes it and greps its usage line, so a build that cannot run CK fails. Verified in the built image, including that a wrong digest does fail the build |
+| J4.2 | Deploy `worker` | `celery@… ready` in the log, connected to Upstash. Its variable list in §6a Step 7 is out of date — Entry 5 Step 3 has the current one |
+| J4.3 | Deploy `ml` | `/healthz` answers on `ml.railway.internal`. ⚠️ Needs a start-command override to bind `::` — Railway's private network is IPv6-only |
+| J4.4 | Migrations run as part of the deploy | `alembic upgrade head` is the `api` service's pre-deploy command, and `CODESAGE_MIGRATION_DATABASE_URL` exists both on Railway and in `apps/api/.env.example` |
+| J4.5 | **A merge to `main` deploys** | A `deploy` job runs after `images`, using a Railway project token in `secrets.RAILWAY_TOKEN`. The repository has no secrets at all today |
+| J4.6 | Verify, in order | A scan on a small **Java** repository reaches `done` on the live site, and a trivial commit to `main` produces a new image digest in the Railway log |
+
+> **§10's condition on J4.5 stands and is worth repeating: automate the deploy only *after* the
+> manual one works.** It does — Entries 1–4 are that. Automating something nobody has done by
+> hand only hides the failure.
+
+> **Not by pointing Railway at the repository.** That would make Railway build the code itself,
+> discarding the images CI publishes — so the thing deployed would not be the thing that was
+> tested. §5's whole idea is that the artefact CI built is the artefact that runs. CI publishes;
+> then it tells Railway to pull.
+
+**Teammates testing the result** — send them
+[Reference — the three ways to run it](deployment-implementation-log.md#reference--the-three-ways-to-run-it-and-what-each-one-can-prove).
+It covers frontend-with-MSW, the full Docker stack and the live site, and it lists exactly which
+endpoints cannot be tested locally and which are not implemented anywhere yet.
 
 ---
 
@@ -548,6 +586,13 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 Variables: only `CODESAGE_DATABASE_URL` and `CODESAGE_REDIS_URL`. Nothing else is needed.
 
+> ⚠️ **Superseded on 26 Aug 2026.** That was true while every Celery task was
+> `raise NotImplementedError`. A worker that really clones and analyses also needs
+> `CODESAGE_ML_SERVICE_URL`, `CODESAGE_ML_TIMEOUT_SECONDS`, `CODESAGE_GITHUB_TOKEN` and
+> `CODESAGE_LOG_LEVEL` — and the image it runs needs the CK jar, which it does not have. Use
+> **[deployment log, Entry 5, Step 3](deployment-implementation-log.md#step-3--deploy-worker-j42)**
+> instead of this block.
+
 **Do not attach a storage volume.** Each scan clones a repository into roughly 2 GB of scratch space
 and throws it away afterwards. Paid storage is for the database only (§9).
 
@@ -576,6 +621,12 @@ and a rebuild — never a setting on this screen.
 
 Deliberately. §9 explains why, and the design already treats the model service as optional: the scan
 finishes without it, every rule finding still appears, and risk comes back as "not measured".
+
+> **Revisited 26 Aug 2026 — it is now J4.3.** The reasoning above still holds, and the honest
+> reason it costs so little is worse than "the design tolerates it": **nothing in `apps/api` calls
+> the ML service at all.** `scan_pipeline.py` imports the rule engine and nothing else from
+> `detection/`. See [deployment log, Entry 5, Step 4](deployment-implementation-log.md#step-4--deploy-ml-j43),
+> which also covers the IPv6 bind Railway's private network requires.
 
 ---
 
@@ -1598,6 +1649,21 @@ Each running scan clones a repository and needs roughly 2 GB of scratch space. *
 ### Deploying automatically
 
 Once CI is green and steady, have a merge to `main` redeploy. Do this **after** the first manual deploy works — automating something you have never done by hand only hides the failure.
+
+> **This is J4.5, and the manual deploy now works.** The full workflow job, the Railway project
+> token, and the two things to verify before trusting it are in
+> **[deployment log, Entry 5, Step 6](deployment-implementation-log.md#step-6--auto-deploy-on-main-j45)**.
+> Do **J0.8 (branch protection)** first — auto-deploy without required checks means a red pull
+> request can reach the live site.
+
+### What CI still does not check
+
+| Not checked | Why it matters |
+|---|---|
+| **Playwright** | The `web` job runs `pnpm test:run`, which is vitest only. The end-to-end suite that walks the demo path is a local gate, not a merge gate |
+| **The CK jar** | No test exercises the extractor with a real jar, which is why an image that cannot scan has been published green since 20 Aug |
+| **Ruff on `apps/api`** | Advisory — 31 pre-existing findings, log Entry 3 |
+| **Prettier** | 97 files fail `--check`. PR B1 (P1) formats the repository, and the check can be added after |
 
 ---
 
