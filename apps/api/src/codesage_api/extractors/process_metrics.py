@@ -49,13 +49,20 @@ def extract_process_metrics(
     histories = {path: _History(set(), set()) for path in files}
     window_start = anchor_date - timedelta(days=90)
 
-    for commit in Repository(str(repository_path), to=commit_sha).traverse_commits():
+    for commit in Repository(
+        str(repository_path),
+        to_commit=commit_sha,
+    ).traverse_commits():
         changed_at = commit.committer_date
         if changed_at > anchor_date:
             continue
         author = commit.author.email or commit.author.name
         for modified in commit.modified_files:
-            relative_path = modified.new_path
+            relative_path = (
+                modified.new_path.replace("\\", "/")
+                if modified.new_path is not None
+                else None
+            )
             if relative_path not in histories:
                 continue
             history = histories[relative_path]
@@ -63,9 +70,9 @@ def extract_process_metrics(
                 history.first_change = changed_at
             if history.last_change is None or changed_at > history.last_change:
                 history.last_change = changed_at
+            history.authors.add(author)
             if window_start <= changed_at <= anchor_date:
                 history.commits_90d.add(commit.hash)
-                history.authors.add(author)
 
     results: list[FileProcessMetrics] = []
     for path in sorted(files):

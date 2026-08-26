@@ -3,13 +3,18 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import ClassVar
 
 from codesage_api.extractors.process_metrics import extract_process_metrics
 
 
 class _Repository:
-    def __init__(self, *_args, **_kwargs) -> None:
-        pass
+    last_path: str | None = None
+    last_kwargs: ClassVar[dict[str, object]] = {}
+
+    def __init__(self, path: str, **kwargs: object) -> None:
+        type(self).last_path = path
+        type(self).last_kwargs = kwargs
 
     def traverse_commits(self):
         return _COMMITS
@@ -33,7 +38,8 @@ _COMMITS = [
         hash="recent-2",
         committer_date=_ANCHOR - timedelta(days=5),
         author=SimpleNamespace(email="two@example.com", name="Two"),
-        modified_files=[SimpleNamespace(new_path="src/A.java")],
+        # PyDriller exposes platform-native separators for local repositories.
+        modified_files=[SimpleNamespace(new_path=r"src\A.java")],
     ),
 ]
 
@@ -46,10 +52,12 @@ def test_process_window_is_anchored_to_scanned_commit(monkeypatch, tmp_path: Pat
 
     metrics = extract_process_metrics(tmp_path, "scanned-sha", _ANCHOR)
 
+    assert _Repository.last_path == str(tmp_path)
+    assert _Repository.last_kwargs == {"to_commit": "scanned-sha"}
     assert len(metrics) == 1
     assert metrics[0].path == "src/A.java"
     assert metrics[0].commits_90d == 2
-    assert metrics[0].author_count == 2
+    assert metrics[0].author_count == 3
     assert metrics[0].file_age_days == 120
     assert metrics[0].recency_days == 5
 
