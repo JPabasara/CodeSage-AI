@@ -22,7 +22,18 @@ import codesage_api.db.models  # noqa: F401
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False, and it is not optional.
+    #
+    # `fileConfig` defaults to True, which sets `disabled = True` on every logger
+    # that already exists and is not named in alembic.ini. alembic.ini names
+    # root, sqlalchemy and alembic. So every `codesage_api.*` logger already
+    # imported goes silent for the rest of the process, and nothing says so.
+    #
+    # It cost us a CI failure nobody could reproduce: the integration tests run a
+    # migration, that call silenced `codesage_api.services.auth`, and a later
+    # test asserting a warning was logged saw nothing. Green on a laptop with no
+    # Docker, red on CI, with the two events in different files.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", get_settings().migration_database_url)
 

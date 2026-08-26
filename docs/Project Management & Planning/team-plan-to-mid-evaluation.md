@@ -1199,6 +1199,8 @@ switch to the deferred fix — store the `id_token` on the session row and pass 
 
 ### The polish (PR B), in priority order
 
+0. **J-CR9 — the never-scanned repository** ✅ *done, 25 Aug* — see below. Promoted above item 1
+   because it is not polish: it is a dead end on the demo path
 1. **Loading / empty / error states** — by far the most valuable. A blank panel mid-scan reads as a crash
 2. **The Projects empty state** — the first screen after sign-in, and empty until a repo is connected
 3. **Dashboard legibility** — chart labels, and grade colours that actually pass contrast
@@ -1206,6 +1208,28 @@ switch to the deferred fix — store the `id_token` on the session row and pass 
 5. **1280 px laptop width** — test at projector resolution, not on your monitor
 6. **Copy pass** — no placeholder text anywhere
 7. **Toast feedback on every write** — Connect, Apply, Scan, Stop
+
+#### J-CR9 — the dashboard top nav must outlive the report
+
+**Found by Chamodh while testing `main`, 25 Aug 2026.** Connect a brand-new repository, select it,
+and the dashboard opens blank with **no top navigation panel — so no way to start the first scan**.
+
+A branch that has never been scanned makes `GET /repos/:id/health` answer **404 `NOT_FOUND`** (the
+contract's first-run state, not a failure). `DashboardView` rendered the top nav *inside* the success
+branch, so that 404 took the **Scan** button down with it: no snapshot → no nav → no scan → no
+snapshot. Fixed frontend-only, in five edits — the nav is now hoisted above the loading/error
+returns, a 404 renders an empty state instead of the error copy, the nav's snapshot metadata became
+optional (*"Never scanned"* rather than `Invalid Date`), the branch selector got a placeholder, and
+`useScan`'s `onComplete` was finally wired to the report's `reload` so the first scan populates the
+screen. Four new tests; suite 99 → 103, all green, plus 50 E2E.
+
+**No API file was touched — the health endpoint is Chamodh's.** One thing to settle when the two
+halves meet: `GET /repos/{id}/health` is still `raise NotImplementedError`, so it returns **500**,
+and the frontend renders the *error* state. The empty state switches on as soon as the endpoint
+returns a proper **404** for an unscanned branch. Worth agreeing on before the demo — an evaluator
+connecting a fresh repo is the most likely first action.
+
+Full write-up: [frontend_build_stepbystep.md § 11.2a](frontend_build_stepbystep.md).
 
 Plus one demo-specific check: **make the 501 render as a calm message**, not a raw error string.
 Until the backend lands, that is what an evaluator sees on every data call.

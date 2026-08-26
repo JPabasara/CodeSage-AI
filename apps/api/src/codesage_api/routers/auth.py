@@ -23,7 +23,7 @@ from codesage_api.config import get_settings
 from codesage_api.db.models import User
 from codesage_api.db.session import SessionLocal
 from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
-from codesage_api.errors import MisconfiguredSignIn
+from codesage_api.errors import MisconfiguredSignIn, SignInFailed
 from codesage_api.schemas.auth import SessionOut
 from codesage_api.services import auth as auth_service
 
@@ -112,7 +112,16 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     if not secrets.compare_digest(issued["state"], state):
         return _back_to_login("invalid")
 
-    claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
+    try:
+        claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
+    except SignInFailed:
+        # Asgardeo said no and meant it: the code is spent, expired, or was not
+        # ours. Whoever is reading this is a person mid-navigation, so send them
+        # back to sign in rather than showing them JSON they cannot act on.
+        #
+        # Refreshing this URL lands here every time, and always will: an
+        # authorization code is single use, so the reload replays a spent one.
+        return _back_to_login("failed")
 
     db = SessionLocal()
     try:
@@ -136,6 +145,10 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
         samesite="lax",              # another website cannot make the browser send it
         max_age=settings.session_idle_minutes * 60,
         path="/",
+        # Empty in local development, ".codesageai.dev" in production. Without it
+        # the cookie is host-only on the API, and the frontend - which is a
+        # different host - never sees it. See `Settings.cookie_domain`.
+        domain=settings.cookie_domain or None,
     )
     response.delete_cookie(HANDSHAKE_COOKIE, path="/api/auth")
     return response
@@ -247,11 +260,13 @@ def sign_out(request: Request) -> RedirectResponse:
 
     response = RedirectResponse(_idp_logout_url(), status_code=status.HTTP_302_FOUND)
     # Same attributes the cookie was SET with. A browser matches on name, domain
-    # and path, so a mismatch here is not fatal today — but the pair should be
-    # read together, and a future domain-scoped cookie would not clear at all.
+    # and path, so `domain` is not optional here: a domain-scoped cookie deleted
+    # without naming that domain is not deleted at all, and the user stays signed
+    # in with a cookie nothing can clear.
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",
+        domain=settings.cookie_domain or None,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",

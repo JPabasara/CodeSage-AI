@@ -173,3 +173,72 @@ def test_cross_tenant_update_cannot_modify_hidden_row(
             {"other": workspace_b},
         )
         assert result.rowcount == 0
+
+
+# ── the sign-in lookup (the 401 loop of 25 Aug) ─────────────────────────────
+
+
+def test_workspace_lookup_works_with_no_workspace_bound(
+    rls_database: tuple[Engine, Engine, uuid.UUID, uuid.UUID],
+) -> None:
+    """`app_workspace_for_user` must answer BEFORE a workspace is bound.
+
+    That is its entire reason to exist. At sign-in there is no context yet, and
+    MEMBERSHIP is the table that holds the answer, so the lookup has to see past
+    the policy filtering MEMBERSHIP.
+
+    It used to return NULL instead. MEMBERSHIP carried FORCE ROW LEVEL SECURITY,
+    which applies policies to the table OWNER too, and a SECURITY DEFINER
+    function runs as its owner. The one deliberate exemption in the system was
+    cancelled by the setting meant to remove the accidental ones. Every returning
+    user got 401 NOT_AUTHENTICATED from the callback.
+    """
+    owner_engine, app_engine, workspace_a, _ = rls_database
+
+    user_id = uuid.uuid4()
+    with owner_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO app_user (id, asgardeo_sub, email, display_name) "
+                "VALUES (:id, :sub, 'someone@example.test', 'Someone')"
+            ),
+            {"id": user_id, "sub": f"sub-{user_id}"},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO membership (id, user_id, workspace_id, status) "
+                "VALUES (:id, :user, :workspace, 'active')"
+            ),
+            {"id": uuid.uuid4(), "user": user_id, "workspace": workspace_a},
+        )
+
+    # No _set_workspace call: this is exactly the state the callback is in.
+    with app_engine.connect() as connection:
+        found = connection.execute(
+            text("SELECT app_workspace_for_user(:user)"), {"user": user_id}
+        ).scalar_one()
+
+    assert found == workspace_a, (
+        "sign-in cannot bind a workspace it is not allowed to look up"
+    )
+
+
+def test_membership_is_still_filtered_for_the_app_role(
+    rls_database: tuple[Engine, Engine, uuid.UUID, uuid.UUID],
+) -> None:
+    """Dropping FORCE must not have opened MEMBERSHIP to the application.
+
+    FORCE only ever governed what the table OWNER sees. `codesage_app` is not the
+    owner, so the tenant-isolation policy still applies to it in full. This is
+    the assertion that says the fix cost us no isolation.
+    """
+    _, app_engine, _, workspace_b = rls_database
+
+    with app_engine.begin() as connection:
+        _set_workspace(connection, workspace_b)
+        # Workspace B has no memberships; A's row must not leak into this read.
+        assert connection.execute(text("SELECT count(*) FROM membership")).scalar_one() == 0
+
+    with app_engine.connect() as connection:
+        # And with nothing bound at all, the app sees nothing either.
+        assert connection.execute(text("SELECT count(*) FROM membership")).scalar_one() == 0

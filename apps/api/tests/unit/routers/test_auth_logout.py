@@ -167,3 +167,42 @@ def test_logout_is_mounted_on_the_public_router() -> None:
 
     assert "/auth/logout" in paths(auth_router.public_router)
     assert "/auth/logout" not in paths(auth_router.router)
+
+
+# ── the cookie domain (the redirect loop of 25 Aug) ─────────────────────────
+#
+# Symptom: sign in on the live site, land back on /login, forever. Sign-in was
+# fine and the session row was real. The cookie was set host-only, so it belonged
+# to api.codesageai.dev and nothing else — and `middleware.ts`, which runs on
+# codesageai.dev, could not see it. Every protected route bounced to /login.
+#
+# Both halves are tested. Setting a domain-scoped cookie without also DELETING a
+# domain-scoped one leaves a cookie no sign-out can clear, which is the same
+# class of bug wearing the opposite mask.
+
+
+def test_logout_clears_a_domain_scoped_cookie(
+    db: FakeDb, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "cookie_domain", ".codesageai.dev")
+    client = TestClient(create_app(), follow_redirects=False)
+    client.cookies.set(COOKIE, SESSION_ID)
+
+    cleared = client.post("/api/auth/logout").headers["set-cookie"]
+
+    # A browser matches a cookie on name, domain AND path. Omit the domain here
+    # and the deletion silently targets a different cookie than the one that
+    # exists, so the user stays signed in with nothing able to clear it.
+    assert "Domain=.codesageai.dev" in cleared
+    assert "Max-Age=0" in cleared
+
+
+def test_logout_leaves_the_cookie_host_only_when_no_domain_is_set(
+    client: TestClient, db: FakeDb
+) -> None:
+    """Local development: API and frontend share `localhost`, so host-only is right."""
+    client.cookies.set(COOKIE, SESSION_ID)
+
+    cleared = client.post("/api/auth/logout").headers["set-cookie"]
+
+    assert "Domain=" not in cleared
