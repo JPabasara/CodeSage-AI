@@ -54,6 +54,8 @@ logger = get_logger(__name__)
 class PipelineResults:
     extraction: ExtractionResult
     findings: list[DetectedFinding]
+    risk_result: RiskClientResult | None = None
+
 
 
 @celery_app.task(bind=True, name="codesage.scan")
