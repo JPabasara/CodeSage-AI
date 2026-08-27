@@ -80,7 +80,9 @@ def warm_workspace_scores(workspace_id: str) -> None:
             )
             for ref in refs:
                 cached, created = dashboard.prepare_snapshot_score(session, ref, profile)
-                if created:
+                if created or (
+                    cached.status == "pending" and cached.started_at is None
+                ):
                     jobs.append((str(cached.id), profile_payload(profile)))
     for cache_id, payload in jobs:
         score_snapshot.delay(cache_id, workspace_id, payload)
@@ -101,5 +103,5 @@ def warm_snapshot_score(snapshot_id: str, workspace_id: str) -> None:
         cached, created = dashboard.prepare_snapshot_score(session, snapshot, profile)
         cache_id = str(cached.id)
         payload = profile_payload(profile)
-    if created:
+    if created or (cached.status == "pending" and cached.started_at is None):
         score_snapshot.delay(cache_id, workspace_id, payload)

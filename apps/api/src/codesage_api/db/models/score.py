@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -35,6 +36,7 @@ class SnapshotScore(UUIDPrimaryKey, Base):
     grade: Mapped[str | None] = mapped_column(String(1))
     debt_score: Mapped[float | None] = mapped_column(Double)
     kloc: Mapped[float | None] = mapped_column(Double)
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     failure_information: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -63,7 +65,8 @@ class SnapshotScore(UUIDPrimaryKey, Base):
         ),
         CheckConstraint(
             "(status = 'ready' AND health_score IS NOT NULL AND grade IS NOT NULL "
-            "AND debt_score IS NOT NULL AND kloc IS NOT NULL) OR status <> 'ready'",
+            "AND debt_score IS NOT NULL AND kloc IS NOT NULL "
+            "AND result_payload IS NOT NULL) OR status <> 'ready'",
             name="ready_values",
         ),
     )

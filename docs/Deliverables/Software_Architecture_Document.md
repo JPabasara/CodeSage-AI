@@ -267,7 +267,7 @@ The processes. Five processes make up a running system. The API process is state
 
 *Figure 4 records eleven architectural decisions. They are stated below, each with the requirement it serves and the consequence of deciding it differently.*
 
-Scoring is performed by a dedicated Celery scoring worker, not inside an API request or the scan pipeline. The analysis write path ends at "Store snapshot" and then queues a non-authoritative cache warm-up. This lets a user change a scoring profile and asynchronously re-score existing immutable facts without running a new scan (SRS FR-20, FR-21).
+Scoring is performed by a dedicated Celery scoring worker, not inside an API request or the scan pipeline. The worker applies the workspace RLS context, reads immutable snapshot facts, and stores the complete derived dashboard result in a non-authoritative profile- and engine-stamped cache. FastAPI reads and serializes that result but never executes the scoring formula on a request path. The analysis write path ends at "Store snapshot" and then queues a cache warm-up. This lets a user change a scoring profile and asynchronously re-score existing immutable facts without running a new scan (SRS FR-20, FR-21).
 
 Skip for unchanged is decided in the API, before the job is queued. The API reads the branch head SHA from GitHub and compares it with the last scan of that branch. If they are equal, no job is queued and no worker is used. The check costs one conditional REST call and one indexed database read, so the user receives a dashboard within the one second allowed by SRS PERF-02. Deciding this in the worker instead would mean queuing a job, occupying a worker, and cloning a repository only to discover that nothing had changed.
 

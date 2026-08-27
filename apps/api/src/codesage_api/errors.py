@@ -83,6 +83,12 @@ class ScanAlreadyRunning(CodeSageError):
     message = "A scan is already running for this branch."
 
 
+class ScorePending(CodeSageError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "SCORE_PENDING"
+    message = "The dashboard score is still being prepared. Please try again shortly."
+
+
 class MLServiceUnavailable(CodeSageError):
     """Raised by the ML clients on timeout.
 

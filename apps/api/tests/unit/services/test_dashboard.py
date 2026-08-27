@@ -26,7 +26,7 @@ from codesage_api.db.models import (
     SourceLocation,
     StaticMetric,
 )
-from codesage_api.errors import NotFound
+from codesage_api.errors import NotFound, ScorePending
 from codesage_api.scoring.enums import Category, Grade
 from codesage_api.scoring.models import Profile
 from codesage_api.services import dashboard
@@ -148,13 +148,23 @@ def _snapshot(
     return snapshot
 
 
+def _ready_cache(snapshot: Snapshot, profile: Profile) -> SimpleNamespace:
+    scored = dashboard._score_snapshot(snapshot, profile)
+    return SimpleNamespace(
+        snapshot_id=snapshot.id,
+        status="ready",
+        health_score=scored.result.health_score,
+        grade=scored.result.grade,
+        result_payload=dashboard._result_payload(scored),
+    )
+
+
 @patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
-@patch("codesage_api.services.dashboard.dashboard_repository.get_snapshot_for_scoring")
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
-def test_health_report_scores_latest_snapshot_and_builds_history(
+def test_health_report_reads_cached_result_without_running_scoring(
     list_snapshots: Mock,
-    get_snapshot: Mock,
     _active_profile: Mock,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     now = datetime(2026, 8, 25, tzinfo=UTC)
     previous = _snapshot(
@@ -162,11 +172,16 @@ def test_health_report_scores_latest_snapshot_and_builds_history(
     )
     current = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
     list_snapshots.return_value = [previous, current]
-    get_snapshot.return_value = current
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = [
-        SimpleNamespace(snapshot_id=previous.id, health_score=100.0)
+        _ready_cache(previous, _profile()),
+        _ready_cache(current, _profile()),
     ]
+    monkeypatch.setattr(
+        dashboard,
+        "_score_snapshot",
+        MagicMock(side_effect=AssertionError("FastAPI executed scoring")),
+    )
 
     report = dashboard.build_health_report(
         session, uuid.uuid4(), uuid.uuid4(), "main"
@@ -185,11 +200,9 @@ def test_health_report_scores_latest_snapshot_and_builds_history(
 
 
 @patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
-@patch("codesage_api.services.dashboard.dashboard_repository.get_snapshot_for_scoring")
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_can_select_a_past_snapshot(
     list_snapshots: Mock,
-    get_snapshot: Mock,
     _active_profile: Mock,
 ) -> None:
     now = datetime(2026, 8, 25, tzinfo=UTC)
@@ -198,9 +211,11 @@ def test_health_can_select_a_past_snapshot(
         scanned_at=now + timedelta(days=1), commit_sha="b" * 40, with_finding=True
     )
     list_snapshots.return_value = [previous, current]
-    get_snapshot.return_value = previous
     session = MagicMock(spec=Session)
-    session.scalars.return_value.all.return_value = []
+    session.scalars.return_value.all.return_value = [
+        _ready_cache(previous, _profile()),
+        _ready_cache(current, _profile()),
+    ]
 
     report = dashboard.build_health_report(
         session, uuid.uuid4(), uuid.uuid4(), "main", previous.id
@@ -209,6 +224,39 @@ def test_health_can_select_a_past_snapshot(
     assert report.snapshot_id == str(previous.id)
     assert report.health_score == 100.0
     assert report.delta == 0.0
+
+
+@patch("codesage_api.services.dashboard.celery_app.send_task")
+@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_health_cache_miss_enqueues_worker_and_never_scores_in_api(
+    list_snapshots: Mock,
+    _active_profile: Mock,
+    send_task: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = _snapshot(
+        scanned_at=datetime(2026, 8, 25, tzinfo=UTC),
+        commit_sha="a" * 40,
+        with_finding=True,
+    )
+    list_snapshots.return_value = [snapshot]
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = []
+    session.scalar.return_value = None
+    monkeypatch.setattr(
+        dashboard,
+        "_score_snapshot",
+        MagicMock(side_effect=AssertionError("FastAPI executed scoring")),
+    )
+
+    with pytest.raises(ScorePending):
+        dashboard.build_health_report(
+            session, uuid.uuid4(), uuid.uuid4(), "main"
+        )
+
+    session.commit.assert_called_once_with()
+    send_task.assert_called_once()
 
 
 @patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
@@ -225,7 +273,7 @@ def test_no_completed_snapshot_is_not_found(
 
 
 @patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
-@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshots")
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_scan_history_is_newest_first_and_uses_current_profile(
     list_snapshots: Mock,
     _active_profile: Mock,
@@ -236,9 +284,14 @@ def test_scan_history_is_newest_first_and_uses_current_profile(
         scanned_at=now + timedelta(days=1), commit_sha="b" * 40, with_finding=True
     )
     list_snapshots.return_value = [previous, current]
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = [
+        _ready_cache(previous, _profile()),
+        _ready_cache(current, _profile()),
+    ]
 
     history = dashboard.build_scan_history(
-        Mock(), uuid.uuid4(), uuid.uuid4(), "main"
+        session, uuid.uuid4(), uuid.uuid4(), "main"
     )
 
     assert [item.snapshot_id for item in history] == [str(current.id), str(previous.id)]

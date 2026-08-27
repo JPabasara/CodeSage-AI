@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from codesage_api.db.models import Finding, Snapshot, SnapshotScore, SourceFile
 from codesage_api.db.repositories import dashboard as dashboard_repository
-from codesage_api.errors import NotFound
+from codesage_api.errors import NotFound, ScorePending
 from codesage_api.schemas import (
     CategoryBreakdownItemOut,
     FileScoreOut,
@@ -22,11 +22,16 @@ from codesage_api.schemas import (
     TreeNodeOut,
 )
 from codesage_api.scoring import formula
-from codesage_api.scoring.cache import SCORING_ENGINE_VERSION, profile_fingerprint
+from codesage_api.scoring.cache import (
+    SCORING_ENGINE_VERSION,
+    profile_fingerprint,
+    profile_payload,
+)
 from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
 from codesage_api.services import profiles
+from codesage_api.tasks.app import celery_app
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +100,7 @@ def calculate_snapshot_score(
     cached.grade = scored.result.grade
     cached.debt_score = sum(item.debt_score for item in scored.result.files)
     cached.kloc = sum(item.loc for item in scored.file_facts.values()) / 1000.0
+    cached.result_payload = _result_payload(scored)
 
 
 def build_latest_health_hint(
@@ -175,21 +181,6 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         kloc=sum(item.loc for item in file_facts.values()) / 1000.0,
     )
     return _ScoredSnapshot(snapshot, result, file_facts, findings_by_fingerprint)
-
-
-def _load_scored(
-    session: Session,
-    workspace_id: uuid.UUID,
-    repository_id: uuid.UUID,
-    branch: str,
-) -> tuple[Profile, list[_ScoredSnapshot]]:
-    stored = dashboard_repository.list_completed_snapshots(
-        session, workspace_id, repository_id, branch
-    )
-    if not stored:
-        raise NotFound
-    profile = profiles.get_active(session, workspace_id)
-    return profile, [_score_snapshot(snapshot, profile) for snapshot in stored]
 
 
 def _finding_outputs(scored: _ScoredSnapshot) -> list[FindingOut]:
@@ -296,6 +287,83 @@ def _model_version(snapshot: Snapshot) -> str | None:
     return ", ".join(sorted(versions)) or None
 
 
+def _result_payload(scored: _ScoredSnapshot) -> dict[str, object]:
+    """Serialize every profile-dependent dashboard value in the worker."""
+    findings = _finding_outputs(scored)
+    return {
+        "health_score": scored.result.health_score,
+        "grade": scored.result.grade,
+        "red_issue_count": sum(
+            item.severity in {Severity.CRITICAL, Severity.HIGH} for item in findings
+        ),
+        "model_version": _model_version(scored.snapshot),
+        "findings": [item.model_dump(mode="json") for item in findings],
+        "tree": [item.model_dump(mode="json") for item in _tree(scored)],
+        "file_scores": [
+            FileScoreOut(
+                file=item.file,
+                debt_score=item.debt_score,
+                risk_score=item.risk_score,
+            ).model_dump(mode="json")
+            for item in scored.result.files
+        ],
+        "category_breakdown": [
+            CategoryBreakdownItemOut(
+                category=item.category,
+                count=item.count,
+                debt=item.debt,
+            ).model_dump(mode="json")
+            for item in scored.result.breakdown
+        ],
+    }
+
+
+def _enqueue_pending_score(
+    session: Session,
+    workspace_id: uuid.UUID,
+    snapshot: Snapshot,
+    profile: Profile,
+) -> None:
+    cached, created = prepare_snapshot_score(session, snapshot, profile)
+    should_enqueue = created or (
+        cached.status == "pending" and cached.started_at is None
+    )
+    if not should_enqueue:
+        return
+    # The worker must not race an uncommitted cache row. SET LOCAL is restored by
+    # the next request/worker session, and this read path performs no later query.
+    session.commit()
+    celery_app.send_task(
+        "codesage.score_snapshot",
+        args=[str(cached.id), str(workspace_id), profile_payload(profile)],
+    )
+
+
+def _enqueue_missing_scores(
+    session: Session,
+    workspace_id: uuid.UUID,
+    snapshots: list[Snapshot],
+    profile: Profile,
+    ready_snapshot_ids: set[uuid.UUID],
+) -> None:
+    jobs: list[str] = []
+    for snapshot in snapshots:
+        if snapshot.id in ready_snapshot_ids:
+            continue
+        cached, created = prepare_snapshot_score(session, snapshot, profile)
+        if created or (cached.status == "pending" and cached.started_at is None):
+            jobs.append(str(cached.id))
+    if not jobs:
+        return
+    session.commit()
+    payload = profile_payload(profile)
+    for cache_id in jobs:
+        celery_app.send_task(
+            "codesage.score_snapshot",
+            args=[cache_id, str(workspace_id), payload],
+        )
+
+
 def build_health_report(
     session: Session,
     workspace_id: uuid.UUID,
@@ -316,80 +384,74 @@ def build_health_report(
         )
         if selected_index < 0:
             raise NotFound
-    hydrated = dashboard_repository.get_snapshot_for_scoring(
-        session, workspace_id, refs[selected_index].id
-    )
-    if hydrated is None:
-        raise NotFound
-    current = _score_snapshot(hydrated, profile)
-
     fingerprint = profile_fingerprint(profile)
     cached_rows = session.scalars(
         select(SnapshotScore).where(
             SnapshotScore.snapshot_id.in_([item.id for item in refs]),
             SnapshotScore.profile_fingerprint == fingerprint,
             SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
-            SnapshotScore.status == "ready",
         )
     ).all()
     cached_by_snapshot = {item.snapshot_id: item for item in cached_rows}
+    selected_ref = refs[selected_index]
+    selected_cache = cached_by_snapshot.get(selected_ref.id)
+    if (
+        selected_cache is None
+        or selected_cache.status != "ready"
+        or selected_cache.result_payload is None
+    ):
+        _enqueue_pending_score(session, workspace_id, selected_ref, profile)
+        raise ScorePending
+
+    payload = selected_cache.result_payload
     previous = (
         cached_by_snapshot.get(refs[selected_index - 1].id)
         if selected_index > 0
         else None
     )
     previous_score = previous.health_score if previous is not None else None
-    delta = current.result.health_score - previous_score if previous_score is not None else 0.0
-    findings = _finding_outputs(current)
+    health_score = float(payload["health_score"])
+    delta = health_score - previous_score if previous_score is not None else 0.0
 
     return HealthReportOut(
-        snapshot_id=str(current.snapshot.id),
+        snapshot_id=str(selected_ref.id),
         repo_id=str(repository_id),
         branch=branch,
-        commit_sha=current.snapshot.commit_sha,
-        scanned_at=current.snapshot.scan_time.isoformat(),
-        health_score=current.result.health_score,
-        grade=Grade(current.result.grade),
+        commit_sha=selected_ref.commit_sha,
+        scanned_at=selected_ref.scan_time.isoformat(),
+        health_score=health_score,
+        grade=Grade(str(payload["grade"])),
         delta=delta,
-        red_issue_count=sum(
-            item.severity in {Severity.CRITICAL, Severity.HIGH} for item in findings
-        ),
+        red_issue_count=int(payload["red_issue_count"]),
         profile=profile.name,
-        model_version=_model_version(current.snapshot),
+        model_version=(
+            str(payload["model_version"])
+            if payload.get("model_version") is not None
+            else None
+        ),
         history=[
             HealthPointOut(
                 t=ref.scan_time.isoformat(),
                 score=(
-                    current.result.health_score
-                    if ref.id == current.snapshot.id
+                    health_score
+                    if ref.id == selected_ref.id
                     else cached_by_snapshot[ref.id].health_score
                 ),
                 commit_sha=ref.commit_sha,
             )
             for ref in refs
-            if ref.id == current.snapshot.id
+            if ref.id == selected_ref.id
             or (
                 ref.id in cached_by_snapshot
                 and cached_by_snapshot[ref.id].health_score is not None
             )
         ],
-        tree=_tree(current),
-        file_scores=[
-            FileScoreOut(
-                file=item.file,
-                debt_score=item.debt_score,
-                risk_score=item.risk_score,
-            )
-            for item in current.result.files
-        ],
-        findings=findings,
+        tree=[TreeNodeOut.model_validate(item) for item in payload["tree"]],
+        file_scores=[FileScoreOut.model_validate(item) for item in payload["file_scores"]],
+        findings=[FindingOut.model_validate(item) for item in payload["findings"]],
         category_breakdown=[
-            CategoryBreakdownItemOut(
-                category=item.category,
-                count=item.count,
-                debt=item.debt,
-            )
-            for item in current.result.breakdown
+            CategoryBreakdownItemOut.model_validate(item)
+            for item in payload["category_breakdown"]
         ],
     )
 
@@ -400,14 +462,31 @@ def build_trend(
     repository_id: uuid.UUID,
     branch: str,
 ) -> list[dict[str, object]]:
-    _profile, snapshots = _load_scored(session, workspace_id, repository_id, branch)
+    profile = profiles.get_active(session, workspace_id)
+    refs = dashboard_repository.list_completed_snapshot_refs(
+        session, workspace_id, repository_id, branch
+    )
+    fingerprint = profile_fingerprint(profile)
+    cached = {
+        item.snapshot_id: item
+        for item in session.scalars(
+            select(SnapshotScore).where(
+                SnapshotScore.snapshot_id.in_([item.id for item in refs]),
+                SnapshotScore.profile_fingerprint == fingerprint,
+                SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+                SnapshotScore.status == "ready",
+            )
+        ).all()
+    }
+    _enqueue_missing_scores(session, workspace_id, refs, profile, set(cached))
     return [
         {
-            "t": item.snapshot.scan_time.isoformat(),
-            "score": item.result.health_score,
-            "commit_sha": item.snapshot.commit_sha,
+            "t": item.scan_time.isoformat(),
+            "score": cached[item.id].health_score,
+            "commit_sha": item.commit_sha,
         }
-        for item in snapshots
+        for item in refs
+        if item.id in cached and cached[item.id].health_score is not None
     ]
 
 
@@ -417,21 +496,42 @@ def build_scan_history(
     repository_id: uuid.UUID,
     branch: str,
 ) -> list[ScanSummaryOut]:
-    _profile, snapshots = _load_scored(session, workspace_id, repository_id, branch)
+    profile = profiles.get_active(session, workspace_id)
+    refs = dashboard_repository.list_completed_snapshot_refs(
+        session, workspace_id, repository_id, branch
+    )
+    if not refs:
+        return []
+    fingerprint = profile_fingerprint(profile)
+    cached = {
+        item.snapshot_id: item
+        for item in session.scalars(
+            select(SnapshotScore).where(
+                SnapshotScore.snapshot_id.in_([item.id for item in refs]),
+                SnapshotScore.profile_fingerprint == fingerprint,
+                SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+                SnapshotScore.status == "ready",
+            )
+        ).all()
+    }
+    _enqueue_missing_scores(session, workspace_id, refs, profile, set(cached))
     output: list[ScanSummaryOut] = []
     previous: float | None = None
-    for item in snapshots:
-        current = item.result.health_score
+    for item in refs:
+        stored_score = cached.get(item.id)
+        if stored_score is None or stored_score.health_score is None:
+            continue
+        current = stored_score.health_score
         output.append(
             ScanSummaryOut(
-                snapshot_id=str(item.snapshot.id),
-                scan_id=str(item.snapshot.analysis_attempt_id),
-                branch=item.snapshot.analysis_attempt.branch.name,
-                commit_sha=item.snapshot.commit_sha,
-                scanned_at=item.snapshot.scan_time.isoformat(),
-                finding_count=item.snapshot.finding_count,
+                snapshot_id=str(item.id),
+                scan_id=str(item.analysis_attempt_id),
+                branch=branch,
+                commit_sha=item.commit_sha,
+                scanned_at=item.scan_time.isoformat(),
+                finding_count=item.finding_count,
                 health_score=current,
-                grade=Grade(item.result.grade),
+                grade=Grade(str(stored_score.grade)),
                 delta=current - previous if previous is not None else 0.0,
             )
         )
