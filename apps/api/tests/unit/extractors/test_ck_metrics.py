@@ -33,7 +33,7 @@ def test_ck_csv_is_aggregated_per_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("codesage_api.extractors.ck_metrics.subprocess.run", fake_run)
 
     assert extract_ck_metrics(repository, ck_jar=jar) == [
-        FileMetrics("src/A.java", 50, 9.0, 4, 4, 18)
+        FileMetrics("src/A.java", 50, 9.0, 4, 4, 18, 0.0, 0.0, 0.0, 0.0, 0.0)
     ]
 
 
