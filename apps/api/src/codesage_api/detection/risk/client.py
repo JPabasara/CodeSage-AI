@@ -25,7 +25,7 @@ class RiskClientResult:
 def predict(
     files: list[FileMetrics], process: dict[str, FileProcessMetrics]
 ) -> RiskClientResult:
-    """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0) and model version provenance."""
+    """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0) and model version."""
     if not files and not process:
         return RiskClientResult(scores={}, model_version="risk-1.0.0")
 
@@ -65,16 +65,17 @@ def predict(
         response = httpx.post(url, json=payload, timeout=30.0)
         response.raise_for_status()
         data = response.json()
+        model_version = str(data.get("model_version", "risk-1.0.0"))
         raw_scores = data.get("scores", [])
-        version = str(data.get("model_version", "risk-1.0.0"))
         
         scores: dict[str, float] = {}
         for item in raw_scores:
+            p = str(item["path"])
             score = float(item["risk_score"])
             if not (0.0 <= score <= 1.0):
-                raise ValueError(f"Risk score {score} out of valid probability range [0.0, 1.0]")
-            scores[item["path"]] = score
-            
-        return RiskClientResult(scores=scores, model_version=version)
+                raise ValueError(f"Risk score {score} out of bounds [0.0, 1.0]")
+            scores[p] = score
+
+        return RiskClientResult(scores=scores, model_version=model_version)
     except Exception as exc:
         raise MLServiceUnavailable(f"Failed to communicate with ML risk service: {exc}") from exc

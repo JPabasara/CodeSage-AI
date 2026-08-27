@@ -2,14 +2,14 @@ import httpx
 import pytest
 from unittest.mock import patch, MagicMock
 
-from codesage_api.detection.risk.client import predict
+from codesage_api.detection.risk.client import predict, RiskClientResult
 from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.ck_metrics import FileMetrics
 from codesage_api.extractors.process_metrics import FileProcessMetrics
 
 
 def test_risk_client_predict_success():
-    """Verify risk client correctly formats metrics and returns per-file risk scores and model version."""
+    """Verify risk client correctly formats metrics and returns per-file risk scores."""
     static_files = [
         FileMetrics(
             path="src/Main.java",
@@ -47,6 +47,7 @@ def test_risk_client_predict_success():
     with patch("httpx.post", return_value=mock_response) as mock_post:
         result = predict(static_files, process_metrics)
 
+        assert isinstance(result, RiskClientResult)
         assert result.scores == {"src/Main.java": 0.78}
         assert result.model_version == "risk-1.0.0"
         assert mock_post.called
@@ -60,11 +61,11 @@ def test_risk_client_predict_success():
 
 
 def test_risk_client_empty_inputs():
-    """Verify risk client returns empty dict when no files are provided without making HTTP call."""
+    """Verify risk client returns empty RiskClientResult when no files are provided without making HTTP call."""
     with patch("httpx.post") as mock_post:
         result = predict([], {})
+        assert isinstance(result, RiskClientResult)
         assert result.scores == {}
-        assert result.model_version == "risk-1.0.0"
         assert not mock_post.called
 
 
@@ -137,15 +138,16 @@ def test_risk_client_handles_process_only_metrics():
     mock_response.status_code = 200
     mock_response.json.return_value = {
         "scores": [{"path": "src/DeletedOrNonJava.txt", "risk_score": 0.35}],
-        "model_version": "v1.0",
+        "model_version": "risk-1.0.0",
     }
 
     with patch("httpx.post", return_value=mock_response) as mock_post:
         result = predict([], process_metrics)
+        assert isinstance(result, RiskClientResult)
         assert result.scores == {"src/DeletedOrNonJava.txt": 0.35}
-        assert result.model_version == "v1.0"
         sent_payload = mock_post.call_args[1]["json"]
         assert len(sent_payload["files"]) == 1
         assert sent_payload["files"][0]["path"] == "src/DeletedOrNonJava.txt"
         assert sent_payload["files"][0]["metrics"]["commits_90d"] == 5.0
+
 
