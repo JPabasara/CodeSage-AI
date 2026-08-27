@@ -164,7 +164,10 @@ test("an unrecognised code still shows the server's sentence rather than nothing
   server.use(
     http.post("*/api/projects", () =>
       HttpResponse.json(
-        { detail: "The upstream host is having a bad day.", code: "UPSTREAM_UNAVAILABLE" },
+        {
+          detail: "The upstream host is having a bad day.",
+          code: "UPSTREAM_UNAVAILABLE",
+        },
         { status: 503 },
       ),
     ),

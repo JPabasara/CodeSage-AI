@@ -11,7 +11,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 test("the rail carries exactly the four v1 destinations", async ({ page }) => {
-  const rail = page.getByRole("navigation").or(page.locator('[data-slot="sidebar"]'))
+  const rail = page
+    .getByRole("navigation")
+    .or(page.locator('[data-slot="sidebar"]'))
   for (const label of ["Projects", "Dashboard", "Scan History", "Profiles"]) {
     await expect(page.getByRole("link", { name: label })).toBeVisible()
   }
@@ -58,8 +60,7 @@ test("the rail marks the screen you are actually on", async ({ page }) => {
     "data-active",
     "true",
   )
-  await expect(page.getByRole("link", { name: "Projects" })).not.toHaveAttribute(
-    "data-active",
-    "true",
-  )
+  await expect(
+    page.getByRole("link", { name: "Projects" }),
+  ).not.toHaveAttribute("data-active", "true")
 })

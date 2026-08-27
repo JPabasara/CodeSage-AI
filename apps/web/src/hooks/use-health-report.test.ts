@@ -36,7 +36,9 @@ test("refetches when the branch changes", async () => {
 })
 
 test("surfaces an error for an unknown repo instead of throwing", async () => {
-  const { result } = renderHook(() => useHealthReport("11111111-2222-3333-4444-555555555555", "main"))
+  const { result } = renderHook(() =>
+    useHealthReport("11111111-2222-3333-4444-555555555555", "main"),
+  )
 
   await waitFor(() => expect(result.current.loading).toBe(false))
 

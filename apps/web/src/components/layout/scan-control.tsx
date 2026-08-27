@@ -1,19 +1,19 @@
-"use client";
+"use client"
 
-import { Play, Square } from "lucide-react";
+import { Play, Square } from "lucide-react"
 
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import type { ScanPhase } from "@/lib/types";
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import type { ScanPhase } from "@/lib/types"
 
 export type ScanControlProps = {
-  phase: ScanPhase;
-  progress: number; // 0–100
+  phase: ScanPhase
+  progress: number // 0–100
   /** Stop has been requested but the scan has not reached a terminal phase yet. */
-  stopping?: boolean;
-  onScan?: () => void;
-  onStop?: () => void;
-};
+  stopping?: boolean
+  onScan?: () => void
+  onStop?: () => void
+}
 
 export function ScanControl({
   phase,
@@ -22,7 +22,7 @@ export function ScanControl({
   onScan,
   onStop,
 }: Readonly<ScanControlProps>) {
-  const running = phase === "running" || phase === "queued";
+  const running = phase === "running" || phase === "queued"
 
   if (running) {
     return (
@@ -46,7 +46,7 @@ export function ScanControl({
           <Square className="size-3.5" /> Stop
         </Button>
       </div>
-    );
+    )
   }
 
   // Cancelled is NOT idle. Without this branch it falls through to the plain
@@ -60,12 +60,12 @@ export function ScanControl({
           <Play className="size-3.5" /> Scan
         </Button>
       </div>
-    );
+    )
   }
 
   return (
     <Button size="sm" onClick={onScan}>
       <Play className="size-3.5" /> Scan
     </Button>
-  );
+  )
 }

@@ -1,8 +1,8 @@
-"use client"; // uses usePathname → must be a Client Component
+"use client" // uses usePathname → must be a Client Component
 
-import { useEffect } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import {
   FolderGit2,
   LayoutDashboard,
@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
   LogOut,
   type LucideIcon,
-} from "lucide-react";
+} from "lucide-react"
 //shadcn/ui components are Client Components, so we can use them here without "use client" directive
 import {
   Sidebar,
@@ -22,17 +22,17 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { ApiRequestError } from "@/lib/api/client";
-import { DEMO_REPO_ID } from "@/lib/demo";
-import { useSession } from "@/hooks/use-session";
+} from "@/components/ui/sidebar"
+import { ApiRequestError } from "@/lib/api/client"
+import { DEMO_REPO_ID } from "@/lib/demo"
+import { useSession } from "@/hooks/use-session"
 
 type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  isActive: (pathname: string) => boolean;
-};
+  href: string
+  label: string
+  icon: LucideIcon
+  isActive: (pathname: string) => boolean
+}
 
 const NAV: NavItem[] = [
   {
@@ -62,44 +62,50 @@ const NAV: NavItem[] = [
     icon: SlidersHorizontal,
     isActive: (p) => p.startsWith("/profiles"),
   },
-];
+]
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export function AppRail() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { data: session, error } = useSession();
+  const pathname = usePathname()
+  const router = useRouter()
+  const { data: session, error } = useSession()
 
   // The API is the actual security boundary (SEC-10) — this is a UX fallback so
   // a signed-out visitor is not left staring at a shell with nothing on it,
   // whether or not the session has simply expired underneath them.
   useEffect(() => {
     if (error instanceof ApiRequestError && error.status === 401) {
-      router.push("/login");
+      router.push("/login")
     }
-  }, [error, router]);
+  }, [error, router])
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-3 py-2 text-sm font-semibold">Code Sage AI</SidebarHeader>
+      <SidebarHeader className="px-3 py-2 text-sm font-semibold">
+        Code Sage AI
+      </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV.map((item) => {
-                const Icon = item.icon;
+                const Icon = item.icon
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={item.isActive(pathname)} tooltip={item.label}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={item.isActive(pathname)}
+                      tooltip={item.label}
+                    >
                       <Link href={item.href}>
                         <Icon />
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                );
+                )
               })}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -144,5 +150,5 @@ export function AppRail() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-  );
+  )
 }

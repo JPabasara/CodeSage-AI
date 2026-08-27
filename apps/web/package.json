@@ -17,7 +17,8 @@
     "test:e2e:report": "playwright show-report",
     "test:all": "pnpm typecheck && pnpm lint && pnpm test:run && pnpm test:e2e",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "verify": "pnpm typecheck && pnpm lint --max-warnings 0 && pnpm format:check && pnpm test:run && pnpm build"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

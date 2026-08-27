@@ -77,22 +77,20 @@ test("Apply sends the complete profile — six numbers, never a delta", async ()
 
 test("adopts the clamped values the server returns, not what it sent", async () => {
   // The server clamps rather than rejecting: 9.0 comes back as 3.0 with a 200.
-  const put = vi
-    .spyOn(client, "applyProfile")
-    .mockResolvedValue({
-      id: "custom",
-      name: "Custom",
-      weights: {
-        security: 3.0, // clamped down from an out-of-range request
-        code_design: 1.0,
-        requirement: 1.0,
-        documentation: 1.0,
-        test: 1.0,
-      },
-      trust_s: 1,
-      is_preset: false,
-      is_active: true,
-    })
+  const put = vi.spyOn(client, "applyProfile").mockResolvedValue({
+    id: "custom",
+    name: "Custom",
+    weights: {
+      security: 3.0, // clamped down from an out-of-range request
+      code_design: 1.0,
+      requirement: 1.0,
+      documentation: 1.0,
+      test: 1.0,
+    },
+    trust_s: 1,
+    is_preset: false,
+    is_active: true,
+  })
 
   render(<ProfilesPage />)
   await ready()
@@ -120,7 +118,9 @@ test("an untouched preset is sent WITH its name", async () => {
   await ready()
 
   await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
-  expect(screen.getByTestId("profile-label")).toHaveTextContent("Security-first")
+  expect(screen.getByTestId("profile-label")).toHaveTextContent(
+    "Security-first",
+  )
 
   await userEvent.click(screen.getByRole("button", { name: "Apply" }))
   await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
@@ -137,10 +137,14 @@ test("dragging away from a preset makes it Custom and omits the name", async () 
   await ready()
 
   await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
-  expect(screen.getByTestId("profile-label")).toHaveTextContent("Security-first")
+  expect(screen.getByTestId("profile-label")).toHaveTextContent(
+    "Security-first",
+  )
 
   // Nudge one weight - the values are no longer Security-first.
-  const securitySlider = screen.getByRole("slider", { name: /security weight/i })
+  const securitySlider = screen.getByRole("slider", {
+    name: /security weight/i,
+  })
   securitySlider.focus()
   await userEvent.keyboard("{ArrowLeft}")
 
@@ -161,7 +165,9 @@ test("the mock stores an edited preset as a custom, non-preset profile", async (
   render(<ProfilesPage />)
   await ready()
 
-  const securitySlider = screen.getByRole("slider", { name: /security weight/i })
+  const securitySlider = screen.getByRole("slider", {
+    name: /security weight/i,
+  })
   securitySlider.focus()
   await userEvent.keyboard("{ArrowRight}")
   await userEvent.click(screen.getByRole("button", { name: "Apply" }))
