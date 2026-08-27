@@ -14,10 +14,6 @@ reachable from here (AI-05). This process loads versioned artifacts and answers
 questions; it never learns.
 """
 
-from __future__ import annotations
-
-import random
-
 from fastapi import FastAPI
 
 from codesage_ml.registry import load_risk_model, load_satd_model
@@ -27,7 +23,6 @@ from codesage_ml.schemas import (
     ClassifyRequest,
     ClassifyResponse,
     CommentPrediction,
-    FileFeaturesIn,
     FileRisk,
     RiskRequest,
     RiskResponse,
@@ -35,9 +30,6 @@ from codesage_ml.schemas import (
 )
 
 app = FastAPI(title="Code Sage AI — ML Inference", version="1.0.0")
-
-#: Reported by endpoints until a trained artifact replaces this service.
-MOCK_VERSION = "mock-1.0.0"
 
 
 @app.post("/classify", response_model=ClassifyResponse)
