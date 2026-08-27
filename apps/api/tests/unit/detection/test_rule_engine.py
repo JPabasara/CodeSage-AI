@@ -33,6 +33,11 @@ def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) ->
             max_nesting_depth=5,
             method_count=2,
             longest_method_lines=90,
+            cbo=0.0,
+            dit=0.0,
+            lcom=0.0,
+            rfc=0.0,
+            noc=0.0,
         )
     ]
 
@@ -58,14 +63,14 @@ def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) ->
 
 def test_rules_do_not_emit_findings_below_thresholds(tmp_path: Path) -> None:
     (tmp_path / "Small.java").write_text("class Small {}", encoding="utf-8")
-    metrics = [FileMetrics("Small.java", 10, 1, 0, 0, 0)]
+    metrics = [FileMetrics("Small.java", 10, 1, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)]
 
     assert detect(metrics, _rules(), tmp_path) == []
 
 
 def test_complexity_is_not_summed_across_methods(tmp_path: Path) -> None:
     (tmp_path / "Example.java").write_text("class Example {}", encoding="utf-8")
-    files = [FileMetrics("Example.java", 20, 20, 1, 2, 10)]
+    files = [FileMetrics("Example.java", 20, 20, 1, 2, 10, 0.0, 0.0, 0.0, 0.0, 0.0)]
     methods = [
         MethodMetrics("Example.java", "Example", "first", 2, 10, 10, 1),
         MethodMetrics("Example.java", "Example", "second", 20, 10, 10, 1),
