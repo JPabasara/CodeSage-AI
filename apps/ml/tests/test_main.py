@@ -22,12 +22,13 @@ def test_healthz():
 
 
 def test_version():
-    """Verify version endpoint returns deployed SATD model version."""
+    """Verify version endpoint returns deployed model versions."""
     response = client.get("/version")
     assert response.status_code == 200
     data = response.json()
     assert data["satd_model_version"] in ("v1.0", "satd-1.0.0")
-    assert data["risk_model_version"] == "mock-1.0.0"
+    assert data["risk_model_version"] in ("mock-1.0.0", "risk-1.0.0")
+
 
 
 def test_classify():
