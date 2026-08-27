@@ -96,3 +96,47 @@ def test_risk_client_handles_malformed_response():
     with patch("httpx.post", return_value=mock_bad_schema):
         with pytest.raises(MLServiceUnavailable):
             predict(static_files, {})
+
+
+def test_risk_client_handles_http_500_error():
+    """Verify risk client raises MLServiceUnavailable on HTTP 500 server errors."""
+    static_files = [FileMetrics("src/A.java", 100, 5.0, 2, 4, 20)]
+
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Server Error", request=MagicMock(), response=mock_response
+    )
+
+    with patch("httpx.post", return_value=mock_response):
+        with pytest.raises(MLServiceUnavailable):
+            predict(static_files, {})
+
+
+def test_risk_client_handles_process_only_metrics():
+    """Verify risk client correctly handles files that only have process metrics without static metrics."""
+    process_metrics = {
+        "src/DeletedOrNonJava.txt": FileProcessMetrics(
+            path="src/DeletedOrNonJava.txt",
+            commits_90d=5,
+            author_count=2,
+            file_age_days=60.0,
+            recency_days=5.0,
+        )
+    }
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "scores": [{"path": "src/DeletedOrNonJava.txt", "risk_score": 0.35}],
+        "model_version": "v1.0",
+    }
+
+    with patch("httpx.post", return_value=mock_response) as mock_post:
+        results = predict([], process_metrics)
+        assert results == {"src/DeletedOrNonJava.txt": 0.35}
+        sent_payload = mock_post.call_args[1]["json"]
+        assert len(sent_payload["files"]) == 1
+        assert sent_payload["files"][0]["path"] == "src/DeletedOrNonJava.txt"
+        assert sent_payload["files"][0]["metrics"]["commits_90d"] == 5.0
+
