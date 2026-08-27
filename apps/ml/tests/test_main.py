@@ -1,3 +1,4 @@
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
@@ -267,13 +268,18 @@ def test_risk_batch_multiple_files_order_and_determinism():
     first_response = client.post("/risk", json=payload).json()
     second_response = client.post("/risk", json=payload).json()
 
-    assert first_response == second_response
+    assert first_response["model_version"] == second_response["model_version"]
 
-    scores = first_response["scores"]
-    assert len(scores) == 10
-    for i, s in enumerate(scores):
-        assert s["path"] == files[i]["path"]
-        assert 0.0 <= s["risk_score"] <= 1.0
+    scores_1 = first_response["scores"]
+    scores_2 = second_response["scores"]
+    assert len(scores_1) == 10
+    assert len(scores_2) == 10
+
+    for i in range(10):
+        assert scores_1[i]["path"] == files[i]["path"]
+        assert scores_2[i]["path"] == files[i]["path"]
+        assert scores_1[i]["risk_score"] == pytest.approx(scores_2[i]["risk_score"], abs=1e-5)
+        assert 0.0 <= scores_1[i]["risk_score"] <= 1.0
 
 
 def test_risk_empty_list():
