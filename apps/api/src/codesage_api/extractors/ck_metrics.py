@@ -24,11 +24,11 @@ class FileMetrics:
     max_nesting_depth: int
     method_count: int
     longest_method_lines: int
-    cbo: float
-    dit: float
-    lcom: float
-    rfc: float
-    noc: float
+    cbo: float = 0.0
+    dit: float = 0.0
+    lcom: float = 0.0
+    rfc: float = 0.0
+    noc: float = 0.0
 
 
 class CKExtractionError(RuntimeError):
