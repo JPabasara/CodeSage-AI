@@ -8,18 +8,26 @@ from __future__ import annotations
 
 import httpx
 
+from dataclasses import dataclass
+
 from codesage_api.config import get_settings
 from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.ck_metrics import FileMetrics
 from codesage_api.extractors.process_metrics import FileProcessMetrics
 
 
+@dataclass(frozen=True, slots=True)
+class RiskClientResult:
+    scores: dict[str, float]
+    model_version: str
+
+
 def predict(
     files: list[FileMetrics], process: dict[str, FileProcessMetrics]
-) -> dict[str, float]:
-    """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0)."""
+) -> RiskClientResult:
+    """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0) and model version provenance."""
     if not files and not process:
-        return {}
+        return RiskClientResult(scores={}, model_version="risk-1.0.0")
 
     settings = get_settings()
     url = f"{settings.ml_service_url.rstrip('/')}/risk"
@@ -38,6 +46,11 @@ def predict(
             metrics["loc"] = float(file_metrics.loc)
             metrics["wmc"] = float(file_metrics.cyclomatic_complexity)
             metrics["max_nested_blocks"] = float(file_metrics.max_nesting_depth)
+            metrics["cbo"] = float(file_metrics.cbo)
+            metrics["dit"] = float(file_metrics.dit)
+            metrics["lcom"] = float(file_metrics.lcom)
+            metrics["rfc"] = float(file_metrics.rfc)
+            metrics["noc"] = float(file_metrics.noc)
         if proc_metrics:
             metrics["commits_90d"] = float(proc_metrics.commits_90d)
             metrics["author_count"] = float(proc_metrics.author_count)
@@ -52,7 +65,16 @@ def predict(
         response = httpx.post(url, json=payload, timeout=30.0)
         response.raise_for_status()
         data = response.json()
-        scores = data.get("scores", [])
-        return {s["path"]: float(s["risk_score"]) for s in scores}
+        raw_scores = data.get("scores", [])
+        version = str(data.get("model_version", "risk-1.0.0"))
+        
+        scores: dict[str, float] = {}
+        for item in raw_scores:
+            score = float(item["risk_score"])
+            if not (0.0 <= score <= 1.0):
+                raise ValueError(f"Risk score {score} out of valid probability range [0.0, 1.0]")
+            scores[item["path"]] = score
+            
+        return RiskClientResult(scores=scores, model_version=version)
     except Exception as exc:
         raise MLServiceUnavailable(f"Failed to communicate with ML risk service: {exc}") from exc

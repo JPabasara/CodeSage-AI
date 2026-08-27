@@ -9,7 +9,7 @@ from codesage_api.extractors.process_metrics import FileProcessMetrics
 
 
 def test_risk_client_predict_success():
-    """Verify risk client correctly formats metrics and returns per-file risk scores."""
+    """Verify risk client correctly formats metrics and returns per-file risk scores and model version."""
     static_files = [
         FileMetrics(
             path="src/Main.java",
@@ -18,6 +18,11 @@ def test_risk_client_predict_success():
             max_nesting_depth=3,
             method_count=8,
             longest_method_lines=45,
+            cbo=4.0,
+            dit=2.0,
+            lcom=1.0,
+            rfc=15.0,
+            noc=0.0,
         )
     ]
     process_metrics = {
@@ -36,34 +41,37 @@ def test_risk_client_predict_success():
         "scores": [
             {"path": "src/Main.java", "risk_score": 0.78}
         ],
-        "model_version": "v1.0",
+        "model_version": "risk-1.0.0",
     }
 
     with patch("httpx.post", return_value=mock_response) as mock_post:
-        results = predict(static_files, process_metrics)
+        result = predict(static_files, process_metrics)
 
-        assert results == {"src/Main.java": 0.78}
+        assert result.scores == {"src/Main.java": 0.78}
+        assert result.model_version == "risk-1.0.0"
         assert mock_post.called
         sent_payload = mock_post.call_args[1]["json"]
         assert len(sent_payload["files"]) == 1
         assert sent_payload["files"][0]["path"] == "src/Main.java"
         assert sent_payload["files"][0]["metrics"]["loc"] == 250.0
         assert sent_payload["files"][0]["metrics"]["wmc"] == 12.0
+        assert sent_payload["files"][0]["metrics"]["cbo"] == 4.0
         assert sent_payload["files"][0]["metrics"]["commits_90d"] == 15.0
 
 
 def test_risk_client_empty_inputs():
     """Verify risk client returns empty dict when no files are provided without making HTTP call."""
     with patch("httpx.post") as mock_post:
-        results = predict([], {})
-        assert results == {}
+        result = predict([], {})
+        assert result.scores == {}
+        assert result.model_version == "risk-1.0.0"
         assert not mock_post.called
 
 
 def test_risk_client_handles_network_error():
     """Verify risk client raises MLServiceUnavailable on network errors for graceful degradation."""
     static_files = [
-        FileMetrics("src/A.java", 100, 5.0, 2, 4, 20)
+        FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)
     ]
 
     with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
@@ -74,7 +82,7 @@ def test_risk_client_handles_network_error():
 def test_risk_client_handles_malformed_response():
     """Verify risk client raises MLServiceUnavailable on malformed JSON or payload."""
     static_files = [
-        FileMetrics("src/A.java", 100, 5.0, 2, 4, 20)
+        FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)
     ]
 
     # Case 1: Malformed JSON
@@ -100,7 +108,7 @@ def test_risk_client_handles_malformed_response():
 
 def test_risk_client_handles_http_500_error():
     """Verify risk client raises MLServiceUnavailable on HTTP 500 server errors."""
-    static_files = [FileMetrics("src/A.java", 100, 5.0, 2, 4, 20)]
+    static_files = [FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)]
 
     mock_response = MagicMock()
     mock_response.status_code = 500
@@ -133,8 +141,9 @@ def test_risk_client_handles_process_only_metrics():
     }
 
     with patch("httpx.post", return_value=mock_response) as mock_post:
-        results = predict([], process_metrics)
-        assert results == {"src/DeletedOrNonJava.txt": 0.35}
+        result = predict([], process_metrics)
+        assert result.scores == {"src/DeletedOrNonJava.txt": 0.35}
+        assert result.model_version == "v1.0"
         sent_payload = mock_post.call_args[1]["json"]
         assert len(sent_payload["files"]) == 1
         assert sent_payload["files"][0]["path"] == "src/DeletedOrNonJava.txt"
