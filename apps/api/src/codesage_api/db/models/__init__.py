@@ -14,10 +14,10 @@ Grouped to match the four domains of SAD §9 Data View:
     rules.py       — RuleDefinition, SATDMarkerPattern
     profile.py     — ScoringProfile, ScoringPreset
 
-**The one rule that governs all of them: the schema stores facts, not scores.**
-Priority, file debt, health score, grade, delta and the category breakdown are not
-columns anywhere here. They are functions of the active profile, derived on every
-read by ScoringEngine (SRS FR-21, DBR-21, DBR-23).
+SnapshotScore is the sole exception to fact storage: it is a deletable derived
+cache stamped with the complete profile fingerprint and scoring-engine version.
+Snapshots and findings remain authoritative; deleting every cache row changes
+performance only.
 
 **Not in the v1.0 schema, deliberately:** no suppression or finding-action table
 (v1.0 is view-only, FR-17b); no webhook-event table (scans are user-initiated
@@ -32,6 +32,7 @@ from codesage_api.db.models.profile import ScoringPreset, ScoringProfile
 from codesage_api.db.models.provenance import AnalysisEngineModelVersion, AnalysisEngineVersion
 from codesage_api.db.models.repository import Branch, Repository
 from codesage_api.db.models.rules import RuleDefinition, SATDMarkerPattern
+from codesage_api.db.models.score import SnapshotScore
 from codesage_api.db.models.source import (
     CodeSymbol,
     FileTreeNode,
@@ -40,7 +41,13 @@ from codesage_api.db.models.source import (
     SourceLocation,
     StaticMetric,
 )
-from codesage_api.db.models.tenancy import Membership, SecurityAuditRecord, User, UserSession, Workspace
+from codesage_api.db.models.tenancy import (
+    Membership,
+    SecurityAuditRecord,
+    User,
+    UserSession,
+    Workspace,
+)
 
 __all__ = [
     "AnalysisAttempt",
@@ -59,12 +66,13 @@ __all__ = [
     "RuleDefinition",
     "SATDMarkerPattern",
     "SATDPrediction",
-    "SecurityAuditRecord",
-    "Snapshot",
-    "SourceFile",
-    "SourceLocation",
     "ScoringPreset",
     "ScoringProfile",
+    "SecurityAuditRecord",
+    "Snapshot",
+    "SnapshotScore",
+    "SourceFile",
+    "SourceLocation",
     "StaticMetric",
     "User",
     "UserSession",

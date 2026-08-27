@@ -1,17 +1,3 @@
-"""Structured logging with a scan_id that survives every process hop.
-
-SAD §11 (traceability): *"Every log line across the API, broker, workers and ML
-service carries the same scan identifier, so one scan is traceable end to end."*
-That only works if the id is ambient rather than passed by hand — a single log
-call that forgets the kwarg breaks the trace. Hence a ContextVar: the router or
-the Celery task binds it once at the entry point, and every log line below picks
-it up automatically.
-
-Note this is the *diagnostic* half of the pair. The other half is durable: the
-final phase and error of every scan are stored on the SCAN row, so a user-reported
-failure is diagnosable without reading logs at all.
-"""
-
 from __future__ import annotations
 
 import contextvars
@@ -22,6 +8,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 _scan_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("scan_id", default=None)
+
+_OBSERVABILITY_FIELDS = (
+    "event",
+    "stage",
+    "duration_ms",
+    "commits_inspected",
+    "files_measured",
+)
 
 
 @contextmanager
@@ -44,6 +38,9 @@ class _JsonFormatter(logging.Formatter):
         }
         if (scan_id := _scan_id.get()) is not None:
             payload["scan_id"] = scan_id
+        for field in _OBSERVABILITY_FIELDS:
+            if hasattr(record, field):
+                payload[field] = getattr(record, field)
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload)

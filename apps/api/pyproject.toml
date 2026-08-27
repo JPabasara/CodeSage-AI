@@ -28,7 +28,9 @@ dependencies = [
     # Java grammar only, matching the CK constraint.
     "tree-sitter>=0.23",
     "tree-sitter-java>=0.23",
-    "pydriller>=2.6",
+    # Process metrics are persisted as reproducible scan facts. Keep this exact
+    # version aligned with AnalysisEngineVersion.tool_versions.
+    "pydriller==2.10",
     # NOTE: CK is not listed. It is a Java jar run as a subprocess, installed into
     # the image by the Dockerfile (CODESAGE_CK_JAR). There is no pip package.
 ]
@@ -97,9 +99,9 @@ forbidden_modules = [
 # later, on the read path, invoked by the API. A worker that imports `scoring` is
 # a worker that is about to store a derived value — an SRS FR-21 violation.
 [[tool.importlinter.contracts]]
-name = "workers never score"
+name = "scan pipeline never scores"
 type = "forbidden"
-source_modules = ["codesage_api.tasks", "codesage_api.extractors", "codesage_api.detection"]
+source_modules = ["codesage_api.tasks.scan_pipeline", "codesage_api.extractors", "codesage_api.detection"]
 # The maths, not the vocabulary. `scoring.enums` deliberately holds the shared
 # words — Category, Severity, Source — and its own docstring says everything may
 # import *down* into it; a detector has to name the category it found. What a

@@ -22,8 +22,9 @@ pyyaml>=6.0
 # per language; v1.0 is Java only, matching the CK constraint.
 tree-sitter>=0.23
 tree-sitter-java>=0.23
-# PyDriller mines the four process metrics from git history.
-pydriller>=2.6
+# PyDriller mines the four process metrics from git history. Keep this exact
+# version aligned with AnalysisEngineVersion.tool_versions.
+pydriller==2.10
 
 # NOTE: CK is NOT here. It is a Java jar run as a subprocess, installed into the
 # image by the Dockerfile — see CODESAGE_CK_JAR. There is no pip package for it.

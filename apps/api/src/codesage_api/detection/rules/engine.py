@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +7,11 @@ from pathlib import Path
 from codesage_api.detection.fingerprint import rule_fingerprint
 from codesage_api.detection.reasons import render_rule_reason
 from codesage_api.detection.rules.registry import RuleDefinition
-from codesage_api.extractors.ck_metrics import FileMetrics
+from codesage_api.detection.rules.security_rules import (
+    detect_hardcoded_secret,
+    detect_sql_concat,
+)
+from codesage_api.extractors.ck_metrics import FileMetrics, MethodMetrics
 from codesage_api.scoring.enums import Category, Severity
 
 
@@ -27,20 +30,14 @@ class DetectedFinding:
     fingerprint: str
 
 
-_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {
-    "complex-function": lambda item: item.cyclomatic_complexity,
-    "long-method": lambda item: float(item.longest_method_lines),
-    "deep-nesting": lambda item: float(item.max_nesting_depth),
+_FILE_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {
     "large-file": lambda item: float(item.loc),
 }
-_SECRET = re.compile(
-    r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\b\s*=\s*[\"']([^\"']{8,})[\"']"
-)
-_SQL_CONCAT = re.compile(
-    r"(?i)[\"']\s*(select|insert|update|delete)\b[^\"']*[\"']\s*\+"
-)
-
-
+_METHOD_RULE_ACCESSORS: dict[str, Callable[[MethodMetrics], float]] = {
+    "complex-function": lambda item: item.cyclomatic_complexity,
+    "long-method": lambda item: float(item.loc),
+    "deep-nesting": lambda item: float(item.max_nesting_depth),
+}
 def _metric_findings(
     files: list[FileMetrics], rules: list[RuleDefinition]
 ) -> list[DetectedFinding]:
@@ -48,7 +45,7 @@ def _metric_findings(
     for item in files:
         symbol = Path(item.path).stem
         for rule in rules:
-            accessor = _RULE_ACCESSORS.get(rule.rule_id)
+            accessor = _FILE_RULE_ACCESSORS.get(rule.rule_id)
             if accessor is None:
                 continue
             value = accessor(item)
@@ -79,6 +76,44 @@ def _metric_findings(
     return findings
 
 
+def _method_metric_findings(
+    methods: list[MethodMetrics], rules: list[RuleDefinition]
+) -> list[DetectedFinding]:
+    findings: list[DetectedFinding] = []
+    for item in methods:
+        symbol = f"{item.class_name}.{item.method_name}"
+        for rule in rules:
+            accessor = _METHOD_RULE_ACCESSORS.get(rule.rule_id)
+            if accessor is None:
+                continue
+            value = accessor(item)
+            threshold = rule.threshold
+            if value <= threshold:
+                continue
+            findings.append(
+                DetectedFinding(
+                    file_path=item.path,
+                    line=item.line,
+                    symbol=symbol,
+                    rule_id=rule.rule_id,
+                    category=rule.category,
+                    severity=rule.severity,
+                    description=render_rule_reason(
+                        rule.message_template,
+                        symbol=symbol,
+                        file=item.path,
+                        value=value,
+                        threshold=threshold,
+                    ),
+                    evidence=f"{rule.rule_id}={value:g}",
+                    measured_value=value,
+                    threshold=threshold,
+                    fingerprint=rule_fingerprint(rule.rule_id, item.path, symbol),
+                )
+            )
+    return findings
+
+
 def _pattern_findings(
     repository_path: Path, rules: list[RuleDefinition]
 ) -> list[DetectedFinding]:
@@ -88,31 +123,29 @@ def _pattern_findings(
         if ".git" in path.parts:
             continue
         relative = path.relative_to(repository_path).as_posix()
-        for line_number, line in enumerate(
-            path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1
-        ):
-            matches = (
-                ("hardcoded-secret", _SECRET.search(line)),
-                ("sql-concat", _SQL_CONCAT.search(line)),
-            )
-            for rule_id, match in matches:
-                rule = by_id.get(rule_id)
-                if rule is None or match is None:
-                    continue
-                symbol = match.group(1)
+        source = path.read_text(encoding="utf-8", errors="replace")
+        detectors = (
+            ("hardcoded-secret", detect_hardcoded_secret),
+            ("sql-concat", detect_sql_concat),
+        )
+        for rule_id, detector in detectors:
+            rule = by_id.get(rule_id)
+            if rule is None:
+                continue
+            for match in detector(path, source):
                 findings.append(
                     DetectedFinding(
                         file_path=relative,
-                        line=line_number,
-                        symbol=symbol,
+                        line=match.line,
+                        symbol=match.symbol,
                         rule_id=rule.rule_id,
                         category=rule.category,
                         severity=rule.severity,
-                        description=rule.message_template.format(symbol=symbol),
-                        evidence=None,
-                        measured_value=None,
-                        threshold=None,
-                        fingerprint=rule_fingerprint(rule.rule_id, relative, symbol),
+                        description=rule.message_template.format(symbol=match.symbol),
+                        evidence=match.evidence,
+                        measured_value=match.measured_value,
+                        threshold=match.threshold,
+                        fingerprint=rule_fingerprint(rule.rule_id, relative, match.symbol),
                     )
                 )
     return findings
@@ -122,5 +155,10 @@ def detect(
     files: list[FileMetrics],
     rules: list[RuleDefinition],
     repository_path: Path,
+    methods: list[MethodMetrics] | None = None,
 ) -> list[DetectedFinding]:
-    return _metric_findings(files, rules) + _pattern_findings(repository_path, rules)
+    return (
+        _metric_findings(files, rules)
+        + _method_metric_findings(methods or [], rules)
+        + _pattern_findings(repository_path, rules)
+    )

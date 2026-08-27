@@ -35,6 +35,7 @@ from codesage_api.errors import (
     UpstreamUnavailable,
 )
 from codesage_api.scoring.config_loader import get_presets
+from codesage_api.scoring.enums import Category
 
 logger = logging.getLogger(__name__)
 
@@ -204,11 +205,11 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
         ScoringProfile(
             workspace_id=workspace_id,
             name=balanced.name,
-            security_weight=balanced.weights["security"],
-            code_design_weight=balanced.weights["code-design"],
-            requirement_weight=balanced.weights["requirement"],
-            documentation_weight=balanced.weights["documentation"],
-            test_weight=balanced.weights["test"],
+            security_weight=balanced.weights[Category.SECURITY],
+            code_design_weight=balanced.weights[Category.CODE_DESIGN],
+            requirement_weight=balanced.weights[Category.REQUIREMENT],
+            documentation_weight=balanced.weights[Category.DOCUMENTATION],
+            test_weight=balanced.weights[Category.TEST],
             trust_slider=balanced.s,
             is_active=True,
         )

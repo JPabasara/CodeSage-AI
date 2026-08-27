@@ -1,30 +1,52 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import uuid
+from typing import Annotated
 
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from codesage_api.db.rls import set_workspace_context
+from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
+from codesage_api.logging import get_logger
 from codesage_api.schemas import ScoreProfileIn, ScoreProfileOut
+from codesage_api.services import profiles
+from codesage_api.tasks.app import celery_app
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["profiles"])
 
 
 @router.get("/profiles", response_model=list[ScoreProfileOut])
-def list_profiles() -> list[ScoreProfileOut]:
-    """The three presets that seed the sliders (FR-20)."""
-    raise NotImplementedError
+def list_profiles(
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> list[ScoreProfileOut]:
+    """The three presets that seed the sliders"""
+    return profiles.list_available(db, workspace_id)
 
 
 @router.get("/profiles/active", response_model=ScoreProfileOut)
-def get_active_profile() -> ScoreProfileOut:
+def get_active_profile(
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> ScoreProfileOut:
     """The workspace's active profile — five weights and the trust slider.
 
     Seeds the Profiles screen on load, so the sliders open at the values actually
     in force rather than at a client-side guess.
     """
-    raise NotImplementedError
+    return profiles.get_active_output(db, workspace_id)
 
 
 @router.put("/profiles/active", response_model=ScoreProfileOut)
-def apply_profile(body: ScoreProfileIn) -> ScoreProfileOut:
+def apply_profile(
+    body: ScoreProfileIn,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+) -> ScoreProfileOut:
     """Apply a profile. One idempotent write carrying the COMPLETE profile.
 
     What the handler does, in full:
@@ -53,4 +75,20 @@ def apply_profile(body: ScoreProfileIn) -> ScoreProfileOut:
     leave three weights updated and two not, which would render a dashboard
     matching no profile the system holds.
     """
-    raise NotImplementedError
+    result = profiles.apply(
+        db,
+        workspace_id,
+        body.weights.model_dump(),
+        body.trust_s,
+        user_id,
+        body.name,
+    )
+    db.commit()
+    try:
+        celery_app.send_task(
+            "codesage.warm_workspace_scores", args=[str(workspace_id)]
+        )
+    except Exception:
+        logger.exception("Could not enqueue score warm-up after profile change")
+        set_workspace_context(db, workspace_id)
+    return result

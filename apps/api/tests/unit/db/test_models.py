@@ -5,12 +5,33 @@ import codesage_api.db.models  # noqa: F401
 from codesage_api.db.base import Base
 
 EXPECTED_TABLES = {
-    "analysis_attempt", "analysis_engine_model_version", "analysis_engine_version",
-    "app_user", "branch", "bug_risk_prediction", "code_symbol", "debt_category",
-    "file_tree_node", "finding", "membership", "ml_model_version", "process_metric",
-    "repository", "rule_definition", "satd_marker_pattern", "satd_prediction",
-    "scoring_preset", "scoring_profile", "security_audit_record", "session", "snapshot",
-    "source_file", "source_location", "static_metric", "workspace",
+    "analysis_attempt",
+    "analysis_engine_model_version",
+    "analysis_engine_version",
+    "app_user",
+    "branch",
+    "bug_risk_prediction",
+    "code_symbol",
+    "debt_category",
+    "file_tree_node",
+    "finding",
+    "membership",
+    "ml_model_version",
+    "process_metric",
+    "repository",
+    "rule_definition",
+    "satd_marker_pattern",
+    "satd_prediction",
+    "scoring_preset",
+    "scoring_profile",
+    "security_audit_record",
+    "session",
+    "snapshot",
+    "snapshot_score",
+    "source_file",
+    "source_location",
+    "static_metric",
+    "workspace",
 }
 
 
@@ -22,7 +43,8 @@ def test_all_erd_models_map() -> None:
 def test_engine_model_link_has_composite_primary_key() -> None:
     table = Base.metadata.tables["analysis_engine_model_version"]
     assert {column.name for column in table.primary_key.columns} == {
-        "analysis_engine_version_id", "model_version_id"
+        "analysis_engine_version_id",
+        "model_version_id",
     }
 
 
@@ -57,7 +79,7 @@ def test_probability_and_range_checks_exist() -> None:
 
 
 def test_profile_dependent_scores_are_not_persisted() -> None:
-    """DBR-21: the database stores scan facts, not profile-dependent opinions."""
+    """Authoritative scan tables do not store profile-dependent opinions."""
     forbidden_columns = {
         "finding": {"priority"},
         "source_file": {"debt_score"},

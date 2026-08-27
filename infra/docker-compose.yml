@@ -118,7 +118,7 @@ services:
   worker:
     build:
       context: ../apps/api
-    command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1
+    command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1 -Q scans
     init: true
     stop_grace_period: 30s
     environment:
@@ -151,6 +151,30 @@ services:
     # Concurrency scales by replicas, not threads: each scan needs its own clone
     # and its own ~2 GB. PERF-07 asks for at least three concurrent analyses.
     # Run `docker compose up --scale worker=3` to meet it.
+
+  score-worker:
+    build:
+      context: ../apps/api
+    command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1 -Q scoring
+    init: true
+    stop_grace_period: 30s
+    environment:
+      CODESAGE_DATABASE_URL: postgresql+psycopg://codesage_app:devpassword@postgres:5432/codesage
+      CODESAGE_REDIS_URL: redis://redis:6379/0
+      CODESAGE_ML_SERVICE_URL: http://ml:8001
+      CODESAGE_CLONE_DIR: /var/tmp/codesage-clones
+      CODESAGE_CK_JAR: /opt/ck/ck.jar
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A codesage_api.worker inspect ping -t 10 | grep -q pong"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 45s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   web:
     build:

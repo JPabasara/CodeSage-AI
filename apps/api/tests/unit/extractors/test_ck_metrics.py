@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from codesage_api.extractors.ck_metrics import (
     CKExtractionError,
     FileMetrics,
+    MethodMetrics,
+    extract_ck_analysis,
     extract_ck_metrics,
 )
 
@@ -16,6 +19,7 @@ def test_ck_csv_is_aggregated_per_file(monkeypatch, tmp_path: Path) -> None:
     jar.touch()
 
     def fake_run(command, **kwargs):
+        assert command[-1].endswith(os.sep)
         output = Path(command[-1])
         (output / "class.csv").write_text(
             "file,loc,wmc,maxNestedBlocksQty,totalMethodsQty\n"
@@ -24,9 +28,9 @@ def test_ck_csv_is_aggregated_per_file(monkeypatch, tmp_path: Path) -> None:
             encoding="utf-8",
         )
         (output / "method.csv").write_text(
-            "file,loc\n"
-            f"{repository / 'src/A.java'},12\n"
-            f"{repository / 'src/A.java'},18\n",
+            "file,class,method,line,loc,wmc,maxNestedBlocksQty\n"
+            f"{repository / 'src/A.java'},A,small,5,12,2,1\n"
+            f"{repository / 'src/A.java'},A,large,30,18,7,3\n",
             encoding="utf-8",
         )
 
@@ -34,6 +38,32 @@ def test_ck_csv_is_aggregated_per_file(monkeypatch, tmp_path: Path) -> None:
 
     assert extract_ck_metrics(repository, ck_jar=jar) == [
         FileMetrics("src/A.java", 50, 9.0, 4, 4, 18)
+    ]
+
+
+def test_ck_method_rows_are_preserved_for_method_rules(monkeypatch, tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    jar = tmp_path / "ck.jar"
+    jar.touch()
+
+    def fake_run(command, **kwargs):
+        output = Path(command[-1])
+        (output / "class.csv").write_text(
+            "file,loc,wmc,maxNestedBlocksQty,totalMethodsQty\n"
+            f"{repository / 'A.java'},20,5,2,1\n",
+            encoding="utf-8",
+        )
+        (output / "method.csv").write_text(
+            "file,class,method,line,loc,wmc,maxNestedBlocksQty\n"
+            f"{repository / 'A.java'},A,work,7,12,4,2\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("codesage_api.extractors.ck_metrics.subprocess.run", fake_run)
+
+    assert extract_ck_analysis(repository, ck_jar=jar).methods == [
+        MethodMetrics("A.java", "A", "work", 7, 12, 4.0, 2)
     ]
 
 

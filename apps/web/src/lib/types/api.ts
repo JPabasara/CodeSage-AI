@@ -203,12 +203,11 @@ export interface paths {
          *     card, the category breakdown, the trend, the Refactor-First list, the data
          *     behind the finding detail, and the hotspot tree.
          *
-         *     **Every score here is computed on this request** under the workspace's
-         *     active profile — `health_score`, `grade`, `delta`, each finding's
-         *     `priority`, each file's `debt_score`, and the whole trend line. None is read
-         *     from a column (FR-21). A profile change therefore re-ranks everything with
-         *     no re-scan, and the trend is redrawn end to end so every point is comparable
-         *     with every other (FR-14, "one lens per line").
+         *     Every score is calculated asynchronously by the tenant-scoped Celery
+         *     scoring worker and read from a complete profile- and engine-stamped derived
+         *     cache. FastAPI does not execute the scoring formula. A profile change
+         *     therefore re-ranks everything with no re-scan, and the trend is redrawn end
+         *     to end so every point is comparable with every other (FR-14, FR-21).
          *
          *     **There is no profile parameter, by design.** See the description at the top
          *     of this document.
@@ -504,7 +503,7 @@ export interface components {
          *     members never change meaning.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -1070,6 +1069,21 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The profile-stamped dashboard result is being prepared asynchronously. */
+        ScorePending: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "detail": "The dashboard score is still being prepared. Please try again shortly.",
+                 *       "code": "SCORE_PENDING"
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         /** @description The connected repository's identifier. */
@@ -1346,6 +1360,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            503: components["responses"]["ScorePending"];
         };
     };
     list_scan_history: {

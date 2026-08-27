@@ -2,7 +2,7 @@ from pathlib import Path
 
 from codesage_api.detection.rules.engine import detect
 from codesage_api.detection.rules.registry import RuleDefinition
-from codesage_api.extractors.ck_metrics import FileMetrics
+from codesage_api.extractors.ck_metrics import FileMetrics, MethodMetrics
 from codesage_api.scoring.enums import Category, Severity
 
 
@@ -36,7 +36,8 @@ def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) ->
         )
     ]
 
-    findings = detect(metrics, _rules(), tmp_path)
+    methods = [MethodMetrics("src/Example.java", "Example", "work", 8, 90, 20, 5)]
+    findings = detect(metrics, _rules(), tmp_path, methods)
 
     assert {item.rule_id for item in findings} == {
         "complex-function",
@@ -48,6 +49,11 @@ def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) ->
     }
     assert all(item.file_path == "src/Example.java" for item in findings)
     assert all(len(item.fingerprint) == 64 for item in findings)
+    method_findings = [item for item in findings if item.rule_id in {
+        "complex-function", "long-method", "deep-nesting"
+    }]
+    assert all(item.line == 8 for item in method_findings)
+    assert all(item.symbol == "Example.work" for item in method_findings)
 
 
 def test_rules_do_not_emit_findings_below_thresholds(tmp_path: Path) -> None:
@@ -55,3 +61,14 @@ def test_rules_do_not_emit_findings_below_thresholds(tmp_path: Path) -> None:
     metrics = [FileMetrics("Small.java", 10, 1, 0, 0, 0)]
 
     assert detect(metrics, _rules(), tmp_path) == []
+
+
+def test_complexity_is_not_summed_across_methods(tmp_path: Path) -> None:
+    (tmp_path / "Example.java").write_text("class Example {}", encoding="utf-8")
+    files = [FileMetrics("Example.java", 20, 20, 1, 2, 10)]
+    methods = [
+        MethodMetrics("Example.java", "Example", "first", 2, 10, 10, 1),
+        MethodMetrics("Example.java", "Example", "second", 20, 10, 10, 1),
+    ]
+
+    assert detect(files, _rules(), tmp_path, methods) == []

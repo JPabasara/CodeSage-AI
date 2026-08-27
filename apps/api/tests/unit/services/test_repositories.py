@@ -14,7 +14,6 @@ from codesage_api.db.enums import (
 )
 from codesage_api.db.models import Branch, Repository
 from codesage_api.integrations.github import GitHubBranch, GitHubRepository
-from codesage_api.scoring.enums import Grade
 from codesage_api.services import repositories
 
 
@@ -31,9 +30,7 @@ def _repository(workspace_id: uuid.UUID) -> Repository:
         connection_status=RepositoryConnectionStatus.CONNECTED,
         created_at=datetime(2026, 8, 25, tzinfo=UTC),
     )
-    repository.branches = [
-        Branch(name="main", head_commit_sha="a" * 40, is_default=True)
-    ]
+    repository.branches = [Branch(name="main", head_commit_sha="a" * 40, is_default=True)]
     return repository
 
 
@@ -75,19 +72,20 @@ def test_connect_persists_default_branch_and_audit(monkeypatch) -> None:
     audit.assert_called_once()
 
 
-def test_list_projects_derives_latest_health(monkeypatch) -> None:
+def test_list_projects_uses_cached_latest_health(monkeypatch) -> None:
     workspace_id = uuid.uuid4()
     repository = _repository(workspace_id)
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = [repository]
+    monkeypatch.setattr(repositories.profiles, "get_active", lambda *_args: object())
     monkeypatch.setattr(
         repositories.dashboard,
-        "build_scan_history",
-        lambda *_args: [
-            SimpleNamespace(health_score=83.0, grade=Grade.A, delta=4.0)
-        ],
+        "build_latest_health_hint",
+        lambda *_args: (
+            (SimpleNamespace(health_score=83.0, grade="A"), 4.0),
+            [],
+        ),
     )
-
     result = repositories.list_projects(session, workspace_id)
 
     assert result[0].owner == "JPabasara"
@@ -96,21 +94,19 @@ def test_list_projects_derives_latest_health(monkeypatch) -> None:
     assert result[0].latest_health.delta == 4.0
 
 
-def test_project_without_default_branch_does_not_hide_valid_projects(
-    monkeypatch,
-) -> None:
+def test_project_without_default_branch_does_not_hide_valid_projects(monkeypatch) -> None:
     workspace_id = uuid.uuid4()
     broken = _repository(workspace_id)
     broken.branches = []
     valid = _repository(workspace_id)
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = [broken, valid]
+    monkeypatch.setattr(repositories.profiles, "get_active", lambda *_args: object())
     monkeypatch.setattr(
         repositories.dashboard,
-        "build_scan_history",
-        lambda *_args: [],
+        "build_latest_health_hint",
+        lambda *_args: (None, []),
     )
-
     result = repositories.list_projects(session, workspace_id)
 
     assert [project.id for project in result] == [str(valid.id)]

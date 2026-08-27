@@ -28,7 +28,8 @@ openapi: 3.1.0
 #                         ML-1 cannot predict that category and it does not exist.
 #   six numbers           a scoring profile is five weights plus one trust slider.
 #   derived on read       every score in this document is computed per request
-#                         under the active profile. None is read from a column
+#                         under the active profile. A valid profile- and
+#                         formula-stamped derived summary cache may be reused
 #                         (FR-21). This is why a profile change re-ranks with no
 #                         re-scan, and why no endpoint takes a profile parameter.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,7 +45,8 @@ info:
     differently, and the difference is the architecture:
 
     - **Reads** (`/projects`, `/branches`, `/health`, `/scans`) return stored facts
-      with every score derived on the spot under the workspace's active profile.
+      with every score derived from stored facts under the workspace's active
+      profile. Valid profile- and formula-stamped summary caches may be reused.
     - **The scan** (`POST /repos/{repo_id}/scan`) is asynchronous. It returns a
       `202` with a `scan_id` immediately and the client polls; the work happens on
       a Celery worker (PERF-03, PERF-05).
@@ -354,12 +356,11 @@ paths:
         card, the category breakdown, the trend, the Refactor-First list, the data
         behind the finding detail, and the hotspot tree.
 
-        **Every score here is computed on this request** under the workspace's
-        active profile — `health_score`, `grade`, `delta`, each finding's
-        `priority`, each file's `debt_score`, and the whole trend line. None is read
-        from a column (FR-21). A profile change therefore re-ranks everything with
-        no re-scan, and the trend is redrawn end to end so every point is comparable
-        with every other (FR-14, "one lens per line").
+        Every score is calculated asynchronously by the tenant-scoped Celery
+        scoring worker and read from a complete profile- and engine-stamped derived
+        cache. FastAPI does not execute the scoring formula. A profile change
+        therefore re-ranks everything with no re-scan, and the trend is redrawn end
+        to end so every point is comparable with every other (FR-14, FR-21).
 
         **There is no profile parameter, by design.** See the description at the top
         of this document.
@@ -393,6 +394,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '503': { $ref: '#/components/responses/ScorePending' }
 
   /api/repos/{repo_id}/scans:
     parameters:
@@ -807,6 +809,14 @@ components:
           example:
             detail: An external service is temporarily unavailable.
             code: UPSTREAM_UNAVAILABLE
+    ScorePending:
+      description: The profile-stamped dashboard result is being prepared asynchronously.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            detail: The dashboard score is still being prepared. Please try again shortly.
+            code: SCORE_PENDING
 
   # ── schemas ───────────────────────────────────────────────────────────────
   schemas:
@@ -862,6 +872,7 @@ components:
         - VALIDATION_FAILED       # 422
         - RATE_LIMITED            # 429
         - UPSTREAM_UNAVAILABLE    # 503
+        - SCORE_PENDING           # 503
         - INTERNAL_ERROR          # 500
 
     # ---- enums ----------------------------------------------------------

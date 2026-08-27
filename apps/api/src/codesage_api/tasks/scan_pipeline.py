@@ -2,11 +2,9 @@
 
     clone → extract → detect → finalize
 
-**The write path ends at "finalize". Scoring is not a pipeline stage.** It happens
-later, in the API process, every time the dashboard is requested. If scoring ran
-here, every profile change would require re-scanning every snapshot — which is
-precisely the thing FR-20 promises never happens. The `workers never score` import
-contract in pyproject.toml enforces this mechanically.
+**The analysis write path ends at "finalize". Scoring is not a scan stage.** A
+successful scan only queues a separate score-cache task after its immutable facts
+commit. Profile changes can therefore re-score existing snapshots without a scan.
 
 **The worker never calls the API.** It records phase by writing to
 ANALYSIS_ATTEMPT and progress by publishing to Redis; the API serves the polling
@@ -17,13 +15,25 @@ matches the deployment view.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from codesage_api.db.enums import AnalysisStatus, FindingSource, Severity
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+
+from codesage_api.db.enums import (
+    AnalysisStatus,
+    FindingSource,
+    MLModelType,
+    ModelDeploymentStatus,
+    Severity,
+)
 from codesage_api.db.models import (
+    AnalysisEngineModelVersion,
     Finding,
+    MLModelVersion,
     ProcessMetric,
+    SATDPrediction,
     Snapshot,
     SourceFile,
     SourceLocation,
@@ -32,8 +42,13 @@ from codesage_api.db.models import (
 from codesage_api.db.repositories import attempts, rules
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
+from codesage_api.detection.fingerprint import satd_fingerprint
+from codesage_api.detection.reasons import render_satd_reason
 from codesage_api.detection.rules.engine import DetectedFinding, detect
 from codesage_api.detection.rules.registry import from_stored
+from codesage_api.detection.satd.client import SATDResult, classify
+from codesage_api.detection.satd.severity_markers import assign_severity
+from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.pipeline import ExtractionResult, extract
 from codesage_api.logging import get_logger, scan_context
 from codesage_api.tasks import cancel, progress
@@ -47,6 +62,7 @@ logger = get_logger(__name__)
 class PipelineResults:
     extraction: ExtractionResult
     findings: list[DetectedFinding]
+    satd_predictions: list[SATDResult] = field(default_factory=list)
 
 
 @celery_app.task(bind=True, name="codesage.scan")
@@ -57,28 +73,8 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
 
         1. clone at the scanned SHA, read its committer date
         2. extract  — CK metrics, PyDriller process metrics, Tree-sitter comments
-        3. detect   — rule engine; then ML-1 and ML-2 (independent, may be issued
-                      together, and skipped together if the service is down)
-        4. finalize — one transaction: Snapshot + files + metrics + findings +
-                      predictions, atomically (DBR-22)
-
-    **The cancel check sits BETWEEN stages, never inside stage 4.** Once
-    finalization begins the worker completes it, because a killed write would leave
-    a partial snapshot and FR-6 requires the previous snapshot to survive a
-    cancellation intact. The cost is that a user who presses Stop waits until the
-    current stage ends.
-
-    **Degraded mode.** If the ML container is unreachable, the attempt still
-    finalizes: all rule and security findings present, no SATD findings, every
-    risk_score 0.0 so risk_factor falls back to 1.0 and boosts nothing. Both models
-    live in one container, so they are reachable or unreachable together.
-
-    **On failure** the worker writes phase `error` and the reason onto the attempt
-    row — stored, not merely logged, per SP-13. Nothing was written to Snapshot, so
-    the previous snapshot is untouched and remains what the dashboard shows.
-
-    Every log line inside this task carries the attempt id, via `scan_context`, so
-    one scan is traceable across the API, the broker, the worker and the ML service.
+        3. detect   — rule engine
+        4. finalize — one transaction
     """
     attempt_uuid = uuid.UUID(attempt_id)
     workspace_uuid = uuid.UUID(workspace_id)
@@ -128,16 +124,34 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
                     for rule in stored_rules
                 ],
                 cloned.path,
+                extracted.method_metrics,
             )
+            try:
+                satd_predictions = [
+                    result for result in classify(extracted.comments) if result.is_debt
+                ]
+            except MLServiceUnavailable:
+                logger.warning(
+                    "SATD classifier unavailable; completing scan in degraded mode",
+                    extra={"comment_count": len(extracted.comments)},
+                )
+                satd_predictions = []
             progress.publish_progress(attempt_id, 80)
             cancel.check(attempt_id)
 
-            _finalize(
+            snapshot_id = _finalize(
                 attempt_uuid,
                 workspace_uuid,
-                PipelineResults(extracted, findings),
+                PipelineResults(extracted, findings, satd_predictions),
             )
             progress.publish_progress(attempt_id, 100)
+            try:
+                celery_app.send_task(
+                    "codesage.warm_snapshot_score",
+                    args=[str(snapshot_id), workspace_id],
+                )
+            except Exception:
+                logger.exception("Could not enqueue snapshot score warm-up")
         except cancel.ScanCancelled:
             _set_terminal(
                 attempt_uuid,
@@ -161,7 +175,7 @@ def _finalize(
     attempt_id: uuid.UUID,
     workspace_id: uuid.UUID,
     results: PipelineResults,
-) -> None:
+) -> uuid.UUID:
     """Commit everything as a finalized result, or nothing at all (DBR-22, REL-05).
 
     Separated from `run_scan` so the transactional boundary is a single, obvious
@@ -179,7 +193,7 @@ def _finalize(
             analysis_attempt=attempt,
             commit_sha=attempt.commit_sha,
             scan_time=datetime.now(UTC),
-            finding_count=len(results.findings),
+            finding_count=len(results.findings) + len(results.satd_predictions),
         )
         session.add(snapshot)
         session.flush()
@@ -256,9 +270,103 @@ def _finalize(
                 )
             )
 
+        model_versions: dict[str, MLModelVersion] = {}
+        for result in results.satd_predictions:
+            if result.category is None:
+                raise RuntimeError("A debt prediction is missing its category.")
+            finding_file = files_by_path.get(result.comment.file_path)
+            if finding_file is None:
+                raise RuntimeError("A SATD prediction references an unknown source file.")
+
+            model_version = model_versions.get(result.model_version)
+            if model_version is None:
+                session.execute(
+                    insert(MLModelVersion)
+                    .values(
+                        model_type=MLModelType.SATD,
+                        version_identifier=result.model_version,
+                        training_date=datetime.now(UTC),
+                        deployment_status=ModelDeploymentStatus.DEPLOYED,
+                        evaluation_dataset_reference=(
+                            "SATDAUG data-augmentation-code_comments.csv"
+                        ),
+                        evaluation_metrics={"registration": "runtime model response"},
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["model_type", "version_identifier"]
+                    )
+                )
+                model_version = session.scalar(
+                    select(MLModelVersion).where(
+                        MLModelVersion.model_type == MLModelType.SATD,
+                        MLModelVersion.version_identifier == result.model_version,
+                    )
+                )
+                if model_version is None:
+                    raise RuntimeError("SATD model version could not be registered.")
+                model_versions[result.model_version] = model_version
+
+                link = session.get(
+                    AnalysisEngineModelVersion,
+                    (attempt.analysis_engine_version_id, model_version.id),
+                )
+                if link is None:
+                    session.add(
+                        AnalysisEngineModelVersion(
+                            analysis_engine_version_id=attempt.analysis_engine_version_id,
+                            model_version_id=model_version.id,
+                        )
+                    )
+
+            location = SourceLocation(
+                source_file=finding_file,
+                code_symbol=None,
+                start_line=result.comment.line,
+                end_line=result.comment.line,
+                start_column=0,
+                end_column=0,
+            )
+            session.add(location)
+            session.flush()
+            marker = assign_severity(result.comment.text)
+            description = render_satd_reason(
+                marker.message_template,
+                comment_text=result.comment.text,
+                predicted_category=result.category.value,
+            )
+            prediction = SATDPrediction(
+                source_location=location,
+                category_id=result.category.value,
+                model_version=model_version,
+                is_debt=True,
+                confidence=result.confidence,
+                explanation=description,
+            )
+            session.add(prediction)
+            session.flush()
+            session.add(
+                Finding(
+                    source_location=location,
+                    category_id=result.category.value,
+                    rule_id=None,
+                    satd_prediction=prediction,
+                    source=FindingSource.SATD,
+                    severity=Severity(marker.severity.value),
+                    description=description,
+                    evidence=result.comment.text,
+                    measured_value=None,
+                    threshold=None,
+                    confidence=result.confidence,
+                    fingerprint=satd_fingerprint(
+                        result.comment.file_path, result.comment.text
+                    ),
+                )
+            )
+
         attempt.status = AnalysisStatus.DONE
         attempt.completion_time = datetime.now(UTC)
         attempt.failure_information = None
+        return snapshot.id
 
 
 def _set_terminal(

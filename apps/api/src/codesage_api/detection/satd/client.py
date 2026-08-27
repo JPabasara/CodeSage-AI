@@ -19,13 +19,13 @@ from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.scoring.enums import Category
 
 
-
 @dataclass(frozen=True, slots=True)
 class SATDResult:
     comment: ExtractedComment
     is_debt: bool
     category: Category | None  # None when is_debt is False
     confidence: float
+    model_version: str
 
 
 def classify(comments: list[ExtractedComment]) -> list[SATDResult]:
@@ -54,6 +54,7 @@ def classify(comments: list[ExtractedComment]) -> list[SATDResult]:
         response.raise_for_status()
         data = response.json()
         predictions = data.get("predictions", [])
+        model_version = str(data["model_version"])
 
         results: list[SATDResult] = []
         for pred in predictions:
@@ -70,6 +71,7 @@ def classify(comments: list[ExtractedComment]) -> list[SATDResult]:
                     is_debt=is_debt,
                     category=category,
                     confidence=confidence,
+                    model_version=model_version,
                 )
             )
 
