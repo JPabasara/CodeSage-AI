@@ -73,7 +73,21 @@ def load_risk_model() -> LoadedModel:
     metrics. Because defective files are rare, class imbalance is handled at
     training time and the model is never evaluated on accuracy (FR-25).
     """
-    raise NotImplementedError
+    import joblib
+
+    model_path = artifact_dir() / "risk_v1.joblib"
+    if model_path.exists():
+        loaded = joblib.load(model_path)
+        if isinstance(loaded, dict) and "pipeline" in loaded:
+            return LoadedModel(
+                name="risk_model",
+                version=loaded.get("version", "v1.0"),
+                artifact=loaded["pipeline"],
+            )
+        else:
+            return LoadedModel(name="risk_model", version="v1.0", artifact=loaded)
+
+    raise NotImplementedError("Risk model artifact not found and fallback not yet configured")
 
 
 def artifact_dir() -> Path:
