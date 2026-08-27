@@ -256,10 +256,31 @@ def test_risk_handles_missing_metrics_gracefully():
     assert 0.0 <= scores[1]["risk_score"] <= 1.0
 
 
+def test_risk_batch_multiple_files_order_and_determinism():
+    """Verify batch risk scoring preserves input file ordering and returns deterministic scores."""
+    files = [
+        {"path": f"src/Module{i}/Service.java", "metrics": {"wmc": float(i * 5), "loc": float(i * 100)}}
+        for i in range(10)
+    ]
+    payload = {"files": files}
+
+    first_response = client.post("/risk", json=payload).json()
+    second_response = client.post("/risk", json=payload).json()
+
+    assert first_response == second_response
+
+    scores = first_response["scores"]
+    assert len(scores) == 10
+    for i, s in enumerate(scores):
+        assert s["path"] == files[i]["path"]
+        assert 0.0 <= s["risk_score"] <= 1.0
+
+
 def test_risk_empty_list():
     """Verify bug-risk endpoint with empty file list."""
     response = client.post("/risk", json={"files": []})
     assert response.status_code == 200
     assert response.json()["scores"] == []
+
 
 
