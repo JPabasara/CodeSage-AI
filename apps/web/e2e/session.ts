@@ -6,6 +6,8 @@ import { test as base, expect } from "@playwright/test"
  * debugging session nobody needs.
  */
 export const DEMO_REPO_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+/** A second connected repository — proves the rail is not pinned to the demo one. */
+export const SECOND_REPO_ID = "b4f0a9d2-3c81-4e57-9f26-1d5a8b7c0e34"
 export const UNSCANNED_REPO_ID = "e3a1c58f-2b64-4d09-8a17-5c0f9e2d6b48"
 
 export const SESSION_COOKIE =
