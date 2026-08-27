@@ -32,8 +32,10 @@ from codesage_api.db.models import (
 from codesage_api.db.repositories import attempts, rules
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
+from codesage_api.detection.risk.client import RiskClientResult, predict as predict_risk
 from codesage_api.detection.rules.engine import DetectedFinding, detect
 from codesage_api.detection.rules.registry import from_stored
+from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.pipeline import ExtractionResult, extract
 from codesage_api.logging import get_logger, scan_context
 from codesage_api.tasks import cancel, progress
@@ -47,6 +49,7 @@ logger = get_logger(__name__)
 class PipelineResults:
     extraction: ExtractionResult
     findings: list[DetectedFinding]
+    risk_result: RiskClientResult | None = None
 
 
 @celery_app.task(bind=True, name="codesage.scan")
@@ -129,13 +132,22 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
                 ],
                 cloned.path,
             )
+            risk_result: RiskClientResult | None = None
+            try:
+                process_by_path = {
+                    item.path: item for item in extracted.process_metrics
+                }
+                risk_result = predict_risk(extracted.static_metrics, process_by_path)
+            except MLServiceUnavailable as exc:
+                logger.warning("ML risk service unavailable; proceeding in degraded mode: %s", exc)
+
             progress.publish_progress(attempt_id, 80)
             cancel.check(attempt_id)
 
             _finalize(
                 attempt_uuid,
                 workspace_uuid,
-                PipelineResults(extracted, findings),
+                PipelineResults(extracted, findings, risk_result),
             )
             progress.publish_progress(attempt_id, 100)
         except cancel.ScanCancelled:
@@ -224,6 +236,35 @@ def _finalize(
                         recency=process_metrics.recency_days,
                     )
                 )
+
+        if results.risk_result:
+            from codesage_api.db.models import BugRiskPrediction, MLModelVersion
+            version_name = results.risk_result.model_version
+            version_obj = (
+                session.query(MLModelVersion)
+                .filter(MLModelVersion.version == version_name)
+                .first()
+            )
+            if version_obj is None:
+                version_obj = MLModelVersion(
+                    version=version_name,
+                    task_type="bug_risk",
+                    algorithm="CalibratedRandomForest",
+                    trained_at=datetime.now(UTC),
+                )
+                session.add(version_obj)
+                session.flush()
+
+            for path, score in results.risk_result.scores.items():
+                if (sf := files_by_path.get(path)) is not None:
+                    session.add(
+                        BugRiskPrediction(
+                            source_file=sf,
+                            model_version=version_obj,
+                            risk_score=score,
+                            confidence=1.0,
+                        )
+                    )
 
         for detected in results.findings:
             finding_file = files_by_path.get(detected.file_path)
