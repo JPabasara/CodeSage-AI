@@ -4,6 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi.testclient import TestClient
 
 from codesage_ml.main import app, classify
+from codesage_ml.registry import _FallbackPipeline, _FallbackRiskPipeline
+from codesage_ml.risk.features import FEATURE_ORDER, build_vector
 from codesage_ml.schemas import ClassifyRequest
 
 client = TestClient(app)
@@ -287,6 +289,47 @@ def test_risk_empty_list():
     response = client.post("/risk", json={"files": []})
     assert response.status_code == 200
     assert response.json()["scores"] == []
+
+
+def test_feature_vector_builder_canonical_order_and_defaults():
+    """Verify build_vector constructs exact 13-feature array in canonical order and defaults missing values."""
+    raw_metrics = {
+        "wmc": 15.0,
+        "loc": 300.0,
+        "commits_90d": 8.0,
+    }
+    vec = build_vector(raw_metrics)
+
+    assert len(vec) == len(FEATURE_ORDER) == 13
+    assert vec[0] == 15.0  # wmc is index 0
+    assert vec[1] == 0.0   # cbo is index 1 (missing -> 0.0)
+    assert vec[6] == 300.0 # loc is index 6
+    assert vec[9] == 8.0   # commits_90d is index 9
+
+
+def test_fallback_risk_pipeline_direct_probabilities():
+    """Verify _FallbackRiskPipeline directly produces valid probability pairs summing to 1.0."""
+    pipeline = _FallbackRiskPipeline()
+    vectors = [
+        [50.0, 20.0, 5.0, 10.0, 30.0, 2.0, 1500.0, 8.0, 0.05, 40.0, 5.0, 365.0, 1.0],
+        [2.0, 1.0, 1.0, 0.0, 3.0, 0.0, 30.0, 1.0, 0.2, 0.0, 1.0, 10.0, 10.0],
+    ]
+    probs = pipeline.predict_proba(vectors)
+    preds = pipeline.predict(vectors)
+
+    assert len(probs) == 2
+    assert len(preds) == 2
+
+    # High complexity / churn file
+    assert probs[0][0] + probs[0][1] == pytest.approx(1.0)
+    assert probs[0][1] > 0.5
+    assert preds[0] == 1
+
+    # Simple clean file
+    assert probs[1][0] + probs[1][1] == pytest.approx(1.0)
+    assert probs[1][1] < 0.5
+    assert preds[1] == 0
+
 
 
 
