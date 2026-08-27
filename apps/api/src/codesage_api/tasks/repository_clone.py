@@ -51,10 +51,13 @@ def clone_at_commit(
     *,
     clone_root: Path | None = None,
 ) -> ClonedRepository:
-    """Clone the repository and detach HEAD at the attempt's immutable SHA."""
+    
+    """Clone the repository"""
+
     parsed_url = urlparse(repository_url)
     if parsed_url.scheme != "https" or parsed_url.hostname != "github.com":
         raise CloneError("Only public GitHub HTTPS repositories can be cloned.")
+    
     safe_attempt_id = uuid.UUID(str(attempt_id))
     root = clone_root or Path(get_settings().clone_dir)
     root.mkdir(parents=True, exist_ok=True)

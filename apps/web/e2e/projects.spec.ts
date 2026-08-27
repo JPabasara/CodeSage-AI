@@ -25,7 +25,9 @@ async function connect(page: import("@playwright/test").Page, url: string) {
 test("the list shows each repository with its visibility and health hint", async ({
   page,
 }) => {
-  const payments = page.getByRole("listitem").filter({ hasText: "acme-payments" })
+  const payments = page
+    .getByRole("listitem")
+    .filter({ hasText: "acme-payments" })
   await expect(payments.getByText("public")).toBeVisible()
   // Grade + score + signed delta, from the DERIVED latest_health hint.
   await expect(payments.getByText(/\b72\/100\b/)).toBeVisible()
@@ -55,11 +57,16 @@ test("connecting a public repository adds it to the list", async ({ page }) => {
   ).toBeVisible()
   // Freshly connected: no scan has run, so no health hint.
   await expect(
-    page.getByRole("listitem").filter({ hasText: "Hello-World" }).getByText(/not scanned yet/i),
+    page
+      .getByRole("listitem")
+      .filter({ hasText: "Hello-World" })
+      .getByText(/not scanned yet/i),
   ).toBeVisible()
 })
 
-test("each connect failure explains itself in its own words", async ({ page }) => {
+test("each connect failure explains itself in its own words", async ({
+  page,
+}) => {
   const cases: [string, RegExp][] = [
     ["not-a-url", /does not look like a repository URL/i],
     ["https://github.com/octocat/private-x", /only public repositories/i],
@@ -71,7 +78,10 @@ test("each connect failure explains itself in its own words", async ({ page }) =
     await connect(page, url)
     await expect(page.getByText(message), url).toBeVisible()
     // Clear the toast before the next case so a stale one cannot pass the check.
-    await page.getByText(message).click({ trial: true }).catch(() => {})
+    await page
+      .getByText(message)
+      .click({ trial: true })
+      .catch(() => {})
     await page.waitForTimeout(150)
   }
 })
@@ -87,7 +97,9 @@ test("selecting a project opens its dashboard", async ({ page }) => {
   await expect(page.getByText("Code Health")).toBeVisible()
 })
 
-test("the repo id in the URL is the contract's uuid, not a slug", async ({ page }) => {
+test("the repo id in the URL is the contract's uuid, not a slug", async ({
+  page,
+}) => {
   await page
     .getByRole("listitem")
     .filter({ hasText: "acme-payments" })
@@ -102,7 +114,7 @@ test("the repo id in the URL is the contract's uuid, not a slug", async ({ page 
   )
 })
 
-test("the rail's hardcoded demo id matches the fixture", () => {
+test("the rail's fallback demo id matches the fixture", () => {
   // Two copies of a UUID, edited in one place, is a silent 404 on the demo path.
   // This guard is cheap and it fails the moment they diverge.
   const demo = readFileSync("src/lib/demo.ts", "utf8")

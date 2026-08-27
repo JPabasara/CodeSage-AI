@@ -43,6 +43,83 @@ def test_tree_sitter_comment_extraction():
     assert any("FIXME: Temporary workaround" in text for text in comment_texts)
 
 
+def test_tree_sitter_excludes_javadocs_but_keeps_ordinary_block_comments():
+    pytest.importorskip("tree_sitter")
+    pytest.importorskip("tree_sitter_java")
+
+    java_code = """/**
+ * Adds a listener.
+ * @param listener must not be null
+ */
+public class ListenerRegistry {
+    /*
+     * TODO: replace this temporary listener store.
+     */
+    private Object listeners;
+
+    // FIXME: make listener registration thread-safe.
+    void register() {}
+}
+"""
+
+    comments = extract_comments_from_file("ListenerRegistry.java", java_code)
+
+    assert [comment.line for comment in comments] == [6, 11]
+    assert comments[0].text.startswith("/*")
+    assert "TODO: replace this temporary listener store" in comments[0].text
+    assert comments[1].text == "// FIXME: make listener registration thread-safe."
+    assert all(not comment.text.startswith("/**") for comment in comments)
+
+
+@pytest.mark.parametrize(
+    "legal_header",
+    [
+        """/* Copyright 2026 Example Authors
+ * This program is free software; you can redistribute it.
+ * It is provided without any warranty.
+ */""",
+        """/* Copyright 2026 Example Authors
+ * Licensed under the Apache License, Version 2.0.
+ */""",
+        "// SPDX-License-Identifier: MIT",
+    ],
+)
+def test_tree_sitter_excludes_leading_legal_headers(legal_header):
+    pytest.importorskip("tree_sitter")
+    pytest.importorskip("tree_sitter_java")
+
+    java_code = f"""{legal_header}
+package example;
+
+class Example {{
+    // TODO: remove this temporary implementation.
+    void run() {{}}
+}}
+"""
+
+    comments = extract_comments_from_file("Example.java", java_code)
+
+    assert len(comments) == 1
+    assert comments[0].text == "// TODO: remove this temporary implementation."
+
+
+def test_tree_sitter_keeps_leading_technical_block_comment():
+    pytest.importorskip("tree_sitter")
+    pytest.importorskip("tree_sitter_java")
+
+    java_code = """/*
+ * TODO: replace this compatibility workaround after the migration.
+ */
+package example;
+class Example {}
+"""
+
+    comments = extract_comments_from_file("Example.java", java_code)
+
+    assert len(comments) == 1
+    assert "TODO: replace this compatibility workaround" in comments[0].text
+
+
 def test_end_to_end_comment_extraction_to_classification():
     """Test full pipeline: comments -> SATD Client -> Classification."""
     comments = [

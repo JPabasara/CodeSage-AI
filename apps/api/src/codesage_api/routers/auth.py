@@ -23,7 +23,7 @@ from codesage_api.config import get_settings
 from codesage_api.db.models import User
 from codesage_api.db.session import SessionLocal
 from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
-from codesage_api.errors import MisconfiguredSignIn
+from codesage_api.errors import MisconfiguredSignIn, SignInFailed
 from codesage_api.schemas.auth import SessionOut
 from codesage_api.services import auth as auth_service
 
@@ -112,7 +112,16 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     if not secrets.compare_digest(issued["state"], state):
         return _back_to_login("invalid")
 
-    claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
+    try:
+        claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
+    except SignInFailed:
+        # Asgardeo said no and meant it: the code is spent, expired, or was not
+        # ours. Whoever is reading this is a person mid-navigation, so send them
+        # back to sign in rather than showing them JSON they cannot act on.
+        #
+        # Refreshing this URL lands here every time, and always will: an
+        # authorization code is single use, so the reload replays a spent one.
+        return _back_to_login("failed")
 
     db = SessionLocal()
     try:

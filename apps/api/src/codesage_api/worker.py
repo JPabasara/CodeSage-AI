@@ -14,13 +14,21 @@ concurrent analyses, which is three worker containers.
 
 from __future__ import annotations
 
+import logging
+
 from codesage_api.config import get_settings
 from codesage_api.logging import configure_logging
 from codesage_api.tasks.app import celery_app
 
 configure_logging(get_settings().log_level)
 
+# PyDriller reports every traversed commit at INFO. A scan may inspect thousands
+# of commits, so those library records bury the useful scan lifecycle events.
+# Keep warnings and failures, and let the extractor emit one bounded summary.
+logging.getLogger("pydriller.repository").setLevel(logging.WARNING)
+
 # Importing the task modules registers them with the Celery app.
-import codesage_api.tasks.scan_pipeline  # noqa: E402,F401
+import codesage_api.tasks.scan_pipeline  # noqa: F401
+import codesage_api.tasks.score_cache  # noqa: F401
 
 __all__ = ["celery_app"]

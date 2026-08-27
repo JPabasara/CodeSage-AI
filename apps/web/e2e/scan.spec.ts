@@ -25,7 +25,9 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByText("Code Health")).toBeVisible()
 })
 
-test("a scan runs to completion and reports progress on the way", async ({ page }) => {
+test("a scan runs to completion and reports progress on the way", async ({
+  page,
+}) => {
   await scanButton(page).click()
 
   // idle → running: the button becomes a live "Scanning… NN%" label.
@@ -57,7 +59,9 @@ test("stopping a scan says Stopping…, then settles on Cancelled — never idle
   await expect(scanButton(page)).toBeVisible()
 })
 
-test("a cancelled scan leaves the previous results intact", async ({ page }) => {
+test("a cancelled scan leaves the previous results intact", async ({
+  page,
+}) => {
   await scanButton(page).click()
   await page.getByRole("button", { name: /stop/i }).click()
   await expect(cancelledLabel(page)).toBeVisible({ timeout: 15_000 })

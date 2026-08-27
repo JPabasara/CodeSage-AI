@@ -15,4 +15,6 @@ import { authHandlers, handlers } from "./handlers"
 //              is seeded by the Playwright fixture and the mock honours it.
 const mockAuth = process.env.NEXT_PUBLIC_API_MOCKING === "e2e"
 
-export const worker = setupWorker(...(mockAuth ? [...authHandlers, ...handlers] : handlers))
+export const worker = setupWorker(
+  ...(mockAuth ? [...authHandlers, ...handlers] : handlers),
+)

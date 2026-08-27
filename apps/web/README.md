@@ -127,15 +127,15 @@ scan runs. See Phase 10.5 in the build guide.
 
 ### Contract change — CR-001 (Phase 10.5) ✅ landed
 
-| Type | From | To |
-|---|---|---|
-| `Source` | `"rule" \| "satd" \| "security" \| "ml-risk"` | `"rule" \| "satd"` |
+| Type           | From                                                          | To                                                   |
+| -------------- | ------------------------------------------------------------- | ---------------------------------------------------- |
+| `Source`       | `"rule" \| "satd" \| "security" \| "ml-risk"`                 | `"rule" \| "satd"`                                   |
 | `ScoreProfile` | `weights { security, codeDesign, satd, duplication }` + `wMl` | `weights` keyed by **category** + `trust` (`s`, 0–1) |
 
 `security` duplicated `category` exactly (security patterns run inside the rule
 engine, so such a finding was always both) and `ml-risk` was unreachable — the risk
 model writes a per-file risk score, never a `Finding`. The old weight vector mixed
-axes: `satd` is a *source*, `duplication` is a *rule*, and real categories had no
+axes: `satd` is a _source_, `duplication` is a _rule_, and real categories had no
 weight at all.
 
 ### ⚠️ Next contract change — CR-002 (Phase 10.6)
@@ -147,15 +147,15 @@ that. Step-by-step in Phase 10.6 of the
 [build guide](../../docs/Project%20Management%20&%20Planning/frontend_build_stepbystep.md);
 locked decisions in [the work plan and locked decisions](../../docs/Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md).
 
-| What | From | To |
-|---|---|---|
-| Field naming | camelCase (`riskScore`, `commitSha`) | **snake_case** (`risk_score`, `commit_sha`) — ~244 usages, 15 files |
-| `Category` | 5 values incl. `defect` | **5 values, `defect` removed** — `code-design`, `requirement`, `documentation`, `test`, `security` |
-| `ScoreProfile` | six weights | **five weights + `s`** = six numbers |
-| `ScanPhase` | ends at `error` | adds **`cancelled`** — `idle` is now only the pre-scan resting state |
-| Sign-in | mocked `POST /api/auth/github` | a link to **`GET {API}/api/auth/login`** — a real browser navigation, the one thing MSW cannot mock |
-| Every `fetch` | default credentials | **`credentials: "include"`** — the session travels as a cookie, and a cross-origin fetch drops cookies unless you ask for them |
-| Errors | `Error("409 Conflict")` | `{ detail, code, errors[] }` — branch on `code`, never on the text |
+| What           | From                                 | To                                                                                                                             |
+| -------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Field naming   | camelCase (`riskScore`, `commitSha`) | **snake_case** (`risk_score`, `commit_sha`) — ~244 usages, 15 files                                                            |
+| `Category`     | 5 values incl. `defect`              | **5 values, `defect` removed** — `code-design`, `requirement`, `documentation`, `test`, `security`                             |
+| `ScoreProfile` | six weights                          | **five weights + `s`** = six numbers                                                                                           |
+| `ScanPhase`    | ends at `error`                      | adds **`cancelled`** — `idle` is now only the pre-scan resting state                                                           |
+| Sign-in        | mocked `POST /api/auth/github`       | a link to **`GET {API}/api/auth/login`** — a real browser navigation, the one thing MSW cannot mock                            |
+| Every `fetch`  | default credentials                  | **`credentials: "include"`** — the session travels as a cookie, and a cross-origin fetch drops cookies unless you ask for them |
+| Errors         | `Error("409 Conflict")`              | `{ detail, code, errors[] }` — branch on `code`, never on the text                                                             |
 
 **Sign-in is not an `@asgardeo/nextjs` integration.** The API is the
 Backend-for-Frontend: it performs the whole OIDC exchange and hands the browser an

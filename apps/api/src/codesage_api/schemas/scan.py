@@ -13,12 +13,7 @@ class StartScanIn(ApiModel):
 
 
 class ScanStatusOut(ApiModel):
-    """What the client polls once per second.
-
-    `phase` comes from PostgreSQL and `progress` from Redis — see the note in
-    `routers/scans.py` on why those two live in different stores.
-    """
-
+    """What the client polls once per second. """
     scan_id: str
     phase: ScanPhase
     progress: int = Field(ge=0, le=100)
@@ -26,9 +21,6 @@ class ScanStatusOut(ApiModel):
     commit_sha: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
-
-    # Present when phase is ERROR. Read from the stored failure reason, not from
-    # logs, so a user-reported failure is diagnosable without shell access.
     error: str | None = None
 
 

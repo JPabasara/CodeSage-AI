@@ -1,4 +1,4 @@
-import { DEMO_REPO_ID, test, expect } from "./session"
+import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 
 // ────────────────────────────────────────────────────────────────────────────
 // The shell: the left rail, and J3.5's promise that nothing on screen points at
@@ -11,7 +11,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 test("the rail carries exactly the four v1 destinations", async ({ page }) => {
-  const rail = page.getByRole("navigation").or(page.locator('[data-slot="sidebar"]'))
+  const rail = page
+    .getByRole("navigation")
+    .or(page.locator('[data-slot="sidebar"]'))
   for (const label of ["Projects", "Dashboard", "Scan History", "Profiles"]) {
     await expect(page.getByRole("link", { name: label })).toBeVisible()
   }
@@ -58,8 +60,51 @@ test("the rail marks the screen you are actually on", async ({ page }) => {
     "data-active",
     "true",
   )
-  await expect(page.getByRole("link", { name: "Projects" })).not.toHaveAttribute(
-    "data-active",
-    "true",
+  await expect(
+    page.getByRole("link", { name: "Projects" }),
+  ).not.toHaveAttribute("data-active", "true")
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// P2 — the two navigation bugs the 25 Aug re-audit found.
+// ────────────────────────────────────────────────────────────────────────────
+
+test("the dashboard rows follow the project you are looking at", async ({
+  page,
+}) => {
+  // The rail used to hardcode the demo repository, so opening any other project
+  // and clicking "Dashboard" silently swapped you back to acme-payments.
+  await page.goto(`/dashboard/${SECOND_REPO_ID}`)
+
+  await page.getByRole("link", { name: "Scan History" }).click()
+  await expect(page).toHaveURL(
+    new RegExp(`/dashboard/${SECOND_REPO_ID}/history$`),
   )
+
+  await page.getByRole("link", { name: "Dashboard" }).click()
+  await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
+})
+
+test("away from a dashboard the rows still lead somewhere", async ({
+  page,
+}) => {
+  // /projects has no repository in the URL to read, so the demo id is the
+  // fallback — the rows must not go dead.
+  await page.getByRole("link", { name: "Dashboard" }).click()
+  await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}$`))
+})
+
+test("below md the rail is reachable at all", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/projects")
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
+
+  // At this width the rail is a closed Sheet and Radix has not mounted its
+  // contents, so every destination is genuinely absent from the page.
+  await expect(page.getByRole("link", { name: "Profiles" })).toBeHidden()
+
+  await page.getByRole("button", { name: "Toggle Sidebar" }).click()
+  await page.getByRole("link", { name: "Profiles" }).click()
+  await expect(page).toHaveURL(/\/profiles$/)
+  await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
 })

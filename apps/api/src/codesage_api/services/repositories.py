@@ -13,7 +13,8 @@ from codesage_api.db.enums import (
     RepositoryPlatform,
     RepositoryVisibility,
 )
-from codesage_api.db.models import Branch, Repository
+from codesage_api.db.models import Branch, Repository, SnapshotScore
+from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import (
     NotFound,
     RepositoryAlreadyConnected,
@@ -22,7 +23,10 @@ from codesage_api.errors import (
 from codesage_api.integrations.github import fetch_branches, fetch_repository
 from codesage_api.logging import get_logger
 from codesage_api.schemas import BranchOut, LatestHealthOut, RepoOut
-from codesage_api.services import audit, dashboard
+from codesage_api.scoring.cache import profile_payload
+from codesage_api.scoring.enums import Grade
+from codesage_api.services import audit, dashboard, profiles
+from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
 
@@ -82,15 +86,23 @@ def connect(
 
 
 def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
-    """List repositories with health derived under the active profile."""
+    """List repositories without hydrating full analysis histories.
+
+    Ready profile-stamped summaries are returned immediately. A missing summary
+    is prepared and queued without hydrating files or findings in this request.
+    """
     statement = (
         select(Repository)
         .where(Repository.workspace_id == workspace_id)
         .options(selectinload(Repository.branches))
         .order_by(Repository.created_at.desc(), Repository.id.desc())
     )
+    stored_repositories = session.scalars(statement).all()
+    profile = profiles.get_active(session, workspace_id) if stored_repositories else None
     output: list[RepoOut] = []
-    for repository in session.scalars(statement).all():
+    pending: list[SnapshotScore] = []
+    for repository in stored_repositories:
+        assert profile is not None
         default_branch = next(
             (branch.name for branch in repository.branches if branch.is_default), None
         )
@@ -101,21 +113,43 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
             )
             continue
 
-        latest_health: LatestHealthOut | None = None
-        try:
-            history = dashboard.build_scan_history(
-                session, workspace_id, repository.id, default_branch
-            )
-        except NotFound:
-            history = []
-        if history:
-            latest = history[0]
+        health, prepared = dashboard.build_latest_health_hint(
+            session,
+            workspace_id,
+            repository.id,
+            default_branch,
+            profile,
+        )
+        pending.extend(prepared)
+        latest_health = None
+        if health is not None:
+            cached, delta = health
+            assert cached.health_score is not None
+            assert cached.grade is not None
             latest_health = LatestHealthOut(
-                score=latest.health_score,
-                grade=latest.grade,
-                delta=latest.delta,
+                score=cached.health_score,
+                grade=Grade(cached.grade),
+                delta=delta,
             )
         output.append(_to_output(repository, default_branch, latest_health))
+    if pending and profile is not None:
+        session.commit()
+        payload = profile_payload(profile)
+        try:
+            for cached in pending:
+                celery_app.send_task(
+                    "codesage.score_snapshot",
+                    args=[str(cached.id), str(workspace_id), payload],
+                )
+        except Exception:
+            logger.exception("Could not enqueue project score calculation")
+            set_workspace_context(session, workspace_id)
+            for cached in pending:
+                stored = session.get(SnapshotScore, cached.id)
+                if stored is not None and stored.status == "pending":
+                    stored.status = "error"
+                    stored.failure_information = "Score calculation could not be queued."
+            session.commit()
     return output
 
 
@@ -136,9 +170,7 @@ def list_branches(
     if repository is None:
         raise NotFound
 
-    default_name = next(
-        (branch.name for branch in repository.branches if branch.is_default), None
-    )
+    default_name = next((branch.name for branch in repository.branches if branch.is_default), None)
     if default_name is None:
         raise RepositoryMissingDefaultBranch
 

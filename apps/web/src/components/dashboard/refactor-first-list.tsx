@@ -1,15 +1,15 @@
-"use client";
+"use client"
 
-import { useMemo, useState } from "react";
+import { useMemo, useState } from "react"
 
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -17,46 +17,59 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import type { Category, Finding, Severity } from "@/lib/types";
-import { severityColor } from "@/lib/utils";
+} from "@/components/ui/table"
+import type { Category, Finding, Severity } from "@/lib/types"
+import { severityColor } from "@/lib/utils"
 
-const SEVERITY_RANK: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+const SEVERITY_RANK: Record<Severity, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+}
 
 function sortKey(f: Finding) {
-  return f.priority ?? SEVERITY_RANK[f.severity];
+  return f.priority ?? SEVERITY_RANK[f.severity]
 }
 
 export type RefactorFirstListProps = {
-  findings: Finding[];
-  onSelect?: (finding: Finding) => void;
-  selectedFingerprint?: string;
-};
+  findings: Finding[]
+  onSelect?: (finding: Finding) => void
+  selectedFingerprint?: string
+}
 
 export function RefactorFirstList({
   findings,
   onSelect,
   selectedFingerprint,
 }: Readonly<RefactorFirstListProps>) {
-  const [category, setCategory] = useState<Category | "all">("all");
+  const [category, setCategory] = useState<Category | "all">("all")
 
   const categories = useMemo(
     () => Array.from(new Set(findings.map((f) => f.category))),
     [findings],
-  );
+  )
 
   const rows = useMemo(() => {
-    const filtered = category === "all" ? findings : findings.filter((f) => f.category === category);
+    const filtered =
+      category === "all"
+        ? findings
+        : findings.filter((f) => f.category === category)
     return [...filtered].sort(
-      (a, b) => sortKey(b) - sortKey(a) || SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
-    );
-  }, [findings, category]);
+      (a, b) =>
+        sortKey(b) - sortKey(a) ||
+        SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+    )
+  }, [findings, category])
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Refactor first</h2>
-        <Select value={category} onValueChange={(v) => setCategory(v as Category | "all")}>
+        <Select
+          value={category}
+          onValueChange={(v) => setCategory(v as Category | "all")}
+        >
           <SelectTrigger className="w-40" aria-label="Filter by debt type">
             <SelectValue placeholder="All types" />
           </SelectTrigger>
@@ -85,18 +98,25 @@ export function RefactorFirstList({
             <TableRow
               key={f.fingerprint}
               onClick={() => onSelect?.(f)}
-              data-state={f.fingerprint === selectedFingerprint ? "selected" : undefined}
+              data-state={
+                f.fingerprint === selectedFingerprint ? "selected" : undefined
+              }
               className="cursor-pointer"
             >
               <TableCell>
                 <Badge
                   variant="outline"
-                  style={{ borderColor: severityColor(f.severity), color: severityColor(f.severity) }}
+                  style={{
+                    borderColor: severityColor(f.severity),
+                    color: severityColor(f.severity),
+                  }}
                 >
                   {f.severity}
                 </Badge>
               </TableCell>
-              <TableCell className="text-muted-foreground">{f.category}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {f.category}
+              </TableCell>
               <TableCell className="font-mono text-xs">
                 {f.file}:{f.line}
               </TableCell>
@@ -107,8 +127,10 @@ export function RefactorFirstList({
       </Table>
 
       {rows.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No findings for this filter.</p>
+        <p className="text-muted-foreground text-sm">
+          No findings for this filter.
+        </p>
       ) : null}
     </div>
-  );
+  )
 }

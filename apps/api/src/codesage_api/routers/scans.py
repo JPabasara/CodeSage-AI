@@ -1,5 +1,4 @@
-"""Scan lifecycle endpoints (SRS FR-6).
-
+"""Scan lifecycle endpoints.
     idle → queued → running NN% → done | error | cancelled
 """
 
@@ -25,24 +24,14 @@ def start_scan(
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
 ) -> ScanStatusOut:
-    """Start a scan; return a scan identifier and phase immediately.
+    """
+    Start a scan; return a scan identifier and phase immediately.
 
-    **The API answers before the work begins.** It inserts the AnalysisAttempt row,
+    The API answers before the work begins. It inserts the AnalysisAttempt row,
     enqueues the job and returns 202 with phase `queued`. The client then polls
-    once per second. Running the pipeline inside the request would hold the
-    connection open for minutes and make PERF-03 and PERF-05 impossible.
+    once per second.
 
-    **Skip-if-unchanged is decided here, before anything is queued.** The API reads
-    the branch head SHA from GitHub and compares it against the SHA of the last
-    *successfully completed* analysis. If they match, no job is queued and no
-    worker is occupied — one conditional REST call and one indexed read, well
-    inside the 1 s PERF-02 allows. Deciding this in the worker instead would mean
-    queuing, occupying a worker and cloning a repository only to discover nothing
-    had changed.
-
-    The "successfully completed" qualifier is load-bearing: a cancelled or failed
-    attempt leaves a row with no Snapshot, and comparing against one would make the
-    system skip the work and then serve a snapshot that was never written.
+    Skip-if-unchanged is decided here, before anything is queued.
     """
     return analysis.start(db, workspace_id, repo_id, body.branch)
 

@@ -35,6 +35,12 @@ celery_app.conf.update(
     # be recorded on the attempt row, not be silently retried three times.
     task_default_retry_delay=30,
     task_max_retries=3,
+    task_routes={
+        "codesage.scan": {"queue": "scans"},
+        "codesage.score_snapshot": {"queue": "scoring"},
+        "codesage.warm_snapshot_score": {"queue": "scoring"},
+        "codesage.warm_workspace_scores": {"queue": "scoring"},
+    },
 )
 
 # NOTE: no Celery result backend. The scan's outcome is not a task return value —

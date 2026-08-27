@@ -1,12 +1,12 @@
-"use client";
+"use client"
 
-import { X } from "lucide-react";
+import { X } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { Finding } from "@/lib/types";
-import { severityColor } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import type { Finding } from "@/lib/types"
+import { severityColor } from "@/lib/utils"
 
 /**
  * CR-001 D-CR7: this used to be a `Sheet` that slid over a blurred dashboard.
@@ -19,15 +19,18 @@ import { severityColor } from "@/lib/utils";
  * [v1.1]), and the code snippet region is built but not filled.
  */
 export type FindingDetailPanelProps = {
-  finding: Finding | null;
+  finding: Finding | null
   /** Leaves detail mode. The container decides what "closed" means (URL, state). */
-  onClose: () => void;
-};
+  onClose: () => void
+}
 
-export function FindingDetailPanel({ finding, onClose }: Readonly<FindingDetailPanelProps>) {
+export function FindingDetailPanel({
+  finding,
+  onClose,
+}: Readonly<FindingDetailPanelProps>) {
   // No finding selected means the dashboard is not in detail mode at all, so
   // there is nothing to render — the container shows the health cards instead.
-  if (!finding) return null;
+  if (!finding) return null
 
   return (
     <Card aria-label="Finding detail" className="gap-0">
@@ -36,14 +39,22 @@ export function FindingDetailPanel({ finding, onClose }: Readonly<FindingDetailP
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
-              style={{ borderColor: severityColor(finding.severity), color: severityColor(finding.severity) }}
+              style={{
+                borderColor: severityColor(finding.severity),
+                color: severityColor(finding.severity),
+              }}
             >
               {finding.severity}
             </Badge>
             <Badge variant="secondary">{finding.category}</Badge>
             <Badge variant="secondary">{finding.source}</Badge>
           </div>
-          <Button variant="ghost" size="icon" aria-label="Close finding detail" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close finding detail"
+            onClick={onClose}
+          >
             <X />
           </Button>
         </div>
@@ -57,17 +68,28 @@ export function FindingDetailPanel({ finding, onClose }: Readonly<FindingDetailP
 
       <CardContent className="space-y-4 pt-4 text-sm">
         <section>
-          <h3 className="text-muted-foreground mb-1 text-xs font-medium uppercase">Why this matters</h3>
+          <h3 className="text-muted-foreground mb-1 text-xs font-medium uppercase">
+            Why this matters
+          </h3>
           <p>{finding.reason}</p>
         </section>
 
-        {finding.metric_value !== undefined && finding.threshold !== undefined ? (
+        {finding.metric_value !== undefined &&
+        finding.threshold !== undefined ? (
           <section>
-            <h3 className="text-muted-foreground mb-1 text-xs font-medium uppercase">Evidence</h3>
+            <h3 className="text-muted-foreground mb-1 text-xs font-medium uppercase">
+              Evidence
+            </h3>
             <p>
-              Measured <span className="font-semibold">{finding.metric_value}</span> · limit{" "}
-              <span className="font-semibold">{finding.threshold}</span>
-              {finding.rule_id ? <span className="text-muted-foreground"> · rule {finding.rule_id}</span> : null}
+              Measured{" "}
+              <span className="font-semibold">{finding.metric_value}</span> ·
+              limit <span className="font-semibold">{finding.threshold}</span>
+              {finding.rule_id ? (
+                <span className="text-muted-foreground">
+                  {" "}
+                  · rule {finding.rule_id}
+                </span>
+              ) : null}
             </p>
           </section>
         ) : null}
@@ -76,5 +98,5 @@ export function FindingDetailPanel({ finding, onClose }: Readonly<FindingDetailP
             partly to give it room — the slide-over was too narrow to render it. */}
       </CardContent>
     </Card>
-  );
+  )
 }

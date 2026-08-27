@@ -15,7 +15,9 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 /** Count the requests a journey makes, so "nothing was scanned" is checkable. */
 function watchRequests(page: import("@playwright/test").Page) {
   const seen: string[] = []
-  page.on("request", (req) => seen.push(`${req.method()} ${new URL(req.url()).pathname}`))
+  page.on("request", (req) =>
+    seen.push(`${req.method()} ${new URL(req.url()).pathname}`),
+  )
   return {
     scans: () => seen.filter((r) => /^POST .*\/scan$/.test(r)),
     profileWrites: () => seen.filter((r) => r === "PUT /api/profiles/active"),
@@ -27,7 +29,9 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
 })
 
-test("the page opens showing the profile that is really in force", async ({ page }) => {
+test("the page opens showing the profile that is really in force", async ({
+  page,
+}) => {
   // Read from GET /api/profiles/active, not guessed client-side — the sliders
   // must never open on a value the server does not hold.
   await expect(page.getByTestId("profile-label")).toHaveText("Balanced")
@@ -39,8 +43,16 @@ test("there are exactly five category weights, plus the trust slider", async ({
   page,
 }) => {
   // Five categories (FR-9.3) — not four, and not the six the pre-CR-001 shape had.
-  for (const label of ["Security", "Code design", "Requirement", "Documentation", "Test"]) {
-    await expect(page.getByRole("slider", { name: `${label} weight` })).toBeVisible()
+  for (const label of [
+    "Security",
+    "Code design",
+    "Requirement",
+    "Documentation",
+    "Test",
+  ]) {
+    await expect(
+      page.getByRole("slider", { name: `${label} weight` }),
+    ).toBeVisible()
   }
   await expect(page.getByRole("slider", { name: "Trust slider" })).toBeVisible()
   await expect(page.getByRole("slider")).toHaveCount(6)
@@ -54,7 +66,9 @@ test("a preset seeds all six numbers in one interaction", async ({ page }) => {
   await expect(page.getByTestId("profile-label")).toHaveText("Security-first")
 })
 
-test("dragging a slider sends nothing — only Apply writes", async ({ page }) => {
+test("dragging a slider sends nothing — only Apply writes", async ({
+  page,
+}) => {
   const requests = watchRequests(page)
 
   const slider = page.getByRole("slider", { name: "Security weight" })
@@ -79,9 +93,15 @@ test("Apply writes exactly once and starts no scan", async ({ page }) => {
   await page.getByRole("button", { name: /^apply$/i }).click()
   await expect(page.getByText(/profile applied/i)).toBeVisible()
 
-  expect(requests.profileWrites(), "PUT is idempotent and fires once").toHaveLength(1)
+  expect(
+    requests.profileWrites(),
+    "PUT is idempotent and fires once",
+  ).toHaveLength(1)
   // FR-20: six numbers change on one row. No snapshot, no scan, no worker.
-  expect(requests.scans(), "a profile change must never trigger a scan").toHaveLength(0)
+  expect(
+    requests.scans(),
+    "a profile change must never trigger a scan",
+  ).toHaveLength(0)
 })
 
 test("out-of-range values come back clamped, and the sliders adopt what was stored", async ({
@@ -108,7 +128,9 @@ test("out-of-range values come back clamped, and the sliders adopt what was stor
  * navigation returns an empty table and two cheerful -1s.
  */
 async function rankings(page: import("@playwright/test").Page) {
-  await expect(page.getByRole("row").filter({ hasText: /940 lines long/ })).toBeVisible()
+  await expect(
+    page.getByRole("row").filter({ hasText: /940 lines long/ }),
+  ).toBeVisible()
   const rows = await page.getByRole("row").allInnerTexts()
   return {
     longFile: rows.findIndex((r) => /940 lines long/.test(r)),

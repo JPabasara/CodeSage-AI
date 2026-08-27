@@ -18,7 +18,9 @@ describe("middleware", () => {
   })
 
   test("passes the request through when the session cookie is present", () => {
-    const response = middleware(requestFor("/projects", "codesage_session=abc123"))
+    const response = middleware(
+      requestFor("/projects", "codesage_session=abc123"),
+    )
 
     expect(response.headers.get("location")).toBeNull()
   })

@@ -9,7 +9,10 @@ from codesage_api.db.enums import AnalysisStatus, Severity
 from codesage_api.db.repositories.attempts import WorkerScanInput
 from codesage_api.detection.risk.client import RiskClientResult
 from codesage_api.errors import MLServiceUnavailable
+from codesage_api.detection.satd.client import SATDResult
+from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.extractors.pipeline import ExtractionResult
+from codesage_api.scoring.enums import Category
 from codesage_api.tasks.cancel import ScanCancelled
 from codesage_api.tasks.scan_pipeline import PipelineResults, run_scan
 
@@ -18,6 +21,7 @@ from codesage_api.tasks.scan_pipeline import PipelineResults, run_scan
 @patch("codesage_api.tasks.scan_pipeline.cancel.check")
 @patch("codesage_api.tasks.scan_pipeline.cancel.cleanup")
 @patch("codesage_api.tasks.scan_pipeline._finalize")
+@patch("codesage_api.tasks.scan_pipeline.classify")
 @patch("codesage_api.tasks.scan_pipeline.detect")
 @patch("codesage_api.tasks.scan_pipeline.extract")
 @patch("codesage_api.tasks.scan_pipeline.clone_at_commit")
@@ -31,6 +35,7 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     clone: Mock,
     extract: Mock,
     detect: Mock,
+    classify: Mock,
     finalize: Mock,
     cleanup: Mock,
     _check: Mock,
@@ -56,11 +61,20 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
         commit_sha="a" * 40,
         committer_date=SimpleNamespace(),
     )
-    extracted = ExtractionResult([], [], [])
+    comment = ExtractedComment("A.java", 3, "// TODO: temporary workaround")
+    extracted = ExtractionResult([], [], [comment])
     extract.return_value = extracted
     detect.return_value = []
     risk_res = RiskClientResult(scores={"Main.java": 0.85}, model_version="risk-1.0.0")
     predict.return_value = risk_res
+    prediction = SATDResult(
+        comment=comment,
+        is_debt=True,
+        category=Category.CODE_DESIGN,
+        confidence=0.91,
+        model_version="satd-1.0.0",
+    )
+    classify.return_value = [prediction]
 
     run_scan.run(str(attempt_id), str(workspace_id))
 
@@ -68,6 +82,7 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     extract.assert_called_once()
     detect.assert_called_once()
     predict.assert_called_once()
+    classify.assert_called_once_with([comment])
     detector_rules = detect.call_args.args[1]
     assert len(detector_rules) == 1
     assert detector_rules[0].rule_id == "large-file"
@@ -75,7 +90,7 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     finalize.assert_called_once_with(
         attempt_id,
         workspace_id,
-        PipelineResults(extracted, [], risk_res),
+        PipelineResults(extracted, [], risk_res, [prediction]),
     )
     cleanup.assert_called_once_with(str(attempt_id), str(tmp_path))
 

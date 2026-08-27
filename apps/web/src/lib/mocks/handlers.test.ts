@@ -22,7 +22,14 @@
 // ────────────────────────────────────────────────────────────────────────────
 import { expect, test } from "vitest"
 
-import type { ApiError, HealthReport, Repo, ScanStatus, ScanSummary, ScoreProfile } from "@/lib/types"
+import type {
+  ApiError,
+  HealthReport,
+  Repo,
+  ScanStatus,
+  ScanSummary,
+  ScoreProfile,
+} from "@/lib/types"
 import { DEMO_REPO_ID, SECOND_REPO_ID, UNSCANNED_REPO_ID } from "./fixtures"
 
 const BASE = "http://localhost/api"
@@ -71,7 +78,9 @@ function expectShape(
   for (const key of required) {
     expect(Object.keys(record), `${where} is missing "${key}"`).toContain(key)
   }
-  const extra = Object.keys(record).filter((k) => ![...required, ...allowed].includes(k))
+  const extra = Object.keys(record).filter(
+    (k) => ![...required, ...allowed].includes(k),
+  )
   expect(extra, `${where} has keys the contract does not define`).toEqual([])
 
   const camel = Object.keys(record).filter((k) => /[a-z][A-Z]/.test(k))
@@ -87,14 +96,27 @@ test("GET /projects returns contract-shaped repos", async () => {
   for (const repo of repos) {
     expectShape(
       repo,
-      ["id", "name", "owner", "visibility", "url", "default_branch", "connected_at"],
+      [
+        "id",
+        "name",
+        "owner",
+        "visibility",
+        "url",
+        "default_branch",
+        "connected_at",
+      ],
       ["latest_health"],
       "Repo",
     )
     expect(repo.id, "Repo.id is format: uuid in the contract").toMatch(UUID)
     expect(["public", "private"]).toContain(repo.visibility)
     if (repo.latest_health) {
-      expectShape(repo.latest_health, ["score", "grade", "delta"], [], "LatestHealth")
+      expectShape(
+        repo.latest_health,
+        ["score", "grade", "delta"],
+        [],
+        "LatestHealth",
+      )
     }
   }
 })
@@ -110,13 +132,23 @@ test("latest_health is ABSENT on a repo that was never scanned, not zero", async
 })
 
 test("POST /projects returns 201 and a contract-shaped Repo", async () => {
-  const res = await post("/projects", { url: "https://github.com/octocat/Hello-World" })
+  const res = await post("/projects", {
+    url: "https://github.com/octocat/Hello-World",
+  })
 
   expect(res.status).toBe(201)
   const repo = (await res.json()) as Repo
   expectShape(
     repo,
-    ["id", "name", "owner", "visibility", "url", "default_branch", "connected_at"],
+    [
+      "id",
+      "name",
+      "owner",
+      "visibility",
+      "url",
+      "default_branch",
+      "connected_at",
+    ],
     ["latest_health"],
     "Repo (connected)",
   )
@@ -210,14 +242,28 @@ test("an unknown repo is 404 with the error envelope, on every repo route", asyn
 // ── the dashboard payload ───────────────────────────────────────────────────
 
 test("GET /repos/:id/health returns the whole dashboard payload", async () => {
-  const report = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const report = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
 
   expectShape(
     report,
     [
-      "snapshot_id", "repo_id", "branch", "commit_sha", "scanned_at",
-      "health_score", "grade", "delta", "red_issue_count", "profile",
-      "history", "tree", "file_scores", "findings", "category_breakdown",
+      "snapshot_id",
+      "repo_id",
+      "branch",
+      "commit_sha",
+      "scanned_at",
+      "health_score",
+      "grade",
+      "delta",
+      "red_issue_count",
+      "profile",
+      "history",
+      "tree",
+      "file_scores",
+      "findings",
+      "category_breakdown",
     ],
     ["model_version"],
     "HealthReport",
@@ -230,17 +276,36 @@ test("GET /repos/:id/health returns the whole dashboard payload", async () => {
     expectShape(
       finding,
       [
-        "fingerprint", "source", "category", "severity", "file", "line",
-        "reason", "status", "priority", "pinned_by_floor",
+        "fingerprint",
+        "source",
+        "category",
+        "severity",
+        "file",
+        "line",
+        "reason",
+        "status",
+        "priority",
+        "pinned_by_floor",
       ],
-      ["symbol", "rule_id", "metric_value", "threshold", "comment_text", "confidence"],
+      [
+        "symbol",
+        "rule_id",
+        "metric_value",
+        "threshold",
+        "comment_text",
+        "confidence",
+      ],
       "Finding",
     )
     // Exactly two sources: a security finding is a `rule` finding whose
     // category is security, never a `security` source.
     expect(["rule", "satd"]).toContain(finding.source)
     expect([
-      "code-design", "requirement", "documentation", "test", "security",
+      "code-design",
+      "requirement",
+      "documentation",
+      "test",
+      "security",
     ]).toContain(finding.category)
     expect(["critical", "high", "medium", "low"]).toContain(finding.severity)
     expect(finding.line).toBeGreaterThanOrEqual(1)
@@ -253,23 +318,38 @@ test("GET /repos/:id/health returns the whole dashboard payload", async () => {
     expectShape(point, ["t", "score"], ["commit_sha"], "HealthPoint")
   }
   for (const slice of report.category_breakdown) {
-    expectShape(slice, ["category", "count", "debt"], [], "CategoryBreakdownItem")
+    expectShape(
+      slice,
+      ["category", "count", "debt"],
+      [],
+      "CategoryBreakdownItem",
+    )
   }
 })
 
 test("the fixture exercises every enum the contract defines", async () => {
-  const report = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const report = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
   const findings = report.findings
 
   // A fixture that only covers three categories leaves render paths untested,
   // and "it looked fine locally" is exactly how those ship broken.
   expect(new Set(findings.map((f) => f.category))).toEqual(
-    new Set(["code-design", "requirement", "documentation", "test", "security"]),
+    new Set([
+      "code-design",
+      "requirement",
+      "documentation",
+      "test",
+      "security",
+    ]),
   )
   expect(new Set(findings.map((f) => f.severity))).toEqual(
     new Set(["critical", "high", "medium", "low"]),
   )
-  expect(new Set(findings.map((f) => f.source))).toEqual(new Set(["rule", "satd"]))
+  expect(new Set(findings.map((f) => f.source))).toEqual(
+    new Set(["rule", "satd"]),
+  )
 
   // The critical-security floor (FR-24) has to be renderable, so at least one
   // finding must carry it and at least one must not.
@@ -336,18 +416,26 @@ test("a null risk_score survives the wire as null, never as 0", async () => {
 })
 
 test("the health report is derived per branch, not one fixture for all", async () => {
-  const main = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
-  const dev = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=develop`)
+  const main = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  const dev = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=develop`,
+  )
 
   expect(main.branch).toBe("main")
   expect(dev.branch).toBe("develop")
   expect(dev.health_score).not.toBe(main.health_score)
   // Trends are per branch too (the contract: "Trends and deltas are per branch").
-  expect(dev.history.map((p) => p.score)).not.toEqual(main.history.map((p) => p.score))
+  expect(dev.history.map((p) => p.score)).not.toEqual(
+    main.history.map((p) => p.score),
+  )
 })
 
 test("an unscanned branch is 404 so the client can render an empty state", async () => {
-  const res = await fetch(`${BASE}/repos/${UNSCANNED_REPO_ID}/health?branch=trunk`)
+  const res = await fetch(
+    `${BASE}/repos/${UNSCANNED_REPO_ID}/health?branch=trunk`,
+  )
   expect(res.status).toBe(404)
   expect(((await res.json()) as ApiError).code).toBe("NOT_FOUND")
 })
@@ -376,8 +464,15 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
     expectShape(
       summary,
       [
-        "snapshot_id", "scan_id", "branch", "commit_sha", "scanned_at",
-        "finding_count", "health_score", "grade", "delta",
+        "snapshot_id",
+        "scan_id",
+        "branch",
+        "commit_sha",
+        "scanned_at",
+        "finding_count",
+        "health_score",
+        "grade",
+        "delta",
       ],
       [],
       "ScanSummary",
@@ -388,7 +483,9 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
   }
 
   const times = history.map((s) => Date.parse(s.scanned_at))
-  expect(times, "newest first (FR-19)").toEqual([...times].sort((a, b) => b - a))
+  expect(times, "newest first (FR-19)").toEqual(
+    [...times].sort((a, b) => b - a),
+  )
 })
 
 // ── scan lifecycle ──────────────────────────────────────────────────────────
@@ -408,7 +505,9 @@ test("the scan lifecycle is contract-shaped, and answers 202 at both writes", as
   )
   expect(scan.scan_id).toMatch(UUID)
 
-  const ticked = await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)
+  const ticked = await get<ScanStatus>(
+    `/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`,
+  )
   expectShape(
     ticked,
     ["scan_id", "phase", "progress"],
@@ -437,7 +536,9 @@ test("stop is cooperative: the phase is unchanged until the NEXT poll", async ()
   // The POST sets a flag; it does not kill the worker.
   expect(stopped.phase).toBe("running")
 
-  const after = await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)
+  const after = await get<ScanStatus>(
+    `/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`,
+  )
   // `cancelled`, never `idle` — a stopped scan must stay distinguishable from
   // one that never ran (SP-13, DBR-22).
   expect(after.phase).toBe("cancelled")
@@ -459,7 +560,9 @@ test("stopping a finished scan is 409 SCAN_NOT_CANCELLABLE", async () => {
   // Poll it to completion (6 ticks × 17% crosses 100).
   let phase = scan.phase
   for (let i = 0; i < 10 && phase === "running"; i++) {
-    phase = (await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)).phase
+    phase = (
+      await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)
+    ).phase
   }
   expect(phase).toBe("done")
 
@@ -474,7 +577,9 @@ test("skip-if-unchanged: rescanning the same head SHA comes back done, not queue
   ).json()) as ScanStatus
   let phase = first.phase
   for (let i = 0; i < 10 && phase === "running"; i++) {
-    phase = (await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${first.scan_id}`)).phase
+    phase = (
+      await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${first.scan_id}`)
+    ).phase
   }
 
   const again = await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
@@ -492,8 +597,21 @@ test("POST /scan without a branch is 422, not a silent default", async () => {
 
 // ── profiles ────────────────────────────────────────────────────────────────
 
-const PROFILE_KEYS = ["id", "name", "weights", "trust_s", "is_preset", "is_active"]
-const WEIGHT_KEYS = ["security", "code_design", "requirement", "documentation", "test"]
+const PROFILE_KEYS = [
+  "id",
+  "name",
+  "weights",
+  "trust_s",
+  "is_preset",
+  "is_active",
+]
+const WEIGHT_KEYS = [
+  "security",
+  "code_design",
+  "requirement",
+  "documentation",
+  "test",
+]
 
 test("GET /profiles and /profiles/active are contract-shaped", async () => {
   const presets = await get<ScoreProfile[]>("/profiles")
@@ -543,10 +661,45 @@ test("PUT /profiles/active rejects a MALFORMED body with 422, not a clamp", asyn
   // Out-of-range is clamped; wrong type / missing key / unknown category is a
   // different thing, and the contract gives it a different answer.
   const cases: unknown[] = [
-    { weights: { security: "high", code_design: 1, requirement: 1, documentation: 1, test: 1 }, trust_s: 0.5 },
-    { weights: { security: 1, code_design: 1, requirement: 1, documentation: 1 }, trust_s: 0.5 },
-    { weights: { security: 1, code_design: 1, requirement: 1, documentation: 1, test: 1, defect: 1 }, trust_s: 0.5 },
-    { weights: { security: 1, code_design: 1, requirement: 1, documentation: 1, test: 1 } },
+    {
+      weights: {
+        security: "high",
+        code_design: 1,
+        requirement: 1,
+        documentation: 1,
+        test: 1,
+      },
+      trust_s: 0.5,
+    },
+    {
+      weights: {
+        security: 1,
+        code_design: 1,
+        requirement: 1,
+        documentation: 1,
+      },
+      trust_s: 0.5,
+    },
+    {
+      weights: {
+        security: 1,
+        code_design: 1,
+        requirement: 1,
+        documentation: 1,
+        test: 1,
+        defect: 1,
+      },
+      trust_s: 0.5,
+    },
+    {
+      weights: {
+        security: 1,
+        code_design: 1,
+        requirement: 1,
+        documentation: 1,
+        test: 1,
+      },
+    },
   ]
 
   for (const body of cases) {
@@ -560,7 +713,13 @@ test("PUT /profiles/active rejects a MALFORMED body with 422, not a clamp", asyn
 
 test("PUT then GET /profiles/active reflects the write", async () => {
   await put("/profiles/active", {
-    weights: { security: 2.5, code_design: 1, requirement: 1, documentation: 1, test: 1 },
+    weights: {
+      security: 2.5,
+      code_design: 1,
+      requirement: 1,
+      documentation: 1,
+      test: 1,
+    },
     trust_s: 0.25,
   })
 
@@ -575,7 +734,9 @@ test("PUT then GET /profiles/active reflects the write", async () => {
 // ── the one the old mock could not pass ─────────────────────────────────────
 
 test("scores are DERIVED: applying a profile re-ranks the list with no re-scan", async () => {
-  const before = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const before = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
 
   const securityFirst = (await get<ScoreProfile[]>("/profiles")).find(
     (p) => p.name === "Security-first",
@@ -586,7 +747,9 @@ test("scores are DERIVED: applying a profile re-ranks the list with no re-scan",
     trust_s: securityFirst.trust_s,
   })
 
-  const after = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const after = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
 
   // FR-21: no column was read, so tripling the security weight moves everything.
   expect(after.findings.map((f) => f.fingerprint)).not.toEqual(
@@ -607,7 +770,9 @@ test("scores are DERIVED: applying a profile re-ranks the list with no re-scan",
 })
 
 test("a security finding's weight moves it past a higher-severity one", async () => {
-  const before = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const before = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
   const rank = (r: HealthReport, fp: string) =>
     r.findings.findIndex((f) => f.fingerprint === fp)
 
@@ -624,18 +789,26 @@ test("a security finding's weight moves it past a higher-severity one", async ()
   })
 
   // Under Security-first it does not. That inversion is what a weight IS.
-  const after = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const after = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
   expect(rank(after, "f-sqli-1")).toBeLessThan(rank(after, "f-long-1"))
 })
 
 test("the trust slider cannot de-weight a security finding (FR-24)", async () => {
   const priorityOf = async (fp: string) => {
-    const r = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+    const r = await get<HealthReport>(
+      `/repos/${DEMO_REPO_ID}/health?branch=main`,
+    )
     return r.findings.find((f) => f.fingerprint === fp)!.priority
   }
 
   const balanced = {
-    security: 1, code_design: 1, requirement: 1, documentation: 1, test: 1,
+    security: 1,
+    code_design: 1,
+    requirement: 1,
+    documentation: 1,
+    test: 1,
   }
   await put("/profiles/active", { weights: balanced, trust_s: 0 })
   const trustModel = await priorityOf("f-secret-1")
@@ -649,8 +822,12 @@ test("the trust slider cannot de-weight a security finding (FR-24)", async () =>
 })
 
 test("different repositories score differently", async () => {
-  const demo = await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
-  const other = await get<HealthReport>(`/repos/${SECOND_REPO_ID}/health?branch=main`)
+  const demo = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  const other = await get<HealthReport>(
+    `/repos/${SECOND_REPO_ID}/health?branch=main`,
+  )
   expect(other.health_score).not.toBe(demo.health_score)
 })
 

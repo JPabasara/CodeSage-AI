@@ -15,7 +15,7 @@ def main():
     print("Loading dataset...")
     # Step 1: Load the dataset
     # We use skiprows=1 because the raw CSV has an excel/pivot table summary header at the top
-    df = pd.read_csv('../../data/raw/data-augmentation-code_comments.csv', skiprows=1)
+    df = pd.read_csv('../../data/raw/data-augmentation-code_comments.csv',sep=";")
     
     # Clean any rows that are missing critical text or classification labels
     df = df.dropna(subset=['text', 'classification', 'projectname', 'status'])

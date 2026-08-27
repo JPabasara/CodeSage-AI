@@ -1,8 +1,4 @@
-"""The dashboard payload (SRS FR-12 – FR-18).
-
-Every number in these shapes is DERIVED on this request under the active profile.
-None of them is read from a column.
-"""
+"""The cached dashboard payload produced by the Celery scoring worker."""
 
 from __future__ import annotations
 

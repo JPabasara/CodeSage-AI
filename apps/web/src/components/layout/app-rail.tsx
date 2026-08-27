@@ -1,8 +1,8 @@
-"use client"; // uses usePathname → must be a Client Component
+"use client" // uses usePathname → must be a Client Component
 
-import { useEffect } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import {
   FolderGit2,
   LayoutDashboard,
@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
   LogOut,
   type LucideIcon,
-} from "lucide-react";
+} from "lucide-react"
 //shadcn/ui components are Client Components, so we can use them here without "use client" directive
 import {
   Sidebar,
@@ -22,84 +22,116 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { ApiRequestError } from "@/lib/api/client";
-import { DEMO_REPO_ID } from "@/lib/demo";
-import { useSession } from "@/hooks/use-session";
+  useSidebar,
+} from "@/components/ui/sidebar"
+import { ApiRequestError } from "@/lib/api/client"
+import { DEMO_REPO_ID } from "@/lib/demo"
+import { useSession } from "@/hooks/use-session"
 
 type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  isActive: (pathname: string) => boolean;
-};
+  href: string
+  label: string
+  icon: LucideIcon
+  isActive: (pathname: string) => boolean
+}
 
-const NAV: NavItem[] = [
-  {
-    href: "/projects",
-    label: "Projects",
-    icon: FolderGit2,
-    isActive: (p) => p.startsWith("/projects"),
-  },
-  {
-    // Hardcoded until a project picker exists; the rail has no way to know which
-    // project you last opened. It is the demo repository's real id, so it points
-    // at something the mock (and later the API) will actually serve.
-    href: `/dashboard/${DEMO_REPO_ID}`,
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    isActive: (p) => p.startsWith("/dashboard") && !p.endsWith("/history"),
-  },
-  {
-    href: `/dashboard/${DEMO_REPO_ID}/history`,
-    label: "Scan History",
-    icon: History,
-    isActive: (p) => p.endsWith("/history"),
-  },
-  {
-    href: "/profiles",
-    label: "Profiles",
-    icon: SlidersHorizontal,
-    isActive: (p) => p.startsWith("/profiles"),
-  },
-];
+/**
+ * Which project the rail's dashboard rows point at.
+ *
+ * They used to be pinned to `DEMO_REPO_ID`, which meant the rail quietly threw
+ * you out of the project you were reading: open `web-store`, click "Dashboard",
+ * and you were looking at `acme-payments` instead — with the rail still marked
+ * active, so nothing said you had moved.
+ *
+ * The URL already knows the answer, so read it from there. Off a dashboard
+ * route there is nothing to read and the demo id stays the fallback, because
+ * these two rows still have to lead somewhere from /projects and /profiles.
+ */
+function currentRepoId(pathname: string): string {
+  return /^\/dashboard\/([^/]+)/.exec(pathname)?.[1] ?? DEMO_REPO_ID
+}
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+function navItems(repoId: string): NavItem[] {
+  return [
+    {
+      href: "/projects",
+      label: "Projects",
+      icon: FolderGit2,
+      isActive: (p) => p.startsWith("/projects"),
+    },
+    {
+      href: `/dashboard/${repoId}`,
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      isActive: (p) => p.startsWith("/dashboard") && !p.endsWith("/history"),
+    },
+    {
+      href: `/dashboard/${repoId}/history`,
+      label: "Scan History",
+      icon: History,
+      isActive: (p) => p.endsWith("/history"),
+    },
+    {
+      href: "/profiles",
+      label: "Profiles",
+      icon: SlidersHorizontal,
+      isActive: (p) => p.startsWith("/profiles"),
+    },
+  ]
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export function AppRail() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { data: session, error } = useSession();
+  const pathname = usePathname()
+  const router = useRouter()
+  const { data: session, error } = useSession()
+  const nav = navItems(currentRepoId(pathname))
+  // Below `md` the rail is a MODAL sheet, and Next navigates without unmounting
+  // it — so tapping a destination left you on the new page with the sheet still
+  // covering it, and Radix marks everything behind a modal aria-hidden, so a
+  // screen reader could not reach the page either. Closing on click rather than
+  // on a pathname change also covers tapping the row you are already on.
+  const { setOpenMobile } = useSidebar()
 
   // The API is the actual security boundary (SEC-10) — this is a UX fallback so
   // a signed-out visitor is not left staring at a shell with nothing on it,
   // whether or not the session has simply expired underneath them.
   useEffect(() => {
     if (error instanceof ApiRequestError && error.status === 401) {
-      router.push("/login");
+      router.push("/login")
     }
-  }, [error, router]);
+  }, [error, router])
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-3 py-2 text-sm font-semibold">Code Sage AI</SidebarHeader>
+      <SidebarHeader className="px-3 py-2 text-sm font-semibold">
+        Code Sage AI
+      </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV.map((item) => {
-                const Icon = item.icon;
+              {nav.map((item) => {
+                const Icon = item.icon
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={item.isActive(pathname)} tooltip={item.label}>
-                      <Link href={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={item.isActive(pathname)}
+                      tooltip={item.label}
+                    >
+                      <Link
+                        href={item.href}
+                        onClick={() => setOpenMobile(false)}
+                      >
                         <Icon />
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                );
+                )
               })}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -144,5 +176,5 @@ export function AppRail() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-  );
+  )
 }

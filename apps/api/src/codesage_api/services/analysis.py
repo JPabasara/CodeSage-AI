@@ -59,22 +59,14 @@ def _status_out(
 def start(
     session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, branch: str
 ) -> ScanStatusOut:
-    """Decide whether to scan, and if so enqueue it and return immediately.
+    """
+    Decide whether to scan, and if so enqueue it and return immediately.
 
         1. read the branch head SHA from GitHub (REST, ETag-conditional)
         2. read the SHA of the last SUCCESSFULLY COMPLETED analysis
         3. if equal → return the existing snapshot's status; nothing is queued
         4. otherwise → insert an AnalysisAttempt (queued), enqueue, return 202
 
-    **Steps 1–3 happen here, in the API, before anything is queued.** The check
-    costs one conditional REST call and one indexed read, so a skipped scan returns
-    a dashboard inside PERF-02's one second. Deciding it in the worker instead
-    would mean queuing a job, occupying a worker and cloning a repository only to
-    discover nothing had changed.
-
-    Step 2's "successfully completed" is load-bearing: a cancelled or failed
-    attempt has no Snapshot, and skipping on the basis of one would serve a
-    snapshot that was never written.
     """
     stored_branch = attempts.get_branch(
         session, workspace_id, repository_id, branch
@@ -93,6 +85,8 @@ def start(
     stored_branch.head_commit_sha = remote_branch.head_commit_sha
 
     completed = attempts.find_latest_completed(session, stored_branch.id)
+
+    # check if there is new commit
     if completed is not None and completed.commit_sha == remote_branch.head_commit_sha:
         return _status_out(completed, stored_branch.name)
 
@@ -100,10 +94,9 @@ def start(
         session, stored_branch.id, remote_branch.head_commit_sha
     )
 
-    # The worker must not race an uncommitted attempt row.
+   
     session.commit()
-    # SET LOCAL is cleared by that commit. Restore tenant isolation for any
-    # queue-failure update and for the rest of this request.
+
     set_workspace_context(session, workspace_id)
     try:
         from codesage_api.tasks.scan_pipeline import run_scan

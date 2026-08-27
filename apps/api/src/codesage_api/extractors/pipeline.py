@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from codesage_api.extractors.ck_metrics import FileMetrics, extract_ck_metrics
+from codesage_api.extractors.ck_metrics import FileMetrics, MethodMetrics, extract_ck_analysis
 from codesage_api.extractors.comments import (
     ExtractedComment,
     extract_comments_from_file,
@@ -19,10 +19,10 @@ class ExtractionResult:
     static_metrics: list[FileMetrics]
     process_metrics: list[FileProcessMetrics]
     comments: list[ExtractedComment]
+    method_metrics: list[MethodMetrics] = field(default_factory=list)
 
 
 def _extract_repository_comments(repository_path: Path) -> list[ExtractedComment]:
-    """Apply PR #77's per-file parser to every Java file in the snapshot."""
     comments: list[ExtractedComment] = []
     for path in sorted(repository_path.rglob("*.java")):
         if ".git" in path.parts:
@@ -39,7 +39,7 @@ def extract(
     committer_date: datetime,
 ) -> ExtractionResult:
     """Extract stored numeric facts plus transient SATD comment inputs."""
-    static = extract_ck_metrics(repository_path)
+    ck_metrics = extract_ck_analysis(repository_path)
     process = extract_process_metrics(repository_path, commit_sha, committer_date)
     comments = _extract_repository_comments(repository_path)
-    return ExtractionResult(static, process, comments)
+    return ExtractionResult(ck_metrics.files, process, comments, ck_metrics.methods)
