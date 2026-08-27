@@ -229,9 +229,37 @@ def test_risk_computes_higher_score_for_complex_churned_file():
     assert scores_by_path["src/ComplexDirty.java"] > scores_by_path["src/SimpleClean.java"]
 
 
+def test_risk_handles_missing_metrics_gracefully():
+    """Verify that files with missing or partial metrics default to 0.0 without errors."""
+    payload = {
+        "files": [
+            {
+                "path": "src/EmptyMetrics.java",
+                "metrics": {},
+            },
+            {
+                "path": "src/PartialMetrics.java",
+                "metrics": {"wmc": 5.0},
+            },
+        ]
+    }
+    response = client.post("/risk", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    scores = data["scores"]
+    assert len(scores) == 2
+    assert scores[0]["path"] == "src/EmptyMetrics.java"
+    assert 0.0 <= scores[0]["risk_score"] <= 1.0
+
+    assert scores[1]["path"] == "src/PartialMetrics.java"
+    assert 0.0 <= scores[1]["risk_score"] <= 1.0
+
+
 def test_risk_empty_list():
     """Verify bug-risk endpoint with empty file list."""
     response = client.post("/risk", json={"files": []})
     assert response.status_code == 200
     assert response.json()["scores"] == []
+
 
