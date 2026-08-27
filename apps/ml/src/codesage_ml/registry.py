@@ -118,7 +118,7 @@ def load_risk_model() -> LoadedModel:
         else:
             return LoadedModel(name="risk_model", version="risk-1.0.0", artifact=loaded)
 
-    return LoadedModel(name="risk_model", version="mock-1.0.0", artifact=_FallbackRiskPipeline())
+    return LoadedModel(name="risk_model", version="v1.0", artifact=_FallbackRiskPipeline())
 
 
 def artifact_dir() -> Path:

@@ -27,7 +27,7 @@ def test_version():
     assert response.status_code == 200
     data = response.json()
     assert data["satd_model_version"] in ("v1.0", "satd-1.0.0")
-    assert data["risk_model_version"] in ("mock-1.0.0", "risk-1.0.0")
+    assert data["risk_model_version"] in ("v1.0", "risk-1.0.0")
 
 
 
@@ -188,7 +188,7 @@ def test_risk():
     data = response.json()
 
     assert "model_version" in data
-    assert data["model_version"] in ("mock-1.0.0", "risk-1.0.0")
+    assert data["model_version"] in ("v1.0", "risk-1.0.0")
 
     scores = data["scores"]
     assert len(scores) == 1
