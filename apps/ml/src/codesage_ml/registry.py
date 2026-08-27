@@ -40,6 +40,37 @@ class _FallbackPipeline:
         return results
 
 
+class _FallbackRiskPipeline:
+    """Heuristic fallback when no trained risk model artifact is present on disk.
+
+    Computes a deterministic, smooth 0-1 risk score based on high complexity (wmc),
+    coupling (cbo), size (loc), and 90-day churn (commits_90d).
+    """
+
+    def predict_proba(self, X: list[list[float]]) -> list[list[float]]:
+        # FEATURE_ORDER = (wmc, cbo, dit, lcom, rfc, noc, loc, max_nested_blocks,
+        #                  comment_ratio, commits_90d, author_count, file_age_days, recency_days)
+        import numpy as np
+
+        results = []
+        for row in X:
+            wmc = row[0] if len(row) > 0 else 0.0
+            cbo = row[1] if len(row) > 1 else 0.0
+            loc = row[6] if len(row) > 6 else 0.0
+            churn = row[9] if len(row) > 9 else 0.0
+
+            # Normalized heuristic score bounded between 0.0 and 1.0
+            score = 1.0 / (1.0 + np.exp(-0.02 * (wmc * 2.0 + cbo * 1.5 + loc * 0.01 + churn * 3.0 - 15.0)))
+            score = float(np.clip(score, 0.05, 0.95))
+            results.append([1.0 - score, score])
+
+        return results
+
+    def predict(self, X: list[list[float]]) -> list[int]:
+        proba = self.predict_proba(X)
+        return [1 if p[1] >= 0.5 else 0 for p in proba]
+
+
 @lru_cache
 def load_satd_model() -> LoadedModel:
     """ML-1: the SATD classifier.
@@ -81,13 +112,13 @@ def load_risk_model() -> LoadedModel:
         if isinstance(loaded, dict) and "pipeline" in loaded:
             return LoadedModel(
                 name="risk_model",
-                version=loaded.get("version", "v1.0"),
+                version=loaded.get("version", "risk-1.0.0"),
                 artifact=loaded["pipeline"],
             )
         else:
-            return LoadedModel(name="risk_model", version="v1.0", artifact=loaded)
+            return LoadedModel(name="risk_model", version="risk-1.0.0", artifact=loaded)
 
-    raise NotImplementedError("Risk model artifact not found and fallback not yet configured")
+    return LoadedModel(name="risk_model", version="mock-1.0.0", artifact=_FallbackRiskPipeline())
 
 
 def artifact_dir() -> Path:
