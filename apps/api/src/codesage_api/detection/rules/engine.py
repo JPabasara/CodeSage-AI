@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +7,10 @@ from pathlib import Path
 from codesage_api.detection.fingerprint import rule_fingerprint
 from codesage_api.detection.reasons import render_rule_reason
 from codesage_api.detection.rules.registry import RuleDefinition
+from codesage_api.detection.rules.security_rules import (
+    detect_hardcoded_secret,
+    detect_sql_concat,
+)
 from codesage_api.extractors.ck_metrics import FileMetrics, MethodMetrics
 from codesage_api.scoring.enums import Category, Severity
 
@@ -35,14 +38,6 @@ _METHOD_RULE_ACCESSORS: dict[str, Callable[[MethodMetrics], float]] = {
     "long-method": lambda item: float(item.loc),
     "deep-nesting": lambda item: float(item.max_nesting_depth),
 }
-_SECRET = re.compile(
-    r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\b\s*=\s*[\"']([^\"']{8,})[\"']"
-)
-_SQL_CONCAT = re.compile(
-    r"(?i)[\"']\s*(select|insert|update|delete)\b[^\"']*[\"']\s*\+"
-)
-
-
 def _metric_findings(
     files: list[FileMetrics], rules: list[RuleDefinition]
 ) -> list[DetectedFinding]:
@@ -128,31 +123,29 @@ def _pattern_findings(
         if ".git" in path.parts:
             continue
         relative = path.relative_to(repository_path).as_posix()
-        for line_number, line in enumerate(
-            path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1
-        ):
-            matches = (
-                ("hardcoded-secret", _SECRET.search(line)),
-                ("sql-concat", _SQL_CONCAT.search(line)),
-            )
-            for rule_id, match in matches:
-                rule = by_id.get(rule_id)
-                if rule is None or match is None:
-                    continue
-                symbol = match.group(1)
+        source = path.read_text(encoding="utf-8", errors="replace")
+        detectors = (
+            ("hardcoded-secret", detect_hardcoded_secret),
+            ("sql-concat", detect_sql_concat),
+        )
+        for rule_id, detector in detectors:
+            rule = by_id.get(rule_id)
+            if rule is None:
+                continue
+            for match in detector(path, source):
                 findings.append(
                     DetectedFinding(
                         file_path=relative,
-                        line=line_number,
-                        symbol=symbol,
+                        line=match.line,
+                        symbol=match.symbol,
                         rule_id=rule.rule_id,
                         category=rule.category,
                         severity=rule.severity,
-                        description=rule.message_template.format(symbol=symbol),
-                        evidence=None,
-                        measured_value=None,
-                        threshold=None,
-                        fingerprint=rule_fingerprint(rule.rule_id, relative, symbol),
+                        description=rule.message_template.format(symbol=match.symbol),
+                        evidence=match.evidence,
+                        measured_value=match.measured_value,
+                        threshold=match.threshold,
+                        fingerprint=rule_fingerprint(rule.rule_id, relative, match.symbol),
                     )
                 )
     return findings
