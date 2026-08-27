@@ -20,9 +20,13 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
+
 from codesage_api.db.enums import AnalysisStatus, FindingSource, Severity
 from codesage_api.db.models import (
+    BugRiskPrediction,
     Finding,
+    MLModelVersion,
     ProcessMetric,
     Snapshot,
     SourceFile,
@@ -32,7 +36,8 @@ from codesage_api.db.models import (
 from codesage_api.db.repositories import attempts, rules
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
-from codesage_api.detection.risk.client import RiskClientResult, predict as predict_risk
+from codesage_api.detection.risk import client as risk_client
+from codesage_api.detection.risk.client import RiskClientResult
 from codesage_api.detection.rules.engine import DetectedFinding, detect
 from codesage_api.detection.rules.registry import from_stored
 from codesage_api.errors import MLServiceUnavailable
@@ -49,7 +54,6 @@ logger = get_logger(__name__)
 class PipelineResults:
     extraction: ExtractionResult
     findings: list[DetectedFinding]
-    risk_result: RiskClientResult | None = None
 
 
 @celery_app.task(bind=True, name="codesage.scan")
@@ -132,14 +136,19 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
                 ],
                 cloned.path,
             )
+
+            # ML-2 Risk Model prediction with graceful degradation
             risk_result: RiskClientResult | None = None
             try:
-                process_by_path = {
-                    item.path: item for item in extracted.process_metrics
-                }
-                risk_result = predict_risk(extracted.static_metrics, process_by_path)
+                process_by_path = {p.path: p for p in extracted.process_metrics}
+                risk_result = risk_client.predict(
+                    extracted.static_metrics, process_by_path
+                )
             except MLServiceUnavailable as exc:
-                logger.warning("ML risk service unavailable; proceeding in degraded mode: %s", exc)
+                logger.warning(
+                    "ML risk service unavailable; scan proceeding in degraded mode",
+                    extra={"error": str(exc)},
+                )
 
             progress.publish_progress(attempt_id, 80)
             cancel.check(attempt_id)
@@ -174,11 +183,7 @@ def _finalize(
     workspace_id: uuid.UUID,
     results: PipelineResults,
 ) -> None:
-    """Commit everything as a finalized result, or nothing at all (DBR-22, REL-05).
-
-    Separated from `run_scan` so the transactional boundary is a single, obvious
-    function rather than an indented block two hundred lines into a task.
-    """
+    """Commit everything as a finalized result, or nothing at all (DBR-22, REL-05)."""
     with session_scope() as session:
         set_workspace_context(session, workspace_id)
         attempt = attempts.get_worker_attempt(session, workspace_id, attempt_id)
@@ -195,6 +200,20 @@ def _finalize(
         )
         session.add(snapshot)
         session.flush()
+
+        # Look up or insert MLModelVersion if risk predictions were generated
+        model_version_record: MLModelVersion | None = None
+        if results.risk_result and results.risk_result.model_version:
+            v_name = results.risk_result.model_version
+            stmt = select(MLModelVersion).where(MLModelVersion.version == v_name)
+            model_version_record = session.scalars(stmt).first()
+            if model_version_record is None:
+                model_version_record = MLModelVersion(
+                    model_type="risk",
+                    version=v_name,
+                )
+                session.add(model_version_record)
+                session.flush()
 
         process_by_path = {
             item.path: item for item in results.extraction.process_metrics
@@ -237,34 +256,21 @@ def _finalize(
                     )
                 )
 
-        if results.risk_result:
-            from codesage_api.db.models import BugRiskPrediction, MLModelVersion
-            version_name = results.risk_result.model_version
-            version_obj = (
-                session.query(MLModelVersion)
-                .filter(MLModelVersion.version == version_name)
-                .first()
-            )
-            if version_obj is None:
-                version_obj = MLModelVersion(
-                    version=version_name,
-                    task_type="bug_risk",
-                    algorithm="CalibratedRandomForest",
-                    trained_at=datetime.now(UTC),
-                )
-                session.add(version_obj)
-                session.flush()
-
-            for path, score in results.risk_result.scores.items():
-                if (sf := files_by_path.get(path)) is not None:
-                    session.add(
-                        BugRiskPrediction(
-                            source_file=sf,
-                            model_version=version_obj,
-                            risk_score=score,
-                            confidence=1.0,
-                        )
+            # Persist ML-2 BugRiskPrediction row if prediction score is present
+            if (
+                results.risk_result
+                and model_version_record
+                and metrics.path in results.risk_result.scores
+            ):
+                score = results.risk_result.scores[metrics.path]
+                session.add(
+                    BugRiskPrediction(
+                        source_file=source_file,
+                        model_version=model_version_record,
+                        risk_score=score,
+                        confidence=score,
                     )
+                )
 
         for detected in results.findings:
             finding_file = files_by_path.get(detected.file_path)
