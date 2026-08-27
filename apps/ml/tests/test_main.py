@@ -188,7 +188,7 @@ def test_risk():
     data = response.json()
 
     assert "model_version" in data
-    assert data["model_version"] == "mock-1.0.0"
+    assert data["model_version"] in ("mock-1.0.0", "risk-1.0.0")
 
     scores = data["scores"]
     assert len(scores) == 1
@@ -197,8 +197,41 @@ def test_risk():
     assert 0.0 <= score["risk_score"] <= 1.0
 
 
+def test_risk_computes_higher_score_for_complex_churned_file():
+    """Verify that complex, highly-churned files receive a higher risk score than simple files."""
+    payload = {
+        "files": [
+            {
+                "path": "src/ComplexDirty.java",
+                "metrics": {
+                    "wmc": 50.0,
+                    "cbo": 20.0,
+                    "loc": 1200.0,
+                    "commits_90d": 30.0,
+                },
+            },
+            {
+                "path": "src/SimpleClean.java",
+                "metrics": {
+                    "wmc": 2.0,
+                    "cbo": 1.0,
+                    "loc": 25.0,
+                    "commits_90d": 0.0,
+                },
+            },
+        ]
+    }
+    response = client.post("/risk", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    scores_by_path = {s["path"]: s["risk_score"] for s in data["scores"]}
+    assert scores_by_path["src/ComplexDirty.java"] > scores_by_path["src/SimpleClean.java"]
+
+
 def test_risk_empty_list():
     """Verify bug-risk endpoint with empty file list."""
     response = client.post("/risk", json={"files": []})
     assert response.status_code == 200
     assert response.json()["scores"] == []
+
