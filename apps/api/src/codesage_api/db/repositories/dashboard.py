@@ -94,9 +94,9 @@ def list_completed_snapshot_refs(
     session: Session,
     workspace_id: uuid.UUID,
     repository_id: uuid.UUID,
-    branch_name: str,
+    branch_name: str | None,
 ) -> list[Snapshot]:
-    """Return lightweight snapshot rows oldest-first for trends and cache warming."""
+    """Return lightweight snapshot rows oldest-first, optionally for one branch."""
     statement = (
         select(Snapshot)
         .join(AnalysisAttempt, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
@@ -105,11 +105,13 @@ def list_completed_snapshot_refs(
         .where(
             Repository.id == repository_id,
             Repository.workspace_id == workspace_id,
-            Branch.name == branch_name,
             AnalysisAttempt.status == AnalysisStatus.DONE,
         )
+        .options(joinedload(Snapshot.analysis_attempt).joinedload(AnalysisAttempt.branch))
         .order_by(Snapshot.scan_time.asc(), Snapshot.id.asc())
     )
+    if branch_name is not None:
+        statement = statement.where(Branch.name == branch_name)
     return list(session.scalars(statement).all())
 
 

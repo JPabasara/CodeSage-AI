@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from codesage_api.deps import get_db, get_workspace_id
@@ -87,11 +87,11 @@ def stop_scan(
 @router.get("/scans", response_model=list[ScanSummaryOut])
 def list_scan_history(
     repo_id: uuid.UUID,
-    branch: str,
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+    branch: Annotated[str | None, Query(min_length=1)] = None,
 ) -> list[ScanSummaryOut]:
-    """Past snapshots for the active project and branch (FR-19).
+    """Past snapshots for the repository, optionally restricted to one branch (FR-19).
 
     Each row: date, commit SHA, health score, grade, delta, finding count. The last
     three are derived under the active profile, not read from a column.

@@ -134,7 +134,7 @@ def get_history(
     session: Session,
     workspace_id: uuid.UUID,
     repository_id: uuid.UUID,
-    branch: str,
+    branch: str | None,
 ) -> list[ScanSummaryOut]:
     return dashboard.build_scan_history(
         session,
