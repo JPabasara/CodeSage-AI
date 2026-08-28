@@ -16,6 +16,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from codesage_ml.risk.features import FEATURE_ORDER
+
 
 @dataclass(frozen=True, slots=True)
 class LoadedModel:
@@ -60,7 +62,9 @@ class _FallbackRiskPipeline:
             churn = row[9] if len(row) > 9 else 0.0
 
             # Normalized heuristic score bounded between 0.0 and 1.0
-            score = 1.0 / (1.0 + np.exp(-0.02 * (wmc * 2.0 + cbo * 1.5 + loc * 0.01 + churn * 3.0 - 15.0)))
+            score = 1.0 / (
+                1.0 + np.exp(-0.02 * (wmc * 2.0 + cbo * 1.5 + loc * 0.01 + churn * 3.0 - 15.0))
+            )
             score = float(np.clip(score, 0.05, 0.95))
             results.append([1.0 - score, score])
 
@@ -81,14 +85,15 @@ def load_satd_model() -> LoadedModel:
     a service that must answer fast enough not to stretch a scan.
     """
     import joblib
+
     model_path = artifact_dir() / "satd_v1.joblib"
     if model_path.exists():
         loaded = joblib.load(model_path)
         if isinstance(loaded, dict) and "pipeline" in loaded:
             return LoadedModel(
-                name="satd_classifier", 
-                version=loaded.get("version", "v1.0"), 
-                artifact=loaded["pipeline"]
+                name="satd_classifier",
+                version=loaded.get("version", "v1.0"),
+                artifact=loaded["pipeline"],
             )
         else:
             return LoadedModel(name="satd_classifier", version="v1.0", artifact=loaded)
@@ -110,6 +115,9 @@ def load_risk_model() -> LoadedModel:
     if model_path.exists():
         loaded = joblib.load(model_path)
         if isinstance(loaded, dict) and "pipeline" in loaded:
+            artifact_features = loaded.get("feature_order")
+            if artifact_features != list(FEATURE_ORDER):
+                raise ValueError("Risk model feature order does not match the inference contract")
             return LoadedModel(
                 name="risk_model",
                 version=loaded.get("version", "risk-1.0.0"),
@@ -118,13 +126,18 @@ def load_risk_model() -> LoadedModel:
         else:
             return LoadedModel(name="risk_model", version="risk-1.0.0", artifact=loaded)
 
-    return LoadedModel(name="risk_model", version="v1.0", artifact=_FallbackRiskPipeline())
+    return LoadedModel(
+        name="risk_model",
+        version="risk-fallback-heuristic-1.0",
+        artifact=_FallbackRiskPipeline(),
+    )
 
 
 def artifact_dir() -> Path:
     """Where versioned artifacts live. A mounted volume in production — models are
     not baked into the image, so replacing one does not require a rebuild."""
     import os
+
     env_dir = os.environ.get("CODESAGE_ML_ARTIFACT_DIR")
     if env_dir:
         return Path(env_dir)
