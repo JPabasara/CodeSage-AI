@@ -26,8 +26,10 @@ API_ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture(scope="module")
 def rls_database() -> Iterator[tuple[Engine, Engine, uuid.UUID, uuid.UUID]]:
     """Migrate as owner, seed two tenants, then expose a non-owner app engine."""
+    postgres_started = False
     try:
         with PostgresContainer("postgres:16-alpine") as postgres:
+            postgres_started = True
             owner_url = make_url(postgres.get_connection_url()).set(
                 drivername="postgresql+psycopg"
             )
@@ -107,7 +109,13 @@ def rls_database() -> Iterator[tuple[Engine, Engine, uuid.UUID, uuid.UUID]]:
             yield owner_engine, app_engine, workspace_a, workspace_b
             app_engine.dispose()
             owner_engine.dispose()
-    except Exception as exc:  # noqa: BLE001 - Docker clients raise backend-specific errors
+    except Exception as exc:
+        # Once PostgreSQL has started, this is a schema, migration or test-setup
+        # failure—not an unavailable Docker daemon. Never turn it into a skip.
+        # CI also promises a database runner, so inability to start one there is
+        # itself a broken required check rather than an optional local condition.
+        if postgres_started or os.environ.get("CI") == "true":
+            raise
         pytest.skip(f"Docker/PostgreSQL is unavailable: {exc}")
 
 
