@@ -24,7 +24,18 @@ The model is trained and evaluated on the authentic **D'Ambros / AEEEM Benchmark
 * **Total Instances:** 5,371 classes
 * **Class Balance:** 15.9% Defective (853 classes with post-release bugs) vs 84.1% Clean (4,518 classes)
 * **Artifact File:** `apps/ml/data/raw/dambros_aeeem.csv`
-* **SHA-256 Checksum:** `c1986940d9d4cfa020dd8cb2e33a724fd941b7125f52e5a4a0c4d53a7d8ebbcd`
+* **Prepared Dataset SHA-256:** `be73bca623ca320e8dce5c302abcabb41648e11dbe075f9ad2dfb3d2a5fce06d`
+
+### v1.0 feature limitation
+
+The AEEEM mirror available to CodeSage contains cumulative process metrics but
+does not contain CK product metrics, a 90-day commit count, or recency. The v1.0
+prototype therefore trains only on the two fields with matching production
+semantics: **author count** and **file age**. All other positions in the canonical
+13-feature vector are neutral during training. They must not be populated with
+unrelated AEEEM fields (for example, code churn is not WMC and version count is
+not DIT). Reconstructing matching CK and commit-anchored process metrics is the
+next model-quality improvement.
 
 ---
 
@@ -32,10 +43,10 @@ The model is trained and evaluated on the authentic **D'Ambros / AEEEM Benchmark
 
 The classifier architecture was selected based on established empirical software engineering defect prediction literature (e.g., *Lessmann et al., IEEE TSE 2008*; *D'Ambros et al., 2010/2012*; *Tantithamthavorn et al., IEEE TSE 2018*):
 
-1. **Non-Linear Complexity Interactions:** Tree ensembles naturally capture complex non-linear thresholds between structural size (`loc`), cyclomatic complexity (`wmc`), and commit churn without requiring manual polynomial feature engineering.
-2. **Robustness to Multicollinearity:** Source code metrics and churn values exhibit high correlation (e.g., lines added vs. code churn); Random Forest's feature subsampling mitigates collinearity effects.
-3. **Calibrated Probabilities (`CalibratedClassifierCV`):** Standard decision trees output step-function pseudo-probabilities. By wrapping Random Forest in Sigmoid Probability Calibration (`CalibratedClassifierCV`), the model produces smooth, well-calibrated continuous risk scores ($0.0$ to $1.0$).
-4. **Low Inference Latency:** Batch prediction over 1,000 files executes in under 5 milliseconds on CPU, satisfying scan responsiveness constraints without requiring a GPU.
+1. **Non-linear process interactions:** Tree ensembles can capture thresholds and interactions between author count and file age without manual polynomial features.
+2. **Prototype continuity:** Random Forest retains the architecture selected for ML-2 while the feature reconstruction work remains outstanding.
+3. **Probability calibration (`CalibratedClassifierCV`):** Sigmoid calibration smooths the forest's class probabilities. Calibration is evaluated with Brier score and should still be checked with reliability plots before calling the values absolute probabilities.
+4. **Inference latency:** Held-out batches of 324–1,862 classes took approximately 35–57 ms on the evaluation machine and require no GPU.
 
 ---
 
@@ -45,13 +56,18 @@ To prevent cross-project data leakage and guarantee generalizability to unseen r
 
 | Held-Out Project | Total Classes | Defective Classes | ROC-AUC | PR-AUC | F1-Score | Brier Score | Latency |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`equinox`** | 324 | 129 (39.8%) | **0.7219** | 0.6758 | 0.0154 | 0.2876 | 130.0ms |
-| **`jdt`** | 997 | 206 (20.7%) | **0.7717** | 0.5229 | 0.4537 | 0.1401 | 164.1ms |
-| **`lucene`** | 691 | 64 (9.3%) | **0.6924** | 0.2120 | 0.0000 | 0.0823 | 119.5ms |
-| **`mylyn`** | 1,862 | 245 (13.2%) | **0.6502** | 0.2732 | 0.0000 | 0.1085 | 205.2ms |
-| **`pde`** | 1,497 | 209 (14.0%) | **0.7067** | 0.2979 | 0.0372 | 0.1129 | 136.3ms |
-| **Mean LOPO Avg** | **5,371** | **853 (15.9%)** | **0.7086** | **0.3964** | **0.1013** | **0.1463** | **145.0ms** |
+| **`equinox`** | 324 | 129 (39.8%) | **0.6773** | 0.5218 | 0.0000 | 0.3117 | 35.0ms |
+| **`jdt`** | 997 | 206 (20.7%) | **0.6723** | 0.4295 | 0.0000 | 0.1553 | 38.8ms |
+| **`lucene`** | 691 | 64 (9.3%) | **0.6579** | 0.2828 | 0.0000 | 0.0861 | 34.8ms |
+| **`mylyn`** | 1,862 | 245 (13.2%) | **0.5251** | 0.1391 | 0.0000 | 0.1155 | 56.8ms |
+| **`pde`** | 1,497 | 209 (14.0%) | **0.5588** | 0.1645 | 0.0000 | 0.1217 | 47.5ms |
+| **Mean LOPO Avg** | **5,371** | **853 (15.9%)** | **0.6183** | **0.3075** | **0.0000** | **0.1581** | **42.6ms** |
 
 ### Key Evaluation Takeaways:
-- **Discrimination Capability**: Achieves a mean LOPO ROC-AUC of **0.7086**, demonstrating strong cross-project defect discrimination on completely unseen software repositories.
-- **Probability Calibration**: Achieves a low mean Brier Score of **0.1463**, confirming probability calibration across all test folds.
+- **Discrimination Capability**: Mean LOPO ROC-AUC is **0.6183**. This is a
+  modest prototype signal, not evidence of production-grade defect prediction.
+- **Threshold limitation**: F1 at the default `0.5` threshold is zero. CodeSage
+  consumes the continuous ranking score, but the model must not be presented as
+  a useful binary defect classifier without threshold selection on validation data.
+- **Probability calibration**: Mean Brier Score is **0.1581**. Brier score alone
+  does not prove perfect calibration; reliability plots remain future work.
