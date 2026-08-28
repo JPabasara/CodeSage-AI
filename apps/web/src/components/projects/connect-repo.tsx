@@ -6,11 +6,10 @@ import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
-// The SRS specifies this panel exactly: "an example URL text box and a Connect
-// button with inline validation." There is deliberately no private-repository
-// option — connecting one needs a GitHub App installation and the SEC-04/SEC-06
-// authorization controls, which are v2. An earlier version of this component
-// advertised it as a disabled tab, which promised a feature two releases away.
+// An example URL box and a Connect button with inline validation. There is
+// deliberately no private-repository option — connecting one needs a GitHub App
+// installation, which is v2. An earlier version advertised it as a disabled tab,
+// promising a feature two releases away.
 export type ConnectRepoProps = {
   onConnect?: (url: string) => void
   /** A connect request is in flight; the form is locked until it settles. */

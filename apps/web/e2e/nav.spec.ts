@@ -1,9 +1,7 @@
 import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// The shell: the left rail, and J3.5's promise that nothing on screen points at
-// a feature we cannot demonstrate.
-// ────────────────────────────────────────────────────────────────────────────
+// The shell: the left rail, and the promise that nothing on screen points at a
+// feature we cannot demonstrate.
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/projects")
@@ -65,9 +63,7 @@ test("the rail marks the screen you are actually on", async ({ page }) => {
   ).not.toHaveAttribute("data-active", "true")
 })
 
-// ────────────────────────────────────────────────────────────────────────────
-// P2 — the two navigation bugs the 25 Aug re-audit found.
-// ────────────────────────────────────────────────────────────────────────────
+// ── the two navigation bugs a later re-audit found ─────────────────────
 
 test("the dashboard rows follow the project you are looking at", async ({
   page,

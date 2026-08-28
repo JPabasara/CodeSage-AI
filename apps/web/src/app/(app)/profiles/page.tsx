@@ -67,26 +67,22 @@ export default function ProfilesPage() {
   const { data: presets, loading: loadingPresets } = useProfiles()
   const { data: active, loading: loadingActive, error } = useActiveProfile()
 
-  // Slider positions are CLIENT STATE until Apply is pressed. A single drag
-  // crosses many intermediate values; writing each one would put a write and a
-  // full re-derivation on the server per pixel of travel, and would leave no way
-  // to abandon an experiment.
+  // Slider positions stay client state until Apply. A single drag crosses many
+  // values, and writing each one would cost a write and a full re-derivation per
+  // pixel of travel, with no way to abandon an experiment.
   //
-  // The draft is DERIVED from the applied profile until the user touches
-  // something, rather than copied into state by an effect. Same reason as
-  // use-query: React 19's react-hooks/set-state-in-effect forbids the copy, and
-  // deriving means the sliders cannot get stuck showing a stale profile.
+  // The draft is derived from the applied profile until the user touches
+  // something, rather than copied in by an effect, so the sliders cannot get
+  // stuck showing a stale profile.
   const [draft, setDraft] = useState<Draft>()
   const [saving, setSaving] = useState(false)
 
   const weights = draft?.weights ?? active?.weights
   const trustS = draft?.trust_s ?? active?.trust_s
 
-  // Which preset, if any, these numbers still ARE. Derived by comparing values
-  // rather than remembering which button was pressed: the moment a slider moves,
-  // this is no longer that preset, and the contract says the name is then omitted
-  // ("omit it for a custom profile"). Sending "Balanced" for numbers that are not
-  // Balanced would mislabel the stored profile.
+  // Which preset, if any, these numbers still are. Compared by value rather than
+  // by remembering which button was pressed: once a slider moves it is no longer
+  // that preset, and sending its name would mislabel the stored profile.
   const matchedPreset =
     weights && trustS !== undefined
       ? (presets ?? []).find((p) =>

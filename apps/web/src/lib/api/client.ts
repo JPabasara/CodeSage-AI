@@ -1,11 +1,8 @@
-// ────────────────────────────────────────────────────────────────────────────
-// THE API CLIENT — thin functions that make the real network calls.
+// The API client — thin functions that make the real network calls.
 //
-// This code is FINAL: it does not know or care whether a real backend exists.
-// It just calls `/api/...`. In dev those calls are intercepted by MSW (Phase 8);
-// at go-live they hit the real FastAPI backend, which needs the session cookie
-// attached — see the note on credentials below.
-// ────────────────────────────────────────────────────────────────────────────
+// It does not know whether a real backend exists; it just calls `/api/...`. In
+// dev those calls are intercepted by MSW; in production they hit the real API,
+// which needs the session cookie attached — see the note on credentials below.
 import type {
   ApiError,
   ApplyProfileRequest,
@@ -20,14 +17,13 @@ import type {
   Session,
 } from "@/lib/types"
 
-// Empty in dev (same-origin, so MSW's service worker sees the request). Phase 12
-// points this at the deployed API, e.g. "https://api.codesage.dev".
+// Empty in dev, so the request is same-origin and MSW's service worker sees it.
+// In production this points at the deployed API.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? ""
 
-// Every call below passes `credentials: "include"`. The API is a different
-// origin (api.codesageai.dev vs codesageai.dev), and a browser leaves cookies
-// out of cross-origin requests unless it is asked — without this the session
-// cookie never arrives and every endpoint answers 401. (J2.7)
+// Every call passes `credentials: "include"`. The API is a different origin, and
+// a browser leaves cookies out of cross-origin requests unless asked — without
+// this the session cookie never arrives and every endpoint answers 401.
 
 /**
  * A failed request, carrying the contract's error envelope.
@@ -87,11 +83,10 @@ export function getSession(): Promise<Session> {
 }
 
 /**
- * Connect a public repository by URL (FR-3).
+ * Connect a public repository by URL.
  *
- * v1.0 accepts public repositories only. A private URL comes back as
- * `REPOSITORY_NOT_PUBLIC` — connecting a private repository needs a GitHub App
- * installation and the SEC-04/SEC-06 authorization controls, which are v2.
+ * Public only for now — a private URL comes back as `REPOSITORY_NOT_PUBLIC`.
+ * Connecting one needs a GitHub App installation, which is v2.
  */
 export function connectRepo(url: string): Promise<Repo> {
   const body: ConnectRepoRequest = { url }
@@ -158,7 +153,7 @@ export function getProfiles(): Promise<ScoreProfile[]> {
   }).then(json<ScoreProfile[]>)
 }
 
-// ── scan lifecycle (wired into the UI in Phase 9) ────────────────────────────
+// ── scan lifecycle ───────────────────────────────────────────────────────────
 
 export function startScan(repoId: string, branch: string): Promise<ScanStatus> {
   return fetch(`${API_BASE}/api/repos/${repoId}/scan`, {

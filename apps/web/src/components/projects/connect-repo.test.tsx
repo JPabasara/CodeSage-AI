@@ -20,9 +20,8 @@ test("submits a public repository URL", async () => {
 test("offers no private-repository option", () => {
   render(<ConnectRepo />)
 
-  // Connecting a private repository is v2 (SRS SEC-04/SEC-06). The SRS specifies
-  // this panel as a URL box and a Connect button - nothing else. Advertising a
-  // GitHub App here would promise a feature two releases away.
+  // Connecting a private repository is v2 — it needs a GitHub App installation.
+  // This panel is a URL box and a Connect button, nothing else.
   expect(screen.queryByText(/private/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/github app/i)).not.toBeInTheDocument()
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()

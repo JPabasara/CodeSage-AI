@@ -1,13 +1,11 @@
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// Journey 2 — the scan state machine: idle → running → done | cancelled.
+// The scan state machine: idle → running → done | cancelled.
 //
-// The interesting part is that CANCELLATION IS COOPERATIVE. Stop sets a flag and
-// returns 202 with the phase still "running"; the client learns the scan really
-// stopped from the NEXT poll. A test that asserted "click Stop → idle" would
-// pass against a mock that lies and fail against the real backend.
-// ────────────────────────────────────────────────────────────────────────────
+// Cancellation is cooperative: Stop sets a flag and returns 202 with the phase
+// still "running", and the client learns the scan really stopped from the next
+// poll. A test asserting "click Stop → idle" would pass against a mock that lies
+// and fail against the real backend.
 
 const scanButton = (page: import("@playwright/test").Page) =>
   page.getByRole("button", { name: /^scan$/i })
@@ -66,8 +64,8 @@ test("a cancelled scan leaves the previous results intact", async ({
   await page.getByRole("button", { name: /stop/i }).click()
   await expect(cancelledLabel(page)).toBeVisible({ timeout: 15_000 })
 
-  // FR-6: cancelling must never leave a half-written snapshot, so the dashboard
-  // still shows the last good one.
+  // Cancelling must never leave a half-written snapshot, so the dashboard still
+  // shows the last good one.
   await expect(page.getByText("Code Health")).toBeVisible()
   await expect(page.getByText("72/100")).toBeVisible()
 })
@@ -88,7 +86,7 @@ test("the scan control never offers Scan and Stop at the same time", async ({
   await expect(page.getByText(/scanning/i)).toBeVisible()
 
   // While running, the only write available is Stop. Two live actions on one
-  // state machine is how you get a 409 in front of an evaluator.
+  // state machine is how you get a 409 in the middle of a demo.
   await expect(scanButton(page)).toHaveCount(0)
   await expect(page.getByRole("button", { name: /stop/i })).toBeVisible()
 })

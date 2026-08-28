@@ -11,10 +11,9 @@ import { ProjectList } from "@/components/projects/project-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProjects } from "@/hooks/use-projects"
 
-// Each of these is a different thing for the user to DO about it, which is why
-// the contract gives them separate codes rather than one 400. A bare
-// "400 Bad Request" would leave someone who pasted their own private repository
-// with no idea what went wrong.
+// Each code is a different thing for the user to do about it, which is why they
+// are separate rather than one 400 — a bare "400 Bad Request" leaves someone who
+// pasted a private repository with no idea what went wrong.
 const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
   INVALID_REPOSITORY_URL: "That does not look like a repository URL.",
   REPOSITORY_NOT_PUBLIC:
@@ -26,7 +25,6 @@ const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
 
 export default function ProjectsPage() {
   const router = useRouter()
-  // Data now arrives over the (mock) network instead of a static import.
   const { data: repos, loading, error, reload } = useProjects()
   const [connecting, setConnecting] = useState(false)
 

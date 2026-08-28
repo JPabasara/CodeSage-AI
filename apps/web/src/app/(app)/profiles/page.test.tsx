@@ -45,7 +45,7 @@ test("picking a preset seeds the sliders without saving anything", async () => {
 
   await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
 
-  // Security-first is 3.0 on security (presets.yaml).
+  // Security-first is 3.0 on security.
   await waitFor(() =>
     expect(screen.getByTestId("value-security")).toHaveTextContent("3.0"),
   )
@@ -155,8 +155,8 @@ test("dragging away from a preset makes it Custom and omits the name", async () 
   await userEvent.click(screen.getByRole("button", { name: "Apply" }))
   await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
 
-  // Contract: "omit it for a custom profile". Sending "Security-first" here
-  // would mislabel a profile that is not Security-first.
+  // The name is omitted for a custom profile: sending "Security-first" here
+  // would mislabel one that is not.
   expect(put.mock.calls[0][0].name).toBeUndefined()
   put.mockRestore()
 })

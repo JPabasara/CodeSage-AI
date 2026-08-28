@@ -1,10 +1,8 @@
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// Journey 1 — the happy path, plus D-CR7 (J3.1): finding detail renders IN THE
-// PAGE, not as a slide-over. Keep this one green forever: it is the smoke alarm
-// for the whole demo.
-// ────────────────────────────────────────────────────────────────────────────
+// The happy path, plus finding detail rendering in the page rather than as a
+// slide-over. Keep this one green forever: it is the smoke alarm for the whole
+// demo.
 
 /** The detail panel, matched exactly — "Close finding detail" contains it too. */
 const detailPanel = (page: import("@playwright/test").Page) =>
@@ -61,7 +59,7 @@ test("selecting a finding swaps the health card for the detail, in place", async
     detail.getByText("src/payments/payment_service.ts:42"),
   ).toBeVisible()
 
-  // D-CR7: the region was REPLACED, not covered. No dialog, no blurred page.
+  // The region was replaced, not covered. No dialog, no blurred page.
   await expect(page.getByText("Code Health")).toBeHidden()
   await expect(page.getByRole("dialog")).toHaveCount(0)
 

@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 /**
- * Fails if `src/lib/types/api.ts` is not what `docs/api/openapi.yaml` generates.
+ * Fails if `src/lib/types/api.ts` is not what the OpenAPI contract generates.
  *
  * This is the guard that stops the contract and the generated types drifting
  * apart silently. Edit the contract without regenerating — or hand-edit the
  * generated file — and this exits 1.
  *
- * Why a script rather than the one-liner `openapi-typescript … | diff -`:
- * `diff` is not a command on Windows, and pnpm runs scripts through `cmd.exe`
- * there. Everyone on the team has to be able to run this, so it is Node.
+ * A script rather than `openapi-typescript … | diff -`, because `diff` is not a
+ * command on Windows and pnpm runs scripts through `cmd.exe` there.
  *
- * Line endings are normalised before comparing. `core.autocrlf` is on for this
- * repo, so once the generated file is committed git hands Windows checkouts a
- * CRLF copy, while the generator always emits LF. Comparing raw bytes would
+ * Line endings are normalised before comparing: git hands Windows checkouts a
+ * CRLF copy while the generator always emits LF, so comparing raw bytes would
  * report every line as changed on one machine and none on another.
  */
 

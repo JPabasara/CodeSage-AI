@@ -2,13 +2,11 @@ import { test as signedOut, expect } from "@playwright/test"
 
 import { DEMO_REPO_ID, SESSION_COOKIE, test as signedIn } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// J3.3 — route protection.
+// Route protection.
 //
-// These use the RAW Playwright `test`, not the signed-in fixture: the whole
-// point is to arrive with no session cookie. Every other spec in this folder
-// imports from ./session and is signed in before it starts.
-// ────────────────────────────────────────────────────────────────────────────
+// These use the raw Playwright `test`, not the signed-in fixture: the point is
+// to arrive with no session cookie. Every other spec imports from ./session and
+// is signed in before it starts.
 
 const PROTECTED = [
   "/projects",
@@ -44,9 +42,9 @@ signedOut(
   async ({ page }) => {
     await page.goto("/login")
 
-    // A plain link, deliberately: the browser has to LEAVE this page for OIDC, and
-    // a service worker cannot intercept a navigation. This is as far as an E2E can
-    // follow sign-in — the rest is Asgardeo's consent screen. See e2e/session.ts.
+    // A plain link, deliberately: the browser has to leave this page for OIDC,
+    // and a service worker cannot intercept a navigation. This is as far as an
+    // E2E can follow sign-in.
     const signIn = page.getByRole("link", { name: /^sign in$/i })
     await expect(signIn).toBeVisible()
     await expect(signIn).toHaveAttribute("href", /\/api\/auth\/login$/)
@@ -85,8 +83,8 @@ signedIn(
     await page.goto("/projects")
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
 
-    // Exactly what an expiry looks like to the browser: the cookie is gone, so the
-    // next navigation has no session. Without J3.3 this rendered a shell with an
+    // Exactly what an expiry looks like to the browser: the cookie is gone, so
+    // the next navigation has no session. This used to render a shell with an
     // error inside it instead of bouncing to sign-in.
     await context.clearCookies({ name: SESSION_COOKIE })
     await page.goto("/projects")

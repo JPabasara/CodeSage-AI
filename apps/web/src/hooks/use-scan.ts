@@ -11,12 +11,11 @@ const POLL_MS = 600
 const IDLE: ScanStatus = { scan_id: "", phase: "idle", progress: 0 }
 
 /**
- * Drives the Scan button. `scan(branch)` POSTs to start, then polls the scan
- * endpoint until the backend says `done`; `stop()` cancels. `onComplete` runs
- * once on success — the dashboard uses it to refetch the health report (9.3).
+ * Drives the Scan button. `scan(branch)` starts one and polls until the backend
+ * says `done`; `stop()` cancels. `onComplete` runs once on success — the
+ * dashboard uses it to refetch the health report.
  *
- * State is only ever set inside callbacks (never in the effect body), so this
- * stays clear of React 19's react-hooks/set-state-in-effect rule.
+ * State is only ever set inside callbacks, never in the effect body.
  */
 export function useScan(repoId: string, onComplete?: () => void) {
   const [status, setStatus] = useState<ScanStatus>(IDLE)
@@ -67,13 +66,12 @@ export function useScan(repoId: string, onComplete?: () => void) {
   )
 
   /**
-   * Ask the backend to cancel. Deliberately does NOT stop polling.
+   * Ask the backend to cancel. Deliberately does not stop polling.
    *
    * Cancellation is cooperative: the POST returns 202 with the phase usually
    * still "running", because the worker only stops at the next stage boundary.
-   * The scan is over when a poll reports "cancelled" — and that poll is what
-   * clears the timer and raises the toast. Clearing the timer here instead would
-   * strand the UI on "Scanning…" forever.
+   * The scan is over when a poll reports "cancelled", and that poll clears the
+   * timer. Clearing it here would strand the UI on "Scanning…".
    */
   const stop = useCallback(async () => {
     setStopping(true)

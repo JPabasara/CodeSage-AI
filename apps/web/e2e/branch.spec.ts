@@ -1,9 +1,7 @@
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// Journey 3 — branch re-scoping. "Trends and deltas are per branch", so picking
-// a different branch has to move every number on the page, not just a label.
-// ────────────────────────────────────────────────────────────────────────────
+// Branch re-scoping. Trends and deltas are per branch, so picking a different
+// branch has to move every number on the page, not just a label.
 
 async function pickBranch(page: import("@playwright/test").Page, name: string) {
   await page.getByRole("combobox", { name: /branch/i }).click()
