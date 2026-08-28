@@ -88,9 +88,7 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
         try:
             with session_scope() as session:
                 set_workspace_context(session, workspace_uuid)
-                scan_input = attempts.begin_for_worker(
-                    session, workspace_uuid, attempt_uuid
-                )
+                scan_input = attempts.begin_for_worker(session, workspace_uuid, attempt_uuid)
                 stored_rules = rules.list_definitions(session)
             if scan_input is None:
                 logger.error("Scan attempt was not found in its workspace")
@@ -135,9 +133,7 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
             risk_result: RiskClientResult | None = None
             try:
                 process_by_path = {p.path: p for p in extracted.process_metrics}
-                risk_result = risk_client.predict(
-                    extracted.static_metrics, process_by_path
-                )
+                risk_result = risk_client.predict(extracted.static_metrics, process_by_path)
             except MLServiceUnavailable as exc:
                 logger.warning(
                     "ML risk service unavailable; scan proceeding in degraded mode",
@@ -161,7 +157,9 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
             snapshot_id = _finalize(
                 attempt_uuid,
                 workspace_uuid,
-                PipelineResults(extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions),
+                PipelineResults(
+                    extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions
+                ),
             )
             progress.publish_progress(attempt_id, 100)
             try:
@@ -217,23 +215,46 @@ def _finalize(
         session.add(snapshot)
         session.flush()
 
-        # Look up or insert MLModelVersion if risk predictions were generated
+        # Register the exact ML-2 version before storing predictions.  Use the
+        # same conflict-safe pattern as ML-1: concurrent scans may observe a new
+        # model version at the same time.
         model_version_record: MLModelVersion | None = None
-        if results.risk_result and results.risk_result.model_version:
+        if results.risk_result and results.risk_result.scores and results.risk_result.model_version:
             v_name = results.risk_result.model_version
-            stmt = select(MLModelVersion).where(MLModelVersion.version == v_name)
-            model_version_record = session.scalars(stmt).first()
-            if model_version_record is None:
-                model_version_record = MLModelVersion(
-                    model_type="risk",
-                    version=v_name,
+            session.execute(
+                insert(MLModelVersion)
+                .values(
+                    model_type=MLModelType.BUG_RISK,
+                    version_identifier=v_name,
+                    training_date=datetime.now(UTC),
+                    deployment_status=ModelDeploymentStatus.DEPLOYED,
+                    evaluation_dataset_reference="D'Ambros/AEEEM",
+                    evaluation_metrics={"registration": "runtime model response"},
                 )
-                session.add(model_version_record)
-                session.flush()
+                .on_conflict_do_nothing(index_elements=["model_type", "version_identifier"])
+            )
+            model_version_record = session.scalar(
+                select(MLModelVersion).where(
+                    MLModelVersion.model_type == MLModelType.BUG_RISK,
+                    MLModelVersion.version_identifier == v_name,
+                )
+            )
+            if model_version_record is None:
+                raise RuntimeError("Bug-risk model version could not be registered.")
 
-        process_by_path = {
-            item.path: item for item in results.extraction.process_metrics
-        }
+            link = session.get(
+                AnalysisEngineModelVersion,
+                (attempt.analysis_engine_version_id, model_version_record.id),
+            )
+            if link is None:
+                session.add(
+                    AnalysisEngineModelVersion(
+                        analysis_engine_version_id=attempt.analysis_engine_version_id,
+                        model_version_id=model_version_record.id,
+                    )
+                )
+
+        process_by_path = {item.path: item for item in results.extraction.process_metrics}
         files_by_path: dict[str, SourceFile] = {}
         for metrics in results.extraction.static_metrics:
             source_file = SourceFile(
@@ -341,9 +362,7 @@ def _finalize(
                         ),
                         evaluation_metrics={"registration": "runtime model response"},
                     )
-                    .on_conflict_do_nothing(
-                        index_elements=["model_type", "version_identifier"]
-                    )
+                    .on_conflict_do_nothing(index_elements=["model_type", "version_identifier"])
                 )
                 model_version = session.scalar(
                     select(MLModelVersion).where(
@@ -406,9 +425,7 @@ def _finalize(
                     measured_value=None,
                     threshold=None,
                     confidence=result.confidence,
-                    fingerprint=satd_fingerprint(
-                        result.comment.file_path, result.comment.text
-                    ),
+                    fingerprint=satd_fingerprint(result.comment.file_path, result.comment.text),
                 )
             )
 
