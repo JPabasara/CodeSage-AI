@@ -1,8 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import httpx
 import pytest
-from unittest.mock import patch, MagicMock
 
-from codesage_api.detection.risk.client import predict, RiskClientResult
+from codesage_api.detection.risk.client import RiskClientResult, predict
 from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.ck_metrics import FileMetrics
 from codesage_api.extractors.process_metrics import FileProcessMetrics
@@ -38,9 +39,7 @@ def test_risk_client_predict_success():
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "scores": [
-            {"path": "src/Main.java", "risk_score": 0.78}
-        ],
+        "scores": [{"path": "src/Main.java", "risk_score": 0.78}],
         "model_version": "risk-1.0.0",
     }
 
@@ -58,6 +57,8 @@ def test_risk_client_predict_success():
         assert sent_payload["files"][0]["metrics"]["wmc"] == 12.0
         assert sent_payload["files"][0]["metrics"]["cbo"] == 4.0
         assert sent_payload["files"][0]["metrics"]["commits_90d"] == 15.0
+        assert sent_payload["files"][0]["metrics"]["comment_ratio"] == 0.0
+        assert len(sent_payload["files"][0]["metrics"]) == 13
 
 
 def test_risk_client_empty_inputs():
@@ -66,45 +67,39 @@ def test_risk_client_empty_inputs():
         result = predict([], {})
         assert isinstance(result, RiskClientResult)
         assert result.scores == {}
+        assert result.model_version == ""
         assert not mock_post.called
 
 
 def test_risk_client_handles_network_error():
     """Verify risk client raises MLServiceUnavailable on network errors for graceful degradation."""
-    static_files = [
-        FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)
-    ]
+    static_files = [FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)]
 
-    with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
-        with pytest.raises(MLServiceUnavailable):
-            predict(static_files, {})
+    with patch(
+        "httpx.post", side_effect=httpx.ConnectError("Connection refused")
+    ), pytest.raises(MLServiceUnavailable):
+        predict(static_files, {})
 
 
 def test_risk_client_handles_malformed_response():
     """Verify risk client raises MLServiceUnavailable on malformed JSON or payload."""
-    static_files = [
-        FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)
-    ]
+    static_files = [FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)]
 
     # Case 1: Malformed JSON
     mock_bad_json = MagicMock()
     mock_bad_json.status_code = 200
     mock_bad_json.json.side_effect = ValueError("Invalid JSON response")
 
-    with patch("httpx.post", return_value=mock_bad_json):
-        with pytest.raises(MLServiceUnavailable):
-            predict(static_files, {})
+    with patch("httpx.post", return_value=mock_bad_json), pytest.raises(MLServiceUnavailable):
+        predict(static_files, {})
 
     # Case 2: Missing expected keys
     mock_bad_schema = MagicMock()
     mock_bad_schema.status_code = 200
-    mock_bad_schema.json.return_value = {
-        "scores": [{"missing_path_key": 0.5}]
-    }
+    mock_bad_schema.json.return_value = {"scores": [{"missing_path_key": 0.5}]}
 
-    with patch("httpx.post", return_value=mock_bad_schema):
-        with pytest.raises(MLServiceUnavailable):
-            predict(static_files, {})
+    with patch("httpx.post", return_value=mock_bad_schema), pytest.raises(MLServiceUnavailable):
+        predict(static_files, {})
 
 
 def test_risk_client_handles_http_500_error():
@@ -117,13 +112,12 @@ def test_risk_client_handles_http_500_error():
         "Server Error", request=MagicMock(), response=mock_response
     )
 
-    with patch("httpx.post", return_value=mock_response):
-        with pytest.raises(MLServiceUnavailable):
-            predict(static_files, {})
+    with patch("httpx.post", return_value=mock_response), pytest.raises(MLServiceUnavailable):
+        predict(static_files, {})
 
 
 def test_risk_client_handles_process_only_metrics():
-    """Verify risk client correctly handles files that only have process metrics without static metrics."""
+    """Process-only and non-Java history entries are not valid ML-2 entities."""
     process_metrics = {
         "src/DeletedOrNonJava.txt": FileProcessMetrics(
             path="src/DeletedOrNonJava.txt",
@@ -134,20 +128,36 @@ def test_risk_client_handles_process_only_metrics():
         )
     }
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "scores": [{"path": "src/DeletedOrNonJava.txt", "risk_score": 0.35}],
-        "model_version": "risk-1.0.0",
-    }
-
-    with patch("httpx.post", return_value=mock_response) as mock_post:
+    with patch("httpx.post") as mock_post:
         result = predict([], process_metrics)
-        assert isinstance(result, RiskClientResult)
-        assert result.scores == {"src/DeletedOrNonJava.txt": 0.35}
-        sent_payload = mock_post.call_args[1]["json"]
-        assert len(sent_payload["files"]) == 1
-        assert sent_payload["files"][0]["path"] == "src/DeletedOrNonJava.txt"
-        assert sent_payload["files"][0]["metrics"]["commits_90d"] == 5.0
+    assert result == RiskClientResult(scores={}, model_version="")
+    mock_post.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "response_payload",
+    [
+        {"scores": [], "model_version": "risk-1.0.0"},
+        {
+            "scores": [
+                {"path": "src/A.java", "risk_score": 0.4},
+                {"path": "src/A.java", "risk_score": 0.5},
+            ],
+            "model_version": "risk-1.0.0",
+        },
+        {
+            "scores": [{"path": "src/Other.java", "risk_score": 0.4}],
+            "model_version": "risk-1.0.0",
+        },
+        {"scores": [{"path": "src/A.java", "risk_score": 0.4}]},
+    ],
+)
+def test_risk_client_rejects_incomplete_or_inconsistent_responses(
+    response_payload: dict[str, object],
+) -> None:
+    static_files = [FileMetrics("src/A.java", 100, 5.0, 2, 4, 20, 1.0, 1.0, 0.0, 5.0, 0.0)]
+    response = MagicMock()
+    response.json.return_value = response_payload
+
+    with patch("httpx.post", return_value=response), pytest.raises(MLServiceUnavailable):
+        predict(static_files, {})
