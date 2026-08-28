@@ -136,10 +136,15 @@ jobs:
       - name: Layer check (import-linter)
         run: lint-imports
 
-      # -rs prints WHY anything skipped. That matters more than usual here: the
-      # six Row-Level Security tests currently skip, and a silent skip in a
-      # security test is a green tick that proves nothing. See the deployment
-      # log, Entry 3.
+      # This is deliberately separate from the general test step. The RLS
+      # fixture executes `alembic upgrade head` against PostgreSQL, so a broken
+      # migration cannot hide behind unit tests built from ORM metadata. The
+      # fixture permits a local skip when Docker is absent, but CI=true converts
+      # that condition—and every migration/setup exception—into a hard failure.
+      - name: Database migrations, constraints, and tenant isolation
+        run: pytest -q -rs tests/integration/test_rls.py tests/integration/test_database_constraints.py
+
+      # -rs keeps any optional local-only skips visible in the general suite.
       - name: Tests
         run: pytest -q -rs
 

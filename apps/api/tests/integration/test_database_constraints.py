@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Iterator
 
@@ -18,14 +19,18 @@ PostgresContainer = testcontainers.PostgresContainer
 
 @pytest.fixture(scope="module")
 def postgres_engine() -> Iterator[object]:
+    postgres_started = False
     try:
         with PostgresContainer("postgres:16-alpine") as postgres:
+            postgres_started = True
             url = make_url(postgres.get_connection_url()).set(drivername="postgresql+psycopg")
             engine = create_engine(url)
             Base.metadata.create_all(engine)
             yield engine
             engine.dispose()
-    except Exception as exc: 
+    except Exception as exc:
+        if postgres_started or os.environ.get("CI") == "true":
+            raise
         pytest.skip(f"Docker/PostgreSQL is unavailable: {exc}")
 
 
