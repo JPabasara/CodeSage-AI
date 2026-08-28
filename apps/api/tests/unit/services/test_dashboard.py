@@ -61,12 +61,13 @@ def _snapshot(
     scanned_at: datetime,
     commit_sha: str,
     with_finding: bool,
+    branch_name: str = "main",
 ) -> Snapshot:
     attempt_id = uuid.uuid4()
     branch = Branch(
         id=uuid.uuid4(),
         repository_id=uuid.uuid4(),
-        name="main",
+        name=branch_name,
         head_commit_sha=commit_sha,
         is_default=True,
     )
@@ -297,3 +298,51 @@ def test_scan_history_is_newest_first_and_uses_current_profile(
     assert [item.snapshot_id for item in history] == [str(current.id), str(previous.id)]
     assert history[0].delta == -32.0
     assert history[1].delta == 0.0
+
+
+@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_repository_scan_history_keeps_deltas_independent_per_branch(
+    list_snapshots: Mock,
+    _active_profile: Mock,
+) -> None:
+    now = datetime(2026, 8, 25, tzinfo=UTC)
+    main_previous = _snapshot(
+        scanned_at=now,
+        commit_sha="a" * 40,
+        with_finding=False,
+        branch_name="main",
+    )
+    release_previous = _snapshot(
+        scanned_at=now + timedelta(hours=1),
+        commit_sha="b" * 40,
+        with_finding=True,
+        branch_name="release",
+    )
+    main_current = _snapshot(
+        scanned_at=now + timedelta(days=1),
+        commit_sha="c" * 40,
+        with_finding=True,
+        branch_name="main",
+    )
+    release_current = _snapshot(
+        scanned_at=now + timedelta(days=1, hours=1),
+        commit_sha="d" * 40,
+        with_finding=False,
+        branch_name="release",
+    )
+    snapshots = [main_previous, release_previous, main_current, release_current]
+    list_snapshots.return_value = snapshots
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = [
+        _ready_cache(snapshot, _profile()) for snapshot in snapshots
+    ]
+
+    history = dashboard.build_scan_history(
+        session, uuid.uuid4(), uuid.uuid4(), None
+    )
+
+    assert [item.branch for item in history] == ["release", "main", "release", "main"]
+    assert [item.delta for item in history] == [32.0, -32.0, 0.0, 0.0]
+    list_snapshots.assert_called_once()
+    assert list_snapshots.call_args.args[-1] is None
