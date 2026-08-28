@@ -6,9 +6,9 @@ MLServiceUnavailable when the container is down or returns a malformed response.
 
 from __future__ import annotations
 
-import httpx
-
 from dataclasses import dataclass
+
+import httpx
 
 from codesage_api.config import get_settings
 from codesage_api.errors import MLServiceUnavailable
@@ -22,18 +22,17 @@ class RiskClientResult:
     model_version: str
 
 
-def predict(
-    files: list[FileMetrics], process: dict[str, FileProcessMetrics]
-) -> RiskClientResult:
+def predict(files: list[FileMetrics], process: dict[str, FileProcessMetrics]) -> RiskClientResult:
     """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0) and model version."""
-    if not files and not process:
-        return RiskClientResult(scores={}, model_version="risk-1.0.0")
+    if not files:
+        return RiskClientResult(scores={}, model_version="")
 
     settings = get_settings()
     url = f"{settings.ml_service_url.rstrip('/')}/risk"
 
-    # Gather all file paths from both static and process metrics
-    all_paths = {f.path for f in files} | set(process.keys())
+    # ML-2 is Java/file scoped. History can contain deleted or non-Java paths,
+    # but those have no compatible CK vector and must not be predicted.
+    all_paths = {f.path for f in files}
     files_by_path = {f.path: f for f in files}
 
     payload_files = []
@@ -51,6 +50,9 @@ def predict(
             metrics["lcom"] = float(file_metrics.lcom)
             metrics["rfc"] = float(file_metrics.rfc)
             metrics["noc"] = float(file_metrics.noc)
+            # CK does not currently emit comment lines. Keep the constant
+            # explicit so the wire contract still has all 13 canonical fields.
+            metrics["comment_ratio"] = 0.0
         if proc_metrics:
             metrics["commits_90d"] = float(proc_metrics.commits_90d)
             metrics["author_count"] = float(proc_metrics.author_count)
@@ -62,20 +64,32 @@ def predict(
     payload = {"files": payload_files}
 
     try:
-        response = httpx.post(url, json=payload, timeout=30.0)
+        response = httpx.post(url, json=payload, timeout=settings.ml_timeout_seconds)
         response.raise_for_status()
         data = response.json()
-        model_version = str(data.get("model_version", "risk-1.0.0"))
-        raw_scores = data.get("scores", [])
-        
+        model_version = data.get("model_version")
+        raw_scores = data.get("scores")
+        if not isinstance(model_version, str) or not model_version.strip():
+            raise ValueError("Risk response is missing model_version")
+        if not isinstance(raw_scores, list):
+            raise TypeError("Risk response scores must be a list")
+
         scores: dict[str, float] = {}
         for item in raw_scores:
             p = str(item["path"])
+            if p not in all_paths:
+                raise ValueError(f"Risk response contains unexpected path {p!r}")
+            if p in scores:
+                raise ValueError(f"Risk response contains duplicate path {p!r}")
             score = float(item["risk_score"])
             if not (0.0 <= score <= 1.0):
                 raise ValueError(f"Risk score {score} out of bounds [0.0, 1.0]")
             scores[p] = score
 
-        return RiskClientResult(scores=scores, model_version=model_version)
+        missing_paths = all_paths - scores.keys()
+        if missing_paths:
+            raise ValueError(f"Risk response is missing paths: {', '.join(sorted(missing_paths))}")
+
+        return RiskClientResult(scores=scores, model_version=model_version.strip())
     except Exception as exc:
         raise MLServiceUnavailable(f"Failed to communicate with ML risk service: {exc}") from exc
