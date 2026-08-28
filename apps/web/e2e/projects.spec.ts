@@ -2,14 +2,12 @@ import { readFileSync } from "node:fs"
 
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// J2.10 — connect a repository, and the four ways it can fail.
+// Connect a repository, and the four ways it can fail.
 //
-// Each failure has its own `code` in the contract precisely because each is a
-// different thing for the user to DO about it. A bare "400 Bad Request" leaves
-// someone who pasted their own private repository with no idea what went wrong,
-// so these assert the MESSAGE, not the status.
-// ────────────────────────────────────────────────────────────────────────────
+// Each failure has its own `code` precisely because each is a different thing
+// for the user to do about it. A bare "400 Bad Request" leaves someone who
+// pasted their own private repository with no idea what went wrong, so these
+// assert the message, not the status.
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/projects")
@@ -32,8 +30,8 @@ test("the list shows each repository with its visibility and health hint", async
   // Grade + score + signed delta, from the DERIVED latest_health hint.
   await expect(payments.getByText(/\b72\/100\b/)).toBeVisible()
 
-  // Visibility is recorded and displayed from v1.0 (FR-3) even though
-  // CONNECTING a private repository is v2 — so a private row must render.
+  // Visibility is recorded and displayed even though connecting a private
+  // repository is v2 — so a private row must render.
   const octo = page.getByRole("listitem").filter({ hasText: "octo-cli" })
   await expect(octo.getByText("private")).toBeVisible()
 })

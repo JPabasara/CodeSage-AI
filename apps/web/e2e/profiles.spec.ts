@@ -1,16 +1,11 @@
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// The profiles journey the build guide asks for (§10.5.6):
+// The profiles journey: pick a preset, drag a slider, press Apply, then assert
+// the list re-orders AND no scan is triggered.
 //
-//   "pick a preset, drag a slider, press Apply, assert the list re-orders AND
-//    no scan is triggered — route-assert that **/api/repos/*/scan is never hit,
-//    and that exactly one PUT **/api/profiles/active fired."
-//
-// That last half is the point. FR-20 says a profile change is NOT a scan and
-// writes NO snapshot; the only way to prove a negative like that is to watch the
+// That last half is the point. A profile change is not a scan and writes no
+// snapshot, and the only way to prove a negative like that is to watch the
 // network and assert the request never happened.
-// ────────────────────────────────────────────────────────────────────────────
 
 /** Count the requests a journey makes, so "nothing was scanned" is checkable. */
 function watchRequests(page: import("@playwright/test").Page) {
@@ -42,7 +37,7 @@ test("the page opens showing the profile that is really in force", async ({
 test("there are exactly five category weights, plus the trust slider", async ({
   page,
 }) => {
-  // Five categories (FR-9.3) — not four, and not the six the pre-CR-001 shape had.
+  // Five categories — not four, and not the six an earlier shape had.
   for (const label of [
     "Security",
     "Code design",
@@ -97,7 +92,7 @@ test("Apply writes exactly once and starts no scan", async ({ page }) => {
     requests.profileWrites(),
     "PUT is idempotent and fires once",
   ).toHaveLength(1)
-  // FR-20: six numbers change on one row. No snapshot, no scan, no worker.
+  // Six numbers change on one row. No snapshot, no scan, no worker.
   expect(
     requests.scans(),
     "a profile change must never trigger a scan",

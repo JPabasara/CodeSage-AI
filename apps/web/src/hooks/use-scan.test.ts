@@ -95,7 +95,7 @@ test("stop pressed during finalize is too late - the scan still completes", asyn
   })
   // Run it into the finalize window (progress 85), where the worker no longer
   // reads the cancel flag: a half-written snapshot would be indistinguishable
-  // from a complete one (FR-6).
+  // from a complete one.
   await act(async () => {
     await vi.advanceTimersByTimeAsync(600 * 5)
   })

@@ -1,46 +1,37 @@
-// ────────────────────────────────────────────────────────────────────────────
-// Code Sage AI — THE DATA CONTRACT
-// Single source of truth for the shapes that flow between the frontend, the mock
-// API (MSW), and the real FastAPI backend. Everyone imports from `@/lib/types`.
+// The data contract — the shapes that flow between the frontend, the mock API
+// and the real backend. Everyone imports from `@/lib/types`.
 //
-// THESE SHAPES MATCH `docs/api/openapi.yaml` EXACTLY (J2.2) — field names,
-// required/optional, and nullability. The generated `./api.ts` is the authority;
-// when the two disagree, api.ts wins and this file is wrong.
+// These match the OpenAPI contract exactly: field names, required/optional and
+// nullability. The generated `./api.ts` is the authority; when the two disagree,
+// api.ts wins and this file is wrong.
 //
-// Two consequences worth knowing before you edit:
-//   * snake_case is the name ON THE WIRE. Do not "tidy" a field to camelCase.
+// Two things to know before editing:
+//   * snake_case is the name on the wire. Do not "tidy" a field to camelCase.
 //   * `?: T | null` means the backend may omit it OR send null. Both happen, and
-//     they mean the same thing to the UI: render the fallback.
+//     both mean the same to the UI: render the fallback.
 //
-// React component props are a separate, internal API and stay camelCase.
-//
-// See docs: release-roadmap.md · code-sage_backend-analysis-engine.md (§4 source
-// vs category, §6 scoring, §7 outputs).
-// ────────────────────────────────────────────────────────────────────────────
+// React component props are internal and stay camelCase.
 
 // ── enums ───────────────────────────────────────────────────────────────────
 
 /**
- * HOW BAD the finding is. Assigned by the DETECTOR at scan time and stored on the
- * row — never computed here. Rules carry a fixed severity (see the rule register,
- * SRS Appendix C); SATD findings default to "medium" (ML-1 predicts `category`
- * only); the risk model produces no Finding at all. The client's only job is to
- * map this string to a colour token (`severityColor`). SRS FR-8.1.
+ * How bad the finding is. Assigned by the detector at scan time and stored on the
+ * row, never computed here — rules carry a fixed severity, SATD findings default
+ * to "medium". The client only maps this to a colour token.
  */
 export type Severity = "critical" | "high" | "medium" | "low"
 
 /**
- * WHICH DETECTOR produced the finding (orthogonal to `Category`). **Exactly two
- * values** (FR-8.2).
+ * Which detector produced the finding — orthogonal to `Category`, and exactly two
+ * values.
  *
  * There is no `security` source: security patterns run inside the rule engine, so
- * a security finding is a `rule` finding whose `category` is `security`. There is
- * no `ml-risk` source either — the risk model scores files, it never emits a
- * Finding (see `FileScore.risk_score`).
+ * a security finding is a `rule` finding categorised `security`. Nor an `ml-risk`
+ * one — the risk model scores files, it never emits a finding.
  */
 export type Source = "rule" | "satd"
 
-/** WHAT TYPE of debt it is (orthogonal to `Source`). Must equal SATD dataset labels. */
+/** What type of debt it is — orthogonal to `Source`. Matches the dataset labels. */
 export type Category =
   | "code-design" // rule engine + SATD   (dataset label: "code/design")
   | "requirement" // SATD
@@ -49,13 +40,12 @@ export type Category =
   | "security" // rule engine (security patterns: secrets, SQL concat, eval/exec)
 
 /**
- * v1.0 is view-only: every finding is `open`. The later values exist now because
- * FR-11 sums *open* finding priorities — the filter needs something to filter on.
- * The v1.1 accept / resolve / false-positive actions will set them.
+ * v1.0 is view-only: every finding is `open`. The other values exist now because
+ * scoring sums *open* priorities, so the filter needs something to filter on.
  */
 export type FindingStatus = "open" | "accepted" | "resolved" | "false-positive"
 
-//A to E grades are used to indicate the overall health of a repo or file. A is the best, E is the worst.
+// A is best, E is worst.
 export type Grade = "A" | "B" | "C" | "D" | "E"
 
 // ── Errors ──────────────────────────────────────────────────────────────────
@@ -116,16 +106,16 @@ export interface Finding {
   file: string
   line: number
   symbol?: string | null // the function/class it sits on; null for file-scoped rules
-  reason: string // one-line TEMPLATE explanation — the anti-noise differentiator (§8)
+  reason: string // one-line templated explanation of why this fired
 
-  status: FindingStatus // v1: read-only, backend-set (default "open"); user actions are v1.1
+  status: FindingStatus // read-only in v1; backend-set, defaults to "open"
 
   /** Derived on this request under the active profile; the list arrives sorted by it. */
   priority: number
   /**
-   * True when the critical-security visibility floor (FR-24) is what keeps this row
-   * visible, rather than its computed priority. Lets the UI explain why a finding is
-   * present even at the minimum `security` weight of 0.1.
+   * True when the critical-security floor is what keeps this row visible, rather
+   * than its computed priority — so the UI can explain why it is still here at
+   * the minimum security weight.
    */
   pinned_by_floor: boolean
 
@@ -133,23 +123,21 @@ export interface Finding {
   metric_value?: number | null // rule findings: measured value (e.g. CCN 18)
   threshold?: number | null // rule findings: the limit crossed (e.g. 15)
   comment_text?: string | null // SATD findings: the developer's own words, as evidence
-  confidence?: number | null // SATD findings: ML-1's confidence in the category, 0–1
+  confidence?: number | null // SATD findings: model confidence in the category, 0–1
 }
 
 // ── Per-file scores: power the heat map + hotspot ranking ───────────────────
 
 export interface FileScore {
   file: string
-  /** Σ of the priorities of this file's open findings. Derived, never stored.
-   *  CR-001 D-CR5 removed the additive ML term: risk is a MULTIPLIER now. */
+  /** Σ of the priorities of this file's open findings. Derived, never stored. */
   debt_score: number
   /**
-   * ML-2 bug-proneness, 0–1 — a STORED fact, not derived.
+   * Bug-proneness, 0–1 — a stored fact, not derived.
    *
-   * Required but nullable, and the difference matters: `null` means the ML
-   * service was unreachable when this snapshot was taken, so no estimate
-   * exists. `0.0` means "measured, and this file looks safe". Render `null` as
-   * "not assessed", never as a zero-risk badge.
+   * Required but nullable, and the difference matters: `null` means never
+   * assessed, `0.0` means measured and looks safe. Render `null` as "not
+   * assessed", never as a zero-risk badge.
    */
   risk_score: number | null
 }
@@ -173,7 +161,7 @@ export interface Repo {
   id: string
   name: string
   owner: string
-  visibility: "public" | "private" // recorded from v1.0; CONNECTING a private repo is v2
+  visibility: "public" | "private" // recorded now; connecting a private repo is v2
   url: string
   default_branch: string
   connected_at: string // ISO
@@ -201,8 +189,8 @@ export interface Branch {
 /**
  * `idle → queued → running → done | error | cancelled`.
  *
- * `cancelled` is a DISTINCT terminal phase, never `idle` — so a scan somebody
- * stopped can never be mistaken for one that completed, or for one that never ran.
+ * `cancelled` is a distinct terminal phase, never `idle`, so a stopped scan is
+ * never mistaken for one that finished or one that never ran.
  */
 export type ScanPhase =
   "idle" | "queued" | "running" | "done" | "error" | "cancelled"
@@ -217,7 +205,7 @@ export interface ScanStatus {
   commit_sha?: string | null // the commit this scan is analysing
   started_at?: string | null
   finished_at?: string | null
-  error?: string | null // present only when phase === "error" (SP-13)
+  error?: string | null // present only when phase === "error"
 }
 
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──
@@ -262,9 +250,8 @@ export interface CategoryWeights {
 }
 
 /**
- * The body of `PUT /api/profiles/active`. The COMPLETE profile — six numbers,
- * never a delta. That is what makes the write idempotent: retrying after a
- * dropped response cannot leave a half-applied profile.
+ * The body of `PUT /api/profiles/active` — the complete profile, six numbers,
+ * never a delta. That is what makes the write idempotent.
  */
 export interface ApplyProfileRequest {
   name?: string | null // records which preset the values came from; omit for custom
@@ -273,10 +260,8 @@ export interface ApplyProfileRequest {
 }
 
 /**
- * Bounds from the contract. **The server is the enforcement point** — it clamps on
- * write and returns what it stored. These exist so the sliders cannot produce a
- * value the server would have to correct; they are a usability affordance, not the
- * rule.
+ * The server is the enforcement point — it clamps on write and returns what it
+ * stored. These exist so the sliders cannot produce a value it would correct.
  */
 export const WEIGHT_MIN = 0.1
 export const WEIGHT_MAX = 3.0
@@ -288,11 +273,10 @@ export interface ScoreProfile {
   name: string // "Balanced" | "Security-first" | "Delivery-speed" | a custom name
   weights: CategoryWeights
   /**
-   * The trust slider `s`. `0` = trust the model, `1` = trust the rules. Scoring
-   * derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it (FR-11).
+   * The trust slider `s`: `0` trusts the model, `1` trusts the rules. Scoring
+   * derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s`.
    *
-   * Security findings are excluded: `source_trust` is fixed at 1.0 for the
-   * `security` category, so no position of this slider can de-weight them.
+   * Security is fixed at 1.0, so no position of this slider de-weights it.
    */
   trust_s: number
   is_preset: boolean // presets are read-only templates that seed the sliders
@@ -320,7 +304,7 @@ export interface HealthReport {
   category_breakdown: CategoryBreakdownItem[] // the pie
 }
 
-// ── v2 — teams & RBAC. Seam only; NOT built in v1 (see roadmap). ────────────
+// ── v2 — teams & roles. Seam only; not built in v1. ─────────────────────────
 
 export type Role = "org-admin" | "manager" | "developer" | "viewer" // v2
 export interface Member {

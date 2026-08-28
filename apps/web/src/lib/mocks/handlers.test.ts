@@ -1,25 +1,21 @@
-// ────────────────────────────────────────────────────────────────────────────
-// DO THE MOCKS TELL THE TRUTH?
+// Do the mocks tell the truth?
 //
-// The mocks are what the whole frontend is built against while the backend
-// endpoints are still stubs. If they drift from `docs/api/openapi.yaml`, the
-// component tests pass against a fiction and the live site breaks in ways
-// nothing caught.
+// The frontend is built against these while the backend endpoints are still
+// stubs. If they drift from the OpenAPI contract, the component tests pass
+// against a fiction and the live site breaks with nothing catching it.
 //
-// These tests check RESPONSES, not fixtures — a handler can assemble a shape no
-// fixture ever had — and they check three things the previous version did not:
+// These check RESPONSES, not fixtures — a handler can assemble a shape no
+// fixture ever had — and three things in particular:
 //
-//   • STATUS CODES. 202 for a queued scan, 201 for a connect, 409 for the two
-//     conflicts, 422 for a malformed body. A mock that answers 200 to
-//     everything teaches the UI that failure modes do not exist.
-//   • NO EXTRA KEYS. Every schema in the contract is `additionalProperties:
-//     false`, so a field we invented here is drift, not a bonus.
-//   • DERIVED, NOT STORED. Applying a profile must actually re-rank the list
-//     (FR-21). This is the one the old mock could not have passed.
+//   • Status codes. 202 for a queued scan, 201 for a connect, 409 for the two
+//     conflicts, 422 for a malformed body. A mock that answers 200 to everything
+//     teaches the UI that failure modes do not exist.
+//   • No extra keys. Every schema is `additionalProperties: false`, so a field
+//     invented here is drift, not a bonus.
+//   • Derived, not stored. Applying a profile must actually re-rank the list.
 //
-// Field lists are copied from the contract's `required:` arrays. When the
-// contract changes, these fail — which is the point.
-// ────────────────────────────────────────────────────────────────────────────
+// Field lists come from the contract's `required:` arrays, so a contract change
+// fails these — which is the point.
 import { expect, test } from "vitest"
 
 import type {
@@ -215,8 +211,8 @@ test("GET /repos/:id/branches returns contract-shaped branches", async () => {
       ["head_commit_sha", "head_commit_at"],
       "Branch",
     )
-    // "Full 40-character SHA. The UI shows the first seven." — a 7-char fixture
-    // would let a `.slice(0, 7)` bug through unnoticed.
+    // Full 40-character SHA: a 7-char fixture would let a `.slice(0, 7)` bug
+    // through unnoticed.
     if (branch.head_commit_sha !== null) {
       expect(branch.head_commit_sha).toMatch(SHA40)
     }
@@ -351,8 +347,8 @@ test("the fixture exercises every enum the contract defines", async () => {
     new Set(["rule", "satd"]),
   )
 
-  // The critical-security floor (FR-24) has to be renderable, so at least one
-  // finding must carry it and at least one must not.
+  // The critical-security floor has to be renderable, so at least one finding
+  // must carry it and at least one must not.
   expect(findings.some((f) => f.pinned_by_floor)).toBe(true)
   expect(findings.some((f) => !f.pinned_by_floor)).toBe(true)
 
@@ -393,8 +389,8 @@ test("a null risk_score survives the wire as null, never as 0", async () => {
     `/repos/${DEMO_REPO_ID}/health?branch=main`,
   )
 
-  // "null means the ML service was unreachable" — a different thing from 0.0,
-  // which is a measured "this file looks safe".
+  // null means never assessed — a different thing from 0.0, which is a measured
+  // "this file looks safe".
   expect(file_scores.some((f) => f.risk_score === null)).toBe(true)
   expect(file_scores.some((f) => typeof f.risk_score === "number")).toBe(true)
 
@@ -426,7 +422,7 @@ test("the health report is derived per branch, not one fixture for all", async (
   expect(main.branch).toBe("main")
   expect(dev.branch).toBe("develop")
   expect(dev.health_score).not.toBe(main.health_score)
-  // Trends are per branch too (the contract: "Trends and deltas are per branch").
+  // Trends and deltas are per branch too.
   expect(dev.history.map((p) => p.score)).not.toEqual(
     main.history.map((p) => p.score),
   )
@@ -492,8 +488,7 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
 
 test("the scan lifecycle is contract-shaped, and answers 202 at both writes", async () => {
   const started = await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
-  // 202, not 200: the work is QUEUED, not done. PERF-05 puts it on a Celery
-  // worker, never inside this request.
+  // 202, not 200: the work is queued on a worker, never done in this request.
   expect(started.status).toBe(202)
 
   const scan = (await started.json()) as ScanStatus
@@ -540,7 +535,7 @@ test("stop is cooperative: the phase is unchanged until the NEXT poll", async ()
     `/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`,
   )
   // `cancelled`, never `idle` — a stopped scan must stay distinguishable from
-  // one that never ran (SP-13, DBR-22).
+  // one that never ran.
   expect(after.phase).toBe("cancelled")
 })
 
@@ -621,7 +616,7 @@ test("GET /profiles and /profiles/active are contract-shaped", async () => {
     expectShape(preset, PROFILE_KEYS, [], "ScoreProfile")
     expectShape(preset.weights, WEIGHT_KEYS, [], "CategoryWeights")
     expect(preset.id).toMatch(UUID)
-    // Five weights, no more and no fewer (FR-9.3).
+    // Five weights, no more and no fewer.
     expect(Object.keys(preset.weights)).toHaveLength(5)
   }
   expect(presets.map((p) => p.name)).toEqual([
@@ -629,7 +624,7 @@ test("GET /profiles and /profiles/active are contract-shaped", async () => {
     "Security-first",
     "Delivery-speed",
   ])
-  // "at most one active profile per workspace", enforced by a partial index.
+  // At most one active profile per workspace, enforced by a partial index.
   expect(presets.filter((p) => p.is_active)).toHaveLength(1)
 
   const active = await get<ScoreProfile>("/profiles/active")
@@ -751,19 +746,19 @@ test("scores are DERIVED: applying a profile re-ranks the list with no re-scan",
     `/repos/${DEMO_REPO_ID}/health?branch=main`,
   )
 
-  // FR-21: no column was read, so tripling the security weight moves everything.
+  // No column was read, so tripling the security weight moves everything.
   expect(after.findings.map((f) => f.fingerprint)).not.toEqual(
     before.findings.map((f) => f.fingerprint),
   )
   expect(after.health_score).not.toBe(before.health_score)
-  // FR-14, "one lens per line": the WHOLE history is redrawn, not just today.
+  // One lens per line: the whole history is redrawn, not just today.
   expect(after.history.map((p) => p.score)).not.toEqual(
     before.history.map((p) => p.score),
   )
   // The chart is labelled with the profile, or its changing shape reads as a bug.
   expect(after.profile).toBe("Security-first")
 
-  // FR-20: a profile change writes no snapshot and starts no scan.
+  // A profile change writes no snapshot and starts no scan.
   expect(after.snapshot_id).toBe(before.snapshot_id)
   expect(after.scanned_at).toBe(before.scanned_at)
   expect(after.commit_sha).toBe(before.commit_sha)

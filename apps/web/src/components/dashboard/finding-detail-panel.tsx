@@ -9,14 +9,13 @@ import type { Finding } from "@/lib/types"
 import { severityColor } from "@/lib/utils"
 
 /**
- * CR-001 D-CR7: this used to be a `Sheet` that slid over a blurred dashboard.
- * It is now an ordinary card that `DashboardView` swaps into the main region —
- * the component's insides are unchanged, only its container. Triage means
- * reading many findings in a row, and a slide-over made the file tree unusable
- * and cost a close-and-reopen per finding.
+ * This used to be a sheet sliding over a blurred dashboard. It is now an ordinary
+ * card swapped into the main region: triage means reading many findings in a row,
+ * and a slide-over made the file tree unusable and cost a close-and-reopen per
+ * finding.
  *
- * Still view-only in v1.0: no accept / resolve / false-positive (those are
- * [v1.1]), and the code snippet region is built but not filled.
+ * Still view-only — no accept / resolve / false-positive, and the code snippet
+ * region is built but not filled.
  */
 export type FindingDetailPanelProps = {
   finding: Finding | null
@@ -94,8 +93,7 @@ export function FindingDetailPanel({
           </section>
         ) : null}
 
-        {/* v1.1: the offending code snippet is loaded on demand here. D-CR7 exists
-            partly to give it room — the slide-over was too narrow to render it. */}
+        {/* The offending code snippet is loaded on demand here later. */}
       </CardContent>
     </Card>
   )

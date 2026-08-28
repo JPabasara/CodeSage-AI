@@ -1,19 +1,16 @@
 # syntax=docker/dockerfile:1
 
-# Code Sage AI — frontend image (J0.1, J0.2).
+# Code Sage AI — frontend image.
 #
 # Four stages: base → deps → builder → runner. Only `runner` ships; the other
 # three exist so a lockfile that has not changed does not trigger a reinstall,
 # and so pnpm, the source tree and the dev dependencies never reach production.
 #
-# ⚠️ THE API ADDRESS IS FIXED WHEN THIS IMAGE IS BUILT, NOT WHEN IT RUNS.
-# Next.js textually replaces every `process.env.NEXT_PUBLIC_*` with a string
-# literal during `next build`. Setting NEXT_PUBLIC_API_BASE_URL in a compose
-# file, a Railway variable, or a `docker run -e` does NOTHING to an image that
-# is already built — the value is inside the JavaScript the browser downloads.
-# So it arrives as a BUILD ARGUMENT (see `ARG` in the builder stage), and
+# ⚠️ The API address is fixed when this image is BUILT, not when it runs.
+# Next.js replaces every `process.env.NEXT_PUBLIC_*` with a string literal during
+# `next build`, so setting it in a compose file or at `docker run` does nothing to
+# an image that is already built. It arrives as a build argument instead, and
 # pointing the frontend at a different backend means building a new image.
-# That is not a workaround; it is how Next.js works.
 #
 # ⚠️ apps/web is its own pnpm root (it has its own pnpm-lock.yaml and
 # pnpm-workspace.yaml, and the repository has no top-level package.json), so the
@@ -36,13 +33,9 @@ RUN npm install --global pnpm@${PNPM_VERSION}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # ── Registry settings, tuned for a bad connection ────────────────────────────
-# 831 packages, and the first attempt at this build died on number 828 with
-# "The operation was aborted due to timeout". pnpm's defaults assume a fast,
-# reliable link; a home connection on a bad evening is neither, and one slow
-# tarball failing the whole install is not a real failure.
-#
-# pnpm reads npm_config_* from the environment, so these apply without an
-# .npmrc that would then have to be kept in sync with anyone's laptop.
+# Around 830 packages, and one slow tarball timing out should not fail the whole
+# install. pnpm reads npm_config_* from the environment, so these apply without an
+# .npmrc that would have to be kept in sync with everyone's laptop.
 ENV npm_config_fetch_timeout=600000 \
     npm_config_fetch_retries=5 \
     npm_config_fetch_retry_mintimeout=10000 \
@@ -66,16 +59,14 @@ FROM base AS deps
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-# --frozen-lockfile makes the build fail rather than quietly resolve a different
-# version than the one that was tested. "It builds on a clean machine" is only
-# worth something if the clean machine installs the same tree.
+# --frozen-lockfile fails rather than quietly resolving a different version than
+# the one that was tested. "It builds on a clean machine" is only worth something
+# if the clean machine installs the same tree.
 #
-# The cache mount keeps the downloaded tarballs between builds. Without it every
-# retry re-downloads all 831 packages, so a timeout on the last one throws away
-# five minutes of work — which is exactly what happened the first time. The
-# mount is a build-time cache only: nothing from it reaches any image layer, so
-# a clean machine with a cold cache still produces the identical result, just
-# slower. CI can persist it with actions/cache to get the same benefit.
+# The cache mount keeps downloaded tarballs between builds, so a timeout on the
+# last package does not throw away five minutes of work. Build-time only —
+# nothing from it reaches an image layer, so a cold cache gives the identical
+# result, just slower.
 RUN --mount=type=cache,id=codesage-pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
@@ -86,22 +77,19 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# J0.2 — the build argument. Default is the local stack so a bare
-# `docker build apps/web` still produces something that works on a laptop.
-# Override it for anywhere real:
+# The build argument. The default is the local stack, so a bare `docker build`
+# still produces something that works on a laptop. Override it for anywhere real:
 #
 #   docker build --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.example.com .
 #
-# Proving it works: build twice with different values and grep the two images'
-# .next/static chunks — the string differs. That is J0.2's "done when".
+# To prove it works: build twice with different values and grep the two images'
+# .next/static chunks — the string differs.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 
-# Hard-off, not merely absent. src/components/msw-provider.tsx starts the MSW
-# fake backend when this equals "enabled", and .env.local sets exactly that for
-# local development. .dockerignore keeps that file out of the context, but state
-# it here too: a production image that answers its own API calls would look
-# perfectly healthy while proving nothing.
+# Hard-off, not merely absent. The app starts its MSW fake backend when this is
+# "enabled", and .env.local sets exactly that locally. A production image that
+# answered its own API calls would look healthy while proving nothing.
 ENV NEXT_PUBLIC_API_MOCKING=disabled
 
 ENV NODE_ENV=production
@@ -141,8 +129,8 @@ COPY --from=builder --chown=node:node /app/public ./public
 
 EXPOSE 3000
 
-# busybox wget, so no extra package. Compose waits on this for J0.3's "six
-# containers healthy at the same time"; start-period covers Next's cold start.
+# busybox wget, so no extra package. Compose waits on this; the start period
+# covers Next's cold start.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
     CMD wget --quiet --spider http://127.0.0.1:3000/ || exit 1
 

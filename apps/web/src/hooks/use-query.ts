@@ -10,12 +10,10 @@ export interface QueryState<T> {
   loading: boolean
   error?: Error
   /**
-   * Re-run the fetcher for the same key. Used after a write that changes what a
-   * read returns — connecting a repository, for instance.
-   *
-   * Deliberately does NOT flip `loading` back on: the key has not changed, so the
-   * existing data stays on screen while the new data is fetched. A list that
-   * blanked to skeletons every time you added a row would read as a bug.
+   * Re-run the fetcher for the same key, after a write that changes what a read
+   * returns. Deliberately does not flip `loading` back on — the existing data
+   * stays on screen, because a list that blanked to skeletons on every add would
+   * read as a bug.
    */
   reload: () => void
 }
@@ -23,14 +21,11 @@ export interface QueryState<T> {
 /**
  * Run `fetcher` whenever `key` changes and expose { data, loading, error }.
  *
- * `loading` is DERIVED (settled-key !== current-key), not stored — so there is
- * no synchronous setState inside the effect (which React 19's
- * react-hooks/set-state-in-effect rule forbids), and switching `key` clears
- * stale data instantly instead of flashing the previous result.
+ * `loading` is derived, not stored, so there is no setState inside the effect and
+ * switching `key` clears stale data instantly instead of flashing the old result.
  *
- * `key` is the single source of truth for "what am I fetching," so it is the
- * only dependency; `fetcher` is a fresh closure each render and is intentionally
- * excluded.
+ * `key` is the only dependency; `fetcher` is a fresh closure each render and is
+ * excluded on purpose.
  */
 export function useQuery<T>(
   key: string,

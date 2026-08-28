@@ -6,8 +6,8 @@ import { ChevronDown, ChevronRight, File, Folder } from "lucide-react"
 import type { TreeNode } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-// PUBLIC boundary (stable). v1 renders a simple recursive tree; a virtualized
-// library can be swapped in later without touching anything outside this file.
+// A stable boundary: this renders a simple recursive tree, and a virtualized
+// library can replace it later without touching anything outside this file.
 export interface FileTreeProps {
   nodes: TreeNode[]
   colorFor: (node: TreeNode) => string // heat-map tint from health_score
@@ -45,15 +45,12 @@ export function FileTree({
     collectFolderPaths(nodes, new Set()),
   )
 
-  // D-CR7: entering detail mode must REVEAL the finding's file, not just tint a
-  // row the user cannot see. Folders start expanded, but a user may have
-  // collapsed this one — so re-open its ancestors whenever the selection MOVES.
+  // Entering detail mode must reveal the finding's file, not just tint a row the
+  // user cannot see — so re-open its ancestors whenever the selection moves.
   //
-  // Adjusted during render, not in an effect (React's documented pattern for
-  // "state that depends on a prop change"): an effect would render the tree
-  // once with the file still hidden, then again with it shown. Keyed on
-  // `revealed` so this fires once per selection — collapsing the folder again
-  // afterwards still works, it just does not fight the user.
+  // Adjusted during render rather than in an effect: an effect would render the
+  // tree once with the file hidden, then again with it shown. Keyed on
+  // `revealed`, so collapsing the folder again afterwards still works.
   const [revealed, setRevealed] = useState<string>()
   if (selectedPath && selectedPath !== revealed) {
     setRevealed(selectedPath)

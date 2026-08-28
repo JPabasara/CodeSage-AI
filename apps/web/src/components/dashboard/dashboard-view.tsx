@@ -19,7 +19,6 @@ import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
 
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
-  // Data now arrives over the (mock) network instead of a static import.
   const { data: branches } = useBranches(repoId)
 
   // `repo_id` is a uuid in the contract, so the top nav cannot just print it —
@@ -54,9 +53,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     stop: stopScan,
   } = useScan(repoId, reload)
 
-  // D-CR7: the selected finding lives in the URL, not in component state, so a
-  // refresh restores detail mode and Back closes it. The fingerprint is stable
-  // across scans, which is exactly what a shareable link needs.
+  // The selected finding lives in the URL, not in state, so a refresh restores
+  // detail mode and Back closes it. Fingerprints are stable across scans, which
+  // is what a shareable link needs.
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -64,13 +63,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const selectedFinding: Finding | null =
     report?.findings.find((f) => f.fingerprint === selectedFingerprint) ?? null
   const detailMode = selectedFinding !== null
-  // The file tree writes the hovered node here (FileTree → onHoverNode). In v1
-  // Card B always shows repo health and ignores this, so only the setter is used
-  // today (the value is intentionally discarded — no consumer, no unused var).
-  // v2 flip (plan §2.3 / roadmap) is two edits, no rewrite:
-  //   1. keep the value: const [hoveredNode, setHoveredNode] = useState<TreeNode | null>(null)
-  //   2. feed Card B:    <HealthGraphCard history={hoveredNode?.history ?? report.history} />
-  // …which also needs a per-node HealthPoint[] added to TreeNode (a v2 contract change).
+  // The file tree writes the hovered node here. Card B always shows repo health
+  // today, so only the setter is used and the value is deliberately discarded.
+  // Wiring it up later means keeping the value, passing it to Card B, and adding
+  // a per-node history to TreeNode.
   const [, setHoveredNode] = useState<TreeNode | null>(null)
 
   // push, not replace: Back should leave detail mode, the way it does in a mail
@@ -85,16 +81,14 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
   const closeFinding = () => router.push(pathname, { scroll: false })
 
-  // A branch that has never been scanned answers 404 NOT_FOUND. That is the
-  // documented first-run state — "the client renders the empty state, not an
-  // error" — not a failure, so it must not take the whole screen down with it.
+  // A branch that has never been scanned answers 404. That is the first-run
+  // state, not a failure, so it must not take the whole screen down.
   const neverScanned =
     error instanceof ApiRequestError && error.code === "NOT_FOUND"
 
-  // J-CR9: the top nav renders ABOVE this, always. It used to live inside the
-  // success branch, so a freshly connected repository — no snapshot, so 404 —
-  // hit the error return and lost the very Scan button that would produce the
-  // first snapshot. Only the body below swaps.
+  // The top nav always renders above this. It used to live inside the success
+  // branch, so a freshly connected repository (404, no snapshot) lost the very
+  // Scan button that would produce the first one. Only the body below swaps.
   const body = () => {
     if (loading) {
       return (
@@ -134,8 +128,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     return (
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2">
         <div className="flex min-h-0 flex-col gap-4">
-          {/* The one region that swaps. Everything else stays put, which is the
-              whole point of D-CR7: the tree and the list remain usable. */}
+          {/* The one region that swaps, so the tree and the list stay usable. */}
           {detailMode ? (
             <FindingDetailPanel
               finding={selectedFinding}

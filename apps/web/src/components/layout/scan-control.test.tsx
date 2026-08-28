@@ -15,8 +15,8 @@ test("cancelled reads Cancelled and still offers a rescan", async () => {
   const onScan = vi.fn()
   render(<ScanControl phase="cancelled" progress={38} onScan={onScan} />)
 
-  // The whole point of J2.5: a stopped scan must not render as a bare Scan
-  // button, which is what "idle" looks like.
+  // A stopped scan must not render as a bare Scan button, which is what "idle"
+  // looks like.
   expect(screen.getByText(/cancelled/i)).toBeInTheDocument()
   expect(screen.queryByText(/38%/)).not.toBeInTheDocument()
 
