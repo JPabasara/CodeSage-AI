@@ -11,8 +11,9 @@ from __future__ import annotations
 import hashlib
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -53,24 +54,32 @@ def load_dataset(dataset_path: Path) -> tuple[pd.DataFrame, str]:
 
 
 def build_feature_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build the feature matrix using exact canonical FEATURE_ORDER metric keys."""
+    """Build a serving-compatible vector from semantically equivalent fields.
+
+    The AEEEM mirror available to this project contains cumulative process
+    metrics, but no CK product metrics, 90-day commit count, or recency.  Those
+    unavailable values must remain neutral: putting churn into the WMC slot (or
+    versions into DIT) creates a well-shaped but meaningless production model.
+    Author count and file age are the two fields whose definitions match the
+    metrics CodeSage extracts from repository history.
+    """
     feature_rows = []
     for _, row in df.iterrows():
         # Match metric keys exactly to FEATURE_ORDER in features.py
         metrics = {
-            "wmc": float(row.get("max_code_churn", 0.0)),
-            "cbo": float(row.get("author_count", 0.0)),
-            "dit": float(row.get("versions", 0.0)),
+            "wmc": 0.0,
+            "cbo": 0.0,
+            "dit": 0.0,
             "lcom": 0.0,
-            "rfc": float(row.get("fixes", 0.0)),
-            "noc": float(row.get("refactorings", 0.0)),
-            "loc": float(row.get("lines_added", 0.0)),
-            "max_nested_blocks": float(row.get("max_lines_added", 0.0)),
+            "rfc": 0.0,
+            "noc": 0.0,
+            "loc": 0.0,
+            "max_nested_blocks": 0.0,
             "comment_ratio": 0.0,
-            "commits_90d": float(row.get("code_churn", 0.0)),
+            "commits_90d": 0.0,
             "author_count": float(row.get("author_count", 0.0)),
             "file_age_days": float(row.get("file_age", 0.0)),
-            "recency_days": float(row.get("recency", 0.0)),
+            "recency_days": 0.0,
         }
         feature_rows.append(build_vector(metrics))
 
@@ -80,7 +89,7 @@ def build_feature_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.n
     return X, y, groups
 
 
-def evaluate_lopo(X: np.ndarray, y: np.ndarray, groups: np.ndarray) -> list[dict[str, any]]:
+def evaluate_lopo(X: np.ndarray, y: np.ndarray, groups: np.ndarray) -> list[dict[str, Any]]:
     """Perform Leave-One-Project-Out (LOPO) cross-validation across all 5 projects."""
     projects = sorted(set(groups))
     results = []
@@ -88,11 +97,13 @@ def evaluate_lopo(X: np.ndarray, y: np.ndarray, groups: np.ndarray) -> list[dict
     print("\n" + "=" * 80)
     print("LEAVE-ONE-PROJECT-OUT (LOPO) CROSS-VALIDATION RESULTS")
     print("=" * 80)
-    print(f"{'Held-Out Project':<18} | {'Classes':<8} | {'Defective':<10} | {'ROC-AUC':<8} | {'PR-AUC':<8} | {'F1':<6} | {'Brier':<6} | {'Latency':<8}")
+    print(
+        f"{'Held-Out Project':<18} | {'Classes':<8} | {'Defective':<10} | {'ROC-AUC':<8} | {'PR-AUC':<8} | {'F1':<6} | {'Brier':<6} | {'Latency':<8}"
+    )
     print("-" * 80)
 
     for held_out in projects:
-        test_mask = (groups == held_out)
+        test_mask = groups == held_out
         train_mask = ~test_mask
 
         X_train, y_train = X[train_mask], y[train_mask]
@@ -104,14 +115,16 @@ def evaluate_lopo(X: np.ndarray, y: np.ndarray, groups: np.ndarray) -> list[dict
             min_samples_split=4,
             class_weight="balanced",
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
         )
 
         calibrated_model = CalibratedClassifierCV(base_rf, cv=3, method="sigmoid")
-        pipeline = Pipeline([
-            ("scaler", StandardScaler()),
-            ("clf", calibrated_model),
-        ])
+        pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("clf", calibrated_model),
+            ]
+        )
 
         pipeline.fit(X_train, y_train)
 
@@ -132,32 +145,43 @@ def evaluate_lopo(X: np.ndarray, y: np.ndarray, groups: np.ndarray) -> list[dict
         n_defective = int(sum(y_test))
         def_rate = n_defective / n_classes
 
-        print(f"{held_out:<18} | {n_classes:<8} | {n_defective:>4} ({def_rate:.1%}) | {roc_auc:<8.4f} | {pr_auc:<8.4f} | {f1:<6.4f} | {brier:<6.4f} | {elapsed_ms:.1f}ms")
+        print(
+            f"{held_out:<18} | {n_classes:<8} | {n_defective:>4} ({def_rate:.1%}) | {roc_auc:<8.4f} | {pr_auc:<8.4f} | {f1:<6.4f} | {brier:<6.4f} | {elapsed_ms:.1f}ms"
+        )
 
-        results.append({
-            "project": held_out,
-            "classes": n_classes,
-            "defective": n_defective,
-            "roc_auc": float(roc_auc),
-            "pr_auc": float(pr_auc),
-            "precision": float(prec),
-            "recall": float(rec),
-            "f1": float(f1),
-            "brier": float(brier),
-            "latency_ms": float(elapsed_ms),
-        })
+        results.append(
+            {
+                "project": held_out,
+                "classes": n_classes,
+                "defective": n_defective,
+                "roc_auc": float(roc_auc),
+                "pr_auc": float(pr_auc),
+                "precision": float(prec),
+                "recall": float(rec),
+                "f1": float(f1),
+                "brier": float(brier),
+                "latency_ms": float(elapsed_ms),
+            }
+        )
 
     avg_roc = float(np.mean([r["roc_auc"] for r in results]))
     avg_pr = float(np.mean([r["pr_auc"] for r in results]))
     avg_f1 = float(np.mean([r["f1"] for r in results]))
     avg_brier = float(np.mean([r["brier"] for r in results]))
     print("-" * 80)
-    print(f"{'Mean LOPO Average':<18} | {len(X):<8} | {int(sum(y)):>4} ({(sum(y)/len(y)):.1%}) | {avg_roc:<8.4f} | {avg_pr:<8.4f} | {avg_f1:<6.4f} | {avg_brier:<6.4f} |")
+    print(
+        f"{'Mean LOPO Average':<18} | {len(X):<8} | {int(sum(y)):>4} ({(sum(y) / len(y)):.1%}) | {avg_roc:<8.4f} | {avg_pr:<8.4f} | {avg_f1:<6.4f} | {avg_brier:<6.4f} |"
+    )
     print("=" * 80)
     return results
 
 
-def train_production_artifact(X: np.ndarray, y: np.ndarray, sha256: str, lopo_results: list[dict]) -> Path:
+def train_production_artifact(
+    X: np.ndarray,
+    y: np.ndarray,
+    sha256: str,
+    lopo_results: list[dict[str, Any]],
+) -> Path:
     """Train the final calibrated production model on the complete D'Ambros benchmark."""
     print("\nTraining final production calibrated artifact on all 5,371 classes...")
     base_rf = RandomForestClassifier(
@@ -166,13 +190,15 @@ def train_production_artifact(X: np.ndarray, y: np.ndarray, sha256: str, lopo_re
         min_samples_split=4,
         class_weight="balanced",
         random_state=42,
-        n_jobs=-1,
+        n_jobs=1,
     )
     calibrated_model = CalibratedClassifierCV(base_rf, cv=5, method="sigmoid")
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", calibrated_model),
-    ])
+    pipeline = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("clf", calibrated_model),
+        ]
+    )
 
     t0 = time.time()
     pipeline.fit(X, y)
@@ -185,11 +211,12 @@ def train_production_artifact(X: np.ndarray, y: np.ndarray, sha256: str, lopo_re
     artifact = {
         "pipeline": pipeline,
         "version": "risk-1.0.0",
-        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "trained_at": datetime.now(UTC).isoformat(),
         "sklearn_version": sklearn.__version__,
         "dataset_name": "D'Ambros / AEEEM Benchmark Dataset",
         "dataset_sha256": sha256,
         "feature_order": list(FEATURE_ORDER),
+        "effective_features": ["author_count", "file_age_days"],
         "lopo_metrics": lopo_results,
     }
 
