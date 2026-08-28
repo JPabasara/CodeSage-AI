@@ -15,8 +15,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except: Next's own build/image assets, anything that looks like
-  // a static file (has a "." in its last segment — favicon.ico, the MSW worker
-  // script, etc.), and /login itself — protecting the destination would loop.
   matcher: ["/((?!_next/static|_next/image|login|.*\\..*).*)"],
 }
