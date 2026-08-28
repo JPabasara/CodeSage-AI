@@ -1,24 +1,17 @@
-// ────────────────────────────────────────────────────────────────────────────
-// THE FAKE BACKEND (MSW request handlers)
+// The fake backend (MSW request handlers).
 //
-// Each entry below answers one endpoint the real FastAPI backend will own. MSW
-// intercepts `fetch()` at the network layer, so components call `/api/...` and
-// never know the response came from here. The same handlers feed three places:
-// the dev app, component tests, and Playwright.
+// Each entry answers one endpoint the real API owns. MSW intercepts `fetch()` at
+// the network layer, so components call `/api/...` and never know the response
+// came from here. The same handlers feed the dev app, component tests and
+// Playwright.
 //
-// DATA vs BEHAVIOUR vs DERIVATION — three files, three jobs:
+//   scoring.ts   the stored facts, and the formula over them
+//   fixtures.ts  those facts as payloads, scored under Balanced
+//   handlers.ts  the HTTP surface: status codes, error envelopes, query
+//                parameters, and the little mutable state a fake backend needs
 //
-//   scoring.ts   the stored facts, and the FR-11 formula over them
-//   fixtures.ts  those facts as contract-shaped payloads, scored under Balanced
-//   handlers.ts  (this file) the HTTP surface: status codes, error envelopes,
-//                query parameters, and the little bit of mutable server state a
-//                fake backend needs (the scan machine, the active profile, the
-//                connected-projects list)
-//
-// STATUS CODES ARE NOT DECORATION. `POST …/scan` answers **202**, not 200,
-// because the contract says the work is queued rather than done — and a client
-// written against a 200 will one day be surprised. Same for `POST …/scan/…/stop`.
-// ────────────────────────────────────────────────────────────────────────────
+// Status codes are not decoration: `POST …/scan` answers 202 because the work is
+// queued rather than done, and a client written against a 200 will be surprised.
 import { http, HttpResponse } from "msw"
 import type {
   ApiError,
@@ -45,10 +38,7 @@ import { scanHistoryFor } from "./scoring"
 
 // ── error helper ────────────────────────────────────────────────────────────
 
-/**
- * Typed, so an envelope missing `code` fails the build rather than silently
- * teaching the frontend that errors have no machine-readable reason on them.
- */
+/** Typed, so an envelope missing `code` fails the build. */
 const fail = (status: number, code: ApiError["code"], detail: string) =>
   HttpResponse.json({ detail, code } satisfies ApiError, { status })
 
@@ -56,14 +46,10 @@ const NOT_FOUND = () => fail(404, "NOT_FOUND", "Not found.")
 
 // ── mutable server state ────────────────────────────────────────────────────
 //
-// A real backend does not forget what you saved when you press F5, and a mock
-// that does is actively misleading: apply a profile, refresh, and the dashboard
-// silently goes back to Balanced. MSW's handlers run in the PAGE, not in the
-// service worker, so plain module variables die with every navigation.
-//
-// So the mutable half is mirrored into sessionStorage — per tab, cleared when
-// the tab closes, invisible to Node (where `storage()` returns null and the
-// module variables are the whole story, which is what the unit tests want).
+// MSW handlers run in the page, not the service worker, so module variables die
+// on every navigation — apply a profile, refresh, and it silently reverts. The
+// mutable half is mirrored into sessionStorage: per tab, and invisible to Node,
+// where the module variables are the whole story.
 
 function storage(): Storage | null {
   try {
@@ -94,10 +80,7 @@ const PROFILE_KEY = "codesage.mock.active-profile"
 /** Connecting adds to the workspace, so the list is state, not a fixture array. */
 let connected: Repo[] = restore(PROJECTS_KEY, [...mockRepos])
 
-/**
- * Applying replaces the workspace's single active profile IN PLACE; profiles are
- * not versioned (contract: "the same row is updated every time").
- */
+/** Applying replaces the single active profile in place; profiles are not versioned. */
 let activeProfile: ScoreProfile = restore(PROFILE_KEY, balancedProfile)
 
 const defaultBranch = mockBranches.find((b) => b.is_default) ?? mockBranches[0]
@@ -114,27 +97,26 @@ const knownRepo = (repoId: string) => connected.find((r) => r.id === repoId)
 const SCAN_STEP = 17 // % added per poll → ~6 polls from 0 to done
 
 /**
- * The pipeline is clone → extract → detect → FINALIZE, and the cancel flag is
- * only read BETWEEN stages — never inside finalize, because a half-written
- * snapshot reads exactly like a complete one (FR-6, DBR-22). Past this progress
- * the mock is "in finalize": Stop is accepted but the scan still completes.
+ * The pipeline is clone → extract → detect → finalize, and the cancel flag is
+ * read only between stages — never inside finalize, because a half-written
+ * snapshot reads exactly like a complete one. Past this progress Stop is
+ * accepted but the scan still completes.
  */
 const FINALIZE_AT = 85
 
 const scans = new Map<string, ScanStatus>()
 
 /**
- * Stop only REQUESTS cancellation; the scan keeps reporting "running" until the
- * next poll. Modelled faithfully on purpose — a mock that returned "cancelled"
- * straight from the POST would let the UI skip the polling path the real backend
- * requires, and the bug would only surface on the live site.
+ * Stop only requests cancellation; the scan keeps reporting "running" until the
+ * next poll. Returning "cancelled" straight from the POST would let the UI skip
+ * the polling path the real backend needs.
  */
 const cancelRequested = new Set<string>()
 
 /**
- * The head SHA of the last SUCCESSFUL scan per repo+branch, which is what
- * skip-if-unchanged compares against. Comparing against the last *successful*
- * scan is what stops a cancelled attempt being mistaken for a stored snapshot.
+ * Head SHA of the last successful scan per repo+branch — what skip-if-unchanged
+ * compares against. Using the last *successful* one stops a cancelled attempt
+ * being mistaken for a stored snapshot.
  */
 const lastSuccessfulSha = new Map<string, string>()
 
@@ -216,10 +198,9 @@ const WEIGHT_KEYS: (keyof CategoryWeights)[] = [
 ]
 
 /**
- * A MALFORMED body is a different thing from an out-of-range one: the first is
- * `422`, the second is clamped and accepted with `200`. The contract is explicit
- * about the distinction, so the mock has to be too — otherwise the UI never
- * learns that a 422 exists.
+ * A malformed body is not the same as an out-of-range one: the first is 422, the
+ * second is clamped and accepted with 200. Keeping both is what teaches the UI
+ * that a 422 exists.
  */
 function validationErrors(body: unknown): { field: string; detail: string }[] {
   const errors: { field: string; detail: string }[] = []
@@ -256,10 +237,9 @@ function validationErrors(body: unknown): { field: string; detail: string }[] {
 }
 
 /**
- * Out-of-range weights are CLAMPED, not rejected: 9.0 is stored as 3.0 and
- * returned as 3.0 with a 200. The response is the profile as it is really in
- * force, which is what lets the client confirm what was saved rather than
- * trusting what it sent.
+ * Out-of-range weights are clamped, not rejected: 9.0 is stored and returned as
+ * 3.0 with a 200. The response is the profile actually in force, so the client
+ * can confirm what was saved instead of trusting what it sent.
  */
 function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
   const w = (n: number) => clamp(n, WEIGHT_MIN, WEIGHT_MAX)
@@ -286,22 +266,16 @@ function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
 
 // ── the endpoints ───────────────────────────────────────────────────────────
 //
-// Three contract endpoints are deliberately NOT in `handlers` below. They are
-// absences by design, not gaps somebody forgot:
-//
-//   GET  /api/auth/login     navigations, not fetches. The browser has to leave
-//   GET  /api/auth/callback  the page for OIDC, so a service worker never sees
-//   POST /api/auth/logout    them at all.
-//
-// `GET /api/auth/session` IS mockable, but only for E2E — see `authHandlers`.
+// Three auth endpoints are deliberately absent: /login, /callback and /logout are
+// navigations, not fetches, so a service worker never sees them. Only
+// /api/auth/session is mockable, and only for E2E — see `authHandlers`.
 
 export const handlers = [
   // ── projects ──────────────────────────────────────────────────────────────
   http.get("*/api/projects", () => HttpResponse.json(connected)),
 
-  // Connect a repository (FR-3). The four failure codes below are the ones the
-  // contract names, and each needs its own message on screen — "400 Bad Request"
-  // tells a user who pasted their own private repo nothing about what to do next.
+  // Connect a repository. Each failure code needs its own message on screen —
+  // "400 Bad Request" tells someone who pasted a private repo nothing useful.
   http.post("*/api/projects", async ({ request }) => {
     const body = (await request
       .json()
@@ -399,8 +373,8 @@ export const handlers = [
     const repo = knownRepo(repoId)
     if (!repo) return NOT_FOUND()
 
-    // "No repository, no such branch, or the branch has never been scanned
-    // successfully. The client renders the empty state, not an error."
+    // No repo, no such branch, or never scanned successfully — the client
+    // renders the empty state, not an error.
     if (repoId === UNSCANNED_REPO_ID) {
       return fail(404, "NOT_FOUND", "This branch has not been scanned yet.")
     }
@@ -422,8 +396,8 @@ export const handlers = [
     )
   }),
 
-  // Scan history (FR-19). Derived under the active profile too, which is why
-  // switching profiles redraws this list as well as the dashboard.
+  // Scan history, derived under the active profile too — which is why switching
+  // profiles redraws this list as well as the dashboard.
   http.get("*/api/repos/:repoId/scans", ({ params, request }) => {
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
@@ -491,10 +465,9 @@ export const handlers = [
     const head = info.head_commit_sha ?? null
     const now = new Date().toISOString()
 
-    // Skip-if-unchanged: the head SHA matches the last SUCCESSFUL scan of this
-    // branch, so nothing is queued and the existing scan_id comes straight back
-    // as `done`. 202 either way — the client cannot tell from the status code,
-    // only from the phase, which is exactly what the contract describes.
+    // Skip-if-unchanged: the head SHA matches the last successful scan, so
+    // nothing is queued and the existing scan_id comes back as `done`. Still
+    // 202 — the client learns this from the phase, not the status code.
     const seen = lastSuccessfulSha.get(scanKey(repoId, info.name))
     if (head && seen === head) {
       const skipped: ScanStatus = {
@@ -558,14 +531,10 @@ export const handlers = [
 // ── auth, for E2E only ──────────────────────────────────────────────────────
 
 /**
- * `GET /api/auth/session` is NOT in `handlers`, and that is deliberate: with
- * mocking on in dev, MSW passes it straight through to the real API, which is
- * the only way a real Asgardeo sign-in can be tested locally.
- *
- * Playwright has the opposite need — there is no API running, and no headless
- * browser is going to complete an interactive OIDC consent screen. So these are
- * kept separate and switched on only when `NEXT_PUBLIC_API_MOCKING=e2e`.
- * See `browser.ts`.
+ * Kept out of `handlers` on purpose: in dev, MSW passes /api/auth/session through
+ * to the real API, which is the only way to test a real sign-in locally.
+ * Playwright has the opposite need — no API, and no headless browser completes an
+ * OIDC consent screen — so these switch on only for `e2e`.
  */
 export const authHandlers = [
   http.get("*/api/auth/session", ({ cookies }) => {

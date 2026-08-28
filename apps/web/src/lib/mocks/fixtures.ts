@@ -1,23 +1,19 @@
-// ────────────────────────────────────────────────────────────────────────────
-// SAMPLE DATA, SHAPED BY THE CONTRACT
+// Sample data, shaped by the contract.
 //
-// Everything exported here is a valid `docs/api/openapi.yaml` payload — the same
-// bytes the real FastAPI backend will send. Component tests import these
-// directly; `handlers.ts` serves them (and re-derives them per profile) over MSW.
+// Everything here is a valid payload — the same bytes the real backend sends.
+// Component tests import these directly; `handlers.ts` serves them, and
+// re-derives them per profile.
 //
 // Two rules keep this file honest:
 //
-//  1. IDs THAT THE CONTRACT TYPES AS `format: uuid` ARE REAL UUIDs. Slugs like
-//     "demo-repo" used to sit here, and they hid a whole class of bug: URL
-//     building, id comparison and routing all behave differently for an opaque
-//     36-character string than for a friendly word.
+//  1. Ids typed as `format: uuid` are real UUIDs. Slugs used to sit here and hid
+//     a class of bug: URL building, id comparison and routing all behave
+//     differently for an opaque 36-character string than for a friendly word.
 //
-//  2. NO SCORE IS HAND-WRITTEN. `health_score`, `grade`, `delta`, every
-//     `priority`, every `debt_score` and the whole trend are produced by
-//     `scoring.ts` under the **Balanced** profile, because the contract says
-//     they are derived on read and never stored (FR-21). Typing a priority here
-//     would be inventing a number the backend would immediately contradict.
-// ────────────────────────────────────────────────────────────────────────────
+//  2. No score is hand-written. Every score, grade, delta, priority and trend
+//     point comes from `scoring.ts` under Balanced, because they are derived on
+//     read and never stored. Typing one here would invent a number the backend
+//     would immediately contradict.
 import type {
   Branch,
   CategoryBreakdownItem,
@@ -59,10 +55,9 @@ export const FEATURE_BRANCH_DEBT_SCALE = 1.2
 // ── auth ────────────────────────────────────────────────────────────────────
 
 /**
- * Only `user_id` and `workspace_id` are guaranteed by the contract; the rest is
- * display detail an identity provider may simply not have. `mockSessionMinimal`
- * exists so the "no name, no email, no avatar" fallback is a path something
- * actually exercises rather than a branch nobody has ever rendered.
+ * Only `user_id` and `workspace_id` are guaranteed; the rest is display detail an
+ * identity provider may not have. `mockSessionMinimal` keeps the "no name, no
+ * email, no avatar" fallback on a path something actually exercises.
  */
 export const mockSession: Session = {
   user_id: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
@@ -185,10 +180,9 @@ export function reportFor(
 // ── projects ────────────────────────────────────────────────────────────────
 
 /**
- * `latest_health` is a DERIVED hint, so it is computed rather than typed — and
- * it is **absent** on `octo-cli`, which has never been scanned. Absent is not
- * the same as a score of zero, and the projects list renders the two
- * differently ("Not scanned yet" versus a grade).
+ * `latest_health` is derived, so it is computed rather than typed — and absent on
+ * `octo-cli`, which has never been scanned. Absent is not zero, and the projects
+ * list renders the two differently.
  */
 function latestHealthFor(repoId: string) {
   const report = reportFor(repoId, "main", true)
@@ -224,9 +218,8 @@ export const mockRepos: Repo[] = [
     id: UNSCANNED_REPO_ID,
     name: "octo-cli",
     owner: "acme",
-    // Private repositories cannot be CONNECTED in v1.0, but visibility is
-    // recorded and displayed from v1.0 (FR-3) — so the badge needs a private row
-    // to render at least once.
+    // Private repositories cannot be connected yet, but visibility is recorded
+    // and displayed — so the badge needs a private row to render at least once.
     visibility: "private",
     url: "https://github.com/acme/octo-cli",
     default_branch: "trunk",

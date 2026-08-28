@@ -20,12 +20,11 @@ export type DashboardTopNavProps = {
   activeBranch: string
   onBranchChange: (branch: string) => void
   /**
-   * Snapshot metadata, ABSENT until the branch has been scanned once.
+   * Snapshot metadata, absent until the branch has been scanned once.
    *
-   * The nav renders above the report now (J-CR9), so it has to survive having no
-   * report at all — a freshly connected repository has no commit and no scan
-   * time, and the old required props rendered "Invalid Date" and threw inside
-   * shortSha() when handed undefined.
+   * The nav renders above the report, so it has to survive having no report at
+   * all — a freshly connected repository has no commit and no scan time, and
+   * required props here rendered "Invalid Date" and threw inside shortSha().
    */
   lastCommitSha?: string
   scannedAt?: string

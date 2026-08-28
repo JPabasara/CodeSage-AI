@@ -3,9 +3,9 @@ import { expect, test } from "vitest"
 import { useHealthReport } from "./use-health-report"
 import { DEMO_REPO_ID } from "@/lib/mocks/fixtures"
 
-// Proves the Phase 8 data path end-to-end in tests: hook → client → MSW handler.
-// No fixture is imported here — the data arrives over (mocked) fetch, exactly as
-// it will from the real backend.
+// Proves the data path end-to-end: hook → client → MSW handler. No fixture is
+// imported — the data arrives over (mocked) fetch, exactly as it will from the
+// real backend.
 
 test("starts loading, then resolves the report for the branch", async () => {
   const { result } = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))

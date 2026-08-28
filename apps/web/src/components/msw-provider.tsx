@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react"
 
-// Starts the MSW browser worker before rendering the app, but ONLY when
-// NEXT_PUBLIC_API_MOCKING === "enabled". This is the single on/off switch for
-// the fake backend: Phase 12 flips the env flag to turn it off — no code edits.
+// Starts the MSW worker before rendering the app, and only when mocking is on.
+// One env flag is the whole on/off switch for the fake backend.
 //
-// Why gate the children: if the app rendered first, its data hooks could fire a
-// fetch() before the worker is intercepting, and that request would escape to
-// the real network (and fail). We wait until the worker is ready, then render.
+// The children are gated because if the app rendered first, its data hooks could
+// fetch before the worker was intercepting and escape to the real network.
 export function MswProvider({ children }: { children: React.ReactNode }) {
   // "enabled" mocks the data endpoints; "e2e" additionally mocks auth so a
   // headless browser never has to complete an OIDC flow. See lib/mocks/browser.

@@ -1,7 +1,7 @@
-# Code Sage AI — local stack (SAD §7 deployment view).
+# Code Sage AI — the local stack.
 #
-# Six containers. `api` and `worker` are the SAME IMAGE with different commands.
-# Only `web` and `api` are published to the host; redis, postgres and ml stay on
+# `api`, `worker` and `score-worker` are the SAME IMAGE with different commands.
+# Only `web` and `api` are published to the host; postgres, redis and ml stay on
 # the private network and are never publicly exposed.
 
 name: codesage
@@ -25,7 +25,7 @@ services:
     #   docker compose exec postgres psql -U codesage_owner codesage
     # An open database port is the single easiest thing to forget before a demo.
     # If you need it from the host for a moment, use an override file rather
-    # than editing this one — see infra/README or the work plan, step 3.6.
+    # than editing this one — see infra/README.
 
   redis:
     image: redis:7-alpine
@@ -87,7 +87,7 @@ services:
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
       CODESAGE_SECRET_KEY: dev-only-change-me
       # ── Sign-in. The two blank ones come from infra/.env, which is never
-      #    committed. Fill them in at the work plan, step 3.10.
+      #    committed.
       CODESAGE_ASGARDEO_BASE_URL: ${CODESAGE_ASGARDEO_BASE_URL:-}
       CODESAGE_ASGARDEO_CLIENT_ID: ${CODESAGE_ASGARDEO_CLIENT_ID:-}
       CODESAGE_ASGARDEO_CLIENT_SECRET: ${CODESAGE_ASGARDEO_CLIENT_SECRET:-}
@@ -149,8 +149,8 @@ services:
       redis:
         condition: service_healthy
     # Concurrency scales by replicas, not threads: each scan needs its own clone
-    # and its own ~2 GB. PERF-07 asks for at least three concurrent analyses.
-    # Run `docker compose up --scale worker=3` to meet it.
+    # and its own ~2 GB. Run `docker compose up --scale worker=3` for three
+    # concurrent analyses.
 
   score-worker:
     build:
@@ -180,14 +180,12 @@ services:
     build:
       context: ../apps/web
       args:
-        # ⚠️ A BUILD ARGUMENT, NOT AN ENVIRONMENT VARIABLE — and the difference
+        # ⚠️ A build argument, not an environment variable, and the difference
         # is not cosmetic. Next.js replaces every NEXT_PUBLIC_* reference with a
         # string literal while `next build` runs, so by the time a container
-        # starts, the address is already inside the JavaScript the browser
-        # downloads. It was written here as `environment:` until 20 Aug 2026,
-        # which did nothing at all: the image still pointed at localhost:8000
-        # wherever it was deployed. Moving it to `args:` is what makes the
-        # frontend deployable somewhere other than a laptop.
+        # starts the address is already inside the JavaScript the browser
+        # downloads. Written as `environment:` it did nothing at all — the image
+        # still pointed at localhost wherever it was deployed.
         #
         # Changing this means rebuilding: `docker compose build web`.
         NEXT_PUBLIC_API_BASE_URL: ${CODESAGE_WEB_API_BASE_URL:-http://localhost:8000}

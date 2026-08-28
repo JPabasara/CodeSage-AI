@@ -1,10 +1,8 @@
 import { UNSCANNED_REPO_ID, test, expect } from "./session"
 
-// ────────────────────────────────────────────────────────────────────────────
-// P3 — Scan History (FR-19). Until 25 Aug this route rendered the word
-// "(Placeholder.)", and it is reachable from the rail, so it is the click an
-// evaluator makes on the way through the nav.
-// ────────────────────────────────────────────────────────────────────────────
+// Scan history. This route used to render the word "(Placeholder.)", and it is
+// reachable from the rail, so it is a click anyone makes on the way through the
+// nav.
 
 test("clicking Scan History in the rail shows real snapshots", async ({
   page,
@@ -22,7 +20,7 @@ test("clicking Scan History in the rail shows real snapshots", async ({
   const rows = page.getByRole("row")
   await expect(rows).toHaveCount(6)
 
-  // Newest first (the contract), so the first body row is the latest commit.
+  // Newest first, so the first body row is the latest commit.
   await expect(rows.nth(1).getByText("a1b2c3d")).toBeVisible()
 })
 

@@ -1,19 +1,18 @@
 -- Bootstrap for the Code Sage AI database.
 --
--- ⚠️ THE POINT OF THIS FILE: create a NON-SUPERUSER, NON-OWNER application role.
+-- ⚠️ The point of this file: create a non-superuser, non-owner application role.
 --
--- PostgreSQL Row-Level Security is silently bypassed by superusers and by the
--- owner of the table. If the application connects as `postgres` or as the role
--- that created the tables, every policy is ignored, every cross-tenant query
--- succeeds, and the isolation required by SRS DBR-3 exists only on paper — while
--- appearing to work perfectly in development.
+-- Row-Level Security is silently bypassed by superusers and by a table's owner.
+-- If the application connected as `postgres`, or as the role that created the
+-- tables, every policy would be ignored and every cross-tenant query would
+-- succeed — while appearing to work perfectly in development.
 --
 -- So there are two roles:
 --   codesage_owner  runs migrations and owns the schema
 --   codesage_app    what the API and workers connect as; subject to RLS
 --
--- The policies themselves are created in the Alembic migration that creates the
--- tables, because a policy cannot exist before its table.
+-- The policies themselves are created in the migration that creates the tables,
+-- because a policy cannot exist before its table.
 
 CREATE ROLE codesage_app WITH LOGIN PASSWORD 'devpassword' NOSUPERUSER NOCREATEDB NOCREATEROLE;
 
@@ -26,8 +25,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE codesage_owner IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE codesage_owner IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO codesage_app;
 
--- TEAM TODO: the RLS policies themselves are still owed (SAD §9). Each
--- tenant-owned table needs:
+-- The policies live in the initial migration. Each tenant-owned table gets:
 --
 --   ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
 --   ALTER TABLE <t> FORCE ROW LEVEL SECURITY;
@@ -35,6 +33,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE codesage_owner IN SCHEMA public
 --       USING (workspace_id = app_current_workspace_id());
 --
 -- FORCE matters: without it the policy still does not apply to the table owner.
--- The setting is bound per transaction by db/rls.py.
---
--- Policies are installed by the initial Alembic migration.
+-- The workspace itself is bound per transaction by db/rls.py.

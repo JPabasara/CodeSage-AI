@@ -12,9 +12,9 @@ import {
 } from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
 
-// D-CR7 moved the selection into the URL, so a container test needs a router
-// that actually re-renders on navigate. This is a miniature one: a query string
-// in a module-level store, and useSearchParams subscribed to it.
+// The selection lives in the URL, so a container test needs a router that
+// actually re-renders on navigate. This is a miniature one: a query string in a
+// module-level store, with useSearchParams subscribed to it.
 const nav = vi.hoisted(() => {
   let params = new URLSearchParams()
   const listeners = new Set<() => void>()
@@ -125,11 +125,11 @@ test("clicking a file in the tree opens that file's finding", async () => {
   ).toBeInTheDocument()
 })
 
-// ── J-CR9: the never-scanned repository ─────────────────────────────────────
-// Reported by Chamodh: connect a brand-new repo, open it, and the dashboard is
-// blank with no way out. The health endpoint answers 404 for a branch that has
-// never been scanned (the documented first-run state), and the top nav used to
-// live inside the success branch — so the 404 took the Scan button down with it.
+// ── the never-scanned repository ────────────────────────────────────────────
+// Connect a brand-new repo, open it, and the dashboard used to be blank with no
+// way out. The health endpoint answers 404 for a branch that has never been
+// scanned, and the top nav lived inside the success branch — so the 404 took
+// the Scan button down with it.
 
 test("a never-scanned repo still gets the top nav, so a scan can be started", async () => {
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)

@@ -1,35 +1,12 @@
-// ────────────────────────────────────────────────────────────────────────────
-// THE MOCK'S SCORING ENGINE
+// The mock's scoring engine.
 //
-// The contract is emphatic that the dashboard carries no stored scores:
+// Nothing numeric is stored. Findings, per-file risk and the snapshot timeline
+// are facts; priorities, scores and the trend line are recomputed on every
+// request under whichever profile is active. fixtures.ts holds the result of
+// running this under Balanced; handlers.ts runs it live, so applying a profile
+// really does re-rank the list. One formula, in one place:
 //
-//   "Every score here is computed on this request under the workspace's active
-//    profile — health_score, grade, delta, each finding's priority, each file's
-//    debt_score, and the whole trend line. None is read from a column (FR-21)."
-//
-// A mock that returned hand-written priorities would quietly contradict that:
-// the Profiles screen would appear to do nothing, and the first time the real
-// backend re-ranked a list we would discover the UI had never been built for it.
-// So this file holds the two halves the contract separates:
-//
-//   STORED FACTS  — findings, per-file risk, the snapshot timeline. Written once
-//                   at detection and never recomputed.
-//   DERIVATION    — everything numeric, recomputed from those facts under
-//                   whichever profile is active right now.
-//
-// `fixtures.ts` exports the results of running this under Balanced, so component
-// tests get plain contract-shaped data. `handlers.ts` runs it per request against
-// the live active profile, so applying a profile really does re-rank the list.
-// Neither can drift from the other: there is one formula, and it lives here.
-//
-// The formula is FR-11:
-//
-//   priority = base_points(severity)
-//            × category_weight        ← the profile
-//            × source_trust           ← the trust slider, fixed at 1.0 for security
-//            × churn_factor           ← 1.0 here; the fixture has no commit history
-//            × risk_factor            ← ML-2's per-file estimate, bounded
-// ────────────────────────────────────────────────────────────────────────────
+//   priority = base_points × category_weight × source_trust × churn × risk
 import type {
   Category,
   CategoryBreakdownItem,
@@ -47,7 +24,7 @@ import type {
 
 // ── the knobs ───────────────────────────────────────────────────────────────
 
-/** Severity → base points. Severity is assigned once at detection (FR-8.1). */
+/** Severity → base points. Severity is fixed at detection time. */
 const BASE_POINTS: Record<Severity, number> = {
   critical: 40,
   high: 12,
@@ -56,31 +33,26 @@ const BASE_POINTS: Record<Severity, number> = {
 }
 
 /**
- * Debt → health. One health point costs this much debt, so a repo with no
- * findings scores 100 and debt drives it down. The real backend calibrates `k`
- * against a corpus (CR-001 D-CR5); this constant is only tuned so the demo
- * fixture lands on a believable B under Balanced.
+ * Debt → health: one health point costs this much debt, so a clean repo scores
+ * 100. Tuned only so the demo fixture lands on a believable B under Balanced.
  */
 const DEBT_PER_HEALTH_POINT = 5.5
 
 /**
- * `risk_score` enters scoring as a bounded MULTIPLIER on findings that already
- * exist, never as an additive term (CR-001 D-CR5). A risky file with no findings
- * therefore still contributes no debt.
+ * Risk is a bounded multiplier on findings that already exist, never an additive
+ * term — so a risky file with no findings still contributes no debt.
  *
- * `null` risk means the ML service was unreachable when the snapshot was taken —
- * not "safe". It multiplies by 1.0: no boost, no penalty, no invented estimate.
+ * `null` means never assessed, which is not "safe": it multiplies by 1.0.
  */
 function riskFactor(risk: number | null | undefined): number {
   return 1 + 0.5 * (risk ?? 0)
 }
 
 /**
- * `rule_trust = 0.5 + s`, `ml_trust = 1.5 − s` (FR-11).
+ * `rule_trust = 0.5 + s`, `ml_trust = 1.5 − s`.
  *
- * Security findings are excluded — `source_trust` is pinned at 1.0 for the
- * `security` category, so no position of the trust slider can de-weight them.
- * That is mechanism 2 of the critical-security floor (FR-24).
+ * Security is pinned at 1.0, so no position of the trust slider can de-weight a
+ * security finding.
  */
 function sourceTrust(
   source: Source,
@@ -113,19 +85,14 @@ const clampScore = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
 
 // ── stored facts ────────────────────────────────────────────────────────────
 
-/**
- * A finding minus its derived field. Exactly `Finding` without `priority` —
- * spelled this way so adding a required field to the contract breaks here.
- */
+/** `Finding` without its derived `priority`, so a new required field breaks here. */
 export type FindingFact = Omit<Finding, "priority">
 
 /**
- * ML-2's per-file bug-proneness. A STORED fact, not derived.
+ * Per-file bug-proneness — a stored fact, not derived.
  *
- * `legacy_gateway.ts` is deliberately `null`: the ML service was unreachable when
- * this snapshot was taken. That is a different thing from `0.0` ("measured, looks
- * safe"), and the UI must render it as "not assessed" rather than a zero-risk
- * badge. Having one in the fixture is the only way that path is ever exercised.
+ * `legacy_gateway.ts` is deliberately `null` (never assessed), which is not the
+ * same as `0.0` (assessed, looks safe). It keeps that render path exercised.
  */
 export const FILE_RISK: Record<string, number | null> = {
   "src/payments/payment_service.ts": 0.78,
@@ -137,18 +104,10 @@ export const FILE_RISK: Record<string, number | null> = {
 }
 
 /**
- * Ten findings covering every axis the contract defines, because a fixture that
- * only exercises three categories leaves several render paths untested:
- *
- *   • all five `Category` values          • both `Source` values
- *   • all four `Severity` values          • `pinned_by_floor` true AND false
- *   • rule extras (`rule_id`, `metric_value`, `threshold`)
- *   • SATD extras (`comment_text`, `confidence`)
- *   • `symbol: null` for file-scoped findings
- *
- * They are also chosen so the ranking genuinely REORDERS between presets — see
- * the note on `f-sqli-1`. A fixture where every profile produced the same order
- * would let the Profiles screen ship broken and no test would notice.
+ * Ten findings covering every category, source, severity and optional field, so
+ * no render path goes untested. They are also chosen so the ranking genuinely
+ * reorders between presets — otherwise the Profiles screen could ship broken and
+ * no test would notice.
  */
 export const FINDING_FACTS: FindingFact[] = [
   {
@@ -166,9 +125,8 @@ export const FINDING_FACTS: FindingFact[] = [
     rule_id: "hardcoded-secret",
   },
   {
-    // The floor demo (FR-24): at the minimum security weight of 0.1 this
-    // finding's computed priority would drop it off the visible list, and the
-    // floor holds it there anyway. `pinned_by_floor` lets the UI explain why.
+    // At the minimum security weight this finding would drop off the list; the
+    // floor holds it there anyway, and `pinned_by_floor` lets the UI say why.
     fingerprint: "f-eval-1",
     source: "rule",
     category: "security",
@@ -183,9 +141,8 @@ export const FINDING_FACTS: FindingFact[] = [
     rule_id: "dangerous-eval",
   },
   {
-    // The reorder lever. A MEDIUM security finding sits below the HIGH
-    // code-design one under Balanced and jumps above it under Security-first —
-    // which is what a weight is for, and the one thing a profiles test must prove.
+    // The reorder lever: below the HIGH code-design finding under Balanced,
+    // above it under Security-first.
     fingerprint: "f-sqli-1",
     source: "rule",
     category: "security",
@@ -357,12 +314,11 @@ export const TREE_SHAPE: ShapeNode[] = [
 ]
 
 /**
- * The stored snapshot timeline, newest LAST. `debt_multiplier` stands in for
- * "this snapshot held more findings than today's" — it scales the same stored
- * findings so an older point scores worse without needing ten more fixtures.
+ * The stored snapshot timeline, newest last. `debt_multiplier` scales the same
+ * findings so an older point scores worse without needing more fixtures.
  *
- * Both the trend chart and the Scan-History list are built from this one array,
- * so a point on the chart and a row in the table can never disagree.
+ * The trend chart and the scan-history list both read this array, so they cannot
+ * disagree.
  */
 export type SnapshotFact = {
   snapshot_id: string
@@ -418,7 +374,7 @@ export const SNAPSHOTS: SnapshotFact[] = [
 
 // ── derivation ──────────────────────────────────────────────────────────────
 
-/** FR-11, in one expression. Everything else here is bookkeeping around it. */
+/** The priority formula, in one expression. The rest is bookkeeping. */
 export function priorityOf(fact: FindingFact, profile: ScoreProfile): number {
   const categoryWeight = profile.weights[WEIGHT_KEY[fact.category]]
   const trust = sourceTrust(fact.source, fact.category, profile.trust_s)
@@ -440,7 +396,7 @@ export function scoreFindings(profile: ScoreProfile, debtScale = 1): Finding[] {
   })).sort((a, b) => b.priority - a.priority)
 }
 
-/** Sum of the priorities of the open findings in each file (contract: FileScore). */
+/** Sum of the priorities of the open findings in each file. */
 export function scoreFiles(findings: Finding[]): FileScore[] {
   return Object.keys(FILE_RISK)
     .map((file) => ({
@@ -460,25 +416,20 @@ function healthFromDebt(debt: number): number {
 }
 
 /**
- * A FILE's debt is judged on a much tighter scale than a whole repository's:
- * 70 points of debt is a middling repo but a catastrophic single file. Sharing
- * one constant made every file score 86–100 and the heat map came out uniformly
- * green, which defeats the point of having one (FR-18).
+ * A file is judged on a tighter scale than a whole repository: 70 points of debt
+ * is a middling repo but a catastrophic single file. One shared constant made
+ * every file score 86–100 and the heat map came out uniformly green.
  */
 const FILE_DEBT_PER_HEALTH_POINT = 0.8
 
 /**
- * Build the tree from the shape, folding file debt upward. Folder `debt_score`
- * is the SUM of the files beneath it — that is what lets the real backend drill
- * into a subtree by adding numbers already in memory.
+ * Fold file debt up the tree. A folder's `debt_score` is the sum of the files
+ * beneath it, but its `health_score` is the mean of their health — re-running
+ * the curve on summed debt would drive every ancestor towards zero just for
+ * containing more files, making the root always the worst node on screen.
  *
- * Folder `health_score`, though, is the MEAN of the descendant files' health,
- * not a recomputation from the summed debt. Summing debt and re-running the
- * curve would drive every ancestor towards zero purely because it contains more
- * files, so the repository root would always be the worst node on screen.
- *
- * `risk_score` is set on FILES ONLY — the contract says so explicitly, and a
- * folder-level "risk" would be an average of estimates that were never averaged.
+ * `risk_score` is set on files only; a folder-level risk would average estimates
+ * that were never meant to be averaged.
  */
 export function buildTree(fileScores: FileScore[]): TreeNode[] {
   const debtOf = new Map(fileScores.map((f) => [f.file, f.debt_score]))
@@ -528,7 +479,7 @@ export function buildTree(fileScores: FileScore[]): TreeNode[] {
 /**
  * `count` is a plain query over stored rows; `debt` is weighted by the active
  * profile. The two move independently on purpose — a category can hold many
- * findings and little debt, which is exactly what the pie is for (FR-13).
+ * findings and little debt, which is exactly what the pie is for.
  *
  * All five categories are emitted, including any with a count of zero: a missing
  * slice and an empty slice mean different things, and the legend should stay
@@ -563,10 +514,10 @@ function debtAt(profile: ScoreProfile, scale: number): number {
 }
 
 /**
- * The trend line (FR-14). Every point is computed under the same, currently
- * active profile, so a profile change redraws the whole history and any two
- * points stay comparable. A line whose points came from different profiles could
- * not distinguish a code change from a settings change.
+ * The trend line. Every point is computed under the same, currently active
+ * profile, so a profile change redraws the whole history and any two points stay
+ * comparable. A line whose points came from different profiles could not
+ * distinguish a code change from a settings change.
  */
 export function trendFor(
   profile: ScoreProfile,
@@ -579,7 +530,7 @@ export function trendFor(
   }))
 }
 
-/** Scan history, newest first (FR-19). Same snapshots, same lens as the trend. */
+/** Scan history, newest first. Same snapshots, same lens as the trend. */
 export function scanHistoryFor(
   profile: ScoreProfile,
   branch: string,
@@ -608,11 +559,11 @@ export type ReportInput = {
   /** Scales this repo's / branch's debt so different rows tell different stories. */
   debtScale: number
   profile: ScoreProfile
-  /** Which stored snapshot to render. Defaults to the newest (FR-19). */
+  /** Which stored snapshot to render. Defaults to the newest. */
   snapshotId?: string
 }
 
-/** The whole dashboard payload, every number of it derived (FR-21). */
+/** The whole dashboard payload, every number of it derived. */
 export function buildHealthReport(input: ReportInput): HealthReport {
   const { repoId, branch, commitSha, debtScale, profile, snapshotId } = input
 

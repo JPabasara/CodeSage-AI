@@ -11,7 +11,7 @@ import {
   LogOut,
   type LucideIcon,
 } from "lucide-react"
-//shadcn/ui components are Client Components, so we can use them here without "use client" directive
+// shadcn/ui components are already Client Components.
 import {
   Sidebar,
   SidebarContent,
@@ -38,14 +38,10 @@ type NavItem = {
 /**
  * Which project the rail's dashboard rows point at.
  *
- * They used to be pinned to `DEMO_REPO_ID`, which meant the rail quietly threw
- * you out of the project you were reading: open `web-store`, click "Dashboard",
- * and you were looking at `acme-payments` instead — with the rail still marked
- * active, so nothing said you had moved.
- *
- * The URL already knows the answer, so read it from there. Off a dashboard
- * route there is nothing to read and the demo id stays the fallback, because
- * these two rows still have to lead somewhere from /projects and /profiles.
+ * Pinning them to one id used to throw you out of the project you were reading:
+ * open one repo, click Dashboard, and you were looking at another. The URL
+ * already knows the answer, so read it from there. Off a dashboard route the
+ * demo id stays the fallback, because these rows still have to lead somewhere.
  */
 function currentRepoId(pathname: string): string {
   return /^\/dashboard\/([^/]+)/.exec(pathname)?.[1] ?? DEMO_REPO_ID
@@ -87,16 +83,14 @@ export function AppRail() {
   const router = useRouter()
   const { data: session, error } = useSession()
   const nav = navItems(currentRepoId(pathname))
-  // Below `md` the rail is a MODAL sheet, and Next navigates without unmounting
-  // it — so tapping a destination left you on the new page with the sheet still
-  // covering it, and Radix marks everything behind a modal aria-hidden, so a
-  // screen reader could not reach the page either. Closing on click rather than
-  // on a pathname change also covers tapping the row you are already on.
+  // Below `md` the rail is a modal sheet and Next navigates without unmounting
+  // it, so tapping a destination left the sheet covering the new page — and
+  // everything behind a modal is aria-hidden. Closing on click rather than on a
+  // pathname change also covers tapping the row you are already on.
   const { setOpenMobile } = useSidebar()
 
-  // The API is the actual security boundary (SEC-10) — this is a UX fallback so
-  // a signed-out visitor is not left staring at a shell with nothing on it,
-  // whether or not the session has simply expired underneath them.
+  // The API is the actual security boundary; this is a UX fallback so a
+  // signed-out visitor is not left staring at an empty shell.
   useEffect(() => {
     if (error instanceof ApiRequestError && error.status === 401) {
       router.push("/login")
@@ -152,19 +146,13 @@ export function AppRail() {
           ) : null}
           <SidebarMenuItem>
             {/*
-              A form the browser submits, not a fetch — and that is the fix.
+              A form the browser submits, not a fetch. Sign-out has to end the
+              session at the identity provider too, and it can only clear its own
+              cookie if the browser actually goes there — so the API answers with
+              a redirect the browser must be free to follow.
 
-              Sign-out has to end the session at Asgardeo too, and Asgardeo can only
-              clear its own cookie if the browser actually goes there. So the API
-              answers with a redirect and the browser must be free to follow it; a
-              background fetch stays on this page and cannot.
-
-              It also removes a quieter bug: the old code awaited a fetch and then
-              pushed to /login regardless, so a 401 looked exactly like success. A
-              form submit leaves no response to ignore. POST, not a link, because a
-              GET is prefetchable and ending a session must not fire on a guess.
-
-              Phase 8+ turns this into a real account menu.
+              POST, not a link: a GET is prefetchable, and ending a session must
+              not fire on a guess.
             */}
             <form action={`${API_BASE}/api/auth/logout`} method="POST">
               <SidebarMenuButton type="submit" tooltip="Sign out">

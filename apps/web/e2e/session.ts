@@ -14,27 +14,21 @@ export const SESSION_COOKIE =
   process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "codesage_session"
 
 /**
- * SIGN-IN IS THE ONE JOURNEY THAT CANNOT BE TESTED HERE, so it is bypassed
+ * Sign-in is the one journey that cannot be tested here, so it is bypassed
  * rather than faked badly.
  *
- * Since J2.6 the sign-in button hands the browser to Asgardeo, which needs real
+ * The button hands the browser to the identity provider, which needs real
  * credentials and shows an interactive consent screen. Driving that headlessly
- * would mean storing a password in the repo and depending on a third party
- * being up — for a flow that is one `<a href>` on our side.
+ * would mean storing a password in the repo and depending on a third party being
+ * up, for a flow that is one `<a href>` on our side.
  *
  * So every journey starts already signed in, via the cookie the middleware
- * actually checks. This is honest for three reasons:
+ * actually checks. That is honest: the middleware only checks the cookie exists
+ * (it is httpOnly, so the edge cannot read it), and the mock session handler
+ * reads the same cookie. What is left untested is the OIDC round trip, which is
+ * verified by hand against the live site.
  *
- *   1. J3.3's middleware only checks the cookie EXISTS — it is httpOnly, so the
- *      edge cannot read it. A seeded cookie is exactly what it sees after a real
- *      sign-in; there is nothing further to imitate.
- *   2. The mock `/api/auth/session` handler reads the same cookie, so the rail
- *      shows a signed-in user for the same reason the real app would.
- *   3. What is left untested is the OIDC round trip, which is verified by hand
- *      against the live site — see the manual checklist.
- *
- * `auth.spec.ts` covers the SIGNED-OUT half without this fixture, because that
- * half needs no identity provider at all.
+ * `auth.spec.ts` covers the signed-out half without this fixture.
  */
 export const test = base.extend({
   page: async ({ page, baseURL }, runTest) => {
