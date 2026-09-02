@@ -1,10 +1,3 @@
-"""Java security-pattern detectors required by SRS FR-8.
-
-Tree-sitter keeps matches inside executable Java syntax, so credentials or SQL
-shown in comments and documentation cannot become findings. Secret values are
-used only in memory to calculate entropy and are never returned or logged.
-"""
-
 from __future__ import annotations
 
 import math

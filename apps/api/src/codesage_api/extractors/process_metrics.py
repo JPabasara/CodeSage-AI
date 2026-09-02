@@ -1,10 +1,3 @@
-"""What the commit history tells us about one file.
-
-Read from the repository's git log, not from the code itself. Two files can look
-identical and still differ here — one has been rewritten forty times this month
-and the other has not been touched in two years.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,8 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 
-from pydriller import Repository  # type: ignore[import-untyped]
-
+from pydriller import Repository  
 from codesage_api.logging import get_logger
 
 logger = get_logger(__name__)
