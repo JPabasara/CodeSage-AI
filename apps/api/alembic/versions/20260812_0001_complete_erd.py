@@ -19,12 +19,7 @@ down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Every table below gets "you only see your own workspace's rows".
-#
-# `session` is deliberately NOT here. It is the table that tells us which
-# workspace the caller belongs to, so it cannot be filtered by the workspace it
-# has not told us yet. It holds no tenant data — only a pointer to a tenant —
-# and its rows are found by an unguessable random id.
+
 DIRECT_POLICIES = {
     "workspace": "id = app_current_workspace_id()",
     "membership": "workspace_id = app_current_workspace_id()",
@@ -69,14 +64,6 @@ def upgrade() -> None:
         "AS $$ SELECT NULLIF(current_setting('app.current_workspace_id', true), '')::uuid $$"
     )
 
-    # Sign-in has a chicken-and-egg problem: to bind a workspace we must first
-    # look one up, but the MEMBERSHIP table that holds the answer is itself
-    # filtered by the workspace we do not have yet.
-    #
-    # SECURITY DEFINER runs this function as its owner instead of as the caller,
-    # so it sees past the policy. It is the ONLY thing in the system that does,
-    # and it is deliberately narrow: one argument, one answer, no table exposed.
-    # EXECUTE is revoked from everyone and granted only to the application role.
     op.execute(
         "CREATE FUNCTION app_workspace_for_user(p_user_id uuid) RETURNS uuid "
         "LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp "

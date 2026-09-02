@@ -1,10 +1,4 @@
-"""Domain exceptions and their HTTP mapping.
 
-Routers raise domain errors; this module decides what the wire sees. Keeping the
-mapping in one place is what makes SEC-16 checkable: error messages must not leak
-internal detail, and that is far easier to audit in one file than across twelve
-handlers.
-"""
 
 from __future__ import annotations
 
@@ -13,13 +7,7 @@ from fastapi.responses import JSONResponse
 
 
 class CodeSageError(Exception):
-    """Base for every domain error.
-
-    `code` is the part clients are allowed to branch on. It is a fixed constant
-    whose meaning never changes; `message` is an English sentence someone may
-    reword tomorrow. Every value below is copied from the `ErrorCode` list in
-    docs/api/openapi.yaml, so the two cannot drift.
-    """
+    
 
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
@@ -39,13 +27,7 @@ class NotAuthenticated(CodeSageError):
 
 
 class RepositoryNotPublic(CodeSageError):
-    """v1.0 connects public repositories only (FR-3).
-
-    Worth its own type because the message must explain *why* rather than saying
-    "forbidden" — a user pasting their own private repo has done nothing wrong and
-    needs to know that private support requires a GitHub App installation, which
-    is not in this release.
-    """
+    
 
     status_code = status.HTTP_400_BAD_REQUEST
     code = "REPOSITORY_NOT_PUBLIC"
@@ -90,13 +72,7 @@ class ScorePending(CodeSageError):
 
 
 class MLServiceUnavailable(CodeSageError):
-    """Raised by the ML clients on timeout.
-
-    ⚠️ This is caught by the pipeline and NOT surfaced to the user as a failure.
-    The scan completes in degraded mode — rule findings only, risk 0.0 — because a
-    valid partial snapshot is more useful than no snapshot. It reaches HTTP only if
-    something outside the pipeline calls inference, which nothing currently does.
-    """
+  
 
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "UPSTREAM_UNAVAILABLE"
@@ -104,13 +80,7 @@ class MLServiceUnavailable(CodeSageError):
 
 
 class UpstreamUnavailable(CodeSageError):
-    """An outside service we depend on did not answer.
-
-    Raised when Asgardeo cannot be reached during sign-in. Kept separate from
-    MLServiceUnavailable because the two mean completely different things to the
-    user: this one means "you cannot sign in right now", and that one means
-    "your scan ran, but with rules only".
-    """
+    
 
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "UPSTREAM_UNAVAILABLE"
@@ -118,33 +88,14 @@ class UpstreamUnavailable(CodeSageError):
 
 
 class SignInFailed(CodeSageError):
-    """Asgardeo refused to complete this sign-in, and retrying will not help.
-
-    Separate from `UpstreamUnavailable` because the two need opposite responses.
-    An outage is temporary and "please try again" is true. A spent authorization
-    code, an expired one, or a mismatched client is terminal for this attempt:
-    the only way forward is to start sign-in again.
-
-    Calling both of them 503 cost us an afternoon. "A service we depend on is
-    temporarily unavailable" sent us looking for a service failure while Asgardeo
-    was up the whole time and simply saying no.
-
-    The callback catches this and sends the browser back to /login, so the status
-    below is only what an escaped one would produce.
-    """
-
+    
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "NOT_AUTHENTICATED"
     message = "Sign-in could not be completed. Please sign in again."
 
 
 class MisconfiguredSignIn(CodeSageError):
-    """The service is running without the Asgardeo settings it needs.
-
-    Deliberately its own error. The failure it replaces was a bare 404 from a
-    relative redirect, which points at nothing and sends whoever is debugging it
-    looking for a missing route instead of a missing environment variable.
-    """
+    
 
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     code = "INTERNAL_ERROR"
@@ -168,23 +119,7 @@ def install_exception_handlers(app: FastAPI) -> None:
     async def _not_built_yet(
         request: Request, exc: NotImplementedError
     ) -> JSONResponse:
-        """Every endpoint that is still a stub raises this. Answer in the contract's
-        envelope rather than letting it escape as an unhandled exception.
-
-        **This is a CORS fix as much as a tidiness one.** An unhandled exception is
-        caught by Starlette's ServerErrorMiddleware, which sits OUTSIDE
-        CORSMiddleware in the stack. Its `text/plain` 500 therefore carries no
-        `Access-Control-Allow-Origin`, so the browser blocks it and the frontend
-        sees a CORS failure instead of a 500 — which sends whoever is debugging it
-        to the CORS settings, which were correct all along.
-
-        Registering a handler for a *specific* exception type puts it on
-        ExceptionMiddleware, which runs INSIDE CORSMiddleware, so the response
-        gets its headers. Registering one for bare `Exception` does not work: that
-        goes to ServerErrorMiddleware and lands back outside. Verified, not assumed.
-
-        Delete this once no endpoint raises NotImplementedError any more.
-        """
+        
         return JSONResponse(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             content={

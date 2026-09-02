@@ -21,11 +21,5 @@ def list_branches(
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
 ) -> list[BranchOut]:
-    """Branches with head commit SHA and the default-branch flag.
-
-    Analysis is per branch: each branch has its own snapshots and its own trend.
-
-    Refreshed from the GitHub REST API. This is one of only two places the system
-    calls REST at all — the pipeline itself runs off a clone.
-    """
+  
     return repositories.list_branches(db, workspace_id, repo_id)

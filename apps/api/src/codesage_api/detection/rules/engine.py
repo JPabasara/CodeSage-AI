@@ -33,15 +33,23 @@ class DetectedFinding:
 _FILE_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {
     "large-file": lambda item: float(item.loc),
 }
+
+
 _METHOD_RULE_ACCESSORS: dict[str, Callable[[MethodMetrics], float]] = {
     "complex-function": lambda item: item.cyclomatic_complexity,
     "long-method": lambda item: float(item.loc),
     "deep-nesting": lambda item: float(item.max_nesting_depth),
 }
+
+
 def _metric_findings(
     files: list[FileMetrics], rules: list[RuleDefinition]
 ) -> list[DetectedFinding]:
+
+    
     findings: list[DetectedFinding] = []
+
+    
     for item in files:
         symbol = Path(item.path).stem
         for rule in rules:

@@ -1,9 +1,5 @@
 """Loads the scoring constants from YAML.
 
-SRS SP-8: thresholds, base points and weights are configuration or data, never
-literals in code, so recalibration is a config change and not a release. This is
-the one file in `scoring` that touches the filesystem — it does so once, at import,
-and the result is cached, so the formula functions stay pure.
 """
 
 from __future__ import annotations
@@ -38,9 +34,7 @@ class Preset:
 
 @lru_cache
 def get_scoring_config() -> ScoringConfig:
-    # encoding is explicit: read_text() defaults to the locale codec, which is
-    # cp1252 on Windows and chokes on the arrows and multiplication signs in the
-    # config comments.
+   
     base = yaml.safe_load((_CONFIG_DIR / "base_points.yaml").read_text(encoding="utf-8"))
     cal = yaml.safe_load((_CONFIG_DIR / "calibration.yaml").read_text(encoding="utf-8"))
     return ScoringConfig(

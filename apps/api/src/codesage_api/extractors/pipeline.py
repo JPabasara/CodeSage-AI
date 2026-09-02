@@ -1,5 +1,3 @@
-"""The complete FR-7 extraction stage over one immutable working tree."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
