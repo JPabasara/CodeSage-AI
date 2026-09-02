@@ -41,6 +41,7 @@ def test_risk_client_predict_success():
     mock_response.json.return_value = {
         "scores": [{"path": "src/Main.java", "risk_score": 0.78}],
         "model_version": "risk-1.0.0",
+        "model_kind": "trained",
     }
 
     with patch("httpx.post", return_value=mock_response) as mock_post:
@@ -49,6 +50,7 @@ def test_risk_client_predict_success():
         assert isinstance(result, RiskClientResult)
         assert result.scores == {"src/Main.java": 0.78}
         assert result.model_version == "risk-1.0.0"
+        assert result.model_kind == "trained"
         assert mock_post.called
         sent_payload = mock_post.call_args[1]["json"]
         assert len(sent_payload["files"]) == 1
@@ -68,6 +70,7 @@ def test_risk_client_empty_inputs():
         assert isinstance(result, RiskClientResult)
         assert result.scores == {}
         assert result.model_version == ""
+        assert result.model_kind == ""
         assert not mock_post.called
 
 
@@ -130,26 +133,31 @@ def test_risk_client_handles_process_only_metrics():
 
     with patch("httpx.post") as mock_post:
         result = predict([], process_metrics)
-    assert result == RiskClientResult(scores={}, model_version="")
+    assert result == RiskClientResult(scores={}, model_version="", model_kind="")
     mock_post.assert_not_called()
 
 
 @pytest.mark.parametrize(
     "response_payload",
     [
-        {"scores": [], "model_version": "risk-1.0.0"},
+        {"scores": [], "model_version": "risk-1.0.0", "model_kind": "trained"},
         {
             "scores": [
                 {"path": "src/A.java", "risk_score": 0.4},
                 {"path": "src/A.java", "risk_score": 0.5},
             ],
             "model_version": "risk-1.0.0",
+            "model_kind": "trained",
         },
         {
             "scores": [{"path": "src/Other.java", "risk_score": 0.4}],
             "model_version": "risk-1.0.0",
+            "model_kind": "trained",
         },
-        {"scores": [{"path": "src/A.java", "risk_score": 0.4}]},
+        {
+            "scores": [{"path": "src/A.java", "risk_score": 0.4}],
+            "model_kind": "trained",
+        },
     ],
 )
 def test_risk_client_rejects_incomplete_or_inconsistent_responses(
@@ -161,3 +169,26 @@ def test_risk_client_rejects_incomplete_or_inconsistent_responses(
 
     with patch("httpx.post", return_value=response), pytest.raises(MLServiceUnavailable):
         predict(static_files, {})
+
+
+def test_risk_client_sends_zero_history_metrics_for_new_file() -> None:
+    """Every request uses the complete 13-field contract, even without Git history."""
+    static_files = [
+        FileMetrics("src/New.java", 20, 2.0, 1, 1, 10, 0.0, 0.0, 0.0, 1.0, 0.0)
+    ]
+    response = MagicMock()
+    response.json.return_value = {
+        "scores": [{"path": "src/New.java", "risk_score": 0.2}],
+        "model_version": "risk-1.0.0",
+        "model_kind": "trained",
+    }
+
+    with patch("httpx.post", return_value=response) as post:
+        predict(static_files, {})
+
+    metrics = post.call_args.kwargs["json"]["files"][0]["metrics"]
+    assert len(metrics) == 13
+    assert metrics["commits_90d"] == 0.0
+    assert metrics["author_count"] == 0.0
+    assert metrics["file_age_days"] == 0.0
+    assert metrics["recency_days"] == 0.0

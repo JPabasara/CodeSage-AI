@@ -78,7 +78,8 @@ def build_feature_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.n
             "comment_ratio": 0.0,
             "commits_90d": 0.0,
             "author_count": float(row.get("author_count", 0.0)),
-            "file_age_days": float(row.get("file_age", 0.0)),
+            # Production PyDriller extraction reports days; AEEEM stores weeks.
+            "file_age_days": float(row.get("file_age_weeks", 0.0)) * 7.0,
             "recency_days": 0.0,
         }
         feature_rows.append(build_vector(metrics))

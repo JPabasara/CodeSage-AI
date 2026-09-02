@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Double, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Double,
+    Enum,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -18,7 +28,7 @@ if TYPE_CHECKING:
     from codesage_api.db.models.source import SourceFile, SourceLocation
 
 
-def values(enum: type[MLModelType] | type[ModelDeploymentStatus]) -> list[str]:
+def values(enum: type[MLModelType | ModelDeploymentStatus]) -> list[str]:
     return [item.value for item in enum]
 
 
@@ -59,7 +69,7 @@ class BugRiskPrediction(UUIDPrimaryKey, Base):
     source_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_file.id", ondelete="CASCADE"), index=True)
     model_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ml_model_version.id", ondelete="RESTRICT"), index=True)
     risk_score: Mapped[float] = mapped_column(Double)
-    confidence: Mapped[float] = mapped_column(Double)
+    confidence: Mapped[float | None] = mapped_column(Double, nullable=True)
     source_file: Mapped[SourceFile] = relationship(back_populates="bug_risk_predictions")
     model_version: Mapped[MLModelVersion] = relationship(back_populates="bug_risk_predictions")
     __table_args__ = (

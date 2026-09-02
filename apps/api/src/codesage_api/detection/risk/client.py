@@ -20,12 +20,30 @@ from codesage_api.extractors.process_metrics import FileProcessMetrics
 class RiskClientResult:
     scores: dict[str, float]
     model_version: str
+    model_kind: str
+
+
+RISK_FEATURES = (
+    "wmc",
+    "cbo",
+    "dit",
+    "lcom",
+    "rfc",
+    "noc",
+    "loc",
+    "max_nested_blocks",
+    "comment_ratio",
+    "commits_90d",
+    "author_count",
+    "file_age_days",
+    "recency_days",
+)
 
 
 def predict(files: list[FileMetrics], process: dict[str, FileProcessMetrics]) -> RiskClientResult:
     """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0) and model version."""
     if not files:
-        return RiskClientResult(scores={}, model_version="")
+        return RiskClientResult(scores={}, model_version="", model_kind="")
 
     settings = get_settings()
     url = f"{settings.ml_service_url.rstrip('/')}/risk"
@@ -40,7 +58,9 @@ def predict(files: list[FileMetrics], process: dict[str, FileProcessMetrics]) ->
         file_metrics = files_by_path.get(path)
         proc_metrics = process.get(path)
 
-        metrics: dict[str, float] = {}
+        # Newly created files may have no Git history. Send the complete wire
+        # contract anyway: absence is represented by zero, not a missing key.
+        metrics = dict.fromkeys(RISK_FEATURES, 0.0)
         if file_metrics:
             metrics["loc"] = float(file_metrics.loc)
             metrics["wmc"] = float(file_metrics.cyclomatic_complexity)
@@ -68,11 +88,14 @@ def predict(files: list[FileMetrics], process: dict[str, FileProcessMetrics]) ->
         response.raise_for_status()
         data = response.json()
         model_version = data.get("model_version")
+        model_kind = data.get("model_kind")
         raw_scores = data.get("scores")
         if not isinstance(model_version, str) or not model_version.strip():
             raise ValueError("Risk response is missing model_version")
         if not isinstance(raw_scores, list):
             raise TypeError("Risk response scores must be a list")
+        if model_kind not in {"trained", "heuristic"}:
+            raise ValueError("Risk response has an invalid model_kind")
 
         scores: dict[str, float] = {}
         for item in raw_scores:
@@ -90,6 +113,10 @@ def predict(files: list[FileMetrics], process: dict[str, FileProcessMetrics]) ->
         if missing_paths:
             raise ValueError(f"Risk response is missing paths: {', '.join(sorted(missing_paths))}")
 
-        return RiskClientResult(scores=scores, model_version=model_version.strip())
+        return RiskClientResult(
+            scores=scores,
+            model_version=model_version.strip(),
+            model_kind=model_kind,
+        )
     except Exception as exc:
         raise MLServiceUnavailable(f"Failed to communicate with ML risk service: {exc}") from exc

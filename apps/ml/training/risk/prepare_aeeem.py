@@ -47,7 +47,11 @@ def prepare(source_dir: Path, output_path: Path) -> str:
                     "author_count": pd.to_numeric(
                         source["numberOfAuthorsUntil"], errors="raise"
                     ),
-                    "file_age": pd.to_numeric(source["ageWithRespectTo"], errors="raise"),
+                    # AEEEM defines ageWithRespectTo in weeks backward from the
+                    # release. Preserve that unit explicitly in the prepared data.
+                    "file_age_weeks": pd.to_numeric(
+                        source["ageWithRespectTo"], errors="raise"
+                    ),
                     "bugs": pd.to_numeric(source["bugs"], errors="raise"),
                 }
             )

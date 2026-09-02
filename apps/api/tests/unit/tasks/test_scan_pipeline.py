@@ -27,7 +27,7 @@ from codesage_api.tasks.scan_pipeline import PipelineResults, _finalize, run_sca
 @patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
 @patch("codesage_api.tasks.scan_pipeline.attempts.get_worker_attempt")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
-def test_finalize_registers_bug_risk_model_with_the_real_database_shape(
+def test_finalize_records_heuristic_risk_provenance_honestly(
     session_scope: Mock,
     get_attempt: Mock,
     _set_workspace: Mock,
@@ -45,10 +45,10 @@ def test_finalize_registers_bug_risk_model_with_the_real_database_shape(
     model_version = MLModelVersion(
         id=uuid.uuid4(),
         model_type=MLModelType.BUG_RISK,
-        version_identifier="risk-1.0.0",
+        version_identifier="risk-fallback-heuristic-1.0",
         training_date=SimpleNamespace(),
         deployment_status=ModelDeploymentStatus.DEPLOYED,
-        evaluation_dataset_reference="D'Ambros/AEEEM",
+        evaluation_dataset_reference="none (deterministic heuristic)",
         evaluation_metrics={},
     )
     session = session_scope.return_value.__enter__.return_value
@@ -63,13 +63,19 @@ def test_finalize_registers_bug_risk_model_with_the_real_database_shape(
             [],
             RiskClientResult(
                 scores={"src/Main.java": 0.7},
-                model_version="risk-1.0.0",
+                model_version="risk-fallback-heuristic-1.0",
+                model_kind="heuristic",
             ),
         ),
     )
 
     assert session.execute.called
     assert session.scalar.called
+    registration = session.execute.call_args_list[0].args[0].compile().params
+    assert registration["evaluation_dataset_reference"] == (
+        "none (deterministic heuristic)"
+    )
+    assert registration["evaluation_metrics"]["model_kind"] == "heuristic"
     assert any(
         getattr(added, "model_version_id", None) == model_version.id
         for added in (call.args[0] for call in session.add.call_args_list)
@@ -122,7 +128,11 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     extracted = ExtractionResult([], [], [comment])
     extract.return_value = extracted
     detect.return_value = []
-    risk_res = RiskClientResult(scores={"Main.java": 0.85}, model_version="risk-1.0.0")
+    risk_res = RiskClientResult(
+        scores={"Main.java": 0.85},
+        model_version="risk-1.0.0",
+        model_kind="trained",
+    )
     predict.return_value = risk_res
     prediction = SATDResult(
         comment=comment,

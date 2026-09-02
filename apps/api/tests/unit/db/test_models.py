@@ -91,6 +91,12 @@ def test_profile_dependent_scores_are_not_persisted() -> None:
         assert actual.isdisjoint(forbidden)
 
 
+def test_bug_risk_confidence_can_be_unknown() -> None:
+    """Risk probability must not be duplicated as a fake confidence value."""
+    table = Base.metadata.tables["bug_risk_prediction"]
+    assert table.columns["confidence"].nullable is True
+
+
 def test_business_keys_are_enforced_by_unique_constraints() -> None:
     expected = {
         "membership": {("user_id", "workspace_id")},

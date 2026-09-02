@@ -24,7 +24,9 @@ The model is trained and evaluated on the authentic **D'Ambros / AEEEM Benchmark
 * **Total Instances:** 5,371 classes
 * **Class Balance:** 15.9% Defective (853 classes with post-release bugs) vs 84.1% Clean (4,518 classes)
 * **Artifact File:** `apps/ml/data/raw/dambros_aeeem.csv`
-* **Prepared Dataset SHA-256:** `be73bca623ca320e8dce5c302abcabb41648e11dbe075f9ad2dfb3d2a5fce06d`
+* **Prepared Dataset SHA-256:** `f5302740905ed60ffc23b16b28feadd09bfe494c509e04459b31d4ed557ce2f6`
+* **Age-unit alignment:** AEEEM's `ageWithRespectTo` is measured in weeks;
+  training converts it to days to match PyDriller's `file_age_days` contract.
 
 ### v1.0 feature limitation
 

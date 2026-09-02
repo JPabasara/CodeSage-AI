@@ -221,6 +221,7 @@ def _finalize(
         model_version_record: MLModelVersion | None = None
         if results.risk_result and results.risk_result.scores and results.risk_result.model_version:
             v_name = results.risk_result.model_version
+            is_heuristic = results.risk_result.model_kind == "heuristic"
             session.execute(
                 insert(MLModelVersion)
                 .values(
@@ -228,8 +229,15 @@ def _finalize(
                     version_identifier=v_name,
                     training_date=datetime.now(UTC),
                     deployment_status=ModelDeploymentStatus.DEPLOYED,
-                    evaluation_dataset_reference="D'Ambros/AEEEM",
-                    evaluation_metrics={"registration": "runtime model response"},
+                    evaluation_dataset_reference=(
+                        "none (deterministic heuristic)"
+                        if is_heuristic
+                        else "D'Ambros/AEEEM"
+                    ),
+                    evaluation_metrics={
+                        "registration": "runtime model response",
+                        "model_kind": results.risk_result.model_kind,
+                    },
                 )
                 .on_conflict_do_nothing(index_elements=["model_type", "version_identifier"])
             )
@@ -305,7 +313,9 @@ def _finalize(
                         source_file=source_file,
                         model_version=model_version_record,
                         risk_score=score,
-                        confidence=score,
+                        # A defect probability is the prediction, not a measure
+                        # of uncertainty about that prediction.
+                        confidence=None,
                     )
                 )
 

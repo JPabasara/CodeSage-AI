@@ -198,6 +198,7 @@ def test_risk():
         "risk-fallback-heuristic-1.0",
         "risk-1.0.0",
     )
+    assert data["model_kind"] in ("trained", "heuristic")
 
     scores = data["scores"]
     assert len(scores) == 1

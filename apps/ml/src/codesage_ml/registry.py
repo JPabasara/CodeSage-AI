@@ -24,6 +24,7 @@ class LoadedModel:
     name: str
     version: str
     artifact: Any
+    kind: str = "trained"
 
 
 class _FallbackPipeline:
@@ -130,6 +131,7 @@ def load_risk_model() -> LoadedModel:
         name="risk_model",
         version="risk-fallback-heuristic-1.0",
         artifact=_FallbackRiskPipeline(),
+        kind="heuristic",
     )
 
 

@@ -90,7 +90,9 @@ def risk(body: RiskRequest) -> RiskResponse:
     risk_info = load_risk_model()
 
     if not body.files:
-        return RiskResponse(scores=[], model_version=risk_info.version)
+        return RiskResponse(
+            scores=[], model_version=risk_info.version, model_kind=risk_info.kind
+        )
 
     # Build 13-element feature vectors in strict canonical order
     vectors = [build_vector(file.metrics) for file in body.files]
@@ -109,7 +111,11 @@ def risk(body: RiskRequest) -> RiskResponse:
         for file, score in zip(body.files, risk_scores)
     ]
 
-    return RiskResponse(scores=scores, model_version=risk_info.version)
+    return RiskResponse(
+        scores=scores,
+        model_version=risk_info.version,
+        model_kind=risk_info.kind,
+    )
 
 
 @app.get("/version", response_model=VersionResponse)
