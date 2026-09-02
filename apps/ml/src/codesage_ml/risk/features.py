@@ -38,6 +38,11 @@ PROCESS_FEATURES: tuple[str, ...] = (
 FEATURE_ORDER: tuple[str, ...] = PRODUCT_FEATURES + PROCESS_FEATURES
 
 
+def aeeem_age_weeks_to_days(age_weeks: float) -> float:
+    """Convert AEEEM's release-relative age unit to the production contract."""
+    return float(age_weeks) * 7.0
+
+
 def build_vector(metrics: dict[str, float]) -> list[float]:
     """Assemble one file's feature vector in FEATURE_ORDER.
 

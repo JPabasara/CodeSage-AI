@@ -1,8 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from fastapi.testclient import TestClient
 
 from codesage_ml.main import app, classify
+from codesage_ml.registry import _FallbackRiskPipeline
+from codesage_ml.risk.features import FEATURE_ORDER, build_vector
 from codesage_ml.schemas import ClassifyRequest
 
 client = TestClient(app)
@@ -22,12 +25,15 @@ def test_healthz():
 
 
 def test_version():
-    """Verify version endpoint returns deployed SATD model version."""
+    """Verify version endpoint returns deployed model versions."""
     response = client.get("/version")
     assert response.status_code == 200
     data = response.json()
     assert data["satd_model_version"] in ("v1.0", "satd-1.0.0")
-    assert data["risk_model_version"] == "mock-1.0.0"
+    assert data["risk_model_version"] in (
+        "risk-fallback-heuristic-1.0",
+        "risk-1.0.0",
+    )
 
 
 def test_classify():
@@ -86,14 +92,15 @@ def test_same_id_gives_the_same_answer():
 
 def test_concurrent_requests_do_not_interfere():
     """Verify thread-safety under concurrent inference requests."""
+
     def predict(tag: str) -> dict[str, tuple[bool, str | None, float]]:
         request = ClassifyRequest(
-            comments=[{"id": f"{tag}-{i}", "text": "TODO: fix this" if i % 2 == 0 else "clean code"} for i in range(40)]
+            comments=[
+                {"id": f"{tag}-{i}", "text": "TODO: fix this" if i % 2 == 0 else "clean code"}
+                for i in range(40)
+            ]
         )
-        return {
-            p.id: (p.is_debt, p.category, p.confidence)
-            for p in classify(request).predictions
-        }
+        return {p.id: (p.is_debt, p.category, p.confidence) for p in classify(request).predictions}
 
     tags = ("A", "B", "C", "D")
     alone: dict[str, tuple[bool, str | None, float]] = {}
@@ -187,7 +194,11 @@ def test_risk():
     data = response.json()
 
     assert "model_version" in data
-    assert data["model_version"] == "mock-1.0.0"
+    assert data["model_version"] in (
+        "risk-fallback-heuristic-1.0",
+        "risk-1.0.0",
+    )
+    assert data["model_kind"] in ("trained", "heuristic")
 
     scores = data["scores"]
     assert len(scores) == 1
@@ -196,8 +207,135 @@ def test_risk():
     assert 0.0 <= score["risk_score"] <= 1.0
 
 
+def test_risk_accepts_supported_history_metrics():
+    """The endpoint accepts the two AEEEM-compatible history fields."""
+    payload = {
+        "files": [
+            {
+                "path": "src/HigherHistoryRisk.java",
+                "metrics": {
+                    "author_count": 20.0,
+                    "file_age_days": 500.0,
+                },
+            },
+            {
+                "path": "src/LowerHistoryRisk.java",
+                "metrics": {
+                    "author_count": 2.0,
+                    "file_age_days": 500.0,
+                },
+            },
+        ]
+    }
+    response = client.post("/risk", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    scores_by_path = {s["path"]: s["risk_score"] for s in data["scores"]}
+    assert set(scores_by_path) == {
+        "src/HigherHistoryRisk.java",
+        "src/LowerHistoryRisk.java",
+    }
+    assert all(0.0 <= score <= 1.0 for score in scores_by_path.values())
+
+
+def test_risk_handles_missing_metrics_gracefully():
+    """Verify that files with missing or partial metrics default to 0.0 without errors."""
+    payload = {
+        "files": [
+            {
+                "path": "src/EmptyMetrics.java",
+                "metrics": {},
+            },
+            {
+                "path": "src/PartialMetrics.java",
+                "metrics": {"wmc": 5.0},
+            },
+        ]
+    }
+    response = client.post("/risk", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+
+    scores = data["scores"]
+    assert len(scores) == 2
+    assert scores[0]["path"] == "src/EmptyMetrics.java"
+    assert 0.0 <= scores[0]["risk_score"] <= 1.0
+
+    assert scores[1]["path"] == "src/PartialMetrics.java"
+    assert 0.0 <= scores[1]["risk_score"] <= 1.0
+
+
+def test_risk_batch_multiple_files_order_and_determinism():
+    """Verify batch risk scoring preserves input file ordering and returns deterministic scores."""
+    files = [
+        {
+            "path": f"src/Module{i}/Service.java",
+            "metrics": {"wmc": float(i * 5), "loc": float(i * 100)},
+        }
+        for i in range(10)
+    ]
+    payload = {"files": files}
+
+    first_response = client.post("/risk", json=payload).json()
+    second_response = client.post("/risk", json=payload).json()
+
+    assert first_response["model_version"] == second_response["model_version"]
+
+    scores_1 = first_response["scores"]
+    scores_2 = second_response["scores"]
+    assert len(scores_1) == 10
+    assert len(scores_2) == 10
+
+    for i in range(10):
+        assert scores_1[i]["path"] == files[i]["path"]
+        assert scores_2[i]["path"] == files[i]["path"]
+        assert scores_1[i]["risk_score"] == pytest.approx(scores_2[i]["risk_score"], abs=1e-5)
+        assert 0.0 <= scores_1[i]["risk_score"] <= 1.0
+
+
 def test_risk_empty_list():
     """Verify bug-risk endpoint with empty file list."""
     response = client.post("/risk", json={"files": []})
     assert response.status_code == 200
     assert response.json()["scores"] == []
+
+
+def test_feature_vector_builder_canonical_order_and_defaults():
+    """Verify build_vector constructs exact 13-feature array in canonical order and defaults missing values."""
+    raw_metrics = {
+        "wmc": 15.0,
+        "loc": 300.0,
+        "commits_90d": 8.0,
+    }
+    vec = build_vector(raw_metrics)
+
+    assert len(vec) == len(FEATURE_ORDER) == 13
+    assert vec[0] == 15.0  # wmc is index 0
+    assert vec[1] == 0.0  # cbo is index 1 (missing -> 0.0)
+    assert vec[6] == 300.0  # loc is index 6
+    assert vec[9] == 8.0  # commits_90d is index 9
+
+
+def test_fallback_risk_pipeline_direct_probabilities():
+    """Verify _FallbackRiskPipeline directly produces valid probability pairs summing to 1.0."""
+    pipeline = _FallbackRiskPipeline()
+    vectors = [
+        [50.0, 20.0, 5.0, 10.0, 30.0, 2.0, 1500.0, 8.0, 0.05, 40.0, 5.0, 365.0, 1.0],
+        [2.0, 1.0, 1.0, 0.0, 3.0, 0.0, 30.0, 1.0, 0.2, 0.0, 1.0, 10.0, 10.0],
+    ]
+    probs = pipeline.predict_proba(vectors)
+    preds = pipeline.predict(vectors)
+
+    assert len(probs) == 2
+    assert len(preds) == 2
+
+    # High complexity / churn file
+    assert probs[0][0] + probs[0][1] == pytest.approx(1.0)
+    assert probs[0][1] > 0.5
+    assert preds[0] == 1
+
+    # Simple clean file
+    assert probs[1][0] + probs[1][1] == pytest.approx(1.0)
+    assert probs[1][1] < 0.5
+    assert preds[1] == 0

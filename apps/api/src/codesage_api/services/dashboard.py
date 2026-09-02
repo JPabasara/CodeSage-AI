@@ -493,7 +493,7 @@ def build_scan_history(
     session: Session,
     workspace_id: uuid.UUID,
     repository_id: uuid.UUID,
-    branch: str,
+    branch: str | None,
 ) -> list[ScanSummaryOut]:
     profile = profiles.get_active(session, workspace_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
@@ -515,17 +515,19 @@ def build_scan_history(
     }
     _enqueue_missing_scores(session, workspace_id, refs, profile, set(cached))
     output: list[ScanSummaryOut] = []
-    previous: float | None = None
+    previous_by_branch: dict[str, float] = {}
     for item in refs:
         stored_score = cached.get(item.id)
         if stored_score is None or stored_score.health_score is None:
             continue
         current = stored_score.health_score
+        item_branch = item.analysis_attempt.branch.name
+        previous = previous_by_branch.get(item_branch)
         output.append(
             ScanSummaryOut(
                 snapshot_id=str(item.id),
                 scan_id=str(item.analysis_attempt_id),
-                branch=branch,
+                branch=item_branch,
                 commit_sha=item.commit_sha,
                 scanned_at=item.scan_time.isoformat(),
                 finding_count=item.finding_count,
@@ -534,5 +536,5 @@ def build_scan_history(
                 delta=current - previous if previous is not None else 0.0,
             )
         )
-        previous = current
+        previous_by_branch[item_branch] = current
     return list(reversed(output))

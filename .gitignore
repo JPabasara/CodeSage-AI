@@ -17,6 +17,9 @@ node_modules/
 # Scratch space for one-off analysis. Nothing here is a deliverable.
 .tmp/
 
+# External research datasets cloned locally for ML experiments.
+external/Large-Defect-Prediction-Benchmark/
+
 # ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]

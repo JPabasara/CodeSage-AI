@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -46,6 +48,7 @@ class FileRisk(BaseModel):
 class RiskResponse(BaseModel):
     scores: list[FileRisk]
     model_version: str
+    model_kind: Literal["trained", "heuristic"]
 
 
 class VersionResponse(BaseModel):

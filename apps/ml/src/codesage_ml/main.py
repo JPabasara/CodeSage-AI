@@ -14,19 +14,15 @@ reachable from here (AI-05). This process loads versioned artifacts and answers
 questions; it never learns.
 """
 
-from __future__ import annotations
-
-import random
-
 from fastapi import FastAPI
 
-from codesage_ml.registry import load_satd_model
+from codesage_ml.registry import load_risk_model, load_satd_model
+from codesage_ml.risk.features import build_vector
 from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 from codesage_ml.schemas import (
     ClassifyRequest,
     ClassifyResponse,
     CommentPrediction,
-    FileFeaturesIn,
     FileRisk,
     RiskRequest,
     RiskResponse,
@@ -34,9 +30,6 @@ from codesage_ml.schemas import (
 )
 
 app = FastAPI(title="Code Sage AI — ML Inference", version="1.0.0")
-
-#: Reported by endpoints until a trained artifact replaces this service.
-MOCK_VERSION = "mock-1.0.0"
 
 
 @app.post("/classify", response_model=ClassifyResponse)
@@ -94,15 +87,35 @@ def risk(body: RiskRequest) -> RiskResponse:
     and both sides import it, because a mismatch is silent: the model returns
     plausible numbers computed from the wrong columns.
     """
-    scores = []
+    risk_info = load_risk_model()
 
-    for file in body.files:
-        # Keyed on the path, for the same reason as `/classify`: a file's score
-        # must not change because another scan happened to run at the same time.
-        rng = random.Random(file.path)
-        scores.append(FileRisk(path=file.path, risk_score=rng.uniform(0.0, 1.0)))
+    if not body.files:
+        return RiskResponse(
+            scores=[], model_version=risk_info.version, model_kind=risk_info.kind
+        )
 
-    return RiskResponse(scores=scores, model_version=MOCK_VERSION)
+    # Build 13-element feature vectors in strict canonical order
+    vectors = [build_vector(file.metrics) for file in body.files]
+
+    # Predict continuous bug-proneness probability [0.0, 1.0]
+    if hasattr(risk_info.artifact, "predict_proba"):
+        probs = risk_info.artifact.predict_proba(vectors)
+        # Class 1 is defective/bug-prone probability
+        risk_scores = [float(p[1]) if len(p) > 1 else float(p[0]) for p in probs]
+    else:
+        preds = risk_info.artifact.predict(vectors)
+        risk_scores = [float(p) for p in preds]
+
+    scores = [
+        FileRisk(path=file.path, risk_score=score)
+        for file, score in zip(body.files, risk_scores)
+    ]
+
+    return RiskResponse(
+        scores=scores,
+        model_version=risk_info.version,
+        model_kind=risk_info.kind,
+    )
 
 
 @app.get("/version", response_model=VersionResponse)
@@ -114,10 +127,11 @@ def version() -> VersionResponse:
     after a retraining would be silently incomparable (AI-03, DBR-18).
     """
     satd_info = load_satd_model()
+    risk_info = load_risk_model()
 
     return VersionResponse(
         satd_model_version=satd_info.version,
-        risk_model_version=MOCK_VERSION,
+        risk_model_version=risk_info.version,
     )
 
 

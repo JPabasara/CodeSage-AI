@@ -18,6 +18,11 @@ class FileMetrics:
     max_nesting_depth: int
     method_count: int
     longest_method_lines: int
+    cbo: float
+    dit: float
+    lcom: float
+    rfc: float
+    noc: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,13 +116,29 @@ def extract_ck_analysis(
             continue
         values = aggregated.setdefault(
             path,
-            {"loc": 0.0, "complexity": 0.0, "nesting": 0.0, "methods": 0.0, "longest": 0.0},
+            {
+                "loc": 0.0,
+                "complexity": 0.0,
+                "nesting": 0.0,
+                "methods": 0.0,
+                "longest": 0.0,
+                "cbo": 0.0,
+                "dit": 0.0,
+                "lcom": 0.0,
+                "rfc": 0.0,
+                "noc": 0.0,
+            },
         )
         
         values["loc"] += _number(row, "loc")
         values["complexity"] += _number(row, "wmc")
         values["nesting"] = max(values["nesting"], _number(row, "maxNestedBlocksQty"))
         values["methods"] += _number(row, "totalMethodsQty")
+        values["cbo"] += _number(row, "cbo")
+        values["dit"] = max(values["dit"], _number(row, "dit"))
+        values["lcom"] += _number(row, "lcom")
+        values["rfc"] += _number(row, "rfc")
+        values["noc"] += _number(row, "noc")
 
     for row in method_rows:
         path = _relative_path(row.get("file", ""), repository_path)
@@ -134,6 +155,11 @@ def extract_ck_analysis(
             max_nesting_depth=int(values["nesting"]),
             method_count=int(values["methods"]),
             longest_method_lines=int(values["longest"]),
+            cbo=values["cbo"],
+            dit=values["dit"],
+            lcom=values["lcom"],
+            rfc=values["rfc"],
+            noc=values["noc"],
         )
         for path, values in sorted(aggregated.items())
     ]

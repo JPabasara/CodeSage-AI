@@ -16,12 +16,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from codesage_ml.risk.features import FEATURE_ORDER
+
 
 @dataclass(frozen=True, slots=True)
 class LoadedModel:
     name: str
     version: str
     artifact: Any
+    kind: str = "trained"
 
 
 class _FallbackPipeline:
@@ -40,6 +43,39 @@ class _FallbackPipeline:
         return results
 
 
+class _FallbackRiskPipeline:
+    """Heuristic fallback when no trained risk model artifact is present on disk.
+
+    Computes a deterministic, smooth 0-1 risk score based on high complexity (wmc),
+    coupling (cbo), size (loc), and 90-day churn (commits_90d).
+    """
+
+    def predict_proba(self, X: list[list[float]]) -> list[list[float]]:
+        # FEATURE_ORDER = (wmc, cbo, dit, lcom, rfc, noc, loc, max_nested_blocks,
+        #                  comment_ratio, commits_90d, author_count, file_age_days, recency_days)
+        import numpy as np
+
+        results = []
+        for row in X:
+            wmc = row[0] if len(row) > 0 else 0.0
+            cbo = row[1] if len(row) > 1 else 0.0
+            loc = row[6] if len(row) > 6 else 0.0
+            churn = row[9] if len(row) > 9 else 0.0
+
+            # Normalized heuristic score bounded between 0.0 and 1.0
+            score = 1.0 / (
+                1.0 + np.exp(-0.02 * (wmc * 2.0 + cbo * 1.5 + loc * 0.01 + churn * 3.0 - 15.0))
+            )
+            score = float(np.clip(score, 0.05, 0.95))
+            results.append([1.0 - score, score])
+
+        return results
+
+    def predict(self, X: list[list[float]]) -> list[int]:
+        proba = self.predict_proba(X)
+        return [1 if p[1] >= 0.5 else 0 for p in proba]
+
+
 @lru_cache
 def load_satd_model() -> LoadedModel:
     """ML-1: the SATD classifier.
@@ -50,14 +86,15 @@ def load_satd_model() -> LoadedModel:
     a service that must answer fast enough not to stretch a scan.
     """
     import joblib
+
     model_path = artifact_dir() / "satd_v1.joblib"
     if model_path.exists():
         loaded = joblib.load(model_path)
         if isinstance(loaded, dict) and "pipeline" in loaded:
             return LoadedModel(
-                name="satd_classifier", 
-                version=loaded.get("version", "v1.0"), 
-                artifact=loaded["pipeline"]
+                name="satd_classifier",
+                version=loaded.get("version", "v1.0"),
+                artifact=loaded["pipeline"],
             )
         else:
             return LoadedModel(name="satd_classifier", version="v1.0", artifact=loaded)
@@ -73,13 +110,36 @@ def load_risk_model() -> LoadedModel:
     metrics. Because defective files are rare, class imbalance is handled at
     training time and the model is never evaluated on accuracy (FR-25).
     """
-    raise NotImplementedError
+    import joblib
+
+    model_path = artifact_dir() / "risk_v1.joblib"
+    if model_path.exists():
+        loaded = joblib.load(model_path)
+        if isinstance(loaded, dict) and "pipeline" in loaded:
+            artifact_features = loaded.get("feature_order")
+            if artifact_features != list(FEATURE_ORDER):
+                raise ValueError("Risk model feature order does not match the inference contract")
+            return LoadedModel(
+                name="risk_model",
+                version=loaded.get("version", "risk-1.0.0"),
+                artifact=loaded["pipeline"],
+            )
+        else:
+            return LoadedModel(name="risk_model", version="risk-1.0.0", artifact=loaded)
+
+    return LoadedModel(
+        name="risk_model",
+        version="risk-fallback-heuristic-1.0",
+        artifact=_FallbackRiskPipeline(),
+        kind="heuristic",
+    )
 
 
 def artifact_dir() -> Path:
     """Where versioned artifacts live. A mounted volume in production — models are
     not baked into the image, so replacing one does not require a rebuild."""
     import os
+
     env_dir = os.environ.get("CODESAGE_ML_ARTIFACT_DIR")
     if env_dir:
         return Path(env_dir)

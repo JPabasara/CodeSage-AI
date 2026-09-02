@@ -49,6 +49,17 @@ apps/ml/
 `./models` at `/models` read-only, so replacing a model is *drop the file, restart* —
 no rebuild and no application change.
 
+Before starting a clean environment, generate `models/risk_v1.joblib` with:
+
+```powershell
+python training/risk/prepare_aeeem.py ../../external/Large-Defect-Prediction-Benchmark/AEEEM-defect-dataset
+python training/risk/train.py
+```
+
+The `/risk` response reports `model_kind: "trained"` when that artifact is loaded
+and `model_kind: "heuristic"` when it is absent. This makes fallback operation
+visible to the worker and prevents it being recorded as an AEEEM-trained result.
+
 ## Training data
 
 | Model | Dataset | Notes |

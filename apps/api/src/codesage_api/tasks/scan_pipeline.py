@@ -30,6 +30,7 @@ from codesage_api.db.enums import (
 )
 from codesage_api.db.models import (
     AnalysisEngineModelVersion,
+    BugRiskPrediction,
     Finding,
     MLModelVersion,
     ProcessMetric,
@@ -44,6 +45,8 @@ from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
 from codesage_api.detection.fingerprint import satd_fingerprint
 from codesage_api.detection.reasons import render_satd_reason
+from codesage_api.detection.risk import client as risk_client
+from codesage_api.detection.risk.client import RiskClientResult
 from codesage_api.detection.rules.engine import DetectedFinding, detect
 from codesage_api.detection.rules.registry import from_stored
 from codesage_api.detection.satd.client import SATDResult, classify
@@ -62,6 +65,7 @@ logger = get_logger(__name__)
 class PipelineResults:
     extraction: ExtractionResult
     findings: list[DetectedFinding]
+    risk_result: RiskClientResult | None = None
     satd_predictions: list[SATDResult] = field(default_factory=list)
 
 
@@ -84,9 +88,7 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
         try:
             with session_scope() as session:
                 set_workspace_context(session, workspace_uuid)
-                scan_input = attempts.begin_for_worker(
-                    session, workspace_uuid, attempt_uuid
-                )
+                scan_input = attempts.begin_for_worker(session, workspace_uuid, attempt_uuid)
                 stored_rules = rules.list_definitions(session)
             if scan_input is None:
                 logger.error("Scan attempt was not found in its workspace")
@@ -126,6 +128,19 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
                 cloned.path,
                 extracted.method_metrics,
             )
+
+            # ML-2 Risk Model prediction with graceful degradation
+            risk_result: RiskClientResult | None = None
+            try:
+                process_by_path = {p.path: p for p in extracted.process_metrics}
+                risk_result = risk_client.predict(extracted.static_metrics, process_by_path)
+            except MLServiceUnavailable as exc:
+                logger.warning(
+                    "ML risk service unavailable; scan proceeding in degraded mode",
+                    extra={"error": str(exc)},
+                )
+
+            # ML-1 SATD prediction
             try:
                 satd_predictions = [
                     result for result in classify(extracted.comments) if result.is_debt
@@ -142,7 +157,9 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
             snapshot_id = _finalize(
                 attempt_uuid,
                 workspace_uuid,
-                PipelineResults(extracted, findings, satd_predictions),
+                PipelineResults(
+                    extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions
+                ),
             )
             progress.publish_progress(attempt_id, 100)
             try:
@@ -198,9 +215,54 @@ def _finalize(
         session.add(snapshot)
         session.flush()
 
-        process_by_path = {
-            item.path: item for item in results.extraction.process_metrics
-        }
+        # Register the exact ML-2 version before storing predictions.  Use the
+        # same conflict-safe pattern as ML-1: concurrent scans may observe a new
+        # model version at the same time.
+        model_version_record: MLModelVersion | None = None
+        if results.risk_result and results.risk_result.scores and results.risk_result.model_version:
+            v_name = results.risk_result.model_version
+            is_heuristic = results.risk_result.model_kind == "heuristic"
+            session.execute(
+                insert(MLModelVersion)
+                .values(
+                    model_type=MLModelType.BUG_RISK,
+                    version_identifier=v_name,
+                    training_date=datetime.now(UTC),
+                    deployment_status=ModelDeploymentStatus.DEPLOYED,
+                    evaluation_dataset_reference=(
+                        "none (deterministic heuristic)"
+                        if is_heuristic
+                        else "D'Ambros/AEEEM"
+                    ),
+                    evaluation_metrics={
+                        "registration": "runtime model response",
+                        "model_kind": results.risk_result.model_kind,
+                    },
+                )
+                .on_conflict_do_nothing(index_elements=["model_type", "version_identifier"])
+            )
+            model_version_record = session.scalar(
+                select(MLModelVersion).where(
+                    MLModelVersion.model_type == MLModelType.BUG_RISK,
+                    MLModelVersion.version_identifier == v_name,
+                )
+            )
+            if model_version_record is None:
+                raise RuntimeError("Bug-risk model version could not be registered.")
+
+            link = session.get(
+                AnalysisEngineModelVersion,
+                (attempt.analysis_engine_version_id, model_version_record.id),
+            )
+            if link is None:
+                session.add(
+                    AnalysisEngineModelVersion(
+                        analysis_engine_version_id=attempt.analysis_engine_version_id,
+                        model_version_id=model_version_record.id,
+                    )
+                )
+
+        process_by_path = {item.path: item for item in results.extraction.process_metrics}
         files_by_path: dict[str, SourceFile] = {}
         for metrics in results.extraction.static_metrics:
             source_file = SourceFile(
@@ -236,6 +298,24 @@ def _finalize(
                         author_count=process_metrics.author_count,
                         file_age=process_metrics.file_age_days,
                         recency=process_metrics.recency_days,
+                    )
+                )
+
+            # Persist ML-2 BugRiskPrediction row if prediction score is present
+            if (
+                results.risk_result
+                and model_version_record
+                and metrics.path in results.risk_result.scores
+            ):
+                score = results.risk_result.scores[metrics.path]
+                session.add(
+                    BugRiskPrediction(
+                        source_file=source_file,
+                        model_version=model_version_record,
+                        risk_score=score,
+                        # A defect probability is the prediction, not a measure
+                        # of uncertainty about that prediction.
+                        confidence=None,
                     )
                 )
 
@@ -292,9 +372,7 @@ def _finalize(
                         ),
                         evaluation_metrics={"registration": "runtime model response"},
                     )
-                    .on_conflict_do_nothing(
-                        index_elements=["model_type", "version_identifier"]
-                    )
+                    .on_conflict_do_nothing(index_elements=["model_type", "version_identifier"])
                 )
                 model_version = session.scalar(
                     select(MLModelVersion).where(
@@ -357,9 +435,7 @@ def _finalize(
                     measured_value=None,
                     threshold=None,
                     confidence=result.confidence,
-                    fingerprint=satd_fingerprint(
-                        result.comment.file_path, result.comment.text
-                    ),
+                    fingerprint=satd_fingerprint(result.comment.file_path, result.comment.text),
                 )
             )
 
