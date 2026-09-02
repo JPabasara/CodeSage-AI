@@ -38,7 +38,11 @@ ml_src = current_dir.parent.parent / "src"
 if str(ml_src) not in sys.path:
     sys.path.insert(0, str(ml_src))
 
-from codesage_ml.risk.features import FEATURE_ORDER, build_vector
+from codesage_ml.risk.features import (
+    FEATURE_ORDER,
+    aeeem_age_weeks_to_days,
+    build_vector,
+)
 
 
 def load_dataset(dataset_path: Path) -> tuple[pd.DataFrame, str]:
@@ -79,7 +83,9 @@ def build_feature_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.n
             "commits_90d": 0.0,
             "author_count": float(row.get("author_count", 0.0)),
             # Production PyDriller extraction reports days; AEEEM stores weeks.
-            "file_age_days": float(row.get("file_age_weeks", 0.0)) * 7.0,
+            "file_age_days": aeeem_age_weeks_to_days(
+                row.get("file_age_weeks", 0.0)
+            ),
             "recency_days": 0.0,
         }
         feature_rows.append(build_vector(metrics))
