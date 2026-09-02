@@ -1,15 +1,4 @@
-"""Value types the scoring engine speaks in.
 
-These are deliberately NOT the SQLAlchemy rows and NOT the Pydantic schemas.
-
-That looks like duplication and is the opposite: it is what keeps `scoring` a pure
-function (SAD G4, SRS SP-11). If the engine took ORM instances it would need a
-session, a database and a running Postgres to test — and the TC-11 worked example
-would stop being a unit test. Repositories map rows to these frozen dataclasses at
-the boundary; the engine never learns where they came from.
-
-Everything here is immutable. The engine derives; it never mutates its input.
-"""
 
 from __future__ import annotations
 
@@ -20,12 +9,7 @@ from codesage_api.scoring.enums import Category, Severity, Source
 
 @dataclass(frozen=True, slots=True)
 class ScoringFinding:
-    """One stored finding, reduced to only what the formula reads.
 
-    `severity` and `category` arrive already decided by the detector and are never
-    recomputed here (SRS FR-8.1). The engine reads `severity` solely to look up its
-    base points.
-    """
 
     fingerprint: str
     source: Source
@@ -72,7 +56,6 @@ class CategoryBreakdownItem:
 
 @dataclass(frozen=True, slots=True)
 class ScoringResult:
-    """Everything the engine derives in one pass. None of this is ever persisted."""
 
     findings: tuple[ScoredFinding, ...]  # ranked, floor applied
     files: tuple[ScoredFile, ...]

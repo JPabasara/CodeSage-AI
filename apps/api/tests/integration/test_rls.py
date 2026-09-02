@@ -43,17 +43,6 @@ def rls_database() -> Iterator[tuple[Engine, Engine, uuid.UUID, uuid.UUID]]:
                     )
                 )
                 connection.execute(text(f"CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}' NOSUPERUSER"))
-                # Inherit from codesage_app rather than re-granting by hand.
-                #
-                # The initial migration REVOKEs EXECUTE on app_workspace_for_user
-                # from PUBLIC and GRANTs it to `codesage_app` specifically. A test
-                # role that merely looks like the app role does not get that, and
-                # the sign-in lookup fails with "permission denied for function" —
-                # which is a privilege the real deployment has and the test did not.
-                #
-                # Membership means this fixture picks up whatever the migration
-                # grants, now and later, instead of maintaining a second copy of
-                # production's grant list that silently drifts from it.
                 connection.execute(text(f"GRANT codesage_app TO {APP_ROLE}"))
 
             old_migration_url = os.environ.get("CODESAGE_MIGRATION_DATABASE_URL")
@@ -217,11 +206,7 @@ def test_workspace_lookup_works_with_no_workspace_bound(
 
     user_id = uuid.uuid4()
     with owner_engine.begin() as connection:
-        # theme_preference must be spelled out. It is NOT NULL, and its default
-        # lives on the ORM mapping (`default=Theme.SYSTEM`) rather than on the
-        # column as a server_default — so SQLAlchemy fills it in only when the
-        # row is inserted through the ORM. This is raw SQL, which goes straight
-        # past that and hits the constraint.
+
         connection.execute(
             text(
                 "INSERT INTO app_user "
@@ -238,7 +223,6 @@ def test_workspace_lookup_works_with_no_workspace_bound(
             {"id": uuid.uuid4(), "user": user_id, "workspace": workspace_a},
         )
 
-    # No _set_workspace call: this is exactly the state the callback is in.
     with app_engine.connect() as connection:
         found = connection.execute(
             text("SELECT app_workspace_for_user(:user)"), {"user": user_id}

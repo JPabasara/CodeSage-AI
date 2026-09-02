@@ -1,4 +1,3 @@
-"""Assemble stored snapshot facts into profile-dependent read models."""
 
 from __future__ import annotations
 

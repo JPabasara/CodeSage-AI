@@ -1,4 +1,3 @@
-"""Connect repositories and serve workspace-scoped project metadata."""
 
 from __future__ import annotations
 
@@ -37,7 +36,6 @@ def connect(
     url: str,
     actor_user_id: uuid.UUID,
 ) -> RepoOut:
-    """Validate and persist one public GitHub repository and its default branch."""
     metadata = fetch_repository(url)
     existing = session.scalar(
         select(Repository).where(
@@ -86,11 +84,7 @@ def connect(
 
 
 def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
-    """List repositories without hydrating full analysis histories.
 
-    Ready profile-stamped summaries are returned immediately. A missing summary
-    is prepared and queued without hydrating files or findings in this request.
-    """
     statement = (
         select(Repository)
         .where(Repository.workspace_id == workspace_id)

@@ -1,8 +1,4 @@
-"""AnalysisOrchestrator — the scan lifecycle, as seen from the API (SRS FR-6).
 
-Starts, monitors, cancels and may skip analyses. Everything here runs in the API
-process; the pipeline itself runs in `tasks/`.
-"""
 
 from __future__ import annotations
 
@@ -59,15 +55,7 @@ def _status_out(
 def start(
     session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, branch: str
 ) -> ScanStatusOut:
-    """
-    Decide whether to scan, and if so enqueue it and return immediately.
 
-        1. read the branch head SHA from GitHub (REST, ETag-conditional)
-        2. read the SHA of the last SUCCESSFULLY COMPLETED analysis
-        3. if equal → return the existing snapshot's status; nothing is queued
-        4. otherwise → insert an AnalysisAttempt (queued), enqueue, return 202
-
-    """
     stored_branch = attempts.get_branch(
         session, workspace_id, repository_id, branch
     )
@@ -116,12 +104,7 @@ def get_status(
     repository_id: uuid.UUID,
     attempt_id: uuid.UUID,
 ) -> ScanStatusOut:
-    """Phase from PostgreSQL, progress percentage from Redis.
 
-    Two stores because they guarantee different things: a lost percentage is
-    recomputed by the next poll, whereas a lost failure would break SP-13's
-    requirement that the final phase be recoverable from the database alone.
-    """
     attempt = attempts.get_for_repository(
         session, workspace_id, repository_id, attempt_id
     )
@@ -150,12 +133,7 @@ def cancel(
     repository_id: uuid.UUID,
     attempt_id: uuid.UUID,
 ) -> ScanStatusOut:
-    """Request cancellation. Sets a Redis flag and returns; does not stop the worker.
 
-    Cooperative by design — see `tasks/cancel.py` for why forcing it would risk a
-    partial snapshot. The user learns the scan really stopped through the polling
-    channel they are already using, when the next poll returns `cancelled`.
-    """
     attempt = attempts.get_for_repository(
         session,
         workspace_id,
