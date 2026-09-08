@@ -90,3 +90,25 @@ test("the scan control never offers Scan and Stop at the same time", async ({
   await expect(scanButton(page)).toHaveCount(0)
   await expect(page.getByRole("button", { name: /stop/i })).toBeVisible()
 })
+
+// ── the score is computed after the scan (#109) ──────────────────────────────
+//
+// The API stores the snapshot when the scan finishes and scores it in a
+// background task, so the read taken at that moment answers 503 SCORE_PENDING.
+// The mock backend reproduces that window deliberately: without it this path is
+// dead code everywhere except production.
+
+test("a finished scan says it is calculating the score, then fills in by itself", async ({
+  page,
+}) => {
+  await scanButton(page).click()
+  await expect(scanButton(page)).toBeVisible({ timeout: 15_000 }) // terminal
+
+  // A wait, not a failure — this is the screen an evaluator sees first.
+  await expect(page.getByText(/calculating your health score/i)).toBeVisible()
+  await expect(page.getByText(/couldn’t load this dashboard/i)).toHaveCount(0)
+
+  // …and it resolves with nothing pressed and no refresh.
+  await expect(page.getByText("Code Health")).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/calculating your health score/i)).toHaveCount(0)
+})
