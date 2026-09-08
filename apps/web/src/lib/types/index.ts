@@ -67,6 +67,11 @@ export type ErrorCode =
   | "VALIDATION_FAILED"
   | "RATE_LIMITED"
   | "UPSTREAM_UNAVAILABLE"
+  // 503 while a stored snapshot's score is still being computed. Added when the
+  // async scoring layer landed; the generated api.ts has carried it since, and
+  // this mirror had not caught up — so the one code the dashboard most needs to
+  // branch on was the one it could not name.
+  | "SCORE_PENDING"
   | "INTERNAL_ERROR"
 
 /** The body of `POST /api/projects`. */
