@@ -4,6 +4,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { ErrorState } from "@/components/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { applyProfile } from "@/lib/api/client"
@@ -65,7 +66,12 @@ function sameNumbers(
 
 export default function ProfilesPage() {
   const { data: presets, loading: loadingPresets } = useProfiles()
-  const { data: active, loading: loadingActive, error } = useActiveProfile()
+  const {
+    data: active,
+    loading: loadingActive,
+    error,
+    refetch,
+  } = useActiveProfile()
 
   // Slider positions stay client state until Apply. A single drag crosses many
   // values, and writing each one would cost a write and a full re-derivation per
@@ -119,9 +125,11 @@ export default function ProfilesPage() {
   if (error) {
     return (
       <div className="p-6">
-        <p className="text-destructive text-sm">
-          Couldn’t load the active profile: {error.message}
-        </p>
+        <ErrorState
+          title="Couldn’t load the active profile"
+          detail={error.message}
+          onRetry={refetch}
+        />
       </div>
     )
   }
