@@ -190,7 +190,7 @@ test("a genuine 500 is an error, not a pending score, and Retry re-runs the read
   expect(asks).toBe(1)
 
   broken = false
-  act(() => result.current.reload())
+  act(() => result.current.refetch())
 
   // Retry blanks the stale error rather than leaving it on screen…
   expect(result.current.loading).toBe(true)
