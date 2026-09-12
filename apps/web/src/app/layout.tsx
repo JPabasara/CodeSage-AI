@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Inter } from "next/font/google"
 import "./globals.css"
 import { cn } from "@/lib/utils"
 import { MswProvider } from "@/components/msw-provider"
+import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
@@ -35,6 +36,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // next-themes writes `class="dark"` and `style="color-scheme"` onto this
+      // element from an inline script that runs BEFORE React hydrates — that is
+      // what stops the page painting light and then snapping to dark. The
+      // server's HTML therefore cannot match what React finds here, and this
+      // tells React that the difference is intended rather than a bug. It
+      // applies to this element only, not to the tree below it.
+      suppressHydrationWarning
       className={cn(
         "h-full",
         "antialiased",
@@ -45,8 +53,21 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        <MswProvider>{children}</MswProvider>
-        <Toaster richColors position="bottom-right" />
+        <ThemeProvider
+          // `class`, because globals.css keys its dark palette off `.dark`.
+          attribute="class"
+          // Follow the operating system until the user says otherwise. Someone
+          // who runs their machine dark should not be handed a white screen.
+          defaultTheme="system"
+          enableSystem
+          // Colours swap instantly instead of every transition on the page
+          // animating at once, which looks like a fault rather than a setting.
+          disableTransitionOnChange
+        >
+          <MswProvider>{children}</MswProvider>
+          {/* Inside the provider: <Toaster> reads useTheme(). */}
+          <Toaster richColors position="bottom-right" />
+        </ThemeProvider>
       </body>
     </html>
   )

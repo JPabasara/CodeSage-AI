@@ -14,6 +14,20 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByText("acme/acme-payments")).toBeVisible()
 })
 
+/**
+ * The repository rows, and ONLY those.
+ *
+ * A bare `getByRole("listitem")` also matches the toast surface, whose <li>
+ * reads "Connected octocat/Hello-World" — which contains the repository name a
+ * filter is looking for. That made the connect test pass or fail on timing: fast
+ * enough and only the toast existed, so the assertion matched the toast and
+ * never checked the list at all.
+ */
+const repoRows = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("list", { name: /connected repositories/i })
+    .getByRole("listitem")
+
 /** The connect form: type a URL, press Connect. */
 async function connect(page: import("@playwright/test").Page, url: string) {
   await page.getByLabel(/repository url/i).fill(url)
@@ -23,23 +37,21 @@ async function connect(page: import("@playwright/test").Page, url: string) {
 test("the list shows each repository with its visibility and health hint", async ({
   page,
 }) => {
-  const payments = page
-    .getByRole("listitem")
-    .filter({ hasText: "acme-payments" })
+  const payments = repoRows(page).filter({ hasText: "acme-payments" })
   await expect(payments.getByText("public")).toBeVisible()
   // Grade + score + signed delta, from the DERIVED latest_health hint.
   await expect(payments.getByText(/\b72\/100\b/)).toBeVisible()
 
   // Visibility is recorded and displayed even though connecting a private
   // repository is v2 — so a private row must render.
-  const octo = page.getByRole("listitem").filter({ hasText: "octo-cli" })
+  const octo = repoRows(page).filter({ hasText: "octo-cli" })
   await expect(octo.getByText("private")).toBeVisible()
 })
 
 test("a repository that was never scanned says so, instead of showing a zero", async ({
   page,
 }) => {
-  const octo = page.getByRole("listitem").filter({ hasText: "octo-cli" })
+  const octo = repoRows(page).filter({ hasText: "octo-cli" })
   // `latest_health` is ABSENT, not zero. "Not scanned yet" and "scored 0" are
   // completely different facts and the list has to tell them apart.
   await expect(octo.getByText(/not scanned yet/i)).toBeVisible()
@@ -51,12 +63,11 @@ test("connecting a public repository adds it to the list", async ({ page }) => {
 
   await expect(page.getByText(/connected octocat\/Hello-World/i)).toBeVisible()
   await expect(
-    page.getByRole("listitem").filter({ hasText: "octocat/Hello-World" }),
+    repoRows(page).filter({ hasText: "octocat/Hello-World" }),
   ).toBeVisible()
   // Freshly connected: no scan has run, so no health hint.
   await expect(
-    page
-      .getByRole("listitem")
+    repoRows(page)
       .filter({ hasText: "Hello-World" })
       .getByText(/not scanned yet/i),
   ).toBeVisible()
@@ -85,8 +96,7 @@ test("each connect failure explains itself in its own words", async ({
 })
 
 test("selecting a project opens its dashboard", async ({ page }) => {
-  await page
-    .getByRole("listitem")
+  await repoRows(page)
     .filter({ hasText: "acme-payments" })
     .getByRole("button", { name: /select/i })
     .click()
@@ -98,8 +108,7 @@ test("selecting a project opens its dashboard", async ({ page }) => {
 test("the repo id in the URL is the contract's uuid, not a slug", async ({
   page,
 }) => {
-  await page
-    .getByRole("listitem")
+  await repoRows(page)
     .filter({ hasText: "acme-payments" })
     .getByRole("button", { name: /select/i })
     .click()

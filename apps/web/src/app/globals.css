@@ -125,6 +125,26 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /*
+    severity and health, restated for a dark ground.
+
+    These were defined under :root only, so before this they kept their light
+    values in dark mode — and a 600-weight red chosen to read on white sinks
+    into a near-black background. Every value here is the 400-weight of the same
+    hue: same meaning, same order, lifted until it reads.
+
+    The pairs are deliberate and must stay paired: health-bad IS critical and
+    health-mid IS medium, so a file tinted "bad" and a badge marked "critical"
+    can never drift apart.
+  */
+  --severity-critical: 0 91% 71%; /* red    */
+  --severity-high: 27 96% 61%; /* orange */
+  --severity-medium: 43 96% 56%; /* amber  */
+  --severity-low: 215 20% 65%; /* slate  */
+  --health-bad: 0 91% 71%;
+  --health-mid: 43 96% 56%;
+  --health-good: 142 69% 58%;
 }
 
 @layer base {
