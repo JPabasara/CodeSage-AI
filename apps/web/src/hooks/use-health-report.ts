@@ -53,10 +53,10 @@ const isScorePending = (error: unknown) =>
  * that is neither data nor an error. `useQuery` has no way to say that, and it
  * is shared by every other read hook, none of which needs a retry loop.
  *
- * `reload` DOES clear the current result here, unlike `useQuery`'s. It is wired
- * to two things — the Retry button and the end of a scan — and both want the
- * screen to admit it is fetching again. After a scan in particular the old
- * numbers are known to be stale, so leaving them up would be a lie.
+ * `reload` and `refetch` mean the same here as they do in `useQuery` — quiet and
+ * loud. The dashboard uses the loud one for both of its cases, including the end
+ * of a scan: those numbers are *known* to be stale, so leaving them up while a
+ * fresh score is fetched would be a lie.
  */
 export function useHealthReport(
   repoId: string,
@@ -71,9 +71,11 @@ export function useHealthReport(
     pending?: boolean
   }>()
 
-  // Bumping this re-runs the effect without changing the key.
+  // Bumping this re-runs the effect without changing the key. Both forms also
+  // restart the score-pending deadline, because the effect recomputes it.
   const [nonce, setNonce] = useState(0)
-  const reload = useCallback(() => {
+  const reload = useCallback(() => setNonce((n) => n + 1), [])
+  const refetch = useCallback(() => {
     setResult(undefined)
     setNonce((n) => n + 1)
   }, [])
@@ -135,5 +137,6 @@ export function useHealthReport(
     pending: settled ? (result?.pending ?? false) : false,
     loading: !settled,
     reload,
+    refetch,
   }
 }

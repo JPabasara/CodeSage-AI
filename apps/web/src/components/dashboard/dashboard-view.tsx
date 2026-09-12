@@ -9,7 +9,7 @@ import { HealthGraphCard } from "@/components/dashboard/health-graph-card"
 import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
-import { Button } from "@/components/ui/button"
+import { ErrorState } from "@/components/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
@@ -44,16 +44,20 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     loading,
     pending: scorePending,
     error,
-    reload,
+    refetch,
   } = useHealthReport(repoId, activeBranch)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
+  //
+  // `refetch`, not `reload`: a finished scan makes the numbers on screen stale,
+  // so the loud form is the honest one. It is also what puts the "calculating
+  // your health score" state on screen while the new snapshot is scored (#109).
   const {
     status: scanStatus,
     stopping,
     scan: runScan,
     stop: stopScan,
-  } = useScan(repoId, reload)
+  } = useScan(repoId, refetch)
 
   // The selected finding lives in the URL, not in state, so a refresh restores
   // detail mode and Back closes it. Fingerprints are stable across scans, which
@@ -144,15 +148,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     // from scratch, including a fresh score-pending budget.
     if (error) {
       return (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm">
-          <div className="text-destructive">
-            <p className="font-medium">Couldn’t load this dashboard</p>
-            <p>{error.message}</p>
-          </div>
-          <Button variant="outline" size="sm" onClick={reload}>
-            Retry
-          </Button>
-        </div>
+        <ErrorState
+          title="Couldn’t load this dashboard"
+          detail={error.message}
+          onRetry={refetch}
+          className="flex-1 items-center justify-center p-6 text-center"
+        />
       )
     }
 
