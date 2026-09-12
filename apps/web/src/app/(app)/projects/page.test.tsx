@@ -5,6 +5,7 @@ import { beforeEach, expect, test, vi } from "vitest"
 import { http, HttpResponse } from "msw"
 
 import { server } from "@/lib/mocks/server"
+import { mockRepos } from "@/lib/mocks/fixtures"
 import ProjectsPage from "./page"
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -180,4 +181,62 @@ test("an unrecognised code still shows the server's sentence rather than nothing
   // No entry in the message map for this code, so fall back to `detail` - which
   // is still a sentence, and better than "503 Service Unavailable".
   expect(await failureMessage()).toMatch(/bad day/i)
+})
+
+// ── the two halves of reload vs refetch, on one screen (#110) ────────────────
+
+test("a failed list offers a Retry that actually reloads it", async () => {
+  let broken = true
+  server.use(
+    http.get("*/api/projects", () =>
+      broken
+        ? HttpResponse.json(
+            { detail: "Something broke.", code: "INTERNAL_ERROR" },
+            { status: 500 },
+          )
+        : HttpResponse.json(mockRepos),
+    ),
+  )
+
+  render(<ProjectsPage />)
+  expect(await screen.findByText(/couldn’t load projects/i)).toBeInTheDocument()
+
+  // Before #110 this screen had no Retry at all: a failed load was a dead end
+  // and the only way out was refreshing the browser.
+  broken = false
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+
+  expect(await screen.findByText("acme/acme-payments")).toBeInTheDocument()
+  expect(screen.queryByText(/couldn’t load projects/i)).not.toBeInTheDocument()
+})
+
+test("connecting a repository refreshes the list without blanking it", async () => {
+  // Hold the SECOND read open, so "while the refresh is in flight" is a moment
+  // this test can actually stand in rather than a race it might lose.
+  let reads = 0
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  server.use(
+    http.get("*/api/projects", async () => {
+      reads += 1
+      if (reads > 1) await held
+      return HttpResponse.json(mockRepos)
+    }),
+  )
+
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/octocat/hello-world")
+  await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
+
+  // The refresh has not answered yet, and the list the user was reading is
+  // still on screen. This is `reload`, and it is why `refetch` had to be a
+  // second function rather than a change to this one.
+  expect(screen.getByText("acme/acme-payments")).toBeInTheDocument()
+  expect(screen.queryByTestId("projects-loading")).not.toBeInTheDocument()
+
+  release()
 })

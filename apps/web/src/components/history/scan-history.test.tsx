@@ -66,17 +66,24 @@ test("a failure reads as an error, not as an empty state", async () => {
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })
 
-test("Retry actually refetches, so a recovered backend fills the table in", async () => {
+test("Retry shows the skeleton, then fills the table in", async () => {
   let failing = true
+  // Hold the retried read open, so the in-between state is a moment the test
+  // can stand in rather than a race it might lose.
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
   server.use(
-    http.get("*/api/repos/:repoId/scans", () =>
-      failing
-        ? HttpResponse.json(
-            { detail: "Something broke.", code: "INTERNAL_ERROR" },
-            { status: 500 },
-          )
-        : HttpResponse.json(ONE_ROW),
-    ),
+    http.get("*/api/repos/:repoId/scans", async () => {
+      if (failing)
+        return HttpResponse.json(
+          { detail: "Something broke.", code: "INTERNAL_ERROR" },
+          { status: 500 },
+        )
+      await held
+      return HttpResponse.json(ONE_ROW)
+    }),
   )
   render(<ScanHistory repoId={DEMO_REPO_ID} />)
 
@@ -84,7 +91,16 @@ test("Retry actually refetches, so a recovered backend fills the table in", asyn
   failing = false
   await userEvent.click(screen.getByRole("button", { name: "Retry" }))
 
-  // Retry has to re-run the fetch, not just clear the message.
+  // The press is VISIBLE. With the old quiet `reload` nothing changed here at
+  // all until the answer landed, so the button read as dead and got pressed
+  // again — which is the whole of #110.
+  expect(await screen.findByTestId("scan-history-loading")).toBeInTheDocument()
+  expect(
+    screen.queryByText(/couldn’t load the scan history/i),
+  ).not.toBeInTheDocument()
+
+  // …and Retry re-runs the fetch, not just the message.
+  release()
   await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument())
   expect(screen.getByText("a1b2c3d")).toBeInTheDocument()
 })
