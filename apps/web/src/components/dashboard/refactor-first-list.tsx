@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { CheckCircle2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -61,6 +62,30 @@ export function RefactorFirstList({
         SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
     )
   }, [findings, category])
+
+  if (findings.length === 0) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Refactor first</h2>
+        </div>
+        <div className="rounded-md border p-6 text-center space-y-2">
+          <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="size-5" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">No refactoring issues found</p>
+            <p className="text-muted-foreground text-xs">
+              The scan found no technical debt or refactoring issues on this branch.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Run a new scan after pushing code changes to keep track of code health.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-3">
