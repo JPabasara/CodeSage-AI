@@ -73,3 +73,23 @@ test("filters the list by debt type", async () => {
   expect(screen.getByText("critical one")).toBeInTheDocument()
   expect(screen.queryByText("low one")).not.toBeInTheDocument()
 })
+
+test("zero findings displays the celebratory empty state (U-14)", () => {
+  render(<RefactorFirstList findings={[]} />)
+
+  expect(screen.getByText("No refactoring issues found")).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /the scan found no technical debt or refactoring issues on this branch/i,
+    ),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /run a new scan after pushing code changes to keep track of code health/i,
+    ),
+  ).toBeInTheDocument()
+
+  // Must not render a table
+  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+})
+
