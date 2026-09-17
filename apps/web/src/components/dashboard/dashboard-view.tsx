@@ -9,6 +9,7 @@ import { HealthGraphCard } from "@/components/dashboard/health-graph-card"
 import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
+import { ErrorState } from "@/components/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
@@ -41,17 +42,22 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const {
     data: report,
     loading,
+    pending: scorePending,
     error,
-    reload,
+    refetch,
   } = useHealthReport(repoId, activeBranch)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
+  //
+  // `refetch`, not `reload`: a finished scan makes the numbers on screen stale,
+  // so the loud form is the honest one. It is also what puts the "calculating
+  // your health score" state on screen while the new snapshot is scored (#109).
   const {
     status: scanStatus,
     stopping,
     scan: runScan,
     stop: stopScan,
-  } = useScan(repoId, reload)
+  } = useScan(repoId, refetch)
 
   // The selected finding lives in the URL, not in state, so a refresh restores
   // detail mode and Back closes it. Fingerprints are stable across scans, which
@@ -90,13 +96,35 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // branch, so a freshly connected repository (404, no snapshot) lost the very
   // Scan button that would produce the first one. Only the body below swaps.
   const body = () => {
-    if (loading) {
+    // Two different waits, one shape. `loading` is "the request is in flight";
+    // `scorePending` is "the snapshot is stored and the API is still scoring it"
+    // (503 SCORE_PENDING). The second only ever follows a scan, so it earns a
+    // sentence — an unlabelled skeleton right after "Scan complete" reads as a
+    // stall. The hook keeps asking; nothing here has to.
+    if (loading || scorePending) {
       return (
         <div className="space-y-4 p-4">
           <div className="grid gap-4 lg:grid-cols-2">
             <Skeleton className="h-64 w-full" />
             <Skeleton className="h-64 w-full" />
           </div>
+          {scorePending && (
+            <div
+              // polite, not assertive: it is progress, and it must not interrupt
+              // a screen reader mid-sentence.
+              role="status"
+              aria-live="polite"
+              className="text-muted-foreground flex flex-col items-center gap-1 text-center text-sm"
+            >
+              <p className="text-foreground font-medium">
+                Calculating your health score…
+              </p>
+              <p>
+                Your scan finished. Scoring it against the active profile takes
+                a few seconds.
+              </p>
+            </div>
+          )}
         </div>
       )
     }
@@ -115,11 +143,17 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
+    // A genuine failure, and only a genuine failure, gets here — SCORE_PENDING
+    // was handled above and a 404 is the empty state. Retry re-runs the read
+    // from scratch, including a fresh score-pending budget.
     if (error) {
       return (
-        <div className="text-destructive p-6 text-sm">
-          Couldn’t load this dashboard: {error.message}
-        </div>
+        <ErrorState
+          title="Couldn’t load this dashboard"
+          detail={error.message}
+          onRetry={refetch}
+          className="flex-1 items-center justify-center p-6 text-center"
+        />
       )
     }
 

@@ -205,3 +205,80 @@ test("finishing the first scan refetches the report, so the empty state fills in
   ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })
+
+// ── SCORE_PENDING (#109) ────────────────────────────────────────────────────
+//
+// The API scores a snapshot in a background task, so the read taken the moment a
+// scan finishes answers 503 SCORE_PENDING. Rendering that as a red error is the
+// first thing anyone sees after their first scan, and it is not true.
+
+test("a score still being calculated is a wait, not an error", async () => {
+  const scorePending = () =>
+    HttpResponse.json(
+      {
+        detail:
+          "The dashboard score is still being prepared. Please try again shortly.",
+        code: "SCORE_PENDING",
+      },
+      { status: 503 },
+    )
+
+  // Branch-aware, because the first render asks with an empty branch — the
+  // branch list has not landed yet — so "the first ask" is not the first ask
+  // for `main`. Counting raw requests would answer ready one poll too early.
+  let asksForMain = 0
+  server.use(
+    http.get("*/api/repos/:repoId/health", ({ request }) => {
+      const branch = new URL(request.url).searchParams.get("branch")
+      if (branch !== "main") return scorePending()
+      asksForMain += 1
+      return asksForMain === 1
+        ? scorePending()
+        : HttpResponse.json(mockHealthReport)
+    }),
+  )
+
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+
+  expect(
+    await screen.findByText(/calculating your health score/i),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByText(/couldn’t load this dashboard/i),
+  ).not.toBeInTheDocument()
+  // Not the never-scanned empty state either — the snapshot does exist.
+  expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
+
+  // Arrives on its own. No Retry pressed, no refresh.
+  expect(
+    await screen.findByText("Code Health", {}, { timeout: 8000 }),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByText(/calculating your health score/i),
+  ).not.toBeInTheDocument()
+}, 15_000)
+
+test("the error state's Retry actually re-runs the read", async () => {
+  let broken = true
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      broken
+        ? HttpResponse.json(
+            { detail: "Something broke.", code: "INTERNAL_ERROR" },
+            { status: 500 },
+          )
+        : HttpResponse.json(mockHealthReport),
+    ),
+  )
+
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await screen.findByText(/couldn’t load this dashboard/i)
+
+  broken = false
+  await userEvent.click(screen.getByRole("button", { name: /retry/i }))
+
+  expect(await screen.findByText("Code Health")).toBeInTheDocument()
+  expect(
+    screen.queryByText(/couldn’t load this dashboard/i),
+  ).not.toBeInTheDocument()
+})

@@ -120,6 +120,20 @@ const cancelRequested = new Set<string>()
  */
 const lastSuccessfulSha = new Map<string, string>()
 
+/**
+ * How many health requests answer 503 SCORE_PENDING once a scan completes.
+ *
+ * The real API stores the snapshot and scores it in a background task, so there
+ * is a genuine window where the snapshot exists and its score does not. Faking
+ * that window is the point: without it the client's pending path is dead code in
+ * dev and in Playwright, and the first time anyone sees it is the demo. Two asks
+ * (~4s at the client's poll interval) is long enough to read the message.
+ */
+const PENDING_ASKS_AFTER_SCAN = 2
+
+/** repo@branch → how many more health requests still answer SCORE_PENDING. */
+const pendingScores = new Map<string, number>()
+
 const scanKey = (repoId: string, branch: string) => `${repoId}@${branch}`
 
 /** A stand-in for a database-generated uuid. */
@@ -168,8 +182,12 @@ function tick(repoId: string): ScanStatus {
     finished_at: now,
   }
   scans.set(repoId, done)
-  if (done.branch && done.commit_sha) {
-    lastSuccessfulSha.set(scanKey(repoId, done.branch), done.commit_sha)
+  if (done.branch) {
+    // The snapshot is stored the moment the scan finishes; the score is not.
+    pendingScores.set(scanKey(repoId, done.branch), PENDING_ASKS_AFTER_SCAN)
+    if (done.commit_sha) {
+      lastSuccessfulSha.set(scanKey(repoId, done.branch), done.commit_sha)
+    }
   }
   return done
 }
@@ -178,6 +196,7 @@ export function resetMockBackend() {
   scans.clear()
   cancelRequested.clear()
   lastSuccessfulSha.clear()
+  pendingScores.clear()
   activeProfile = balancedProfile
   connected = [...mockRepos]
   storage()?.removeItem(PROJECTS_KEY)
@@ -383,6 +402,19 @@ export const handlers = [
     const branch = url.searchParams.get("branch") ?? defaultBranch.name
     if (!mockBranches.some((b) => b.name === branch)) {
       return fail(404, "NOT_FOUND", "No such branch.")
+    }
+
+    // 503, not 404 and not an empty report: the snapshot is there, its score is
+    // not yet. Answering 200 with a zero would be the harmful version of this —
+    // "scored 0" and "not scored" must never look the same.
+    const stillScoring = pendingScores.get(scanKey(repoId, branch)) ?? 0
+    if (stillScoring > 0) {
+      pendingScores.set(scanKey(repoId, branch), stillScoring - 1)
+      return fail(
+        503,
+        "SCORE_PENDING",
+        "The dashboard score is still being prepared. Please try again shortly.",
+      )
     }
 
     return HttpResponse.json(

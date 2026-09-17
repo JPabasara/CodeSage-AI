@@ -14,8 +14,23 @@ export interface QueryState<T> {
    * returns. Deliberately does not flip `loading` back on — the existing data
    * stays on screen, because a list that blanked to skeletons on every add would
    * read as a bug.
+   *
+   * Quiet on purpose. Behind a Retry button use {@link refetch} instead.
    */
   reload: () => void
+  /**
+   * Re-run the fetcher and *show* it: data and error are cleared first, so
+   * `loading` flips back on and the screen returns to its skeleton.
+   *
+   * This is what a **Retry** button needs. With `reload` the press produces no
+   * visible change at all — the old error simply stays until the new answer
+   * lands — so the button reads as dead and gets pressed again and again.
+   *
+   * The two are separate rather than one function with a flag because the
+   * choice is not a preference: a silent reload after "project connected" is
+   * right, and a silent reload behind Retry is a bug.
+   */
+  refetch: () => void
 }
 
 /**
@@ -39,6 +54,13 @@ export function useQuery<T>(
   // Bumping this re-runs the effect without changing the key.
   const [nonce, setNonce] = useState(0)
   const reload = useCallback(() => setNonce((n) => n + 1), [])
+
+  // Same re-run, but the result is dropped first. `settled` then goes false,
+  // which is the single switch that turns `loading` back on.
+  const refetch = useCallback(() => {
+    setResult(undefined)
+    setNonce((n) => n + 1)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -65,5 +87,6 @@ export function useQuery<T>(
     error: settled ? result?.error : undefined,
     loading: !settled,
     reload,
+    refetch,
   }
 }

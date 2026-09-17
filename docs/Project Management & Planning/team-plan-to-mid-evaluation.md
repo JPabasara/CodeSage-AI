@@ -2,6 +2,10 @@
 
 *Working plan · written 17 Aug 2026 · Group 16. Not a deliverable. Nine days.*
 
+> **Superseded on 6 Sep 2026 by [team-plan-to-final.md](team-plan-to-final.md).**
+> Kept as the record of how the mid-evaluation was planned and divided. The ownership
+> split in §1 still holds; the milestones, issues and dates below do not.
+
 ---
 
 ## The goal

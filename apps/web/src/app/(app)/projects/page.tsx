@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { ApiRequestError, connectRepo } from "@/lib/api/client"
 import type { ErrorCode } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
+import { ErrorState } from "@/components/error-state"
 import { ProjectList } from "@/components/projects/project-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProjects } from "@/hooks/use-projects"
@@ -25,7 +26,10 @@ const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
 
 export default function ProjectsPage() {
   const router = useRouter()
-  const { data: repos, loading, error, reload } = useProjects()
+  // Both halves of the contract, on one screen: `reload` after a successful
+  // connect keeps the list on screen, `refetch` behind Retry blanks it to
+  // skeletons so the press is visibly doing something.
+  const { data: repos, loading, error, reload, refetch } = useProjects()
   const [connecting, setConnecting] = useState(false)
 
   async function onConnect(url: string) {
@@ -59,11 +63,13 @@ export default function ProjectsPage() {
       <ConnectRepo onConnect={onConnect} busy={connecting} />
 
       {error ? (
-        <p className="text-destructive text-sm">
-          Couldn’t load projects: {error.message}
-        </p>
+        <ErrorState
+          title="Couldn’t load projects"
+          detail={error.message}
+          onRetry={refetch}
+        />
       ) : loading ? (
-        <div className="space-y-2">
+        <div className="space-y-2" data-testid="projects-loading">
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
         </div>

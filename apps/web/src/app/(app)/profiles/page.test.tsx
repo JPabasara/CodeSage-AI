@@ -2,8 +2,12 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, test, vi } from "vitest"
 
+import { http, HttpResponse } from "msw"
+
 import ProfilesPage from "./page"
 import * as client from "@/lib/api/client"
+import { balancedProfile } from "@/lib/mocks/fixtures"
+import { server } from "@/lib/mocks/server"
 
 /** Wait for the seed-from-active load to finish. */
 async function ready() {
@@ -177,4 +181,35 @@ test("the mock stores an edited preset as a custom, non-preset profile", async (
   expect(saved.name).toBe("Custom")
   expect(saved.is_preset).toBe(false)
   expect(saved.is_active).toBe(true)
+})
+
+// ── a failed load is no longer a dead end (#110) ─────────────────────────────
+
+test("a failed profile load offers a Retry that actually reloads it", async () => {
+  let broken = true
+  server.use(
+    http.get("*/api/profiles/active", () =>
+      broken
+        ? HttpResponse.json(
+            { detail: "Something broke.", code: "INTERNAL_ERROR" },
+            { status: 500 },
+          )
+        : HttpResponse.json(balancedProfile),
+    ),
+  )
+
+  render(<ProfilesPage />)
+  expect(
+    await screen.findByText(/couldn’t load the active profile/i),
+  ).toBeInTheDocument()
+
+  // This screen returns early on error, so before #110 a failed read hid the
+  // whole page — sliders, presets and all — with nothing to press.
+  broken = false
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }))
+
+  expect(await screen.findByText("Category weights")).toBeInTheDocument()
+  expect(
+    screen.queryByText(/couldn’t load the active profile/i),
+  ).not.toBeInTheDocument()
 })

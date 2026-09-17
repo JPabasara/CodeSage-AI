@@ -3,6 +3,7 @@
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
+import { ErrorState } from "@/components/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -71,7 +72,7 @@ function ScanRow({ scan }: Readonly<{ scan: ScanSummary }>) {
 }
 
 export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
-  const { data: scans, loading, error, reload } = useScanHistory(repoId)
+  const { data: scans, loading, error, refetch } = useScanHistory(repoId)
 
   return (
     <div className="space-y-6 p-6">
@@ -85,14 +86,11 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
       </div>
 
       {error ? (
-        <div className="space-y-3">
-          <p className="text-destructive text-sm">
-            Couldn’t load the scan history: {error.message}
-          </p>
-          <Button variant="outline" size="sm" onClick={reload}>
-            Retry
-          </Button>
-        </div>
+        <ErrorState
+          title="Couldn’t load the scan history"
+          detail={error.message}
+          onRetry={refetch}
+        />
       ) : loading ? (
         <div className="space-y-2" data-testid="scan-history-loading">
           <Skeleton className="h-9 w-full" />
