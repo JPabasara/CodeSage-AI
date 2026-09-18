@@ -17,11 +17,11 @@ import type { CategoryBreakdownItem, Grade } from "@/lib/types"
 import { gradeColor } from "@/lib/utils"
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "code-design": "var(--chart-1)",
-  security: "hsl(var(--severity-critical))",
-  documentation: "var(--chart-3)",
-  requirement: "var(--chart-4)",
-  test: "var(--chart-5)",
+  "code-design": "var(--category-code-design)",
+  security: "var(--category-security)",
+  documentation: "var(--category-documentation)",
+  requirement: "var(--category-requirement)",
+  test: "var(--category-test)",
 }
 
 export type OverallHealthCardProps = {
@@ -49,7 +49,7 @@ export function OverallHealthCard({
   // Recharts colours each slice from a `fill` field on the datum (Cell is deprecated in v3).
   const pieData = categoryBreakdown.map((c) => ({
     ...c,
-    fill: CATEGORY_COLORS[c.category] ?? "var(--chart-2)",
+    fill: CATEGORY_COLORS[c.category] ?? "var(--category-code-design)",
   }))
 
   return (
