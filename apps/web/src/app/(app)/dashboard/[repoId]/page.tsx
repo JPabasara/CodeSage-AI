@@ -1,7 +1,10 @@
+import type { Metadata } from "next"
 import { Suspense } from "react"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
 import { Skeleton } from "@/components/ui/skeleton"
+
+export const metadata: Metadata = { title: "Dashboard" }
 
 export default async function Page({
   params,

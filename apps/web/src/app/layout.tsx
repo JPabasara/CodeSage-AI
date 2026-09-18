@@ -19,7 +19,14 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Code Sage AI",
+  // A template, so each route says where it is and the product name still ends
+  // every tab. Every page used to read "Code Sage AI", which makes a row of
+  // open tabs, a browser history and a screen reader's page announcement all
+  // useless for telling one screen from another (U-9).
+  title: {
+    default: "Code Sage AI",
+    template: "%s · Code Sage AI",
+  },
   description:
     "Find the technical debt in a repository, and rank it by what your team " +
     "actually cares about.",
