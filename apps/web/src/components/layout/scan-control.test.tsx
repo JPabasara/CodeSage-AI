@@ -47,8 +47,12 @@ test("stopping says so and refuses a second click", async () => {
 
   // The phase is still "running" here - that is exactly the window where the
   // old UI looked frozen at "Scanning… 85%".
-  expect(screen.getByText(/stopping/i)).toBeInTheDocument()
-  expect(screen.queryByText(/scanning/i)).not.toBeInTheDocument()
+  //
+  // Exact text, not /stopping/i: the screen-reader announcement says "Stopping
+  // the scan" and would match the loose pattern too. Two different messages for
+  // two different audiences, and a test should say which one it means.
+  expect(screen.getByText("Stopping…")).toBeInTheDocument()
+  expect(screen.queryByText(/scanning…/i)).not.toBeInTheDocument()
 
   const button = screen.getByRole("button", { name: /stop/i })
   expect(button).toBeDisabled()
@@ -61,4 +65,47 @@ test("running without stopping still shows progress and an enabled Stop", () => 
   expect(screen.getByText(/85%/)).toBeInTheDocument()
   expect(screen.queryByText(/stopping/i)).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: /stop/i })).toBeEnabled()
+})
+
+// ── queued is not running, and progress is announced (U-9, #115) ─────────────
+
+test("queued says so instead of claiming a scan is 0% done", () => {
+  render(<ScanControl phase="queued" progress={0} />)
+
+  // "Scanning… 0%" claimed work had started and then stalled, which is the
+  // reading that makes someone press Stop on a scan that never began.
+  expect(screen.getByText("Queued…")).toBeInTheDocument()
+  expect(screen.queryByText(/scanning…/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/0%/)).not.toBeInTheDocument()
+})
+
+test("queued shows no progress bar, because there is no progress yet", () => {
+  render(<ScanControl phase="queued" progress={0} />)
+
+  // An empty bar reads as "0% done", not as "not started".
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
+  // …but Stop is still offered: a queued job can be abandoned.
+  expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument()
+})
+
+test("running still shows its progress bar", () => {
+  render(<ScanControl phase="running" progress={47} />)
+  expect(screen.getByRole("progressbar")).toBeInTheDocument()
+})
+
+test("progress is announced politely, and rounded so it can be read aloud", () => {
+  render(<ScanControl phase="running" progress={47} />)
+
+  const status = screen.getByRole("status")
+  expect(status).toHaveAttribute("aria-live", "polite")
+  // 47 → 25. Announcing every tick reads a number that has already changed by
+  // the time the sentence ends.
+  expect(status).toHaveTextContent("Scanning, 25 percent complete")
+})
+
+test("a queued scan announces that it is waiting, not that it is scanning", () => {
+  render(<ScanControl phase="queued" progress={0} />)
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Scan queued, waiting for a worker",
+  )
 })
