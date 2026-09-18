@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2 } from "lucide-react"
+import { CheckCircle2, FilterX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -33,6 +34,14 @@ function sortKey(f: Finding) {
   return f.priority ?? SEVERITY_RANK[f.severity]
 }
 
+export const ALL_CATEGORIES: Category[] = [
+  "code-design",
+  "requirement",
+  "documentation",
+  "test",
+  "security",
+]
+
 export type RefactorFirstListProps = {
   findings: Finding[]
   onSelect?: (finding: Finding) => void
@@ -47,7 +56,10 @@ export function RefactorFirstList({
   const [category, setCategory] = useState<Category | "all">("all")
 
   const categories = useMemo(
-    () => Array.from(new Set(findings.map((f) => f.category))),
+    () =>
+      Array.from(
+        new Set([...ALL_CATEGORIES, ...findings.map((f) => f.category)]),
+      ),
     [findings],
   )
 
@@ -109,53 +121,68 @@ export function RefactorFirstList({
         </Select>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Severity</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Reason</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((f) => (
-            <TableRow
-              key={f.fingerprint}
-              onClick={() => onSelect?.(f)}
-              data-state={
-                f.fingerprint === selectedFingerprint ? "selected" : undefined
-              }
-              className="cursor-pointer"
-            >
-              <TableCell>
-                <Badge
-                  variant="outline"
-                  style={{
-                    borderColor: severityColor(f.severity),
-                    color: severityColor(f.severity),
-                  }}
-                >
-                  {f.severity}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {f.category}
-              </TableCell>
-              <TableCell className="font-mono text-xs">
-                {f.file}:{f.line}
-              </TableCell>
-              <TableCell className="max-w-md truncate">{f.reason}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
       {rows.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No findings for this filter.
-        </p>
-      ) : null}
+        <div className="rounded-md border p-6 text-center space-y-3">
+          <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <FilterX className="size-5" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">No findings match this filter</p>
+            <p className="text-muted-foreground text-xs">
+              No findings match the &ldquo;{category}&rdquo; filter.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCategory("all")}
+          >
+            Clear filter
+          </Button>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Severity</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Reason</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((f) => (
+              <TableRow
+                key={f.fingerprint}
+                onClick={() => onSelect?.(f)}
+                data-state={
+                  f.fingerprint === selectedFingerprint ? "selected" : undefined
+                }
+                className="cursor-pointer"
+              >
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    style={{
+                      borderColor: severityColor(f.severity),
+                      color: severityColor(f.severity),
+                    }}
+                  >
+                    {f.severity}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {f.category}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {f.file}:{f.line}
+                </TableCell>
+                <TableCell className="max-w-md truncate">{f.reason}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   )
 }
