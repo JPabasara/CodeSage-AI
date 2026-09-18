@@ -15,7 +15,7 @@ test("lists repositories and fires onSelect with the chosen repo", async () => {
   expect(onSelect).toHaveBeenCalledWith(mockRepos[0])
 })
 
-test("shows an empty state when there are no repositories", () => {
+test("shows a named empty state naming what is empty and the next action when there are no repositories (U-14)", () => {
   render(<ProjectList repos={[]} />)
-  expect(screen.getByText(/no repositories yet/i)).toBeInTheDocument()
+  expect(screen.getByText(/no repositories yet — connect one to see its health/i)).toBeInTheDocument()
 })

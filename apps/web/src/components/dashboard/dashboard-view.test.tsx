@@ -324,3 +324,59 @@ test("a report with an empty file tree displays the named empty tree state (U-14
   ).toBeInTheDocument()
 })
 
+test("a report with zero findings displays the celebratory empty state in place of the list (U-14)", async () => {
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json({
+        ...mockHealthReport,
+        findings: [],
+      }),
+    ),
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText("No refactoring issues found")).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /the scan found no technical debt or refactoring issues on this branch/i,
+    ),
+  ).toBeInTheDocument()
+  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+})
+
+test("filtering to nothing inside the dashboard displays the filter empty state and clear button (U-14)", async () => {
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json({
+        ...mockHealthReport,
+        findings: [mockFindings[0]], // only a security finding
+      }),
+    ),
+  )
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  // Filter by debt type to a category with 0 items
+  await user.click(
+    screen.getByRole("combobox", { name: /filter by debt type/i }),
+  )
+  await user.click(await screen.findByRole("option", { name: "test" }))
+
+  expect(screen.getByText("No findings match this filter")).toBeInTheDocument()
+  expect(
+    screen.getByText(/no findings match the “test” filter/i),
+  ).toBeInTheDocument()
+
+  const clearBtn = screen.getByRole("button", { name: /clear filter/i })
+  expect(clearBtn).toBeInTheDocument()
+
+  await user.click(clearBtn)
+  expect(
+    screen.queryByText("No findings match this filter"),
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole("table")).toBeInTheDocument()
+})
+
+
