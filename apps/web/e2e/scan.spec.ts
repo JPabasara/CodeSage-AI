@@ -11,6 +11,21 @@ const scanButton = (page: import("@playwright/test").Page) =>
   page.getByRole("button", { name: /^scan$/i })
 
 /**
+ * The VISIBLE "Scanning… NN%" label.
+ *
+ * Not `/scanning/i`: the control also renders a screen-reader announcement
+ * reading "Scanning, NN percent complete" (U-9), so the loose pattern resolves
+ * to two elements. The two are deliberately worded differently — one is read,
+ * one is spoken — and the ellipsis is what tells them apart.
+ */
+const scanningLabel = (page: import("@playwright/test").Page) =>
+  page.getByText(/scanning…/i)
+
+/** The visible "Stopping…" label, for the same reason. */
+const stoppingLabel = (page: import("@playwright/test").Page) =>
+  page.getByText("Stopping…", { exact: true })
+
+/**
  * The scan control's own "Cancelled" label — matched exactly, because the toast
  * says "Scan cancelled" and an unscoped /cancelled/i matches both. The label is
  * the one that matters: it is what stays on screen after the toast fades.
@@ -29,19 +44,19 @@ test("a scan runs to completion and reports progress on the way", async ({
   await scanButton(page).click()
 
   // idle → running: the button becomes a live "Scanning… NN%" label.
-  await expect(page.getByText(/scanning/i)).toBeVisible()
+  await expect(scanningLabel(page)).toBeVisible()
   await expect(page.getByRole("button", { name: /stop/i })).toBeVisible()
 
   // …and ends back at an idle Scan button once the phase turns terminal.
   await expect(scanButton(page)).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(/scanning/i)).toHaveCount(0)
+  await expect(scanningLabel(page)).toHaveCount(0)
 })
 
 test("stopping a scan says Stopping…, then settles on Cancelled — never idle", async ({
   page,
 }) => {
   await scanButton(page).click()
-  await expect(page.getByText(/scanning/i)).toBeVisible()
+  await expect(scanningLabel(page)).toBeVisible()
 
   await page.getByRole("button", { name: /stop/i }).click()
 
@@ -49,7 +64,7 @@ test("stopping a scan says Stopping…, then settles on Cancelled — never idle
   // stages, so there is a real interval where "Stopping…" is the honest answer.
   // Saying so is the difference between "working on it" and "that button is
   // broken".
-  await expect(page.getByText(/stopping/i)).toBeVisible()
+  await expect(stoppingLabel(page)).toBeVisible()
 
   // `cancelled` is a DISTINCT terminal phase, not a return to idle — a scan
   // somebody stopped must stay distinguishable from one that never ran.
@@ -76,14 +91,14 @@ test("a scan can be started again after being cancelled", async ({ page }) => {
   await expect(cancelledLabel(page)).toBeVisible({ timeout: 15_000 })
 
   await scanButton(page).click()
-  await expect(page.getByText(/scanning/i)).toBeVisible()
+  await expect(scanningLabel(page)).toBeVisible()
 })
 
 test("the scan control never offers Scan and Stop at the same time", async ({
   page,
 }) => {
   await scanButton(page).click()
-  await expect(page.getByText(/scanning/i)).toBeVisible()
+  await expect(scanningLabel(page)).toBeVisible()
 
   // While running, the only write available is Stop. Two live actions on one
   // state machine is how you get a 409 in the middle of a demo.
