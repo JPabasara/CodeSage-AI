@@ -123,8 +123,11 @@ export function OverallHealthCard({
                   data={pieData}
                   dataKey="count"
                   nameKey="category"
-                  innerRadius={26}
-                  outerRadius={44}
+                  innerRadius={28}
+                  outerRadius={46}
+                  paddingAngle={totalFindings > 0 ? 3 : 0}
+                  cornerRadius={totalFindings > 0 ? 3 : 0}
+                  stroke="var(--card)"
                   strokeWidth={2}
                 />
               </PieChart>
@@ -133,10 +136,10 @@ export function OverallHealthCard({
               className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"
               aria-hidden="true"
             >
-              <span className="text-base font-bold leading-tight tabular-nums sm:text-lg">
+              <span className="text-lg font-bold tracking-tight text-foreground tabular-nums sm:text-xl">
                 {totalFindings}
               </span>
-              <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
+              <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
                 total
               </span>
             </div>
@@ -146,26 +149,44 @@ export function OverallHealthCard({
         {categoryBreakdown.length > 0 && (
           <div className="mt-4 border-t pt-3">
             <ul
-              className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-xs"
+              className="space-y-1.5 text-xs"
               aria-label="Category breakdown legend"
             >
-              {categoryBreakdown.map((item) => (
-                <li key={item.category} className="flex items-center gap-1.5">
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{
-                      backgroundColor:
-                        CATEGORY_COLORS[item.category] ??
-                        "var(--category-code-design)",
-                    }}
-                    aria-hidden="true"
-                  />
-                  <span className="text-muted-foreground">{item.category}</span>
-                  <span className="font-mono font-medium text-foreground tabular-nums">
-                    {item.count}
-                  </span>
-                </li>
-              ))}
+              {categoryBreakdown.map((item) => {
+                const pct =
+                  totalFindings > 0
+                    ? Math.round((item.count / totalFindings) * 100)
+                    : 0
+                return (
+                  <li
+                    key={item.category}
+                    className="flex items-center justify-between gap-2 py-0.5"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor:
+                            CATEGORY_COLORS[item.category] ??
+                            "var(--category-code-design)",
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span className="text-muted-foreground capitalize truncate">
+                        {item.category}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] text-muted-foreground tabular-nums">
+                        {pct}%
+                      </span>
+                      <span className="min-w-[1.25rem] rounded bg-muted/70 px-1.5 py-0.5 text-center font-mono text-[11px] font-medium text-foreground tabular-nums">
+                        {item.count}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
