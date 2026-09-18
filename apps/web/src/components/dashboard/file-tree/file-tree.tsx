@@ -92,6 +92,10 @@ export function FileTree({
             aria-current={isSelected ? "true" : undefined}
             className={cn(
               "hover:bg-accent flex w-full items-center gap-1.5 rounded py-1 pr-2 text-left text-sm",
+              // Already a real button, so Enter and Space worked — but with no
+              // focus style you could not see where you were while tabbing
+              // through the tree, which U-9 counts as not operable.
+              "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
               isSelected && "bg-accent ring-primary font-medium ring-1",
             )}
             style={{
