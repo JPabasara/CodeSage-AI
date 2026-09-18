@@ -61,3 +61,22 @@ test("a selected file re-opens the folders that hide it", async () => {
   expect(row).toBeVisible()
   expect(row).toHaveAttribute("aria-current", "true")
 })
+
+test("renders a named empty state with next action when nodes is empty (U-14)", () => {
+  render(<FileTree nodes={[]} colorFor={() => "red"} />)
+
+  // Names what is empty and provides the next action
+  expect(screen.getByText("No files in this tree")).toBeInTheDocument()
+  expect(
+    screen.getByText(/no files were detected in this snapshot/i),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /run a scan to analyze and display the repository file hierarchy/i,
+    ),
+  ).toBeInTheDocument()
+
+  // Must not render a list of files
+  expect(screen.queryByRole("list")).not.toBeInTheDocument()
+})
+

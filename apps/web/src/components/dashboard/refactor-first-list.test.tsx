@@ -73,3 +73,59 @@ test("filters the list by debt type", async () => {
   expect(screen.getByText("critical one")).toBeInTheDocument()
   expect(screen.queryByText("low one")).not.toBeInTheDocument()
 })
+
+test("zero findings displays the celebratory empty state (U-14)", () => {
+  render(<RefactorFirstList findings={[]} />)
+
+  expect(screen.getByText("No refactoring issues found")).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /the scan found no technical debt or refactoring issues on this branch/i,
+    ),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /run a new scan after pushing code changes to keep track of code health/i,
+    ),
+  ).toBeInTheDocument()
+
+  // Must not render a table
+  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+})
+
+test("filtered to nothing names the active filter and provides a clear filter button (U-14)", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={findings} />)
+
+  // findings only has code-design and security, so filtering by "test" produces 0 rows
+  await user.click(
+    screen.getByRole("combobox", { name: /filter by debt type/i }),
+  )
+  await user.click(await screen.findByRole("option", { name: "test" }))
+
+  // Names what is empty and states which filter
+  expect(screen.getByText("No findings match this filter")).toBeInTheDocument()
+  expect(
+    screen.getByText(/no findings match the “test” filter/i),
+  ).toBeInTheDocument()
+
+  // Visually and textually distinct: must NOT show the zero-findings clean copy
+  expect(
+    screen.queryByText("No refactoring issues found"),
+  ).not.toBeInTheDocument()
+
+  // Offers clear-filter action
+  const clearBtn = screen.getByRole("button", { name: /clear filter/i })
+  expect(clearBtn).toBeInTheDocument()
+
+  // Clicking clear-filter resets the filter and restores all findings
+  await user.click(clearBtn)
+  expect(screen.getByText("critical one")).toBeInTheDocument()
+  expect(screen.getByText("low one")).toBeInTheDocument()
+  expect(screen.getByText("medium one")).toBeInTheDocument()
+  expect(
+    screen.queryByText("No findings match this filter"),
+  ).not.toBeInTheDocument()
+})
+
+

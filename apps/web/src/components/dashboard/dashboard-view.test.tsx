@@ -50,7 +50,10 @@ vi.mock("sonner", () => ({
 
 const CRITICAL = mockFindings[0] // the hardcoded Stripe key in payment_service.ts
 
-beforeEach(() => nav.reset())
+beforeEach(() => {
+  nav.reset()
+  server.resetHandlers()
+})
 
 /** Wait for the (mock) health report to land. */
 async function ready() {
@@ -282,3 +285,98 @@ test("the error state's Retry actually re-runs the read", async () => {
     screen.queryByText(/couldn’t load this dashboard/i),
   ).not.toBeInTheDocument()
 })
+
+test("a never-scanned repository displays the empty state with first-scan guidance, not an error state (U-14)", async () => {
+  render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
+
+  expect(await screen.findByText("No scans yet")).toBeInTheDocument()
+  expect(
+    screen.getByText(/run your first scan to see its health/i),
+  ).toBeInTheDocument()
+
+  // Must not be an error state
+  expect(
+    screen.queryByText(/couldn’t load this dashboard/i),
+  ).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument()
+})
+
+test("a report with an empty file tree displays the named empty tree state (U-14)", async () => {
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json({
+        ...mockHealthReport,
+        tree: [],
+      }),
+    ),
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText("No files in this tree")).toBeInTheDocument()
+  expect(
+    screen.getByText(/no files were detected in this snapshot/i),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /run a scan to analyze and display the repository file hierarchy/i,
+    ),
+  ).toBeInTheDocument()
+})
+
+test("a report with zero findings displays the celebratory empty state in place of the list (U-14)", async () => {
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json({
+        ...mockHealthReport,
+        findings: [],
+      }),
+    ),
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText("No refactoring issues found")).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /the scan found no technical debt or refactoring issues on this branch/i,
+    ),
+  ).toBeInTheDocument()
+  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+})
+
+test("filtering to nothing inside the dashboard displays the filter empty state and clear button (U-14)", async () => {
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json({
+        ...mockHealthReport,
+        findings: [mockFindings[0]], // only a security finding
+      }),
+    ),
+  )
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  // Filter by debt type to a category with 0 items
+  await user.click(
+    screen.getByRole("combobox", { name: /filter by debt type/i }),
+  )
+  await user.click(await screen.findByRole("option", { name: "test" }))
+
+  expect(screen.getByText("No findings match this filter")).toBeInTheDocument()
+  expect(
+    screen.getByText(/no findings match the “test” filter/i),
+  ).toBeInTheDocument()
+
+  const clearBtn = screen.getByRole("button", { name: /clear filter/i })
+  expect(clearBtn).toBeInTheDocument()
+
+  await user.click(clearBtn)
+  expect(
+    screen.queryByText("No findings match this filter"),
+  ).not.toBeInTheDocument()
+  expect(screen.getByRole("table")).toBeInTheDocument()
+})
+
+

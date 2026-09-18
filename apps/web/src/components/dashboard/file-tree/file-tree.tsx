@@ -121,6 +121,28 @@ export function FileTree({
       )
     })
 
+  if (nodes.length === 0) {
+    return (
+      <div
+        aria-label="File health tree"
+        className="flex flex-col items-center justify-center p-8 text-center space-y-2"
+      >
+        <div className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Folder className="size-5" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-sm font-medium">No files in this tree</p>
+          <p className="text-muted-foreground text-xs">
+            No files were detected in this snapshot.
+          </p>
+          <p className="text-muted-foreground text-xs">
+            Run a scan to analyze and display the repository file hierarchy.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <ul aria-label="File health tree" className="text-sm">
       {renderNodes(nodes, 0)}
