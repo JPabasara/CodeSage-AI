@@ -341,6 +341,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{repo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a connected repository
+         * @description Permanently removes the repository and all workspace-owned descendants,
+         *     including branches, analysis attempts, snapshots, cached scores, source
+         *     records, predictions, and findings.
+         *
+         *     Requires `repository:disconnect`, which is granted only to org-admin and
+         *     manager roles. Removal is refused while any scan for the repository is
+         *     running; clients switch on `REPOSITORY_SCAN_RUNNING` to explain why.
+         */
+        delete: operations["remove_project"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo_id}/branches": {
         parameters: {
             query?: never;
@@ -681,7 +710,7 @@ export interface components {
          *     members never change meaning.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -1796,6 +1825,45 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
             503: components["responses"]["UpstreamUnavailable"];
+        };
+    };
+    remove_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Repository and all descendants removed successfully. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The repository has a scan in progress and cannot be removed. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "detail": "Stop the running scan before removing this repository.",
+                     *       "code": "REPOSITORY_SCAN_RUNNING"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     list_branches: {
