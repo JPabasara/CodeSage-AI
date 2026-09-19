@@ -31,7 +31,12 @@ export default defineConfig({
     // 2000ms, which put every journey over the 30s timeout.
     launchOptions: { slowMo: Number(process.env.E2E_SLOWMO ?? 0) },
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], channel: "chrome" },
+    },
+  ],
   webServer: {
     command: `pnpm exec next dev -p ${PORT}`,
     url: `http://localhost:${PORT}`,
