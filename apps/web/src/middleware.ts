@@ -7,7 +7,13 @@ import { NextResponse, type NextRequest } from "next/server"
 const SESSION_COOKIE =
   process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "codesage_session"
 
+const PUBLIC_PATHS = new Set(["/", "/login"])
+
 export function middleware(request: NextRequest) {
+  if (PUBLIC_PATHS.has(request.nextUrl.pathname)) {
+    return NextResponse.next()
+  }
+
   if (!request.cookies.has(SESSION_COOKIE)) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
