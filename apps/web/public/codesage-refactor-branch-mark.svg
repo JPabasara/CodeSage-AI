@@ -1,0 +1,11 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">CodeSage refactor branch mark</title>
+  <desc id="desc">A circular app icon with a minimalist git branch ending in a soft mint leaf.</desc>
+  <circle cx="64" cy="64" r="58" fill="#09090B"/>
+  <path d="M38 88V40" stroke="#FAFAFA" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M38 63C56 63 63 42 84 42" stroke="#FAFAFA" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="38" cy="88" r="9" fill="#09090B" stroke="#FAFAFA" stroke-width="6"/>
+  <circle cx="38" cy="40" r="9" fill="#09090B" stroke="#FAFAFA" stroke-width="6"/>
+  <path d="M82 42C89 28 106 27 116 37C111 52 94 58 82 48C90 46 99 41 107 35C97 40 89 43 82 42Z" fill="#34D399"/>
+  <path d="M82 48C90 46 99 41 107 35" stroke="#09090B" stroke-width="3" stroke-linecap="round" stroke-opacity=".72"/>
+</svg>
