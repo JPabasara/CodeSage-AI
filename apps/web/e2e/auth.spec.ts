@@ -23,11 +23,26 @@ for (const path of PROTECTED) {
       await expect(page).toHaveURL(/\/login$/)
       // Not just the URL: the protected page must not have rendered underneath.
       await expect(
-        page.getByRole("heading", { name: "Code Sage AI" }),
+        page.getByRole("heading", { name: /continue to your dashboard/i }),
       ).toBeVisible()
     },
   )
 }
+
+signedOut(
+  "the public landing page renders product name and sign-in CTA",
+  async ({ page }) => {
+    await page.goto("/")
+
+    await expect(
+      page.getByRole("heading", { name: "CodeSage AI" }),
+    ).toBeVisible()
+
+    const signIn = page.getByRole("link", { name: /sign in/i }).first()
+    await expect(signIn).toBeVisible()
+    await expect(signIn).toHaveAttribute("href", /\/login$/)
+  },
+)
 
 signedOut(
   "/login itself is reachable signed out — protecting it would loop",
@@ -45,7 +60,7 @@ signedOut(
     // A plain link, deliberately: the browser has to leave this page for OIDC,
     // and a service worker cannot intercept a navigation. This is as far as an
     // E2E can follow sign-in.
-    const signIn = page.getByRole("link", { name: /^sign in$/i })
+    const signIn = page.getByRole("link", { name: /sign in with asgardeo/i })
     await expect(signIn).toBeVisible()
     await expect(signIn).toHaveAttribute("href", /\/api\/auth\/login$/)
   },
