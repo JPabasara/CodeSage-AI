@@ -100,8 +100,19 @@ export function OverallHealthCard({
               </span>
               <span className="text-muted-foreground text-lg">{score}/100</span>
             </div>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {delta >= 0 ? `▲ +${delta}` : `▼ ${delta}`} since last scan
+            <p className="mt-1 text-sm">
+              {delta > 0 ? (
+                <span style={{ color: "hsl(var(--health-good))" }}>
+                  ▲ +{delta} improved
+                </span>
+              ) : delta < 0 ? (
+                <span style={{ color: "hsl(var(--health-bad))" }}>
+                  ▼ {delta} degraded
+                </span>
+              ) : (
+                <span className="text-muted-foreground">0 unchanged</span>
+              )}
+              <span className="text-muted-foreground"> since last scan</span>
             </p>
           </div>
 
