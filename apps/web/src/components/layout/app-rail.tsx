@@ -32,6 +32,8 @@ import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { ApiRequestError } from "@/lib/api/client"
 import { DEMO_REPO_ID } from "@/lib/demo"
 import { useSession } from "@/hooks/use-session"
+import { useProjects } from "@/hooks/use-projects"
+import { useSelectedProject } from "@/hooks/use-selected-project"
 
 type NavItem = {
   href: string
@@ -40,19 +42,13 @@ type NavItem = {
   isActive: (pathname: string) => boolean
 }
 
-/**
- * Which project the rail's dashboard rows point at.
- *
- * Pinning them to one id used to throw you out of the project you were reading:
- * open one repo, click Dashboard, and you were looking at another. The URL
- * already knows the answer, so read it from there. Off a dashboard route the
- * demo id stays the fallback, because these rows still have to lead somewhere.
- */
-function currentRepoId(pathname: string): string {
-  return /^\/dashboard\/([^/]+)/.exec(pathname)?.[1] ?? DEMO_REPO_ID
-}
+const MOCKING_MODE = process.env.NEXT_PUBLIC_API_MOCKING
+const DEMO_FALLBACK_ID =
+  MOCKING_MODE === "enabled" || MOCKING_MODE === "e2e"
+    ? DEMO_REPO_ID
+    : undefined
 
-function navItems(repoId: string): NavItem[] {
+function navItems(repoId: string | undefined): NavItem[] {
   return [
     {
       href: "/projects",
@@ -61,13 +57,13 @@ function navItems(repoId: string): NavItem[] {
       isActive: (p) => p.startsWith("/projects"),
     },
     {
-      href: `/dashboard/${repoId}`,
+      href: repoId ? `/dashboard/${repoId}` : "/projects",
       label: "Dashboard",
       icon: LayoutDashboard,
       isActive: (p) => p.startsWith("/dashboard") && !p.endsWith("/history"),
     },
     {
-      href: `/dashboard/${repoId}/history`,
+      href: repoId ? `/dashboard/${repoId}/history` : "/projects",
       label: "Scan History",
       icon: History,
       isActive: (p) => p.endsWith("/history"),
@@ -87,7 +83,12 @@ export function AppRail() {
   const pathname = usePathname()
   const router = useRouter()
   const { data: session, error } = useSession()
-  const nav = navItems(currentRepoId(pathname))
+  const { data: repos } = useProjects()
+  const { selectedProjectId } = useSelectedProject({
+    availableRepoIds: repos?.map((repo) => repo.id),
+    demoRepoId: DEMO_FALLBACK_ID,
+  })
+  const nav = navItems(selectedProjectId)
   // Below `md` the rail is a modal sheet and Next navigates without unmounting
   // it, so tapping a destination left the sheet covering the new page — and
   // everything behind a modal is aria-hidden. Closing on click rather than on a
