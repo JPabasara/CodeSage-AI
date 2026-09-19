@@ -23,6 +23,11 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-category-code-design: var(--category-code-design);
+  --color-category-security: var(--category-security);
+  --color-category-test: var(--category-test);
+  --color-category-documentation: var(--category-documentation);
+  --color-category-requirement: var(--category-requirement);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -82,6 +87,13 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
+  /* category palette — validated colourblind-safe against light/dark */
+  --category-code-design: #2a78d6; /* blue    */
+  --category-security: #eb6834; /* orange  */
+  --category-test: #1baf7a; /* aqua    */
+  --category-documentation: #eda100; /* yellow  */
+  --category-requirement: #e87ba4; /* magenta */
+
   /* severity — drives finding badges */
   --severity-critical: 0 72% 51%; /* red    */
   --severity-high: 25 95% 53%; /* orange */
@@ -126,6 +138,12 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 
+  /* category palette */
+  --category-code-design: #3987e5;
+  --category-security: #d95926;
+  --category-test: #199e70;
+  --category-documentation: #c98500;
+  --category-requirement: #d55181;
   /*
     severity and health, restated for a dark ground.
 
