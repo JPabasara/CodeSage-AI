@@ -63,6 +63,20 @@ test("the rail marks the screen you are actually on", async ({ page }) => {
   ).not.toHaveAttribute("data-active", "true")
 })
 
+test("the desktop rail can be collapsed and expanded visibly", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Collapse sidebar" }).click()
+  await expect(
+    page.getByRole("button", { name: "Expand sidebar" }),
+  ).toBeVisible()
+
+  await page.getByRole("button", { name: "Expand sidebar" }).click()
+  await expect(
+    page.getByRole("button", { name: "Collapse sidebar" }),
+  ).toBeVisible()
+})
+
 // ── the two navigation bugs a later re-audit found ─────────────────────
 
 test("the dashboard rows follow the project you are looking at", async ({

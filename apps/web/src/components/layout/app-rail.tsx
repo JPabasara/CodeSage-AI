@@ -1,6 +1,7 @@
 "use client" // uses usePathname → must be a Client Component
 
 import { useEffect } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
@@ -9,6 +10,9 @@ import {
   History,
   SlidersHorizontal,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  UserRound,
   type LucideIcon,
 } from "lucide-react"
 // shadcn/ui components are already Client Components.
@@ -88,7 +92,12 @@ export function AppRail() {
   // it, so tapping a destination left the sheet covering the new page — and
   // everything behind a modal is aria-hidden. Closing on click rather than on a
   // pathname change also covers tapping the row you are already on.
-  const { setOpenMobile } = useSidebar()
+  const { setOpenMobile, state, toggleSidebar } = useSidebar()
+  const sidebarCollapsed = state === "collapsed"
+  const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
+  const sidebarStateLabel = sidebarCollapsed
+    ? "Expand sidebar"
+    : "Collapse sidebar"
 
   // The API is the actual security boundary; this is a UX fallback so a
   // signed-out visitor is not left staring at an empty shell.
@@ -99,9 +108,32 @@ export function AppRail() {
   }, [error, router])
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="px-3 py-2 text-sm font-semibold">
-        Code Sage AI
+    <Sidebar collapsible="icon" className="border-sidebar-border/80">
+      <SidebarHeader className="px-2 py-3">
+        <Link
+          href="/projects"
+          title="CodeSage AI"
+          onClick={() => setOpenMobile(false)}
+          className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+        >
+          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-sidebar-primary/10 ring-1 ring-sidebar-border">
+            <Image
+              src="/codesage-refactor-branch-mark.svg"
+              alt=""
+              width={28}
+              height={28}
+              className="size-7"
+            />
+          </span>
+          <span className="min-w-0 group-data-[collapsible=icon]:hidden">
+            <span className="block truncate text-sm font-semibold leading-5">
+              CodeSage AI
+            </span>
+            <span className="block truncate text-[0.625rem] font-medium text-sidebar-foreground/55">
+              Refactor-first analytics
+            </span>
+          </span>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent>
@@ -133,18 +165,42 @@ export function AppRail() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border/70">
         <SidebarMenu>
           {session ? (
             <SidebarMenuItem>
               <div
-                className="text-muted-foreground truncate px-2 py-1.5 text-xs"
+                className="flex min-w-0 items-center gap-2 rounded-md border border-sidebar-border/70 bg-sidebar-accent/40 px-2 py-2 text-xs group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
                 title={session.email ?? undefined}
               >
-                {session.name ?? session.email ?? "Signed in"}
+                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-sidebar-primary/10 text-sidebar-primary">
+                  <UserRound className="size-4" />
+                </span>
+                <span className="min-w-0 group-data-[collapsible=icon]:hidden">
+                  <span className="block truncate font-medium text-sidebar-foreground">
+                    {session.name ?? "Signed in"}
+                  </span>
+                  {session.email ? (
+                    <span className="block truncate text-[0.625rem] text-sidebar-foreground/55">
+                      {session.email}
+                    </span>
+                  ) : null}
+                </span>
               </div>
             </SidebarMenuItem>
           ) : null}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              onClick={toggleSidebar}
+              tooltip={sidebarStateLabel}
+              aria-label={sidebarStateLabel}
+              className="hidden md:flex"
+            >
+              <SidebarStateIcon />
+              <span>{sidebarStateLabel}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           {/* FR-22's theme switch, in the account area the requirement names. */}
           <SidebarMenuItem>
             <ThemeToggle />

@@ -10,6 +10,18 @@ function requestFor(path: string, cookie?: string): NextRequest {
 }
 
 describe("middleware", () => {
+  test("the root path is public", () => {
+    const response = middleware(requestFor("/"))
+
+    expect(response.headers.get("location")).toBeNull()
+  })
+
+  test("the login path is public", () => {
+    const response = middleware(requestFor("/login"))
+
+    expect(response.headers.get("location")).toBeNull()
+  })
+
   test("redirects to /login when the session cookie is missing", () => {
     const response = middleware(requestFor("/projects"))
 
@@ -29,12 +41,6 @@ describe("middleware", () => {
     const response = middleware(
       requestFor("/dashboard/demo-repo", "sidebar_state=expanded"),
     )
-
-    expect(response.headers.get("location")).toBe("http://localhost:3000/login")
-  })
-
-  test("the root path is protected too", () => {
-    const response = middleware(requestFor("/"))
 
     expect(response.headers.get("location")).toBe("http://localhost:3000/login")
   })

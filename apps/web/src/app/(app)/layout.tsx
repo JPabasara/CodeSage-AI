@@ -3,6 +3,7 @@ import {
   SidebarInset,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import Image from "next/image"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppRail } from "@/components/layout/app-rail"
 
@@ -28,7 +29,14 @@ export default function AppLayout({
           */}
           <header className="flex h-12 items-center gap-2 border-b px-3 md:hidden">
             <SidebarTrigger />
-            <span className="text-sm font-semibold">Code Sage AI</span>
+            <Image
+              src="/codesage-refactor-branch-mark.svg"
+              alt=""
+              width={24}
+              height={24}
+              className="size-6"
+            />
+            <span className="text-sm font-semibold">CodeSage AI</span>
           </header>
           {children}
         </SidebarInset>
