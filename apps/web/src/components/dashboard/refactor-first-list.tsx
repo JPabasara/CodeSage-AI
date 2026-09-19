@@ -88,10 +88,12 @@ export function RefactorFirstList({
           <div className="space-y-1">
             <p className="text-sm font-medium">No refactoring issues found</p>
             <p className="text-muted-foreground text-xs">
-              The scan found no technical debt or refactoring issues on this branch.
+              The scan found no technical debt or refactoring issues on this
+              branch.
             </p>
             <p className="text-muted-foreground text-xs">
-              Run a new scan after pushing code changes to keep track of code health.
+              Run a new scan after pushing code changes to keep track of code
+              health.
             </p>
           </div>
         </div>
@@ -154,11 +156,35 @@ export function RefactorFirstList({
             {rows.map((f) => (
               <TableRow
                 key={f.fingerprint}
+                // U-9. This row was `onClick` on a plain <tr>: no tab stop, no
+                // key handler, so the core triage flow could not be reached by
+                // keyboard at all. A tab stop plus Enter/Space is the smallest
+                // fix that keeps this a real table — swapping the table for a
+                // list of buttons would take the column alignment with it.
+                tabIndex={0}
                 onClick={() => onSelect?.(f)}
+                onKeyDown={(event) => {
+                  // Both keys, because that is what a button answers to and
+                  // this row now behaves like one. Space scrolls the page by
+                  // default, so activating on it is only safe once prevented.
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    onSelect?.(f)
+                  }
+                }}
+                // `aria-current` carries the selection to a screen reader;
+                // `data-state` is what shadcn's row styling reads. Both,
+                // because neither one does the other's job.
+                aria-current={
+                  f.fingerprint === selectedFingerprint ? "true" : undefined
+                }
                 data-state={
                   f.fingerprint === selectedFingerprint ? "selected" : undefined
                 }
-                className="cursor-pointer"
+                // An outline rather than a ring: a ring on `display: table-row`
+                // renders inconsistently across browsers. Inset, so a row at the
+                // edge of the scroll container does not lose half of it.
+                className="focus-visible:outline-ring cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2"
               >
                 <TableCell>
                   <Badge
