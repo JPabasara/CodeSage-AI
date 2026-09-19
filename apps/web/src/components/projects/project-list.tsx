@@ -26,7 +26,10 @@ export function ProjectList({
   }
 
   return (
-    <ul className="space-y-2">
+    // Named, because this is not the only list on the page. The toast surface is
+    // an <ol> of <li>s too, so "the repository rows" has to be something a
+    // reader — human or test — can actually ask for.
+    <ul className="space-y-2" aria-label="Connected repositories">
       {repos.map((repo) => (
         <li key={repo.id}>
           <Card

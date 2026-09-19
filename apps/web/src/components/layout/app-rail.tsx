@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { ApiRequestError } from "@/lib/api/client"
 import { DEMO_REPO_ID } from "@/lib/demo"
 import { useSession } from "@/hooks/use-session"
@@ -144,6 +145,10 @@ export function AppRail() {
               </div>
             </SidebarMenuItem>
           ) : null}
+          {/* FR-22's theme switch, in the account area the requirement names. */}
+          <SidebarMenuItem>
+            <ThemeToggle />
+          </SidebarMenuItem>
           <SidebarMenuItem>
             {/*
               A form the browser submits, not a fetch. Sign-out has to end the
