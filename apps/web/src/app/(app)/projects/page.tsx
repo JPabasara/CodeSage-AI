@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/error-state"
 import { ProjectList } from "@/components/projects/project-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useProjects } from "@/hooks/use-projects"
+import { useSelectedProject } from "@/hooks/use-selected-project"
 
 // Each code is a different thing for the user to do about it, which is why they
 // are separate rather than one 400 — a bare "400 Bad Request" leaves someone who
@@ -31,11 +32,15 @@ export default function ProjectsPage() {
   // skeletons so the press is visibly doing something.
   const { data: repos, loading, error, reload, refetch } = useProjects()
   const [connecting, setConnecting] = useState(false)
+  const { selectedProjectId, selectProject } = useSelectedProject({
+    availableRepoIds: repos?.map((repo) => repo.id),
+  })
 
   async function onConnect(url: string) {
     setConnecting(true)
     try {
       const repo = await connectRepo(url)
+      selectProject(repo.id)
       reload() // the list is a separate read; it does not know about the write
       toast.success(`Connected ${repo.owner}/${repo.name}`)
     } catch (err) {
@@ -76,7 +81,11 @@ export default function ProjectsPage() {
       ) : (
         <ProjectList
           repos={repos ?? []}
-          onSelect={(repo) => router.push(`/dashboard/${repo.id}`)}
+          activeRepoId={selectedProjectId}
+          onSelect={(repo) => {
+            selectProject(repo.id)
+            router.push(`/dashboard/${repo.id}`)
+          }}
         />
       )}
     </div>
