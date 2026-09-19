@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, File, Folder } from "lucide-react"
 
 import type { TreeNode } from "@/lib/types"
-import { cn } from "@/lib/utils"
+import { cn, gradeColor } from "@/lib/utils"
 
 // A stable boundary: this renders a simple recursive tree, and a virtualized
 // library can replace it later without touching anything outside this file.
@@ -90,6 +90,7 @@ export function FileTree({
             type="button"
             ref={isSelected ? selectedRef : undefined}
             aria-current={isSelected ? "true" : undefined}
+            aria-expanded={isFolder ? isOpen : undefined}
             className={cn(
               "hover:bg-accent flex w-full items-center gap-1.5 rounded py-1 pr-2 text-left text-sm",
               // Already a real button, so Enter and Space worked — but with no
@@ -115,7 +116,16 @@ export function FileTree({
             ) : (
               <File className="size-4 shrink-0" />
             )}
-            <span className="truncate">{node.name}</span>
+            <span className="truncate flex-1">{node.name}</span>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs tabular-nums">
+              <span className="text-muted-foreground">{Math.round(node.health_score)}</span>
+              <span
+                className="font-semibold"
+                style={{ color: gradeColor(node.grade) }}
+              >
+                {node.grade}
+              </span>
+            </span>
           </button>
 
           {isFolder && isOpen && node.children ? (
@@ -148,8 +158,42 @@ export function FileTree({
   }
 
   return (
-    <ul aria-label="File health tree" className="text-sm">
-      {renderNodes(nodes, 0)}
-    </ul>
+    <div className="space-y-2">
+      <div
+        aria-label="Health scale legend"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b pb-2 text-xs text-muted-foreground"
+      >
+        <span className="flex items-center gap-1">
+          <span
+            className="size-2 rounded-full"
+            style={{ backgroundColor: "hsl(var(--health-bad))" }}
+            aria-hidden="true"
+          />
+          &lt;40 critical
+        </span>
+        <span className="text-muted-foreground/40" aria-hidden="true">·</span>
+        <span className="flex items-center gap-1">
+          <span
+            className="size-2 rounded-full"
+            style={{ backgroundColor: "hsl(var(--health-mid))" }}
+            aria-hidden="true"
+          />
+          40–69 needs work
+        </span>
+        <span className="text-muted-foreground/40" aria-hidden="true">·</span>
+        <span className="flex items-center gap-1">
+          <span
+            className="size-2 rounded-full"
+            style={{ backgroundColor: "hsl(var(--health-good))" }}
+            aria-hidden="true"
+          />
+          70+ healthy
+        </span>
+      </div>
+
+      <ul aria-label="File health tree" className="text-sm">
+        {renderNodes(nodes, 0)}
+      </ul>
+    </div>
   )
 }
