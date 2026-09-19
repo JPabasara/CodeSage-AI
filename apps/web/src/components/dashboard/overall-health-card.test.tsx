@@ -18,7 +18,8 @@ test("shows the grade, positive delta, and red-issue count", () => {
     />,
   )
   expect(screen.getByText("A")).toBeInTheDocument()
-  expect(screen.getByText(/\+3 since last scan/)).toBeInTheDocument()
+  expect(screen.getByText(/▲ \+3 improved/)).toBeInTheDocument()
+  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
   expect(screen.getByText(/2 red issues/)).toBeInTheDocument()
 })
 
@@ -32,8 +33,23 @@ test("renders a negative delta with a down marker and singular issue", () => {
       categoryBreakdown={[{ category: "code-design", count: 1, debt: 3 }]}
     />,
   )
-  expect(screen.getByText(/▼ -5 since last scan/)).toBeInTheDocument()
+  expect(screen.getByText(/▼ -5 degraded/)).toBeInTheDocument()
+  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
   expect(screen.getByText(/1 red issue$/)).toBeInTheDocument()
+})
+
+test("renders zero delta as unchanged (U-8)", () => {
+  render(
+    <OverallHealthCard
+      score={70}
+      grade="C"
+      delta={0}
+      redIssueCount={0}
+      categoryBreakdown={[]}
+    />,
+  )
+  expect(screen.getByText(/0 unchanged/)).toBeInTheDocument()
+  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
 })
 
 test("renders category legend with counts, center total, and distinct colors (#113)", () => {
