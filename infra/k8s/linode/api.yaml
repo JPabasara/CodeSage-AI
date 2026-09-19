@@ -1,0 +1,4 @@
+# TODO: Add the FastAPI Deployment and Service.
+# Image: ghcr.io/jpabasara/codesage-ai/api
+# Port: 8000
+# Liveness endpoint: /api/healthz

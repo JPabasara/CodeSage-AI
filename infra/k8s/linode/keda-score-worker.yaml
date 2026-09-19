@@ -1,0 +1,4 @@
+# TODO: Add KEDA ScaledObject for score workers.
+# Queue/list: scoring
+# minReplicaCount: 1
+# maxReplicaCount: 2

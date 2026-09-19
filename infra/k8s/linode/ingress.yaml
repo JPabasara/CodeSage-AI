@@ -1,0 +1,3 @@
+# TODO: Add ingress-nginx Ingress for:
+# codesageai.dev -> web:3000
+# api.codesageai.dev -> api:8000

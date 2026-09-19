@@ -1,0 +1,4 @@
+# TODO: Add the score worker Deployment.
+# Image: ghcr.io/jpabasara/codesage-ai/api
+# Command:
+# celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1 -Q scoring
