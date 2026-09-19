@@ -128,4 +128,51 @@ test("filtered to nothing names the active filter and provides a clear filter bu
   ).not.toBeInTheDocument()
 })
 
+// ── keyboard operability (U-9, #115) ────────────────────────────────────────
+//
+// These rows were `onClick` on a plain <tr>: no tab stop, no key handler. The
+// core triage flow — open the worst finding — could not be reached by keyboard
+// at all, which is the single biggest thing U-9 asks about.
 
+test("a finding row is a tab stop", async () => {
+  render(<RefactorFirstList findings={findings} />)
+
+  const row = screen.getAllByRole("row")[1] // [0] is the header
+  expect(row).toHaveAttribute("tabindex", "0")
+
+  await userEvent.tab()
+  // The filter is the first stop on this component; the first row follows it.
+  await userEvent.tab()
+  expect(row).toHaveFocus()
+})
+
+test("Enter on a focused row opens that finding", async () => {
+  const onSelect = vi.fn()
+  render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
+
+  const row = screen.getAllByRole("row")[1]
+  row.focus()
+  await userEvent.keyboard("{Enter}")
+
+  expect(onSelect).toHaveBeenCalledWith(findings[1]) // the critical one, sorted first
+})
+
+test("Space on a focused row opens it too, without scrolling the page", async () => {
+  const onSelect = vi.fn()
+  render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
+
+  const row = screen.getAllByRole("row")[1]
+  row.focus()
+  await userEvent.keyboard(" ")
+
+  expect(onSelect).toHaveBeenCalledWith(findings[1])
+})
+
+test("the selected row says so to a screen reader, not only in colour", async () => {
+  render(<RefactorFirstList findings={findings} selectedFingerprint="b" />)
+
+  const row = screen.getAllByRole("row")[1]
+  expect(row).toHaveAttribute("aria-current", "true")
+  // and the unselected one does not claim to be current
+  expect(screen.getAllByRole("row")[2]).not.toHaveAttribute("aria-current")
+})

@@ -15,6 +15,34 @@ export type ScanControlProps = {
   onStop?: () => void
 }
 
+/**
+ * What a screen reader hears while a scan runs (U-9).
+ *
+ * Separate from the visible label, and deliberately coarser. The visible text
+ * ticks through every percentage the poll returns; announcing each one would
+ * read a number aloud that has already changed by the time the sentence ends.
+ * Rounding to a quarter turns roughly six updates into four useful ones.
+ *
+ * `polite`, never `assertive`: progress must wait its turn rather than cut into
+ * whatever the user is reading.
+ */
+function ScanAnnouncement({
+  phase,
+  progress,
+  stopping,
+}: Readonly<Pick<ScanControlProps, "phase" | "progress" | "stopping">>) {
+  let message: string
+  if (stopping) message = "Stopping the scan"
+  else if (phase === "queued") message = "Scan queued, waiting for a worker"
+  else message = `Scanning, ${Math.floor(progress / 25) * 25} percent complete`
+
+  return (
+    <span role="status" aria-live="polite" className="sr-only">
+      {message}
+    </span>
+  )
+}
+
 export function ScanControl({
   phase,
   progress,
@@ -22,9 +50,19 @@ export function ScanControl({
   onScan,
   onStop,
 }: Readonly<ScanControlProps>) {
-  const running = phase === "running" || phase === "queued"
+  const queued = phase === "queued"
+  const running = phase === "running" || queued
 
   if (running) {
+    // "Queued" and "running" are different facts. Queued means no worker has
+    // picked the job up, so there is no progress to report — and rendering that
+    // as "Scanning… 0%" claimed work had started and then stalled, which is the
+    // reading that makes someone press Stop on a scan that never began.
+    let label: string
+    if (stopping) label = "Stopping…"
+    else if (queued) label = "Queued…"
+    else label = `Scanning… ${progress}%`
+
     return (
       <div className="flex items-center gap-2">
         {/*
@@ -33,10 +71,10 @@ export function ScanControl({
           after Stop is pressed. Saying so is the difference between "working on
           it" and "that button is broken".
         */}
-        <span className="text-sm tabular-nums">
-          {stopping ? "Stopping…" : `Scanning… ${progress}%`}
-        </span>
-        <Progress value={progress} className="w-24" />
+        <span className="text-sm tabular-nums">{label}</span>
+        {/* Queued has nothing to fill, and an empty bar reads as 0%, not as
+            "not started". The label carries it alone until work begins. */}
+        {queued ? null : <Progress value={progress} className="w-24" />}
         <Button
           size="sm"
           variant="outline"
@@ -45,6 +83,11 @@ export function ScanControl({
         >
           <Square className="size-3.5" /> Stop
         </Button>
+        <ScanAnnouncement
+          phase={phase}
+          progress={progress}
+          stopping={stopping}
+        />
       </div>
     )
   }
