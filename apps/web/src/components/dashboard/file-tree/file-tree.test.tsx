@@ -80,3 +80,22 @@ test("renders a named empty state with next action when nodes is empty (U-14)", 
   expect(screen.queryByRole("list")).not.toBeInTheDocument()
 })
 
+test("renders numeric health score, grade letter, and scale legend (U-8)", () => {
+  render(<FileTree nodes={mockTree} colorFor={() => "rgb(0, 255, 0)"} />)
+
+  // Scale legend above the tree
+  expect(screen.getByLabelText("Health scale legend")).toBeInTheDocument()
+  expect(screen.getByText(/<40 critical/)).toBeInTheDocument()
+  expect(screen.getByText(/40–69 needs work/)).toBeInTheDocument()
+  expect(screen.getByText(/70\+ healthy/)).toBeInTheDocument()
+
+  // Rows render numeric score and grade letter beside node name
+  const paymentRow = screen.getByRole("button", {
+    name: /payment_service\.ts/i,
+  })
+  expect(paymentRow).toBeInTheDocument()
+  expect(paymentRow.textContent).toContain("payment_service.ts")
+  expect(paymentRow.textContent).toMatch(/[0-9]+/) // numeric score
+  expect(paymentRow.textContent).toMatch(/[A-E]/) // grade letter
+})
+
