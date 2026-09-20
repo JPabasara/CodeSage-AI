@@ -382,9 +382,9 @@ kubectl apply -f infra/k3s/linode/ml.yaml
 Check:
 
 ```bash
-kubectl get pods -n codesage
-kubectl logs -n codesage deploy/ml
-kubectl port-forward -n codesage svc/ml 8001:8001
+kubectl get pods -n codesageai
+kubectl logs -n codesageai deploy/ml
+kubectl port-forward -n codesageai svc/ml 8001:8001
 ```
 
 Then from another terminal:
@@ -412,8 +412,8 @@ kubectl apply -f infra/k3s/linode/migrate-job.yaml
 Check:
 
 ```bash
-kubectl get jobs -n codesage
-kubectl logs -n codesage job/codesage-migrate
+kubectl get jobs -n codesageai
+kubectl logs -n codesageai job/codesage-migrate
 ```
 
 Continue only when the Job succeeds.
@@ -431,9 +431,9 @@ kubectl apply -f infra/k3s/linode/api.yaml
 Check:
 
 ```bash
-kubectl get pods -n codesage
-kubectl logs -n codesage deploy/api
-kubectl port-forward -n codesage svc/api 8000:8000
+kubectl get pods -n codesageai
+kubectl logs -n codesageai deploy/api
+kubectl port-forward -n codesageai svc/api 8000:8000
 ```
 
 Then from another terminal:
@@ -475,9 +475,9 @@ celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1 -Q scoring
 Check:
 
 ```bash
-kubectl get pods -n codesage
-kubectl logs -n codesage deploy/worker
-kubectl logs -n codesage deploy/score-worker
+kubectl get pods -n codesageai
+kubectl logs -n codesageai deploy/worker
+kubectl logs -n codesageai deploy/score-worker
 ```
 
 Keep Celery concurrency at `1`.
@@ -497,9 +497,9 @@ kubectl apply -f infra/k3s/linode/web.yaml
 Check:
 
 ```bash
-kubectl get pods -n codesage
-kubectl logs -n codesage deploy/web
-kubectl port-forward -n codesage svc/web 3000:3000
+kubectl get pods -n codesageai
+kubectl logs -n codesageai deploy/web
+kubectl port-forward -n codesageai svc/web 3000:3000
 ```
 
 Open locally:
@@ -541,9 +541,9 @@ First use the Let's Encrypt staging issuer.
 Check:
 
 ```bash
-kubectl get ingress -n codesage
-kubectl describe ingress -n codesage
-kubectl get certificate -n codesage
+kubectl get ingress -n codesageai
+kubectl describe ingress -n codesageai
+kubectl get certificate -n codesageai
 ```
 
 ---
@@ -613,7 +613,7 @@ Demo test:
 2. Watch pods:
 
 ```bash
-kubectl get pods -n codesage -w
+kubectl get pods -n codesageai -w
 ```
 
 3. Confirm worker pods increase.
@@ -674,8 +674,8 @@ After DNS is pointing to Linode and the staging certificate works:
 
 ```bash
 kubectl apply -f infra/k3s/linode/ingress.yaml
-kubectl get certificate -n codesage
-kubectl describe certificate -n codesage
+kubectl get certificate -n codesageai
+kubectl describe certificate -n codesageai
 ```
 
 Expected result:
