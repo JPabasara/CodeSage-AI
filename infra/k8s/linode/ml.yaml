@@ -1,4 +1,0 @@
-# TODO: Add the ML FastAPI Deployment and Service.
-# Image: ghcr.io/jpabasara/codesage-ai/ml
-# Port: 8001
-# Health endpoint: /healthz
