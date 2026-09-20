@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { DashboardTopNav } from "@/components/layout/dashboard-topnav"
@@ -10,6 +11,7 @@ import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { ErrorState } from "@/components/error-state"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
@@ -27,7 +29,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // and fall back to the id only while the list is still loading.
   const { data: repos } = useProjects()
   const repo = repos?.find((r) => r.id === repoId)
-  const repoName = repo ? `${repo.owner}/${repo.name}` : repoId
+  const reposLoaded = repos !== undefined
+  const repoName = repo
+    ? `${repo.owner}/${repo.name}`
+    : reposLoaded
+      ? "Project unavailable"
+      : "Loading project"
 
   // A user pick wins; until then fall back to the repo's default branch, then
   // the first available one. Empty string only for the first render before
@@ -96,6 +103,23 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // branch, so a freshly connected repository (404, no snapshot) lost the very
   // Scan button that would produce the first one. Only the body below swaps.
   const body = () => {
+    if (reposLoaded && !repo) {
+      return (
+        <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+          <div className="space-y-1">
+            <p className="text-foreground font-medium">Choose a project</p>
+            <p>
+              This project is not connected to your workspace anymore. Select an
+              available repository to open its dashboard.
+            </p>
+          </div>
+          <Button asChild size="sm" variant="secondary">
+            <Link href="/projects">View projects</Link>
+          </Button>
+        </div>
+      )
+    }
+
     // Two different waits, one shape. `loading` is "the request is in flight";
     // `scorePending` is "the snapshot is stored and the API is still scoring it"
     // (503 SCORE_PENDING). The second only ever follows a scan, so it earns a
