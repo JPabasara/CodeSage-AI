@@ -6,9 +6,15 @@ import { http, HttpResponse } from "msw"
 
 import { server } from "@/lib/mocks/server"
 import { mockRepos } from "@/lib/mocks/fixtures"
+import { SELECTED_PROJECT_KEY } from "@/hooks/use-selected-project"
 import ProjectsPage from "./page"
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/projects",
+  useRouter: () => ({ push: pushMock }),
+}))
 
 // <Toaster> lives in the root layout, not in this page, so rendering the page
 // alone puts no toast in the DOM. Assert on the calls instead: what matters is
@@ -22,6 +28,8 @@ vi.mock("sonner", () => ({
 }))
 
 beforeEach(() => {
+  localStorage.clear()
+  pushMock.mockClear()
   toastError.mockClear()
   toastSuccess.mockClear()
 })
@@ -54,6 +62,18 @@ test("connecting a public URL adds it to the list", async () => {
   expect(await screen.findByText("octocat/hello-world")).toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world")
   expect(toastError).not.toHaveBeenCalled()
+})
+
+test("selecting a project stores it before opening the dashboard", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await userEvent.click(
+    screen.getByRole("button", { name: /select acme\/web-store/i }),
+  )
+
+  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+  expect(pushMock).toHaveBeenCalledWith(`/dashboard/${mockRepos[1].id}`)
 })
 
 test("a private repository explains itself instead of failing generically", async () => {

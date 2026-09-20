@@ -8,6 +8,11 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
 })
 
+const repoRows = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("list", { name: /connected repositories/i })
+    .getByRole("listitem")
+
 test("the rail carries exactly the four v1 destinations", async ({ page }) => {
   const rail = page
     .getByRole("navigation")
@@ -102,6 +107,32 @@ test("away from a dashboard the rows still lead somewhere", async ({
   // fallback — the rows must not go dead.
   await page.getByRole("link", { name: "Dashboard" }).click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}$`))
+})
+
+test("the selected project survives profiles, dashboard, refresh and history", async ({
+  page,
+}) => {
+  await repoRows(page)
+    .filter({ hasText: "web-store" })
+    .getByRole("button", { name: /select/i })
+    .click()
+  await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
+
+  await page.getByRole("link", { name: "Profiles" }).click()
+  await expect(page).toHaveURL(/\/profiles$/)
+
+  await page.getByRole("link", { name: "Dashboard" }).click()
+  await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
+
+  await page.getByRole("link", { name: "Profiles" }).click()
+  await expect(page).toHaveURL(/\/profiles$/)
+  await page.reload()
+  await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
+
+  await page.getByRole("link", { name: "Scan History" }).click()
+  await expect(page).toHaveURL(
+    new RegExp(`/dashboard/${SECOND_REPO_ID}/history$`),
+  )
 })
 
 test("below md the rail is reachable at all", async ({ page }) => {

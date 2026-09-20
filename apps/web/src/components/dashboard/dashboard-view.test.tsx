@@ -49,6 +49,7 @@ vi.mock("sonner", () => ({
 }))
 
 const CRITICAL = mockFindings[0] // the hardcoded Stripe key in payment_service.ts
+const UNKNOWN_REPO_ID = "11111111-2222-3333-4444-555555555555"
 
 beforeEach(() => {
   nav.reset()
@@ -146,6 +147,19 @@ test("a never-scanned repo still gets the top nav, so a scan can be started", as
   // …and the controls that produce the first snapshot are on screen
   expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
   expect(screen.getByLabelText("Branch")).toBeInTheDocument()
+})
+
+test("an unavailable project shows project guidance instead of a raw uuid", async () => {
+  render(<DashboardView repoId={UNKNOWN_REPO_ID} />)
+
+  expect(await screen.findByText("Choose a project")).toBeInTheDocument()
+  expect(screen.getByText("Project unavailable")).toBeInTheDocument()
+  expect(screen.getByRole("link", { name: /view projects/i })).toHaveAttribute(
+    "href",
+    "/projects",
+  )
+  expect(screen.queryByText(UNKNOWN_REPO_ID)).not.toBeInTheDocument()
+  expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })
 
 test("with no snapshot the nav reads Never scanned instead of Invalid Date", async () => {
@@ -298,7 +312,9 @@ test("a never-scanned repository displays the empty state with first-scan guidan
   expect(
     screen.queryByText(/couldn’t load this dashboard/i),
   ).not.toBeInTheDocument()
-  expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /retry/i }),
+  ).not.toBeInTheDocument()
 })
 
 test("a report with an empty file tree displays the named empty tree state (U-14)", async () => {
@@ -378,5 +394,3 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
   ).not.toBeInTheDocument()
   expect(screen.getByRole("table")).toBeInTheDocument()
 })
-
-
