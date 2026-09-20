@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: ml
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: ml
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: codesage-ai
+        app.kubernetes.io/component: ml
+        app.kubernetes.io/part-of: codesage-ai
+    spec:
+      containers:
+        - name: ml
+          image: ghcr.io/jpabasara/codesage-ai/ml:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8001
+          env:
+            - name: CODESAGE_ML_ARTIFACT_DIR
+              value: /models
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: ml
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: ml
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http
