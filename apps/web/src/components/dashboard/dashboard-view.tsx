@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 
 import { DashboardTopNav } from "@/components/layout/dashboard-topnav"
 import { OverallHealthCard } from "@/components/dashboard/overall-health-card"
@@ -81,18 +82,26 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // Wiring it up later means keeping the value, passing it to Card B, and adding
   // a per-node history to TreeNode.
   const [, setHoveredNode] = useState<TreeNode | null>(null)
+  const [treeSelectionNotice, setTreeSelectionNotice] = useState<string | null>(
+    null,
+  )
 
   // push, not replace: Back should leave detail mode, the way it does in a mail
   // client. scroll: false keeps the dashboard where it is as the region swaps.
-  const openFinding = (finding: Finding) =>
+  const openFinding = (finding: Finding) => {
+    setTreeSelectionNotice(null)
     router.push(
       `${pathname}?finding=${encodeURIComponent(finding.fingerprint)}`,
       {
         scroll: false,
       },
     )
+  }
 
-  const closeFinding = () => router.push(pathname, { scroll: false })
+  const closeFinding = () => {
+    setTreeSelectionNotice(null)
+    router.push(pathname, { scroll: false })
+  }
 
   // A branch that has never been scanned answers 404. That is the first-run
   // state, not a failure, so it must not take the whole screen down.
@@ -127,7 +136,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     // stall. The hook keeps asking; nothing here has to.
     if (loading || scorePending) {
       return (
-        <div className="space-y-4 p-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-hidden p-4">
           <div className="grid gap-4 lg:grid-cols-2">
             <Skeleton className="h-64 w-full" />
             <Skeleton className="h-64 w-full" />
@@ -182,10 +191,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
 
     if (!report) return null
+    const findingFiles = new Set(report.findings.map((finding) => finding.file))
 
     return (
-      <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2">
-        <div className="flex min-h-0 flex-col gap-4">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)]">
+        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           {/* The one region that swaps, so the tree and the list stay usable. */}
           {detailMode ? (
             <FindingDetailPanel
@@ -193,7 +203,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               onClose={closeFinding}
             />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid shrink-0 gap-4 sm:grid-cols-2">
               <OverallHealthCard
                 score={report.health_score}
                 grade={report.grade}
@@ -207,11 +217,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
           {/* Shrunk, not hidden, in detail mode — moving to the next finding is
               one click, with no close-and-reopen. */}
-          <div
-            className={
-              detailMode ? "min-h-0 flex-1 overflow-y-auto" : undefined
-            }
-          >
+          <div className="min-h-0 flex-1 overflow-hidden">
             <RefactorFirstList
               findings={report.findings}
               onSelect={openFinding}
@@ -220,11 +226,18 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           </div>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto rounded-lg border p-2">
+        <div className="min-h-0 overflow-hidden">
           <FileTree
             nodes={report.tree}
             colorFor={(node) => healthColor(node.health_score)}
+            hasFinding={(node) => findingFiles.has(node.path)}
             onHoverNode={setHoveredNode}
+            onSelectNodeWithoutFinding={(node) => {
+              const message = `${node.name} has no findings in this snapshot.`
+              setTreeSelectionNotice(message)
+              toast(message)
+            }}
+            selectionNotice={treeSelectionNotice}
             selectedPath={selectedFinding?.file}
             onSelectNode={(node) => {
               const match = report.findings.find((f) => f.file === node.path)
@@ -237,12 +250,15 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[oklch(0.985_0.002_255)] dark:bg-[oklch(0.12_0.006_255)]">
       <DashboardTopNav
         repoName={repoName}
         branches={branches ?? []}
         activeBranch={activeBranch}
-        onBranchChange={setPickedBranch}
+        onBranchChange={(branch) => {
+          setTreeSelectionNotice(null)
+          setPickedBranch(branch)
+        }}
         lastCommitSha={report?.commit_sha}
         scannedAt={report?.scanned_at}
         scan={{

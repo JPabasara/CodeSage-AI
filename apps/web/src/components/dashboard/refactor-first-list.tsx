@@ -1,7 +1,8 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { useMemo, useState } from "react"
-import { CheckCircle2, FilterX } from "lucide-react"
+import { ArrowDownWideNarrow, CheckCircle2, FilterX } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,8 +31,8 @@ const SEVERITY_RANK: Record<Severity, number> = {
   low: 1,
 }
 
-function sortKey(f: Finding) {
-  return f.priority ?? SEVERITY_RANK[f.severity]
+function sortKey(finding: Finding) {
+  return finding.priority ?? SEVERITY_RANK[finding.severity]
 }
 
 export const ALL_CATEGORIES: Category[] = [
@@ -46,6 +47,35 @@ export type RefactorFirstListProps = {
   findings: Finding[]
   onSelect?: (finding: Finding) => void
   selectedFingerprint?: string
+}
+
+function ListPanel({
+  children,
+  action,
+  count,
+}: Readonly<{
+  children: ReactNode
+  action?: ReactNode
+  count: number
+}>) {
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border-t-2 border-t-primary/60 bg-card shadow-sm ring-1 ring-foreground/10">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b px-3 py-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Refactor first</h2>
+            <Badge variant="outline">{count}</Badge>
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <ArrowDownWideNarrow className="size-3.5" aria-hidden="true" />
+            Ranked by priority
+          </p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
 }
 
 export function RefactorFirstList({
@@ -67,7 +97,7 @@ export function RefactorFirstList({
     const filtered =
       category === "all"
         ? findings
-        : findings.filter((f) => f.category === category)
+        : findings.filter((finding) => finding.category === category)
     return [...filtered].sort(
       (a, b) =>
         sortKey(b) - sortKey(a) ||
@@ -75,62 +105,58 @@ export function RefactorFirstList({
     )
   }, [findings, category])
 
+  const filter = findings.length ? (
+    <Select
+      value={category}
+      onValueChange={(value) => setCategory(value as Category | "all")}
+    >
+      <SelectTrigger className="w-40" aria-label="Filter by debt type">
+        <SelectValue placeholder="All types" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All types</SelectItem>
+        {categories.map((item) => (
+          <SelectItem key={item} value={item}>
+            {item}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : null
+
   if (findings.length === 0) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Refactor first</h2>
-        </div>
-        <div className="rounded-md border p-6 text-center space-y-2">
+      <ListPanel count={0}>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center space-y-2">
           <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">No refactoring issues found</p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               The scan found no technical debt or refactoring issues on this
               branch.
             </p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               Run a new scan after pushing code changes to keep track of code
               health.
             </p>
           </div>
         </div>
-      </div>
+      </ListPanel>
     )
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Refactor first</h2>
-        <Select
-          value={category}
-          onValueChange={(v) => setCategory(v as Category | "all")}
-        >
-          <SelectTrigger className="w-40" aria-label="Filter by debt type">
-            <SelectValue placeholder="All types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            {categories.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
+    <ListPanel action={filter} count={rows.length}>
       {rows.length === 0 ? (
-        <div className="rounded-md border p-6 text-center space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center space-y-3">
           <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <FilterX className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">No findings match this filter</p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               No findings match the &ldquo;{category}&rdquo; filter.
             </p>
           </div>
@@ -143,72 +169,80 @@ export function RefactorFirstList({
           </Button>
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Severity</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Reason</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((f) => (
-              <TableRow
-                key={f.fingerprint}
-                // U-9. This row was `onClick` on a plain <tr>: no tab stop, no
-                // key handler, so the core triage flow could not be reached by
-                // keyboard at all. A tab stop plus Enter/Space is the smallest
-                // fix that keeps this a real table — swapping the table for a
-                // list of buttons would take the column alignment with it.
-                tabIndex={0}
-                onClick={() => onSelect?.(f)}
-                onKeyDown={(event) => {
-                  // Both keys, because that is what a button answers to and
-                  // this row now behaves like one. Space scrolls the page by
-                  // default, so activating on it is only safe once prevented.
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault()
-                    onSelect?.(f)
-                  }
-                }}
-                // `aria-current` carries the selection to a screen reader;
-                // `data-state` is what shadcn's row styling reads. Both,
-                // because neither one does the other's job.
-                aria-current={
-                  f.fingerprint === selectedFingerprint ? "true" : undefined
-                }
-                data-state={
-                  f.fingerprint === selectedFingerprint ? "selected" : undefined
-                }
-                // An outline rather than a ring: a ring on `display: table-row`
-                // renders inconsistently across browsers. Inset, so a row at the
-                // edge of the scroll container does not lose half of it.
-                className="focus-visible:outline-ring cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2"
-              >
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    style={{
-                      borderColor: severityColor(f.severity),
-                      color: severityColor(f.severity),
-                    }}
-                  >
-                    {f.severity}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {f.category}
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {f.file}:{f.line}
-                </TableCell>
-                <TableCell className="max-w-md truncate">{f.reason}</TableCell>
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          data-testid="refactor-first-scroll"
+        >
+          <Table className="table-fixed">
+            <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableRow>
+                <TableHead className="w-28">Priority</TableHead>
+                <TableHead>Finding</TableHead>
+                <TableHead className="w-[34%]">Location</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {rows.map((finding) => (
+                <TableRow
+                  key={finding.fingerprint}
+                  tabIndex={0}
+                  onClick={() => onSelect?.(finding)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      onSelect?.(finding)
+                    }
+                  }}
+                  aria-current={
+                    finding.fingerprint === selectedFingerprint
+                      ? "true"
+                      : undefined
+                  }
+                  data-state={
+                    finding.fingerprint === selectedFingerprint
+                      ? "selected"
+                      : undefined
+                  }
+                  className="cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <TableCell className="whitespace-normal align-top">
+                    <div className="flex flex-col items-start gap-1">
+                      <Badge
+                        variant="outline"
+                        style={{
+                          borderColor: severityColor(finding.severity),
+                          color: severityColor(finding.severity),
+                        }}
+                      >
+                        {finding.severity}
+                      </Badge>
+                      <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[0.625rem] text-muted-foreground">
+                        P{Math.round(finding.priority)}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-normal align-top">
+                    <div className="space-y-2">
+                      <p className="break-words text-xs text-foreground">
+                        {finding.reason}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant="secondary">{finding.category}</Badge>
+                        <Badge variant="secondary">{finding.source}</Badge>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-normal align-top font-mono text-[0.6875rem] text-muted-foreground">
+                    <span className="break-all">
+                      {finding.file}:{finding.line}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
-    </div>
+    </ListPanel>
   )
 }
