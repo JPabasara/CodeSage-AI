@@ -1,6 +1,13 @@
 "use client"
 
-import { Activity, Clock3, GitBranch, GitCommit } from "lucide-react"
+import {
+  Activity,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  GitBranch,
+  GitCommit,
+} from "lucide-react"
 
 import {
   Select,
@@ -13,8 +20,19 @@ import {
   ScanControl,
   type ScanControlProps,
 } from "@/components/layout/scan-control"
+import { Button } from "@/components/ui/button"
 import type { Branch } from "@/lib/types"
 import { shortSha } from "@/lib/utils"
+
+export type SnapshotNavigation = {
+  isHistorical: boolean
+  positionLabel?: string
+  canGoOlder: boolean
+  canGoNewer: boolean
+  onOlder: () => void
+  onNewer: () => void
+  onLatest: () => void
+}
 
 export type DashboardTopNavProps = {
   repoName: string
@@ -30,6 +48,7 @@ export type DashboardTopNavProps = {
   lastCommitSha?: string
   scannedAt?: string
   scan: ScanControlProps
+  snapshotNavigation?: SnapshotNavigation
 }
 
 export function DashboardTopNav({
@@ -40,6 +59,7 @@ export function DashboardTopNav({
   lastCommitSha,
   scannedAt,
   scan,
+  snapshotNavigation,
 }: Readonly<DashboardTopNavProps>) {
   // Branches load on their own clock. Before they land `activeBranch` is "",
   // which Radix renders as a blank trigger, so the placeholder must be explicit.
@@ -61,7 +81,9 @@ export function DashboardTopNav({
               {repoName}
             </h1>
             <span className="rounded-full border border-primary/45 px-2 py-0.5 text-[0.625rem] font-medium text-primary">
-              Live dashboard
+              {snapshotNavigation?.isHistorical
+                ? "Historical snapshot"
+                : "Live dashboard"}
             </span>
           </div>
 
@@ -120,6 +142,49 @@ export function DashboardTopNav({
             <Activity className="size-4 text-primary" aria-hidden="true" />
             <ScanControl {...scan} />
           </div>
+
+          {snapshotNavigation ? (
+            <div
+              className="flex min-h-9 items-center gap-1 rounded-md border border-border/70 bg-card px-1"
+              aria-label="Scan snapshot navigation"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Older scan"
+                title="Older scan"
+                onClick={snapshotNavigation.onOlder}
+                disabled={!snapshotNavigation.canGoOlder}
+              >
+                <ChevronLeft />
+              </Button>
+              <span className="min-w-14 px-1 text-center text-[0.625rem] font-medium text-muted-foreground">
+                {snapshotNavigation.positionLabel ?? "Latest"}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Newer scan"
+                title="Newer scan"
+                onClick={snapshotNavigation.onNewer}
+                disabled={!snapshotNavigation.canGoNewer}
+              >
+                <ChevronRight />
+              </Button>
+              {snapshotNavigation.isHistorical ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={snapshotNavigation.onLatest}
+                >
+                  Latest scan
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
