@@ -19,6 +19,7 @@ import { useBranches } from "@/hooks/use-branches"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
 import { useScan } from "@/hooks/use-scan"
+import { useScanHistory } from "@/hooks/use-scan-history"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
 
@@ -40,12 +41,19 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // A user pick wins; until then fall back to the repo's default branch, then
   // the first available one. Empty string only for the first render before
   // branches load (the mock treats it as the default branch).
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const branchFromUrl = searchParams.get("branch") ?? undefined
+  const snapshotId = searchParams.get("snapshot_id") ?? undefined
   const [pickedBranch, setPickedBranch] = useState<string>()
   const activeBranch =
+    branchFromUrl ??
     pickedBranch ??
     branches?.find((b) => b.is_default)?.name ??
     branches?.[0]?.name ??
     ""
+  const { data: scanHistory } = useScanHistory(repoId, activeBranch)
 
   const {
     data: report,
@@ -53,7 +61,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     pending: scorePending,
     error,
     refetch,
-  } = useHealthReport(repoId, activeBranch)
+  } = useHealthReport(repoId, activeBranch, snapshotId)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
   //
@@ -70,9 +78,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // The selected finding lives in the URL, not in state, so a refresh restores
   // detail mode and Back closes it. Fingerprints are stable across scans, which
   // is what a shareable link needs.
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   const selectedFingerprint = searchParams.get("finding") ?? undefined
   const selectedFinding: Finding | null =
     report?.findings.find((f) => f.fingerprint === selectedFingerprint) ?? null
@@ -86,22 +91,79 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     null,
   )
 
+  const dashboardHref = (
+    updates: Record<string, string | undefined | null>,
+  ) => {
+    const next = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === undefined || value === null || value === "") {
+        next.delete(key)
+      } else {
+        next.set(key, value)
+      }
+    }
+    const query = next.toString()
+    return query ? `${pathname}?${query}` : pathname
+  }
+
   // push, not replace: Back should leave detail mode, the way it does in a mail
   // client. scroll: false keeps the dashboard where it is as the region swaps.
   const openFinding = (finding: Finding) => {
     setTreeSelectionNotice(null)
-    router.push(
-      `${pathname}?finding=${encodeURIComponent(finding.fingerprint)}`,
-      {
-        scroll: false,
-      },
-    )
+    router.push(dashboardHref({ finding: finding.fingerprint }), {
+      scroll: false,
+    })
   }
 
   const closeFinding = () => {
     setTreeSelectionNotice(null)
-    router.push(pathname, { scroll: false })
+    router.push(dashboardHref({ finding: null }), { scroll: false })
   }
+
+  const openSnapshot = (snapshot_id: string | null) => {
+    setTreeSelectionNotice(null)
+    router.push(
+      dashboardHref({
+        branch: activeBranch,
+        snapshot_id,
+        finding: null,
+      }),
+      { scroll: false },
+    )
+  }
+
+  const currentSnapshotId = snapshotId ?? report?.snapshot_id
+  const currentScanIndex =
+    scanHistory?.findIndex((scan) => scan.snapshot_id === currentSnapshotId) ??
+    -1
+  const snapshotNavigation =
+    scanHistory && scanHistory.length > 0
+      ? {
+          isHistorical: Boolean(snapshotId),
+          positionLabel:
+            currentScanIndex >= 0
+              ? `${currentScanIndex + 1}/${scanHistory.length}`
+              : snapshotId
+                ? "History"
+                : "Latest",
+          canGoOlder:
+            currentScanIndex >= 0 && currentScanIndex < scanHistory.length - 1,
+          canGoNewer: currentScanIndex > 0,
+          onOlder: () => {
+            if (currentScanIndex >= 0) {
+              const older = scanHistory[currentScanIndex + 1]
+              if (older) openSnapshot(older.snapshot_id)
+            }
+          },
+          onNewer: () => {
+            if (currentScanIndex > 0) {
+              const newer = scanHistory[currentScanIndex - 1]
+              if (newer) openSnapshot(newer.snapshot_id)
+            }
+          },
+          onLatest: () => openSnapshot(null),
+        }
+      : undefined
 
   // A branch that has never been scanned answers 404. That is the first-run
   // state, not a failure, so it must not take the whole screen down.
@@ -258,9 +320,18 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         onBranchChange={(branch) => {
           setTreeSelectionNotice(null)
           setPickedBranch(branch)
+          router.push(
+            dashboardHref({
+              branch,
+              snapshot_id: null,
+              finding: null,
+            }),
+            { scroll: false },
+          )
         }}
         lastCommitSha={report?.commit_sha}
         scannedAt={report?.scanned_at}
+        snapshotNavigation={snapshotNavigation}
         scan={{
           phase: scanStatus.phase,
           progress: scanStatus.progress,
