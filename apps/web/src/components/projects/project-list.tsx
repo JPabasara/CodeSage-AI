@@ -30,48 +30,55 @@ export function ProjectList({
     // an <ol> of <li>s too, so "the repository rows" has to be something a
     // reader — human or test — can actually ask for.
     <ul className="space-y-2" aria-label="Connected repositories">
-      {repos.map((repo) => (
-        <li key={repo.id}>
-          <Card
-            className={repo.id === activeRepoId ? "border-primary" : undefined}
-          >
-            <CardContent className="flex items-center justify-between gap-4 py-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">
-                    {repo.owner}/{repo.name}
-                  </span>
-                  <Badge variant="secondary">{repo.visibility}</Badge>
+      {repos.map((repo) => {
+        const isActive = repo.id === activeRepoId
+        return (
+          <li key={repo.id} aria-current={isActive ? "true" : undefined}>
+            <Card
+              className={
+                isActive ? "border-primary bg-accent/20 shadow-sm" : undefined
+              }
+            >
+              <CardContent className="flex items-center justify-between gap-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium">
+                      {repo.owner}/{repo.name}
+                    </span>
+                    <Badge variant="secondary">{repo.visibility}</Badge>
+                    {isActive ? <Badge>Active</Badge> : null}
+                  </div>
+                  {repo.latest_health ? (
+                    <p className="text-muted-foreground text-sm">
+                      <span
+                        style={{ color: gradeColor(repo.latest_health.grade) }}
+                      >
+                        {repo.latest_health.grade}
+                      </span>{" "}
+                      · {repo.latest_health.score}/100 ·{" "}
+                      {repo.latest_health.delta >= 0
+                        ? `+${repo.latest_health.delta}`
+                        : repo.latest_health.delta}
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">
+                      Not scanned yet
+                    </p>
+                  )}
                 </div>
-                {repo.latest_health ? (
-                  <p className="text-muted-foreground text-sm">
-                    <span
-                      style={{ color: gradeColor(repo.latest_health.grade) }}
-                    >
-                      {repo.latest_health.grade}
-                    </span>{" "}
-                    · {repo.latest_health.score}/100 ·{" "}
-                    {repo.latest_health.delta >= 0
-                      ? `+${repo.latest_health.delta}`
-                      : repo.latest_health.delta}
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    Not scanned yet
-                  </p>
-                )}
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onSelect?.(repo)}
-              >
-                Select
-              </Button>
-            </CardContent>
-          </Card>
-        </li>
-      ))}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label={`Select ${repo.owner}/${repo.name}`}
+                  onClick={() => onSelect?.(repo)}
+                >
+                  Select
+                </Button>
+              </CardContent>
+            </Card>
+          </li>
+        )
+      })}
     </ul>
   )
 }
