@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: codesage-config
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/part-of: codesage-ai
+data:
+  CODESAGE_FRONTEND_BASE_URL: "https://codesageai.dev"
+  CODESAGE_CORS_ORIGINS: '["https://codesageai.dev"]'
+  CODESAGE_COOKIE_DOMAIN: ".codesageai.dev"
+  CODESAGE_COOKIE_SECURE: "true"
+  CODESAGE_ML_SERVICE_URL: "http://ml:8001"
+  CODESAGE_LOG_LEVEL: "INFO"
