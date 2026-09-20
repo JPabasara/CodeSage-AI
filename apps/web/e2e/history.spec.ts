@@ -24,6 +24,29 @@ test("clicking Scan History in the rail shows real snapshots", async ({
   await expect(rows.nth(1).getByText("a1b2c3d")).toBeVisible()
 })
 
+test("clicking a history row opens the exact snapshot", async ({ page }) => {
+  await page.goto("/projects")
+  await page.getByRole("link", { name: "Scan History" }).click()
+
+  const rows = page.getByRole("row")
+  await expect(rows).toHaveCount(6)
+  await rows.nth(2).click()
+
+  await expect(page).toHaveURL(/\/dashboard\/[^?]+\?/)
+  await expect(page).toHaveURL(/branch=main/)
+  await expect(page).toHaveURL(/snapshot_id=[0-9a-f-]+/)
+  await expect(page.getByText("Historical snapshot")).toBeVisible()
+})
+
+test("scan history exposes a latest-scan return link", async ({ page }) => {
+  await page.goto("/projects")
+  await page.getByRole("link", { name: "Scan History" }).click()
+
+  await page.getByRole("link", { name: /open latest scan/i }).click()
+  await expect(page).toHaveURL(/\/dashboard\/[^?]+\?branch=main$/)
+  await expect(page.getByText("Live dashboard")).toBeVisible()
+})
+
 test("an unscanned repository says so instead of showing an empty table", async ({
   page,
 }) => {

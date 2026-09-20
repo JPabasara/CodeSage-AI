@@ -10,6 +10,7 @@ import {
   UNSCANNED_REPO_ID,
   mockFindings,
   mockHealthReport,
+  mockScanHistory,
 } from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
 
@@ -136,6 +137,33 @@ test("clicking a file in the tree opens that file's finding", async () => {
 // scanned, and the top nav lived inside the success branch — so the 404 took
 // the Scan button down with it.
 
+test("a snapshot_id URL loads historical mode and can return to latest", async () => {
+  const older = mockScanHistory[1]
+  nav.navigate(
+    `/dashboard/${DEMO_REPO_ID}?branch=${older.branch}&snapshot_id=${older.snapshot_id}`,
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText("Historical snapshot")).toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: /latest scan/i }))
+
+  expect(nav.read().get("snapshot_id")).toBeNull()
+  expect(nav.read().get("branch")).toBe("main")
+})
+
+test("normal dashboard arrows can move to an older scan", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const older = await screen.findByRole("button", { name: /older scan/i })
+  await waitFor(() => expect(older).not.toBeDisabled())
+  await userEvent.click(older)
+
+  expect(nav.read().get("snapshot_id")).toBe(mockScanHistory[1].snapshot_id)
+  expect(nav.read().get("branch")).toBe("main")
+})
+
 test("renders the ranked-list label and tree legend", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
@@ -173,7 +201,7 @@ test("a never-scanned repo still gets the top nav, so a scan can be started", as
   ).not.toBeInTheDocument()
 
   // …and the controls that produce the first snapshot are on screen
-  expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^scan$/i })).toBeInTheDocument()
   expect(screen.getByLabelText("Branch")).toBeInTheDocument()
 })
 
@@ -213,7 +241,7 @@ test("a real failure still reads as an error, not as an empty state", async () =
   ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
   // the nav survives this too — switching branch is the obvious recovery
-  expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^scan$/i })).toBeInTheDocument()
 })
 
 test("finishing the first scan refetches the report, so the empty state fills in", async () => {
@@ -241,7 +269,7 @@ test("finishing the first scan refetches the report, so the empty state fills in
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
   await screen.findByText(/no scans yet/i)
 
-  await userEvent.click(screen.getByRole("button", { name: /scan/i }))
+  await userEvent.click(screen.getByRole("button", { name: /^scan$/i }))
 
   // Without useScan's onComplete wired to the report's reload(), this never
   // arrives and the empty state sits there until a manual refresh.
