@@ -1,5 +1,7 @@
 "use client"
 
+import { Activity, Clock3, GitBranch, GitCommit } from "lucide-react"
+
 import {
   Select,
   SelectContent,
@@ -23,8 +25,7 @@ export type DashboardTopNavProps = {
    * Snapshot metadata, absent until the branch has been scanned once.
    *
    * The nav renders above the report, so it has to survive having no report at
-   * all — a freshly connected repository has no commit and no scan time, and
-   * required props here rendered "Invalid Date" and threw inside shortSha().
+   * all. A freshly connected repository has no commit and no scan time.
    */
   lastCommitSha?: string
   scannedAt?: string
@@ -41,48 +42,85 @@ export function DashboardTopNav({
   scan,
 }: Readonly<DashboardTopNavProps>) {
   // Branches load on their own clock. Before they land `activeBranch` is "",
-  // which Radix renders as a blank trigger — indistinguishable from a broken
-  // dropdown now that the nav is on screen from the first paint.
+  // which Radix renders as a blank trigger, so the placeholder must be explicit.
   const branchesReady = branches.length > 0
+  const formattedScanTime = scannedAt
+    ? new Date(scannedAt).toLocaleString()
+    : undefined
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-      <div className="flex items-center gap-3">
-        <span className="font-semibold">{repoName}</span>
-        <Select
-          value={activeBranch}
-          onValueChange={onBranchChange}
-          disabled={!branchesReady}
-        >
-          <SelectTrigger className="w-40" aria-label="Branch">
-            <SelectValue
-              placeholder={
-                branchesReady ? "Select branch" : "Loading branches…"
-              }
+    <div className="z-10 shrink-0 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              className="h-5 w-px shrink-0 rounded-full bg-primary"
+              aria-hidden="true"
             />
-          </SelectTrigger>
-          <SelectContent>
-            {branches.map((b) => (
-              <SelectItem key={b.name} value={b.name}>
-                {b.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <ScanControl {...scan} />
-      </div>
+            <h1 className="truncate text-base font-semibold leading-6">
+              {repoName}
+            </h1>
+            <span className="rounded-full border border-primary/45 px-2 py-0.5 text-[0.625rem] font-medium text-primary">
+              Live dashboard
+            </span>
+          </div>
 
-      <div className="text-muted-foreground text-right text-xs">
-        {scannedAt ? (
-          <>
-            <div>Last analyzed {new Date(scannedAt).toLocaleString()}</div>
-            {lastCommitSha ? (
-              <div className="font-mono">#{shortSha(lastCommitSha)}</div>
-            ) : null}
-          </>
-        ) : (
-          <div>Never scanned</div>
-        )}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-card px-2 py-1">
+              <GitCommit className="size-3.5" aria-hidden="true" />
+              {lastCommitSha ? (
+                <span className="font-mono">#{shortSha(lastCommitSha)}</span>
+              ) : (
+                <span>No commit yet</span>
+              )}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-card px-2 py-1">
+              <Clock3 className="size-3.5" aria-hidden="true" />
+              {formattedScanTime ? (
+                <span>Last analyzed {formattedScanTime}</span>
+              ) : (
+                <span>Never scanned</span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
+            <GitBranch
+              className="size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Select
+              value={activeBranch}
+              onValueChange={onBranchChange}
+              disabled={!branchesReady}
+            >
+              <SelectTrigger
+                className="h-7 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0"
+                aria-label="Branch"
+              >
+                <SelectValue
+                  placeholder={
+                    branchesReady ? "Select branch" : "Loading branches..."
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => (
+                  <SelectItem key={b.name} value={b.name}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex min-h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
+            <Activity className="size-4 text-primary" aria-hidden="true" />
+            <ScanControl {...scan} />
+          </div>
+        </div>
       </div>
     </div>
   )
