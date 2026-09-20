@@ -24,12 +24,15 @@ export const metadata: Metadata = {
   // open tabs, a browser history and a screen reader's page announcement all
   // useless for telling one screen from another (U-9).
   title: {
-    default: "Code Sage AI",
-    template: "%s · Code Sage AI",
+    default: "CodeSage AI",
+    template: "%s | CodeSage AI",
   },
   description:
     "Find the technical debt in a repository, and rank it by what your team " +
     "actually cares about.",
+  icons: {
+    icon: [{ url: "/codesage-favicon.svg", type: "image/svg+xml" }],
+  },
 }
 
 // Authentication state is cookie-backed and therefore request-specific.
