@@ -142,7 +142,13 @@ test("a running scan prevents repository removal", async () => {
   )
 
   expect(await failureMessage()).toMatch(/stop the running scan/i)
-  expect(screen.getByText("acme-payments")).toBeInTheDocument()
+  expect(screen.getByRole("dialog")).toBeInTheDocument()
+  // Radix marks background content aria-hidden while the modal is open, so
+  // accessible queries correctly cannot see the list at this point. Inspect
+  // the already-rendered list node to prove the failed delete kept its row.
+  expect(
+    document.querySelector('[aria-label="Connected repositories"]'),
+  ).toHaveTextContent("acme-payments")
 })
 
 test("a private repository explains itself instead of failing generically", async () => {

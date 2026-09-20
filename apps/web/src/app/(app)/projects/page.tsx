@@ -45,6 +45,10 @@ export default function ProjectsPage() {
   const [removingRepoId, setRemovingRepoId] = useState<string>()
   const { selectedProjectId, selectProject, clearProject } = useSelectedProject({
     availableRepoIds: repos?.map((repo) => repo.id),
+    // This screen has an intentional "None" state after the active repository
+    // is removed. Re-selecting the first stale list item would write the deleted
+    // repository straight back to localStorage before reload() finishes.
+    fallbackToFirstAvailable: false,
   })
   const projectCount = repos?.length ?? 0
   const scannedCount = repos?.filter((repo) => repo.latest_health).length ?? 0
