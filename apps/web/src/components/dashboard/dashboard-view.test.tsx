@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { http, HttpResponse } from "msw"
+import { toast } from "sonner"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
@@ -134,6 +135,33 @@ test("clicking a file in the tree opens that file's finding", async () => {
 // way out. The health endpoint answers 404 for a branch that has never been
 // scanned, and the top nav lived inside the success branch — so the 404 took
 // the Scan button down with it.
+
+test("renders the ranked-list label and tree legend", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText(/ranked by priority/i)).toBeInTheDocument()
+  expect(screen.getByLabelText("Heat map legend")).toBeInTheDocument()
+})
+
+test("clicking a tree file with no finding shows feedback", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const tree = screen.getByLabelText("File health tree")
+  await userEvent.click(
+    within(tree).getByRole("button", { name: /formatters\.ts/i }),
+  )
+
+  const status = await screen.findByRole("status")
+  expect(status).toHaveTextContent(
+    "formatters.ts has no findings in this snapshot.",
+  )
+  expect(toast).toHaveBeenCalledWith(
+    "formatters.ts has no findings in this snapshot.",
+  )
+  expect(screen.queryByLabelText("Finding detail")).not.toBeInTheDocument()
+})
 
 test("a never-scanned repo still gets the top nav, so a scan can be started", async () => {
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)

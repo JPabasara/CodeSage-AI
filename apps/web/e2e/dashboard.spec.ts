@@ -18,8 +18,11 @@ test("the health card shows a derived grade, score and red-issue count", async (
 }) => {
   // 72 / B under Balanced, computed by the mock's scoring engine rather than
   // typed into a fixture — so this number moving means the FORMULA moved.
-  await expect(page.getByText("72/100")).toBeVisible()
-  await expect(page.getByText("B", { exact: true })).toBeVisible()
+  const healthCard = page.locator('[data-slot="card"]').filter({
+    hasText: "Code Health",
+  })
+  await expect(healthCard.getByText("72/100")).toBeVisible()
+  await expect(healthCard.getByText("B", { exact: true })).toBeVisible()
   // critical + high = 4 of the ten findings.
   await expect(page.getByText(/4 red issues/i)).toBeVisible()
 })
@@ -176,4 +179,47 @@ test("the category filter narrows the list to one debt type", async ({
   await expect(
     page.getByRole("row").filter({ hasText: /940 lines long/ }),
   ).toHaveCount(0)
+})
+
+test("the dashboard is viewport-bounded at 1280x720", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
+  await expect(page.getByText("Code Health")).toBeVisible()
+
+  const hasNoHorizontalScroll = await page.evaluate(
+    () => document.documentElement.scrollWidth <= window.innerWidth,
+  )
+  expect(hasNoHorizontalScroll).toBeTruthy()
+
+  const listScroll = page.getByTestId("refactor-first-scroll")
+  const listScrolledInternally = await listScroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return (
+      element.scrollTop > 0 && (document.scrollingElement?.scrollTop ?? 0) === 0
+    )
+  })
+  expect(listScrolledInternally).toBeTruthy()
+  await expect(page.getByText("Live dashboard")).toBeVisible()
+
+  await expect(page.getByTestId("file-tree-scroll")).toHaveCSS(
+    "overflow-y",
+    "auto",
+  )
+})
+
+test("clicking a clean file in the tree gives helpful feedback", async ({
+  page,
+}) => {
+  await page
+    .getByLabel("File health tree")
+    .getByRole("button", { name: /formatters\.ts/ })
+    .click()
+
+  await expect(
+    page
+      .getByLabel("File health tree")
+      .getByRole("status")
+      .filter({ hasText: "formatters.ts has no findings in this snapshot." }),
+  ).toBeVisible()
+  await expect(detailPanel(page)).toHaveCount(0)
 })
