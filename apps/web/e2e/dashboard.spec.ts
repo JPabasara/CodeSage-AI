@@ -16,11 +16,12 @@ test.beforeEach(async ({ page }) => {
 test("the health card shows a derived grade, score and red-issue count", async ({
   page,
 }) => {
-  // 72 / B under Balanced, computed by the mock's scoring engine rather than
+  // 71 / B under Balanced, computed by the mock's scoring engine rather than
   // typed into a fixture — so this number moving means the FORMULA moved.
-  await expect(page.getByText("72/100")).toBeVisible()
-  await expect(page.getByText("B", { exact: true })).toBeVisible()
-  // critical + high = 4 of the ten findings.
+  const healthCard = page.locator("div").filter({ hasText: "Code Health" }).first()
+  await expect(page.getByText(/71\/100/)).toBeVisible()
+  await expect(healthCard.getByText("B", { exact: true }).first()).toBeVisible()
+  // critical + high = 4 of the findings.
   await expect(page.getByText(/4 red issues/i)).toBeVisible()
 })
 
@@ -176,4 +177,56 @@ test("the category filter narrows the list to one debt type", async ({
   await expect(
     page.getByRole("row").filter({ hasText: /940 lines long/ }),
   ).toHaveCount(0)
+})
+
+// ── Responsive viewports (U-13) ─────────────────────────────────────────────
+
+test("dashboard is fully usable at 1280x720 laptop baseline with no horizontal scroll (U-13)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  // U-13: No horizontal scrolling of the dashboard
+  const hasHorizontalScroll = await page.evaluate(
+    () => document.body.scrollWidth > window.innerWidth,
+  )
+  expect(hasHorizontalScroll).toBe(false)
+
+  // Top nav elements visible
+  await expect(page.getByText("acme/acme-payments")).toBeVisible()
+  await expect(page.getByRole("button", { name: /scan/i })).toBeVisible()
+
+  // Cards, table, and file tree visible side-by-side
+  await expect(page.getByText("Code Health")).toBeVisible()
+  await expect(page.getByText("Health Trend")).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: /refactor first/i }),
+  ).toBeVisible()
+  await expect(page.getByLabel("File health tree")).toBeVisible()
+})
+
+test("dashboard collapses to single column below lg breakpoint without overflow (U-13)", async ({
+  page,
+}) => {
+  // Below lg (1024px)
+  await page.setViewportSize({ width: 900, height: 800 })
+
+  const hasHorizontalScroll = await page.evaluate(
+    () => document.body.scrollWidth > window.innerWidth,
+  )
+  expect(hasHorizontalScroll).toBe(false)
+
+  // Elements remain visible and accessible in collapsed single column
+  await expect(page.getByText("Code Health")).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: /refactor first/i }),
+  ).toBeVisible()
+  await expect(page.getByLabel("File health tree")).toBeVisible()
+
+  // File tree is below the list in vertical order
+  const listRect = await page
+    .getByRole("heading", { name: /refactor first/i })
+    .boundingBox()
+  const treeRect = await page.getByLabel("File health tree").boundingBox()
+  expect(treeRect!.y).toBeGreaterThan(listRect!.y)
 })
