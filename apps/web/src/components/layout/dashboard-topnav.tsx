@@ -71,7 +71,10 @@ export function DashboardTopNav({
     : undefined
 
   return (
-    <div className="z-10 shrink-0 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+    <header
+      aria-label="Dashboard header"
+      className="z-10 shrink-0 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -109,7 +112,7 @@ export function DashboardTopNav({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <nav aria-label="Dashboard controls" className="flex flex-wrap items-center gap-2">
           <div className="flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
             <GitBranch
               className="size-4 text-muted-foreground"
@@ -194,8 +197,8 @@ export function DashboardTopNav({
               ) : null}
             </div>
           ) : null}
-        </div>
+        </nav>
       </div>
-    </div>
+    </header>
   )
 }

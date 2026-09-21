@@ -175,7 +175,7 @@ export default function Home() {
       <section className="relative isolate min-h-[88svh] overflow-hidden border-b bg-zinc-950 px-5 py-5 text-white sm:px-8 lg:px-10">
         <DashboardPreview />
 
-        <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4">
+        <header aria-label="Site header" className="relative z-10 mx-auto flex max-w-7xl items-center justify-between gap-4">
           <Link href="/" className="flex min-w-0 items-center gap-3">
             <Image
               src="/codesage-refactor-branch-mark.svg"
