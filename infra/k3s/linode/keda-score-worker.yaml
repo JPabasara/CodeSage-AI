@@ -1,4 +1,47 @@
-# TODO: Add KEDA ScaledObject for score workers.
-# Queue/list: scoring
-# minReplicaCount: 1
-# maxReplicaCount: 2
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-score-worker-redis-auth
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: score-worker
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  secretTargetRef:
+    - parameter: address
+      name: codesage-secrets
+      key: CODESAGE_KEDA_REDIS_ADDRESS
+    - parameter: username
+      name: codesage-secrets
+      key: CODESAGE_KEDA_REDIS_USERNAME
+    - parameter: password
+      name: codesage-secrets
+      key: CODESAGE_KEDA_REDIS_PASSWORD
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: score-worker-redis-scaler
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: score-worker
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  scaleTargetRef:
+    name: score-worker
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  triggers:
+    - type: redis
+      metadata:
+        listName: scoring
+        listLength: "1"
+        activationListLength: "1"
+        enableTLS: "true"
+        databaseIndex: "0"
+      authenticationRef:
+        name: keda-score-worker-redis-auth

@@ -1,4 +1,47 @@
-# TODO: Add KEDA ScaledObject for scan workers.
-# Queue/list: scans
-# minReplicaCount: 1
-# maxReplicaCount: 3
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-worker-redis-auth
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  secretTargetRef:
+    - parameter: address
+      name: codesage-secrets
+      key: CODESAGE_KEDA_REDIS_ADDRESS
+    - parameter: username
+      name: codesage-secrets
+      key: CODESAGE_KEDA_REDIS_USERNAME
+    - parameter: password
+      name: codesage-secrets
+      key: CODESAGE_KEDA_REDIS_PASSWORD
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-redis-scaler
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  scaleTargetRef:
+    name: worker
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  triggers:
+    - type: redis
+      metadata:
+        listName: scans
+        listLength: "1"
+        activationListLength: "1"
+        enableTLS: "true"
+        databaseIndex: "0"
+      authenticationRef:
+        name: keda-worker-redis-auth
