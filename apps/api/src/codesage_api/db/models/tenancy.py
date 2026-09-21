@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, LargeBinary, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from codesage_api.db.models.repository import Repository
 
 
-def enum_values(enum: type[Theme | MembershipStatus]) -> list[str]:
+def enum_values(enum: type[Theme] | type[MembershipStatus]) -> list[str]:
     return [item.value for item in enum]
 
 
@@ -30,6 +30,7 @@ class User(UUIDPrimaryKey, Base):
 
     # Everything below is for showing on screen. None of it is identity.
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     # "github", "google", "local" — which button they clicked inside Asgardeo.
@@ -79,6 +80,26 @@ class Membership(UUIDPrimaryKey, Base):
     workspace: Mapped[Workspace] = relationship(back_populates="memberships")
 
     __table_args__ = (UniqueConstraint("user_id", "workspace_id"),)
+
+
+class WorkspaceInvitation(UUIDPrimaryKey, Base):
+    __tablename__ = "workspace_invitation"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspace.id", ondelete="CASCADE"), index=True
+    )
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    role_id: Mapped[str] = mapped_column(ForeignKey("role.id", ondelete="RESTRICT"))
+    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    invited_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("app_user.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SecurityAuditRecord(UUIDPrimaryKey, Base):

@@ -93,6 +93,8 @@ services:
       CODESAGE_ASGARDEO_CLIENT_SECRET: ${CODESAGE_ASGARDEO_CLIENT_SECRET:-}
       CODESAGE_ASGARDEO_REDIRECT_URI: http://localhost:8000/api/auth/callback
       CODESAGE_FRONTEND_BASE_URL: http://localhost:3000
+      CODESAGE_RESEND_API_KEY: ${CODESAGE_RESEND_API_KEY:-}
+      CODESAGE_INVITATION_FROM_EMAIL: '${CODESAGE_INVITATION_FROM_EMAIL:-CodeSage <onboarding@resend.dev>}'
       # Local development is plain http, so a Secure-only cookie would never be
       # sent at all. This MUST be true anywhere real.
       CODESAGE_COOKIE_SECURE: "false"

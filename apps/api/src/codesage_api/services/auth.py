@@ -151,6 +151,7 @@ class IdentityClaims:
     name: str | None
     picture: str | None
     identity_provider: str | None
+    email_verified: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,6 +217,7 @@ def exchange_code_for_identity(code: str, code_verifier: str) -> IdentityClaims:
         name=claims.get("name") or claims.get("username"),
         picture=claims.get("picture"),
         identity_provider=claims.get("idp"),
+        email_verified=claims.get("email_verified") is True,
     )
 
 
@@ -227,6 +229,7 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
     else:
         # Their name or picture may have changed since last time.
         user.email = claims.email or user.email
+        user.email_verified = claims.email_verified
         user.display_name = claims.name or user.display_name
         user.avatar_url = claims.picture or user.avatar_url
 
@@ -267,6 +270,7 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
         display_name=claims.name,
         avatar_url=claims.picture,
         identity_provider=claims.identity_provider,
+        email_verified=claims.email_verified,
     )
     db.add(user)
     db.flush()
