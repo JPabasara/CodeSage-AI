@@ -142,13 +142,14 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           isHistorical: Boolean(snapshotId),
           positionLabel:
             currentScanIndex >= 0
-              ? `${currentScanIndex + 1}/${scanHistory.length}`
+              ? `${scanHistory.length - currentScanIndex}/${scanHistory.length}`
               : snapshotId
                 ? "History"
                 : "Latest",
           canGoOlder:
             currentScanIndex >= 0 && currentScanIndex < scanHistory.length - 1,
           canGoNewer: currentScanIndex > 0,
+          showLatestButton: currentScanIndex > 0,
           onOlder: () => {
             if (currentScanIndex >= 0) {
               const older = scanHistory[currentScanIndex + 1]
