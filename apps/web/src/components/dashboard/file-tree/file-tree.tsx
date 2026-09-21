@@ -6,51 +6,52 @@ import { ChevronDown, ChevronRight, File, Folder } from "lucide-react"
 import type { TreeNode } from "@/lib/types"
 import { cn, gradeColor } from "@/lib/utils"
 
-// A stable boundary: this renders a simple recursive tree, and a virtualized
-// library can replace it later without touching anything outside this file.
 export interface FileTreeProps {
   nodes: TreeNode[]
-  colorFor: (node: TreeNode) => string // heat-map tint from health_score
-  onHoverNode?: (node: TreeNode | null) => void // drives Card B later
-  onSelectNode?: (node: TreeNode) => void // opens finding detail / focuses file
-  /** The file the dashboard is showing detail for. Its folders open automatically. */
+  colorFor: (node: TreeNode) => string
+  hasFinding?: (node: TreeNode) => boolean
+  onHoverNode?: (node: TreeNode | null) => void
+  onSelectNode?: (node: TreeNode) => void
+  onSelectNodeWithoutFinding?: (node: TreeNode) => void
+  selectionNotice?: string | null
   selectedPath?: string
 }
 
-/** "src/payments/x.ts" → ["src", "src/payments"] — the folders that hide it. */
 function ancestorPaths(path: string) {
   const parts = path.split("/")
   return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join("/"))
 }
 
 function collectFolderPaths(nodes: TreeNode[], acc: Set<string>) {
-  for (const n of nodes) {
-    if (n.type === "folder") {
-      acc.add(n.path)
-      if (n.children) collectFolderPaths(n.children, acc)
+  for (const node of nodes) {
+    if (node.type === "folder") {
+      acc.add(node.path)
+      if (node.children) collectFolderPaths(node.children, acc)
     }
   }
   return acc
 }
 
+function nodeScoreLabel(node: TreeNode) {
+  return `${node.name}, grade ${node.grade}, score ${Math.round(
+    node.health_score,
+  )}`
+}
+
 export function FileTree({
   nodes,
   colorFor,
+  hasFinding,
   onHoverNode,
   onSelectNode,
+  onSelectNodeWithoutFinding,
+  selectionNotice,
   selectedPath,
 }: Readonly<FileTreeProps>) {
-  // default: all folders expanded, so the heat map reads at a glance
   const [expanded, setExpanded] = useState<Set<string>>(() =>
     collectFolderPaths(nodes, new Set()),
   )
 
-  // Entering detail mode must reveal the finding's file, not just tint a row the
-  // user cannot see — so re-open its ancestors whenever the selection moves.
-  //
-  // Adjusted during render rather than in an effect: an effect would render the
-  // tree once with the file hidden, then again with it shown. Keyed on
-  // `revealed`, so collapsing the folder again afterwards still works.
   const [revealed, setRevealed] = useState<string>()
   if (selectedPath && selectedPath !== revealed) {
     setRevealed(selectedPath)
@@ -58,8 +59,6 @@ export function FileTree({
     if (missing.length > 0) setExpanded(new Set([...expanded, ...missing]))
   }
 
-  // Runs after the expansion above has re-rendered, so the row exists by now.
-  // "nearest" scrolls the tree's own scroll container, never the whole page.
   const selectedRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (selectedPath) selectedRef.current?.scrollIntoView({ block: "nearest" })
@@ -72,6 +71,21 @@ export function FileTree({
       else next.add(path)
       return next
     })
+
+  const selectNode = (node: TreeNode) => {
+    if (node.type === "folder") {
+      toggle(node.path)
+      onSelectNode?.(node)
+      return
+    }
+
+    if (hasFinding && !hasFinding(node)) {
+      onSelectNodeWithoutFinding?.(node)
+      return
+    }
+
+    onSelectNode?.(node)
+  }
 
   const renderNodes = (list: TreeNode[], depth: number) =>
     list.map((node) => {
@@ -90,14 +104,15 @@ export function FileTree({
             type="button"
             ref={isSelected ? selectedRef : undefined}
             aria-current={isSelected ? "true" : undefined}
+<<<<<<< HEAD
             aria-expanded={isFolder ? isOpen : undefined}
+=======
+            aria-label={nodeScoreLabel(node)}
+>>>>>>> origin/main
             className={cn(
-              "hover:bg-accent flex w-full items-center gap-1.5 rounded py-1 pr-2 text-left text-sm",
-              // Already a real button, so Enter and Space worked — but with no
-              // focus style you could not see where you were while tabbing
-              // through the tree, which U-9 counts as not operable.
-              "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
-              isSelected && "bg-accent ring-primary font-medium ring-1",
+              "group/file flex h-8 w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-accent/70",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              isSelected && "bg-accent font-medium ring-1 ring-primary",
             )}
             style={{
               paddingLeft: depth * 14 + 6,
@@ -105,10 +120,7 @@ export function FileTree({
             }}
             onMouseEnter={() => onHoverNode?.(node)}
             onMouseLeave={() => onHoverNode?.(null)}
-            onClick={() => {
-              if (isFolder) toggle(node.path)
-              onSelectNode?.(node)
-            }}
+            onClick={() => selectNode(node)}
           >
             {chevron}
             {isFolder ? (
@@ -116,6 +128,7 @@ export function FileTree({
             ) : (
               <File className="size-4 shrink-0" />
             )}
+<<<<<<< HEAD
             <span className="truncate flex-1">{node.name}</span>
             <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs tabular-nums">
               <span className="text-muted-foreground">{Math.round(node.health_score)}</span>
@@ -125,6 +138,17 @@ export function FileTree({
               >
                 {node.grade}
               </span>
+=======
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <span
+              className="ml-2 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background px-1.5 text-[0.625rem] font-medium tabular-nums text-muted-foreground"
+              aria-hidden="true"
+            >
+              <span className="font-semibold text-foreground">
+                {node.grade}
+              </span>
+              {Math.round(node.health_score)}
+>>>>>>> origin/main
             </span>
           </button>
 
@@ -139,17 +163,17 @@ export function FileTree({
     return (
       <div
         aria-label="File health tree"
-        className="flex flex-col items-center justify-center p-8 text-center space-y-2"
+        className="flex h-full min-h-0 flex-col items-center justify-center rounded-lg border-t-2 border-t-primary/60 bg-card p-8 text-center shadow-sm ring-1 ring-foreground/10 space-y-2"
       >
         <div className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Folder className="size-5" />
         </div>
         <div className="space-y-1">
           <p className="text-sm font-medium">No files in this tree</p>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-muted-foreground">
             No files were detected in this snapshot.
           </p>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-muted-foreground">
             Run a scan to analyze and display the repository file hierarchy.
           </p>
         </div>
@@ -158,42 +182,68 @@ export function FileTree({
   }
 
   return (
-    <div className="space-y-2">
-      <div
-        aria-label="Health scale legend"
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b pb-2 text-xs text-muted-foreground"
-      >
-        <span className="flex items-center gap-1">
-          <span
-            className="size-2 rounded-full"
-            style={{ backgroundColor: "hsl(var(--health-bad))" }}
-            aria-hidden="true"
-          />
-          &lt;40 critical
-        </span>
-        <span className="text-muted-foreground/40" aria-hidden="true">·</span>
-        <span className="flex items-center gap-1">
-          <span
-            className="size-2 rounded-full"
-            style={{ backgroundColor: "hsl(var(--health-mid))" }}
-            aria-hidden="true"
-          />
-          40–69 needs work
-        </span>
-        <span className="text-muted-foreground/40" aria-hidden="true">·</span>
-        <span className="flex items-center gap-1">
-          <span
-            className="size-2 rounded-full"
-            style={{ backgroundColor: "hsl(var(--health-good))" }}
-            aria-hidden="true"
-          />
-          70+ healthy
-        </span>
+    <section
+      aria-label="File health tree"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border-t-2 border-t-primary/60 bg-card shadow-sm ring-1 ring-foreground/10"
+    >
+      <div className="shrink-0 border-b px-3 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">File health map</h2>
+            <p className="text-xs text-muted-foreground">
+              Scores are shown per file and folded up through folders.
+            </p>
+          </div>
+        </div>
+
+        <div
+          className="mt-3 flex flex-wrap items-center gap-2 text-[0.625rem] font-medium text-muted-foreground"
+          aria-label="Heat map legend"
+        >
+          <span>Heat map legend</span>
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="size-2 rounded-full"
+              style={{ backgroundColor: "hsl(var(--health-bad))" }}
+              aria-hidden="true"
+            />
+            Hot
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="size-2 rounded-full"
+              style={{ backgroundColor: "hsl(var(--health-mid))" }}
+              aria-hidden="true"
+            />
+            Watch
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="size-2 rounded-full"
+              style={{ backgroundColor: "hsl(var(--health-good))" }}
+              aria-hidden="true"
+            />
+            Healthy
+          </span>
+        </div>
+
+        {selectionNotice ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-2 rounded-md border border-border/70 bg-background px-2 py-1 text-xs text-muted-foreground"
+          >
+            {selectionNotice}
+          </p>
+        ) : null}
       </div>
 
-      <ul aria-label="File health tree" className="text-sm">
-        {renderNodes(nodes, 0)}
-      </ul>
-    </div>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto p-2"
+        data-testid="file-tree-scroll"
+      >
+        <ul className="space-y-0.5 text-sm">{renderNodes(nodes, 0)}</ul>
+      </div>
+    </section>
   )
 }

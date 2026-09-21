@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: codesage-ai
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: codesage-ai
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: api
+          image: ghcr.io/jpabasara/codesage-ai/api:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: codesage-config
+            - secretRef:
+                name: codesage-secrets
+          startupProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

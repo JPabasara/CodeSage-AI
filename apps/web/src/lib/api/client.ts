@@ -113,15 +113,24 @@ export function getBranches(repoId: string): Promise<Branch[]> {
 export function getHealthReport(
   repoId: string,
   branch: string,
+  snapshotId?: string,
 ): Promise<HealthReport> {
   const qs = new URLSearchParams({ branch })
+  if (snapshotId) qs.set("snapshot_id", snapshotId)
   return fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
     credentials: "include",
   }).then(json<HealthReport>)
 }
 
-export function getScanHistory(repoId: string): Promise<ScanSummary[]> {
-  return fetch(`${API_BASE}/api/repos/${repoId}/scans`, {
+export function getScanHistory(
+  repoId: string,
+  branch?: string,
+): Promise<ScanSummary[]> {
+  const qs = new URLSearchParams()
+  if (branch) qs.set("branch", branch)
+  const query = qs.toString()
+  const suffix = query ? `?${query}` : ""
+  return fetch(`${API_BASE}/api/repos/${repoId}/scans${suffix}`, {
     credentials: "include",
   }).then(json<ScanSummary[]>)
 }

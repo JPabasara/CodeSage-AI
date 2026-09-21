@@ -12,6 +12,17 @@ test("renders nodes and tints each row via colorFor", () => {
   expect(colorFor).toHaveBeenCalled()
 })
 
+test("renders the heat-map legend and per-node grade/score", () => {
+  render(<FileTree nodes={mockTree} colorFor={() => "red"} />)
+
+  expect(screen.getByLabelText("Heat map legend")).toBeInTheDocument()
+  const payment = screen.getByRole("button", {
+    name: /payment_service\.ts, grade [A-E], score \d+/i,
+  })
+  expect(payment).toBeInTheDocument()
+  expect(payment).toHaveTextContent(/[A-E]\d+/)
+})
+
 test("collapsing a folder hides its children", async () => {
   render(<FileTree nodes={mockTree} colorFor={() => "red"} />)
   expect(screen.getByText("payment_service.ts")).toBeInTheDocument() // folders start expanded
@@ -37,6 +48,30 @@ test("hovering and selecting a node fire their callbacks", () => {
   expect(onHoverNode).toHaveBeenCalled()
   fireEvent.click(fileButton)
   expect(onSelectNode).toHaveBeenCalled()
+})
+
+test("selecting a file without a finding calls the feedback path", async () => {
+  const onSelectNode = vi.fn()
+  const onSelectNodeWithoutFinding = vi.fn()
+
+  render(
+    <FileTree
+      nodes={mockTree}
+      colorFor={() => "red"}
+      hasFinding={(node) => node.path !== "src/lib/formatters.ts"}
+      onSelectNode={onSelectNode}
+      onSelectNodeWithoutFinding={onSelectNodeWithoutFinding}
+    />,
+  )
+
+  await userEvent.click(screen.getByRole("button", { name: /formatters\.ts/i }))
+
+  expect(onSelectNodeWithoutFinding).toHaveBeenCalledWith(
+    expect.objectContaining({ path: "src/lib/formatters.ts" }),
+  )
+  expect(onSelectNode).not.toHaveBeenCalledWith(
+    expect.objectContaining({ path: "src/lib/formatters.ts" }),
+  )
 })
 
 // Detail mode must reveal the finding's file: tinting a row inside a folder the
@@ -79,23 +114,3 @@ test("renders a named empty state with next action when nodes is empty (U-14)", 
   // Must not render a list of files
   expect(screen.queryByRole("list")).not.toBeInTheDocument()
 })
-
-test("renders numeric health score, grade letter, and scale legend (U-8)", () => {
-  render(<FileTree nodes={mockTree} colorFor={() => "rgb(0, 255, 0)"} />)
-
-  // Scale legend above the tree
-  expect(screen.getByLabelText("Health scale legend")).toBeInTheDocument()
-  expect(screen.getByText(/<40 critical/)).toBeInTheDocument()
-  expect(screen.getByText(/40–69 needs work/)).toBeInTheDocument()
-  expect(screen.getByText(/70\+ healthy/)).toBeInTheDocument()
-
-  // Rows render numeric score and grade letter beside node name
-  const paymentRow = screen.getByRole("button", {
-    name: /payment_service\.ts/i,
-  })
-  expect(paymentRow).toBeInTheDocument()
-  expect(paymentRow.textContent).toContain("payment_service.ts")
-  expect(paymentRow.textContent).toMatch(/[0-9]+/) // numeric score
-  expect(paymentRow.textContent).toMatch(/[A-E]/) // grade letter
-})
-

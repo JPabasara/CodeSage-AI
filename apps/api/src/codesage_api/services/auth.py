@@ -20,9 +20,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.enums import MembershipStatus
+from codesage_api.db.enums import (
+    MembershipStatus,
+    RepositoryConnectionStatus,
+    RepositoryPlatform,
+    RepositoryVisibility,
+)
 from codesage_api.db.models import (
+    Branch,
     Membership,
+    Repository,
     ScoringProfile,
     User,
     UserSession,
@@ -34,6 +41,7 @@ from codesage_api.errors import (
     SignInFailed,
     UpstreamUnavailable,
 )
+from codesage_api.integrations.github import fetch_repository, parse_github_url
 from codesage_api.scoring.config_loader import get_presets
 from codesage_api.scoring.enums import Category
 
@@ -43,6 +51,81 @@ logger = logging.getLogger(__name__)
 # is down". Both are terminal for this attempt and neither is worth retrying, so
 # they must not be dressed up as a temporary outage.
 _CLIENT_SIDE_GRANT_ERRORS = {"invalid_grant", "invalid_request", "expired_token"}
+_UNKNOWN_HEAD_SHA = "0" * 40
+
+
+@dataclass(frozen=True, slots=True)
+class DemoRepositorySeed:
+    owner: str
+    name: str
+    url: str
+    external_repository_id: str
+    default_branch: str
+    head_commit_sha: str
+
+
+def _demo_repository_seed() -> DemoRepositorySeed | None:
+    settings = get_settings()
+    url = settings.demo_repository_url.strip()
+    if not url:
+        return None
+
+    try:
+        metadata = fetch_repository(url)
+        return DemoRepositorySeed(
+            owner=metadata.owner,
+            name=metadata.name,
+            url=metadata.url,
+            external_repository_id=metadata.external_id,
+            default_branch=metadata.default_branch,
+            head_commit_sha=metadata.default_branch_sha,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not read configured demo repository metadata; seeding from URL only: %s",
+            exc,
+        )
+
+    try:
+        owner, name = parse_github_url(url)
+    except Exception:
+        logger.warning("Configured demo repository URL is not a GitHub repository URL")
+        return None
+
+    default_branch = settings.demo_repository_default_branch.strip() or "main"
+    return DemoRepositorySeed(
+        owner=owner,
+        name=name,
+        url=f"https://github.com/{owner}/{name}",
+        external_repository_id=f"demo:{owner}/{name}",
+        default_branch=default_branch,
+        head_commit_sha=_UNKNOWN_HEAD_SHA,
+    )
+
+
+def _seed_demo_repository(db: DbSession, workspace_id: uuid.UUID) -> None:
+    seed = _demo_repository_seed()
+    if seed is None:
+        return
+
+    repository = Repository(
+        workspace_id=workspace_id,
+        source_platform=RepositoryPlatform.GITHUB,
+        external_repository_id=seed.external_repository_id,
+        name=seed.name,
+        owner=seed.owner,
+        url=seed.url,
+        visibility=RepositoryVisibility.PUBLIC,
+        connection_status=RepositoryConnectionStatus.CONNECTED,
+    )
+    repository.branches.append(
+        Branch(
+            name=seed.default_branch,
+            head_commit_sha=seed.head_commit_sha,
+            is_default=True,
+        )
+    )
+    db.add(repository)
 
 
 def _oauth_error(response: httpx.Response) -> str | None:
@@ -206,6 +289,7 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
             is_active=True,
         )
     )
+    _seed_demo_repository(db, workspace_id)
     db.flush()
     return user
 

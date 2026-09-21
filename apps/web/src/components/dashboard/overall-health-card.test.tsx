@@ -18,12 +18,11 @@ test("shows the grade, positive delta, and red-issue count", () => {
     />,
   )
   expect(screen.getByText("A")).toBeInTheDocument()
-  expect(screen.getByText(/▲ \+3 improved/)).toBeInTheDocument()
-  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
+  expect(screen.getByText(/Up \+3 since last scan/)).toBeInTheDocument()
   expect(screen.getByText(/2 red issues/)).toBeInTheDocument()
 })
 
-test("renders a negative delta with a down marker and singular issue", () => {
+test("renders a negative delta with a down label and singular issue", () => {
   render(
     <OverallHealthCard
       score={40}
@@ -33,8 +32,7 @@ test("renders a negative delta with a down marker and singular issue", () => {
       categoryBreakdown={[{ category: "code-design", count: 1, debt: 3 }]}
     />,
   )
-  expect(screen.getByText(/▼ -5 degraded/)).toBeInTheDocument()
-  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
+  expect(screen.getByText(/Down -5 since last scan/)).toBeInTheDocument()
   expect(screen.getByText(/1 red issue$/)).toBeInTheDocument()
 })
 
@@ -71,15 +69,14 @@ test("renders category legend with counts, center total, and distinct colors (#1
     />,
   )
 
-  // Total findings in the center of the donut: 2 + 5 + 1 + 3 + 4 = 15
   expect(screen.getByText("15")).toBeInTheDocument()
   expect(screen.getByText("total")).toBeInTheDocument()
 
-  // Accessible legend exists
-  const legend = screen.getByRole("list", { name: /category breakdown legend/i })
+  const legend = screen.getByRole("list", {
+    name: /category breakdown legend/i,
+  })
   expect(legend).toBeInTheDocument()
 
-  // Each category and count is displayed in the legend
   for (const item of breakdown) {
     expect(screen.getByText(item.category)).toBeInTheDocument()
   }
@@ -89,19 +86,15 @@ test("renders category legend with counts, center total, and distinct colors (#1
   expect(screen.getByText("3")).toBeInTheDocument()
   expect(screen.getByText("4")).toBeInTheDocument()
 
-  // Chart container has an accessible aria-label summarizing the breakdown
   const chart = screen.getByLabelText(
     /category breakdown: 2 security, 5 code-design, 1 test, 3 documentation, 4 requirement\. total: 15/i,
   )
   expect(chart).toBeInTheDocument()
 
-  // CATEGORY_COLORS maps strictly to dedicated --category-* tokens
   expect(CATEGORY_COLORS["code-design"]).toBe("var(--category-code-design)")
   expect(CATEGORY_COLORS["security"]).toBe("var(--category-security)")
   expect(CATEGORY_COLORS["test"]).toBe("var(--category-test)")
-  expect(CATEGORY_COLORS["documentation"]).toBe(
-    "var(--category-documentation)",
-  )
+  expect(CATEGORY_COLORS["documentation"]).toBe("var(--category-documentation)")
   expect(CATEGORY_COLORS["requirement"]).toBe("var(--category-requirement)")
 })
 

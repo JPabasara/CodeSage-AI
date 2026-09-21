@@ -11,7 +11,7 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/projects")
-  await expect(page.getByText("acme/acme-payments")).toBeVisible()
+  await expect(page.getByText("acme-payments")).toBeVisible()
 })
 
 /**
@@ -63,7 +63,7 @@ test("connecting a public repository adds it to the list", async ({ page }) => {
 
   await expect(page.getByText(/connected octocat\/Hello-World/i)).toBeVisible()
   await expect(
-    repoRows(page).filter({ hasText: "octocat/Hello-World" }),
+    repoRows(page).filter({ hasText: "Hello-World" }),
   ).toBeVisible()
   // Freshly connected: no scan has run, so no health hint.
   await expect(
@@ -98,7 +98,7 @@ test("each connect failure explains itself in its own words", async ({
 test("selecting a project opens its dashboard", async ({ page }) => {
   await repoRows(page)
     .filter({ hasText: "acme-payments" })
-    .getByRole("button", { name: /select/i })
+    .getByRole("link", { name: /open dashboard/i })
     .click()
 
   await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}$`))
@@ -110,7 +110,7 @@ test("the repo id in the URL is the contract's uuid, not a slug", async ({
 }) => {
   await repoRows(page)
     .filter({ hasText: "acme-payments" })
-    .getByRole("button", { name: /select/i })
+    .getByRole("link", { name: /open dashboard/i })
     .click()
 
   // `Repo.id` is `format: uuid`. Slug ids used to hide a class of bug here —

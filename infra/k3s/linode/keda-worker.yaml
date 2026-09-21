@@ -1,0 +1,4 @@
+# TODO: Add KEDA ScaledObject for scan workers.
+# Queue/list: scans
+# minReplicaCount: 1
+# maxReplicaCount: 3

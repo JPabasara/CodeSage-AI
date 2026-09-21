@@ -40,55 +40,59 @@ export function OverallHealthCard({
   redIssueCount,
   categoryBreakdown,
 }: Readonly<OverallHealthCardProps>) {
+  const deltaLabel =
+    delta === 0
+      ? "No change since last scan"
+      : delta > 0
+        ? `Up +${delta} since last scan`
+        : `Down ${delta} since last scan`
+
   const chartConfig = useMemo(
     () =>
       Object.fromEntries(
-        categoryBreakdown.map((c) => [
-          c.category,
-          { label: c.category, color: CATEGORY_COLORS[c.category] },
+        categoryBreakdown.map((item) => [
+          item.category,
+          { label: item.category, color: CATEGORY_COLORS[item.category] },
         ]),
       ) as ChartConfig,
     [categoryBreakdown],
   )
 
   const totalFindings = useMemo(
-    () => categoryBreakdown.reduce((sum, c) => sum + c.count, 0),
+    () => categoryBreakdown.reduce((sum, item) => sum + item.count, 0),
     [categoryBreakdown],
   )
 
   const ariaLabel = useMemo(() => {
-    if (totalFindings === 0) {
-      return "Category breakdown: zero findings"
-    }
+    if (totalFindings === 0) return "Category breakdown: zero findings"
     const splitSummary = categoryBreakdown
-      .filter((c) => c.count > 0)
-      .map((c) => `${c.count} ${c.category}`)
+      .filter((item) => item.count > 0)
+      .map((item) => `${item.count} ${item.category}`)
       .join(", ")
     return `Category breakdown: ${splitSummary}. Total: ${totalFindings}`
   }, [categoryBreakdown, totalFindings])
 
-  // Recharts colours each slice from a `fill` field on the datum (Cell is deprecated in v3).
   const pieData = useMemo(() => {
     if (totalFindings === 0) {
       return [{ category: "none", count: 1, fill: "var(--muted)" }]
     }
     return categoryBreakdown
-      .filter((c) => c.count > 0)
-      .map((c) => ({
-        ...c,
-        fill: CATEGORY_COLORS[c.category] ?? "var(--category-code-design)",
+      .filter((item) => item.count > 0)
+      .map((item) => ({
+        ...item,
+        fill: CATEGORY_COLORS[item.category] ?? "var(--category-code-design)",
       }))
   }, [categoryBreakdown, totalFindings])
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-t-2 border-t-primary/60 shadow-sm">
+      <CardHeader className="pb-2">
         <CardTitle>Code Health</CardTitle>
         <CardDescription>
           {redIssueCount} red {redIssueCount === 1 ? "issue" : "issues"}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3 pt-0">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-baseline gap-2">
@@ -98,45 +102,35 @@ export function OverallHealthCard({
               >
                 {grade}
               </span>
-              <span className="text-muted-foreground text-lg">{score}/100</span>
+              <span className="text-lg text-muted-foreground">{score}/100</span>
             </div>
-            <p className="mt-1 text-sm">
-              {delta > 0 ? (
-                <span style={{ color: "hsl(var(--health-good))" }}>
-                  ▲ +{delta} improved
-                </span>
-              ) : delta < 0 ? (
-                <span style={{ color: "hsl(var(--health-bad))" }}>
-                  ▼ {delta} degraded
-                </span>
-              ) : (
-                <span className="text-muted-foreground">0 unchanged</span>
-              )}
-              <span className="text-muted-foreground"> since last scan</span>
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{deltaLabel}</p>
           </div>
 
-          <div className="relative aspect-square h-24 w-24 shrink-0 sm:h-28 sm:w-28">
+          <div className="relative aspect-square h-32 w-32 shrink-0 overflow-visible">
             <ChartContainer
               role="img"
               config={chartConfig}
-              className="aspect-square h-full w-full"
+              className="aspect-square h-full w-full overflow-visible"
               aria-label={ariaLabel}
             >
               <PieChart>
-                {totalFindings > 0 && (
+                {totalFindings > 0 ? (
                   <ChartTooltip
+                    cursor={false}
+                    position={{ x: -120, y: 8 }}
+                    wrapperStyle={{ pointerEvents: "none" }}
                     content={
                       <ChartTooltipContent nameKey="category" hideLabel />
                     }
                   />
-                )}
+                ) : null}
                 <Pie
                   data={pieData}
                   dataKey="count"
                   nameKey="category"
-                  innerRadius={28}
-                  outerRadius={46}
+                  innerRadius={42}
+                  outerRadius={60}
                   paddingAngle={totalFindings > 0 ? 3 : 0}
                   cornerRadius={totalFindings > 0 ? 3 : 0}
                   stroke="var(--card)"
@@ -158,8 +152,8 @@ export function OverallHealthCard({
           </div>
         </div>
 
-        {categoryBreakdown.length > 0 && (
-          <div className="mt-4 border-t pt-3">
+        {categoryBreakdown.length > 0 ? (
+          <div className="border-t pt-3">
             <ul
               className="space-y-1.5 text-xs"
               aria-label="Category breakdown legend"
@@ -174,7 +168,7 @@ export function OverallHealthCard({
                     key={item.category}
                     className="flex items-center justify-between gap-2 py-0.5"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-full"
                         style={{
@@ -184,11 +178,11 @@ export function OverallHealthCard({
                         }}
                         aria-hidden="true"
                       />
-                      <span className="text-muted-foreground capitalize truncate">
+                      <span className="truncate capitalize text-muted-foreground">
                         {item.category}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 items-center gap-2">
                       <span className="text-[10px] text-muted-foreground tabular-nums">
                         {pct}%
                       </span>
@@ -201,7 +195,7 @@ export function OverallHealthCard({
               })}
             </ul>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   )

@@ -1,0 +1,81 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-staging
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-production
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-production-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: codesage-ingress
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: codesage-ai
+  annotations:
+    cert-manager.io/issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - codesageai.dev
+        - api.codesageai.dev
+      secretName: codesageai-tls
+  rules:
+    - host: codesageai.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http
+    - host: api.codesageai.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  name: http

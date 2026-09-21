@@ -47,100 +47,42 @@ const findings: Finding[] = [
   },
 ]
 
+function findingCards() {
+  return within(
+    screen.getByRole("list", { name: /ranked refactor findings/i }),
+  ).getAllByRole("button")
+}
+
 test("sorts findings by priority, highest first", () => {
   render(<RefactorFirstList findings={findings} />)
-  const rows = screen.getAllByRole("row")
-  // rows[0] is the header; the first data row must be the highest-priority finding
-  expect(within(rows[1]).getByText("critical one")).toBeInTheDocument()
+
+  expect(findingCards()[0]).toHaveTextContent("critical one")
 })
 
-test("renders explicit rank (#) column with 1-based sequential rank numbers", () => {
+test("labels the list as ranked by priority", () => {
   render(<RefactorFirstList findings={findings} />)
-  expect(screen.getByRole("columnheader", { name: "#" })).toBeInTheDocument()
-  const rows = screen.getAllByRole("row")
-  // Row 1 (critical one) is rank 1
-  expect(within(rows[1]).getByText("1")).toBeInTheDocument()
-  // Row 2 (medium one) is rank 2
-  expect(within(rows[2]).getByText("2")).toBeInTheDocument()
-  // Row 3 (low one) is rank 3
-  expect(within(rows[3]).getByText("3")).toBeInTheDocument()
+  expect(screen.getByText(/ranked by priority/i)).toBeInTheDocument()
 })
 
-test("renders count badge and explanatory ranking subtitle", () => {
-  render(<RefactorFirstList findings={findings} />)
-  const heading = screen.getByRole("heading", { name: /refactor first/i })
-  expect(heading).toBeInTheDocument()
-  expect(
-    screen.getByText("Ranked by severity × risk — start at the top."),
-  ).toBeInTheDocument()
-  // Badge next to heading contains total count
-  expect(within(heading.parentElement!).getByText("3")).toBeInTheDocument()
-})
-
-test("renders detector source chip in each row", () => {
-  render(<RefactorFirstList findings={findings} />)
-  // All test findings have source: "rule"
-  const sourceBadges = screen.getAllByText("rule")
-  expect(sourceBadges.length).toBe(3)
-})
-
-test("renders full reason in title attribute for hover accessibility", () => {
-  render(<RefactorFirstList findings={findings} />)
-  const reasonCell = screen.getByText("critical one")
-  expect(reasonCell).toHaveAttribute("title", "critical one")
-})
-
-test("caps findings list to 10 items and toggles show all / show top 10", async () => {
-  const fifteenFindings: Finding[] = Array.from({ length: 15 }, (_, i) => ({
-    fingerprint: `f-${i}`,
-    source: "rule",
-    category: "code-design",
-    severity: "medium",
-    file: `file-${i}.ts`,
-    line: i + 1,
-    symbol: `func${i}`,
-    reason: `Finding number ${i + 1}`,
-    status: "open",
-    priority: 15 - i,
-    pinned_by_floor: false,
-  }))
-
-  const user = userEvent.setup()
-  render(<RefactorFirstList findings={fifteenFindings} />)
-
-  // Header row + 10 visible data rows = 11 rows total
-  const initialRows = screen.getAllByRole("row")
-  expect(initialRows.length).toBe(11)
-
-  // Toggle button is present
-  const toggleBtn = screen.getByRole("button", {
-    name: /show all 15 findings/i,
-  })
-  expect(toggleBtn).toBeInTheDocument()
-
-  // Click to expand
-  await user.click(toggleBtn)
-
-  // Header row + 15 visible data rows = 16 rows total
-  const expandedRows = screen.getAllByRole("row")
-  expect(expandedRows.length).toBe(16)
-  expect(
-    screen.getByRole("button", { name: /show top 10/i }),
-  ).toBeInTheDocument()
-
-  // Click to collapse
-  await user.click(screen.getByRole("button", { name: /show top 10/i }))
-  expect(screen.getAllByRole("row").length).toBe(11)
-})
-
-test("clicking a row fires onSelect with that finding", async () => {
+test("clicking a finding card fires onSelect with that finding", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
-  await userEvent.click(screen.getByText("critical one"))
+
+  await userEvent.click(screen.getByRole("button", { name: /critical one/i }))
+
   expect(onSelect).toHaveBeenCalledWith(findings[1])
 })
 
-test("filters the list by debt type and updates count badge", async () => {
+test("cards include source, category and compact location", () => {
+  render(<RefactorFirstList findings={findings} />)
+
+  const critical = screen.getByRole("button", { name: /critical one/i })
+  expect(critical).toHaveTextContent("security")
+  expect(critical).toHaveTextContent("rule")
+  expect(critical).toHaveTextContent("b.ts:2")
+})
+
+test("filters the list by debt type", async () => {
   const user = userEvent.setup()
   render(<RefactorFirstList findings={findings} />)
 
@@ -175,7 +117,6 @@ test("zero findings displays the celebratory empty state (U-14)", () => {
     ),
   ).toBeInTheDocument()
 
-  // Must not render a table
   expect(screen.queryByRole("table")).not.toBeInTheDocument()
 })
 
@@ -183,28 +124,20 @@ test("filtered to nothing names the active filter and provides a clear filter bu
   const user = userEvent.setup()
   render(<RefactorFirstList findings={findings} />)
 
-  // findings only has code-design and security, so filtering by "test" produces 0 rows
   await user.click(
     screen.getByRole("combobox", { name: /filter by debt type/i }),
   )
   await user.click(await screen.findByRole("option", { name: "test" }))
 
-  // Names what is empty and states which filter
   expect(screen.getByText("No findings match this filter")).toBeInTheDocument()
-  expect(
-    screen.getByText(/no findings match the “test” filter/i),
-  ).toBeInTheDocument()
-
-  // Visually and textually distinct: must NOT show the zero-findings clean copy
+  expect(screen.getByText(/test.*filter/i)).toBeInTheDocument()
   expect(
     screen.queryByText("No refactoring issues found"),
   ).not.toBeInTheDocument()
 
-  // Offers clear-filter action
   const clearBtn = screen.getByRole("button", { name: /clear filter/i })
   expect(clearBtn).toBeInTheDocument()
 
-  // Clicking clear-filter resets the filter and restores all findings
   await user.click(clearBtn)
   expect(screen.getByText("critical one")).toBeInTheDocument()
   expect(screen.getByText("low one")).toBeInTheDocument()
@@ -214,51 +147,47 @@ test("filtered to nothing names the active filter and provides a clear filter bu
   ).not.toBeInTheDocument()
 })
 
-// ── keyboard operability (U-9, #115) ────────────────────────────────────────
-//
-// These rows were `onClick` on a plain <tr>: no tab stop, no key handler. The
-// core triage flow — open the worst finding — could not be reached by keyboard
-// at all, which is the single biggest thing U-9 asks about.
-
-test("a finding row is a tab stop", async () => {
+test("a finding card is a tab stop", async () => {
   render(<RefactorFirstList findings={findings} />)
 
-  const row = screen.getAllByRole("row")[1] // [0] is the header
-  expect(row).toHaveAttribute("tabindex", "0")
+  const card = screen.getByRole("button", { name: /critical one/i })
 
   await userEvent.tab()
-  // The filter is the first stop on this component; the first row follows it.
   await userEvent.tab()
-  expect(row).toHaveFocus()
+  expect(card).toHaveFocus()
 })
 
-test("Enter on a focused row opens that finding", async () => {
+test("Enter on a focused card opens that finding", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
 
-  const row = screen.getAllByRole("row")[1]
-  row.focus()
+  const card = screen.getByRole("button", { name: /critical one/i })
+  card.focus()
   await userEvent.keyboard("{Enter}")
 
-  expect(onSelect).toHaveBeenCalledWith(findings[1]) // the critical one, sorted first
+  expect(onSelect).toHaveBeenCalledWith(findings[1])
 })
 
-test("Space on a focused row opens it too, without scrolling the page", async () => {
+test("Space on a focused card opens it too, without scrolling the page", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
 
-  const row = screen.getAllByRole("row")[1]
-  row.focus()
+  const card = screen.getByRole("button", { name: /critical one/i })
+  card.focus()
   await userEvent.keyboard(" ")
 
   expect(onSelect).toHaveBeenCalledWith(findings[1])
 })
 
-test("the selected row says so to a screen reader, not only in colour", async () => {
+test("the selected card says so to a screen reader, not only in colour", () => {
   render(<RefactorFirstList findings={findings} selectedFingerprint="b" />)
 
-  const row = screen.getAllByRole("row")[1]
-  expect(row).toHaveAttribute("aria-current", "true")
-  // and the unselected one does not claim to be current
-  expect(screen.getAllByRole("row")[2]).not.toHaveAttribute("aria-current")
+  const selected = screen.getByRole("button", {
+    name: /critical one/i,
+    current: true,
+  })
+  expect(selected).toHaveAttribute("aria-current", "true")
+  expect(
+    screen.getByRole("button", { name: /medium one/i }),
+  ).not.toHaveAttribute("aria-current")
 })

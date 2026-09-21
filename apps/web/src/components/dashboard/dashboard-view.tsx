@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 
 import { DashboardTopNav } from "@/components/layout/dashboard-topnav"
 import { OverallHealthCard } from "@/components/dashboard/overall-health-card"
@@ -10,12 +12,14 @@ import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { ErrorState } from "@/components/error-state"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
 import { useScan } from "@/hooks/use-scan"
+import { useScanHistory } from "@/hooks/use-scan-history"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
 
@@ -27,17 +31,29 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // and fall back to the id only while the list is still loading.
   const { data: repos } = useProjects()
   const repo = repos?.find((r) => r.id === repoId)
-  const repoName = repo ? `${repo.owner}/${repo.name}` : repoId
+  const reposLoaded = repos !== undefined
+  const repoName = repo
+    ? `${repo.owner}/${repo.name}`
+    : reposLoaded
+      ? "Project unavailable"
+      : "Loading project"
 
   // A user pick wins; until then fall back to the repo's default branch, then
   // the first available one. Empty string only for the first render before
   // branches load (the mock treats it as the default branch).
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const branchFromUrl = searchParams.get("branch") ?? undefined
+  const snapshotId = searchParams.get("snapshot_id") ?? undefined
   const [pickedBranch, setPickedBranch] = useState<string>()
   const activeBranch =
+    branchFromUrl ??
     pickedBranch ??
     branches?.find((b) => b.is_default)?.name ??
     branches?.[0]?.name ??
     ""
+  const { data: scanHistory } = useScanHistory(repoId, activeBranch)
 
   const {
     data: report,
@@ -45,7 +61,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     pending: scorePending,
     error,
     refetch,
-  } = useHealthReport(repoId, activeBranch)
+  } = useHealthReport(repoId, activeBranch, snapshotId)
 
   // The Scan button's state machine (start → poll progress → done/stop + toast).
   //
@@ -62,9 +78,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // The selected finding lives in the URL, not in state, so a refresh restores
   // detail mode and Back closes it. Fingerprints are stable across scans, which
   // is what a shareable link needs.
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
   const selectedFingerprint = searchParams.get("finding") ?? undefined
   const selectedFinding: Finding | null =
     report?.findings.find((f) => f.fingerprint === selectedFingerprint) ?? null
@@ -74,18 +87,84 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // Wiring it up later means keeping the value, passing it to Card B, and adding
   // a per-node history to TreeNode.
   const [, setHoveredNode] = useState<TreeNode | null>(null)
+  const [treeSelectionNotice, setTreeSelectionNotice] = useState<string | null>(
+    null,
+  )
+
+  const dashboardHref = (
+    updates: Record<string, string | undefined | null>,
+  ) => {
+    const next = new URLSearchParams(searchParams.toString())
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === undefined || value === null || value === "") {
+        next.delete(key)
+      } else {
+        next.set(key, value)
+      }
+    }
+    const query = next.toString()
+    return query ? `${pathname}?${query}` : pathname
+  }
 
   // push, not replace: Back should leave detail mode, the way it does in a mail
   // client. scroll: false keeps the dashboard where it is as the region swaps.
-  const openFinding = (finding: Finding) =>
-    router.push(
-      `${pathname}?finding=${encodeURIComponent(finding.fingerprint)}`,
-      {
-        scroll: false,
-      },
-    )
+  const openFinding = (finding: Finding) => {
+    setTreeSelectionNotice(null)
+    router.push(dashboardHref({ finding: finding.fingerprint }), {
+      scroll: false,
+    })
+  }
 
-  const closeFinding = () => router.push(pathname, { scroll: false })
+  const closeFinding = () => {
+    setTreeSelectionNotice(null)
+    router.push(dashboardHref({ finding: null }), { scroll: false })
+  }
+
+  const openSnapshot = (snapshot_id: string | null) => {
+    setTreeSelectionNotice(null)
+    router.push(
+      dashboardHref({
+        branch: activeBranch,
+        snapshot_id,
+        finding: null,
+      }),
+      { scroll: false },
+    )
+  }
+
+  const currentSnapshotId = snapshotId ?? report?.snapshot_id
+  const currentScanIndex =
+    scanHistory?.findIndex((scan) => scan.snapshot_id === currentSnapshotId) ??
+    -1
+  const snapshotNavigation =
+    scanHistory && scanHistory.length > 0
+      ? {
+          isHistorical: Boolean(snapshotId),
+          positionLabel:
+            currentScanIndex >= 0
+              ? `${scanHistory.length - currentScanIndex}/${scanHistory.length}`
+              : snapshotId
+                ? "History"
+                : "Latest",
+          canGoOlder:
+            currentScanIndex >= 0 && currentScanIndex < scanHistory.length - 1,
+          canGoNewer: currentScanIndex > 0,
+          showLatestButton: currentScanIndex > 0,
+          onOlder: () => {
+            if (currentScanIndex >= 0) {
+              const older = scanHistory[currentScanIndex + 1]
+              if (older) openSnapshot(older.snapshot_id)
+            }
+          },
+          onNewer: () => {
+            if (currentScanIndex > 0) {
+              const newer = scanHistory[currentScanIndex - 1]
+              if (newer) openSnapshot(newer.snapshot_id)
+            }
+          },
+          onLatest: () => openSnapshot(null),
+        }
+      : undefined
 
   // A branch that has never been scanned answers 404. That is the first-run
   // state, not a failure, so it must not take the whole screen down.
@@ -96,6 +175,23 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // branch, so a freshly connected repository (404, no snapshot) lost the very
   // Scan button that would produce the first one. Only the body below swaps.
   const body = () => {
+    if (reposLoaded && !repo) {
+      return (
+        <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm">
+          <div className="space-y-1">
+            <p className="text-foreground font-medium">Choose a project</p>
+            <p>
+              This project is not connected to your workspace anymore. Select an
+              available repository to open its dashboard.
+            </p>
+          </div>
+          <Button asChild size="sm" variant="secondary">
+            <Link href="/projects">View projects</Link>
+          </Button>
+        </div>
+      )
+    }
+
     // Two different waits, one shape. `loading` is "the request is in flight";
     // `scorePending` is "the snapshot is stored and the API is still scoring it"
     // (503 SCORE_PENDING). The second only ever follows a scan, so it earns a
@@ -103,7 +199,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     // stall. The hook keeps asking; nothing here has to.
     if (loading || scorePending) {
       return (
-        <div className="space-y-4 p-4 max-w-[1600px] w-full mx-auto">
+        <div className="min-h-0 flex-1 space-y-4 p-4 max-w-[1600px] w-full mx-auto">
           <div className="grid gap-4 lg:grid-cols-2">
             <Skeleton className="h-64 w-full" />
             <Skeleton className="h-64 w-full" />
@@ -158,6 +254,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
 
     if (!report) return null
+    const findingFiles = new Set(report.findings.map((finding) => finding.file))
 
     return (
       <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2 max-w-[1600px] w-full mx-auto min-w-0">
@@ -169,7 +266,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               onClose={closeFinding}
             />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid shrink-0 gap-4 sm:grid-cols-2">
               <OverallHealthCard
                 score={report.health_score}
                 grade={report.grade}
@@ -183,11 +280,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
           {/* Shrunk, not hidden, in detail mode — moving to the next finding is
               one click, with no close-and-reopen. */}
-          <div
-            className={
-              detailMode ? "min-h-0 flex-1 overflow-y-auto" : undefined
-            }
-          >
+          <div className="min-h-0 flex-1 overflow-hidden">
             <RefactorFirstList
               findings={report.findings}
               onSelect={openFinding}
@@ -196,11 +289,18 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           </div>
         </div>
 
-        <div className="max-h-[70vh] min-w-0 overflow-y-auto rounded-lg border p-2">
+        <div className="min-h-0 min-w-0 flex-1 flex flex-col">
           <FileTree
             nodes={report.tree}
             colorFor={(node) => healthColor(node.health_score)}
+            hasFinding={(node) => findingFiles.has(node.path)}
             onHoverNode={setHoveredNode}
+            onSelectNodeWithoutFinding={(node) => {
+              const message = `${node.name} has no findings in this snapshot.`
+              setTreeSelectionNotice(message)
+              toast(message)
+            }}
+            selectionNotice={treeSelectionNotice}
             selectedPath={selectedFinding?.file}
             onSelectNode={(node) => {
               const match = report.findings.find((f) => f.file === node.path)
@@ -213,14 +313,26 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[oklch(0.985_0.002_255)] dark:bg-[oklch(0.12_0.006_255)]">
       <DashboardTopNav
         repoName={repoName}
         branches={branches ?? []}
         activeBranch={activeBranch}
-        onBranchChange={setPickedBranch}
+        onBranchChange={(branch) => {
+          setTreeSelectionNotice(null)
+          setPickedBranch(branch)
+          router.push(
+            dashboardHref({
+              branch,
+              snapshot_id: null,
+              finding: null,
+            }),
+            { scroll: false },
+          )
+        }}
         lastCommitSha={report?.commit_sha}
         scannedAt={report?.scanned_at}
+        snapshotNavigation={snapshotNavigation}
         scan={{
           phase: scanStatus.phase,
           progress: scanStatus.progress,

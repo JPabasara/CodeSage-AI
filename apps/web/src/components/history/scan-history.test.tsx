@@ -1,11 +1,23 @@
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { http, HttpResponse } from "msw"
-import { expect, test } from "vitest"
+import { beforeEach, expect, test, vi } from "vitest"
 
 import { ScanHistory } from "./scan-history"
 import { server } from "@/lib/mocks/server"
 import { DEMO_REPO_ID, UNSCANNED_REPO_ID } from "@/lib/mocks/fixtures"
+
+const nav = vi.hoisted(() => ({
+  push: vi.fn(),
+}))
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: nav.push }),
+}))
+
+beforeEach(() => {
+  nav.push.mockReset()
+})
 
 test("shows a skeleton while the first request is in flight", () => {
   render(<ScanHistory repoId={DEMO_REPO_ID} />)
@@ -27,6 +39,33 @@ test("lists the stored snapshots newest first (FR-19)", async () => {
   // The newest snapshot in the fixture is a1b2c3d.
   expect(first.getByText("a1b2c3d")).toBeInTheDocument()
   expect(first.getByText("main")).toBeInTheDocument()
+})
+
+test("opens an exact historical snapshot from a row", async () => {
+  render(<ScanHistory repoId={DEMO_REPO_ID} />)
+
+  const rows = await screen.findAllByRole("row")
+  await userEvent.click(rows[1])
+
+  expect(nav.push).toHaveBeenCalledWith(
+    expect.stringMatching(
+      new RegExp(
+        `/dashboard/${DEMO_REPO_ID}\\?branch=main&snapshot_id=[0-9a-f-]+`,
+      ),
+    ),
+  )
+})
+
+test("exposes a latest-scan link for the branch", async () => {
+  render(<ScanHistory repoId={DEMO_REPO_ID} />)
+
+  const latest = await screen.findByRole("link", {
+    name: /open latest scan/i,
+  })
+  expect(latest).toHaveAttribute(
+    "href",
+    `/dashboard/${DEMO_REPO_ID}?branch=main`,
+  )
 })
 
 test("the oldest row says no change rather than inventing a direction", async () => {

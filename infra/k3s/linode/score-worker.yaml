@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: score-worker
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: score-worker
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: score-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: codesage-ai
+        app.kubernetes.io/component: score-worker
+        app.kubernetes.io/part-of: codesage-ai
+    spec:
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: score-worker
+          image: ghcr.io/jpabasara/codesage-ai/api:latest
+          imagePullPolicy: Always
+          command: ["celery"]
+          args:
+            - "-A"
+            - "codesage_api.worker"
+            - "worker"
+            - "--loglevel=INFO"
+            - "--concurrency=1"
+            - "-Q"
+            - "scoring"
+            - "--hostname=score-worker@%h"
+          envFrom:
+            - configMapRef:
+                name: codesage-config
+            - secretRef:
+                name: codesage-secrets
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - celery -A codesage_api.worker inspect ping -d score-worker@$HOSTNAME -t 10 | grep -q pong
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 12
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - celery -A codesage_api.worker inspect ping -d score-worker@$HOSTNAME -t 10 | grep -q pong
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - celery -A codesage_api.worker inspect ping -d score-worker@$HOSTNAME -t 10 | grep -q pong
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi

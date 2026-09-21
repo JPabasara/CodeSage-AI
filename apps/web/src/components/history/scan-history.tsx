@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { ErrorState } from "@/components/error-state"
@@ -16,6 +17,20 @@ import {
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { ScanSummary } from "@/lib/types"
 import { gradeColor, shortSha } from "@/lib/utils"
+
+function dashboardSnapshotHref(repoId: string, scan: ScanSummary) {
+  const qs = new URLSearchParams({
+    branch: scan.branch,
+    snapshot_id: scan.snapshot_id,
+  })
+  return `/dashboard/${repoId}?${qs}`
+}
+
+function dashboardLatestHref(repoId: string, branch?: string) {
+  if (!branch) return `/dashboard/${repoId}`
+  const qs = new URLSearchParams({ branch })
+  return `/dashboard/${repoId}?${qs}`
+}
 
 /**
  * One row's movement against the snapshot before it.
@@ -41,9 +56,27 @@ function Delta({ value }: Readonly<{ value: number }>) {
   )
 }
 
-function ScanRow({ scan }: Readonly<{ scan: ScanSummary }>) {
+function ScanRow({
+  repoId,
+  scan,
+}: Readonly<{ repoId: string; scan: ScanSummary }>) {
+  const router = useRouter()
+  const href = dashboardSnapshotHref(repoId, scan)
+  const open = () => router.push(href)
+
   return (
-    <TableRow>
+    <TableRow
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          open()
+        }
+      }}
+      className="cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={`Open scan from ${new Date(scan.scanned_at).toLocaleString()}`}
+    >
       <TableCell className="whitespace-nowrap">
         <time dateTime={scan.scanned_at}>
           {new Date(scan.scanned_at).toLocaleString()}
@@ -67,6 +100,7 @@ function ScanRow({ scan }: Readonly<{ scan: ScanSummary }>) {
       <TableCell className="text-right">
         <Delta value={scan.delta} />
       </TableCell>
+      <TableCell className="text-right text-primary">Open</TableCell>
     </TableRow>
   )
 }
@@ -76,13 +110,22 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Scan History</h1>
-        <p className="text-muted-foreground text-sm">
-          Every stored snapshot for this repository, newest first. Scores are
-          recalculated under the profile in force right now, so applying a
-          different profile redraws this list.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Scan History</h1>
+          <p className="text-muted-foreground text-sm">
+            Every stored snapshot for this repository, newest first. Scores are
+            recalculated under the profile in force right now, so applying a
+            different profile redraws this list.
+          </p>
+        </div>
+        {scans && scans.length > 0 ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={dashboardLatestHref(repoId, scans[0]?.branch)}>
+              Open latest scan
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
       {error ? (
@@ -107,11 +150,12 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
               <TableHead className="text-right">Score</TableHead>
               <TableHead>Grade</TableHead>
               <TableHead className="text-right">Change</TableHead>
+              <TableHead className="text-right">Open</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {scans.map((scan) => (
-              <ScanRow key={scan.snapshot_id} scan={scan} />
+              <ScanRow key={scan.snapshot_id} repoId={repoId} scan={scan} />
             ))}
           </TableBody>
         </Table>
