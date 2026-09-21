@@ -245,7 +245,9 @@ export function RefactorFirstList({
                 <TableCell className="font-mono text-xs">
                   {f.file}:{f.line}
                 </TableCell>
-                <TableCell className="max-w-md truncate">{f.reason}</TableCell>
+                <TableCell className="max-w-md truncate" title={f.reason}>
+                  {f.reason}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

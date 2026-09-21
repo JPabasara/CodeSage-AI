@@ -84,6 +84,12 @@ test("renders detector source chip in each row", () => {
   expect(sourceBadges.length).toBe(3)
 })
 
+test("renders full reason in title attribute for hover accessibility", () => {
+  render(<RefactorFirstList findings={findings} />)
+  const reasonCell = screen.getByText("critical one")
+  expect(reasonCell).toHaveAttribute("title", "critical one")
+})
+
 test("clicking a row fires onSelect with that finding", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
