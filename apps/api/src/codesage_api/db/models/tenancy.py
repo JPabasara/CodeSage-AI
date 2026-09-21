@@ -55,6 +55,7 @@ class User(UUIDPrimaryKey, Base):
 class Workspace(UUIDPrimaryKey, Base):
     __tablename__ = "workspace"
 
+    name: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Workspace")
     memberships: Mapped[list[Membership]] = relationship(back_populates="workspace", passive_deletes=True)
     repositories: Mapped[list[Repository]] = relationship(back_populates="workspace", passive_deletes=True)
     scoring_profiles: Mapped[list[ScoringProfile]] = relationship(back_populates="workspace", passive_deletes=True)
