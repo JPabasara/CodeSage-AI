@@ -9,7 +9,7 @@ used by the contract, the SRS and the database columns — so no one has to
 remember which side of the wire they are on.
 """
 
-from codesage_api.schemas.auth import SessionOut
+from codesage_api.schemas.auth import SessionOut, SwitchWorkspaceIn, WorkspaceSummaryOut
 from codesage_api.schemas.base import ApiModel
 from codesage_api.schemas.branch import BranchOut
 from codesage_api.schemas.finding import FindingOut
@@ -42,5 +42,7 @@ __all__ = [
     "ScoreProfileOut",
     "SessionOut",
     "StartScanIn",
+    "SwitchWorkspaceIn",
     "TreeNodeOut",
+    "WorkspaceSummaryOut",
 ]
