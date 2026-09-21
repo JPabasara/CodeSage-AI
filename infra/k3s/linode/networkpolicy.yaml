@@ -1,0 +1,2 @@
+# TODO: Add NetworkPolicy after the app works.
+# Apply this last because network rules can make debugging harder.
