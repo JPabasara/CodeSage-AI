@@ -1,0 +1,1 @@
+"""Workspace authorization policy definitions."""
