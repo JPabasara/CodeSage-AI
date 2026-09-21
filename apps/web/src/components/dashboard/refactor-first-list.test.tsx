@@ -90,6 +90,49 @@ test("renders full reason in title attribute for hover accessibility", () => {
   expect(reasonCell).toHaveAttribute("title", "critical one")
 })
 
+test("caps findings list to 10 items and toggles show all / show top 10", async () => {
+  const fifteenFindings: Finding[] = Array.from({ length: 15 }, (_, i) => ({
+    fingerprint: `f-${i}`,
+    source: "rule",
+    category: "code-design",
+    severity: "medium",
+    file: `file-${i}.ts`,
+    line: i + 1,
+    symbol: `func${i}`,
+    reason: `Finding number ${i + 1}`,
+    status: "open",
+    priority: 15 - i,
+    pinned_by_floor: false,
+  }))
+
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={fifteenFindings} />)
+
+  // Header row + 10 visible data rows = 11 rows total
+  const initialRows = screen.getAllByRole("row")
+  expect(initialRows.length).toBe(11)
+
+  // Toggle button is present
+  const toggleBtn = screen.getByRole("button", {
+    name: /show all 15 findings/i,
+  })
+  expect(toggleBtn).toBeInTheDocument()
+
+  // Click to expand
+  await user.click(toggleBtn)
+
+  // Header row + 15 visible data rows = 16 rows total
+  const expandedRows = screen.getAllByRole("row")
+  expect(expandedRows.length).toBe(16)
+  expect(
+    screen.getByRole("button", { name: /show top 10/i }),
+  ).toBeInTheDocument()
+
+  // Click to collapse
+  await user.click(screen.getByRole("button", { name: /show top 10/i }))
+  expect(screen.getAllByRole("row").length).toBe(11)
+})
+
 test("clicking a row fires onSelect with that finding", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)

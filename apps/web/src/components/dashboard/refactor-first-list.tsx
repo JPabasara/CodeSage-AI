@@ -48,12 +48,15 @@ export type RefactorFirstListProps = {
   selectedFingerprint?: string
 }
 
+const PAGE_SIZE = 10
+
 export function RefactorFirstList({
   findings,
   onSelect,
   selectedFingerprint,
 }: Readonly<RefactorFirstListProps>) {
   const [category, setCategory] = useState<Category | "all">("all")
+  const [showAll, setShowAll] = useState(false)
 
   const categories = useMemo(
     () =>
@@ -74,6 +77,11 @@ export function RefactorFirstList({
         SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
     )
   }, [findings, category])
+
+  const visibleRows = useMemo(
+    () => (showAll ? rows : rows.slice(0, PAGE_SIZE)),
+    [rows, showAll],
+  )
 
   if (findings.length === 0) {
     return (
@@ -182,7 +190,7 @@ export function RefactorFirstList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((f, index) => (
+            {visibleRows.map((f, index) => (
               <TableRow
                 key={f.fingerprint}
                 // U-9. This row was `onClick` on a plain <tr>: no tab stop, no
@@ -252,6 +260,21 @@ export function RefactorFirstList({
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {rows.length > PAGE_SIZE && (
+        <div className="flex justify-center pt-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAll((prev) => !prev)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            {showAll
+              ? `Show top ${PAGE_SIZE}`
+              : `Show all ${rows.length} findings`}
+          </Button>
+        </div>
       )}
     </div>
   )
