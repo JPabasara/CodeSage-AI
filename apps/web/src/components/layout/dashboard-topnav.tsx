@@ -118,12 +118,16 @@ export function DashboardTopNav({
               className="size-4 text-muted-foreground"
               aria-hidden="true"
             />
+            <label htmlFor="branch-select-trigger" className="sr-only">
+              Select branch
+            </label>
             <Select
               value={branchesReady && activeBranch ? activeBranch : undefined}
               onValueChange={onBranchChange}
               disabled={!branchesReady}
             >
               <SelectTrigger
+                id="branch-select-trigger"
                 className="h-7 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0"
                 aria-label="Branch"
               >
