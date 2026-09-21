@@ -208,6 +208,53 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/WorkspaceSummary' }
         '401': { $ref: '#/components/responses/NotAuthenticated' }
+    post:
+      tags: [auth]
+      operationId: create_workspace
+      summary: Create and select another workspace
+      description: |
+        Requires the signed-in user to be an org-admin of the active workspace.
+        Creates a named workspace with that user as its active org-admin,
+        provisions the default scoring profile and demo repository, and selects
+        it for only the current server-side session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkspaceRequest' }
+      responses:
+        '201':
+          description: The newly created and active workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceSummary' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/auth/workspaces/{workspace_id}:
+    patch:
+      tags: [auth]
+      operationId: rename_workspace
+      summary: Rename the active workspace
+      description: |
+        Requires org-admin access. The path must identify the session's active
+        workspace; another workspace returns 404 even if the user belongs to it.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateWorkspaceRequest' }
+      responses:
+        '200':
+          description: The renamed active workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceSummary' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/auth/workspaces/active:
     put:
@@ -886,6 +933,12 @@ components:
         Browser clients must send `credentials: "include"` on every request.
 
   parameters:
+    WorkspaceId:
+      name: workspace_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
     RepoId:
       name: repo_id
       in: path
@@ -1147,10 +1200,11 @@ components:
 
     WorkspaceSummary:
       type: object
-      required: [workspace_id, role, is_active]
+      required: [workspace_id, name, role, is_active]
       additionalProperties: false
       properties:
         workspace_id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 255 }
         role:
           type: string
           enum: [org-admin, manager, developer, viewer]
@@ -1164,6 +1218,20 @@ components:
       additionalProperties: false
       properties:
         workspace_id: { type: string, format: uuid }
+
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+
+    UpdateWorkspaceRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
 
     Role:
       type: string

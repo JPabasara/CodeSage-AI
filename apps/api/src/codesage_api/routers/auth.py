@@ -4,6 +4,7 @@ import base64
 import hashlib
 import secrets
 import uuid
+from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -12,16 +13,24 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.models import User
+from codesage_api.authorization.context import AuthorizationContext
+from codesage_api.db.models import User, Workspace
 from codesage_api.db.session import SessionLocal
 from codesage_api.deps import (
     get_current_session_id,
     get_current_user_id,
     get_db,
     get_workspace_id,
+    require_permission,
 )
 from codesage_api.errors import MisconfiguredSignIn, NotFound, SignInFailed
-from codesage_api.schemas.auth import SessionOut, SwitchWorkspaceIn, WorkspaceSummaryOut
+from codesage_api.schemas.auth import (
+    CreateWorkspaceIn,
+    SessionOut,
+    SwitchWorkspaceIn,
+    UpdateWorkspaceIn,
+    WorkspaceSummaryOut,
+)
 from codesage_api.services import auth as auth_service
 
 public_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -30,6 +39,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 HANDSHAKE_COOKIE = "codesage_signin"
 HANDSHAKE_SECONDS = 600
+WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
 
 
 def _signer() -> URLSafeTimedSerializer:
@@ -170,6 +180,7 @@ def list_workspaces(
         return [
             WorkspaceSummaryOut(
                 workspace_id=str(workspace.workspace_id),
+                name=workspace.name,
                 role=workspace.role_id,
                 is_active=workspace.workspace_id == workspace_id,
             )
@@ -177,6 +188,58 @@ def list_workspaces(
         ]
     finally:
         db.close()
+
+
+@router.post("/workspaces", response_model=WorkspaceSummaryOut, status_code=status.HTTP_201_CREATED)
+def create_workspace(
+    body: CreateWorkspaceIn,
+    context: WorkspaceAdmin,
+    session_id: uuid.UUID = Depends(get_current_session_id),
+) -> WorkspaceSummaryOut:
+    db = SessionLocal()
+    try:
+        created = auth_service.create_workspace(
+            db,
+            session_id=session_id,
+            user_id=context.user_id,
+            name=body.name,
+        )
+        if created is None:
+            raise NotFound
+        db.commit()
+        return WorkspaceSummaryOut(
+            workspace_id=str(created.workspace_id),
+            name=created.name,
+            role=created.role_id,
+            is_active=True,
+        )
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
+def rename_workspace(
+    workspace_id: uuid.UUID,
+    body: UpdateWorkspaceIn,
+    context: WorkspaceAdmin,
+    db: DbSession = Depends(get_db),
+) -> WorkspaceSummaryOut:
+    if workspace_id != context.workspace_id:
+        raise NotFound
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise NotFound
+    workspace.name = body.name
+    db.flush()
+    return WorkspaceSummaryOut(
+        workspace_id=str(workspace.id),
+        name=workspace.name,
+        role=context.role_id,
+        is_active=True,
+    )
 
 
 @router.put("/workspaces/active", response_model=WorkspaceSummaryOut)
@@ -203,6 +266,7 @@ def switch_workspace(
         db.commit()
         return WorkspaceSummaryOut(
             workspace_id=str(selected.workspace_id),
+            name=selected.name,
             role=selected.role_id,
             is_active=True,
         )

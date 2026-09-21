@@ -58,6 +58,7 @@ def _baseline_metadata() -> MetaData:
         }:
             table.to_metadata(metadata)
     for table_name, columns in {
+        "workspace": ("name",),
         "membership": ("role_id",),
         "app_user": ("email_verified",),
         "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),

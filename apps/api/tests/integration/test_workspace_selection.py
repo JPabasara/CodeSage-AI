@@ -104,11 +104,94 @@ def test_lists_only_authenticated_users_active_workspaces(workspace_set, client)
 
     assert response.status_code == 200
     assert {
-        item["workspace_id"]: (item["role"], item["is_active"]) for item in response.json()
+        item["workspace_id"]: (item["name"], item["role"], item["is_active"])
+        for item in response.json()
     } == {
-        str(workspace_set["personal"]): ("org-admin", True),
-        str(workspace_set["active"]): ("manager", False),
+        str(workspace_set["personal"]): ("My Workspace", "org-admin", True),
+        str(workspace_set["active"]): ("Workspace", "manager", False),
     }
+
+
+def test_existing_user_creates_and_selects_another_workspace(workspace_set, client):
+    response = client.post("/api/auth/workspaces", json={"name": "Platform Team"})
+
+    assert response.status_code == 201
+    created = response.json()
+    created_workspace = uuid.UUID(created["workspace_id"])
+    assert created == {
+        "workspace_id": str(created_workspace),
+        "name": "Platform Team",
+        "role": "org-admin",
+        "is_active": True,
+    }
+
+    with Session(workspace_set["engine"]) as db:
+        membership = db.scalar(
+            select(Membership).where(
+                Membership.user_id == workspace_set["user"],
+                Membership.workspace_id == created_workspace,
+            )
+        )
+        assert membership is not None
+        assert membership.status == MembershipStatus.ACTIVE
+        assert membership.role_id == "org-admin"
+        assert db.get(UserSession, workspace_set["session"]).workspace_id == created_workspace
+
+    listed = client.get("/api/auth/workspaces")
+    assert listed.status_code == 200
+    assert sum(item["is_active"] for item in listed.json()) == 1
+    assert {item["workspace_id"] for item in listed.json()} == {
+        str(workspace_set["personal"]),
+        str(workspace_set["active"]),
+        str(created_workspace),
+    }
+
+
+def test_org_admin_renames_active_workspace(workspace_set, client):
+    response = client.patch(
+        f"/api/auth/workspaces/{workspace_set['personal']}",
+        json={"name": "  Core Services  "},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "workspace_id": str(workspace_set["personal"]),
+        "name": "Core Services",
+        "role": "org-admin",
+        "is_active": True,
+    }
+    with Session(workspace_set["engine"]) as db:
+        assert db.get(Workspace, workspace_set["personal"]).name == "Core Services"
+
+
+def test_non_admin_cannot_create_or_rename_workspace(workspace_set, client):
+    with Session(workspace_set["engine"]) as db:
+        membership = db.scalar(
+            select(Membership).where(
+                Membership.user_id == workspace_set["user"],
+                Membership.workspace_id == workspace_set["personal"],
+            )
+        )
+        membership.role_id = "manager"
+        db.commit()
+
+    create_response = client.post("/api/auth/workspaces", json={"name": "Forbidden"})
+    rename_response = client.patch(
+        f"/api/auth/workspaces/{workspace_set['personal']}",
+        json={"name": "Forbidden"},
+    )
+
+    assert create_response.status_code == 403
+    assert rename_response.status_code == 403
+
+
+def test_admin_cannot_rename_a_different_workspace(workspace_set, client):
+    response = client.patch(
+        f"/api/auth/workspaces/{workspace_set['active']}",
+        json={"name": "Wrong Workspace"},
+    )
+
+    assert response.status_code == 404
 
 
 def test_switch_updates_only_current_server_side_session(workspace_set, client):
@@ -131,6 +214,7 @@ def test_switch_updates_only_current_server_side_session(workspace_set, client):
     assert response.status_code == 200
     assert response.json() == {
         "workspace_id": str(workspace_set["active"]),
+        "name": "Workspace",
         "role": "manager",
         "is_active": True,
     }

@@ -8,10 +8,12 @@ compile error. These tests are the cheap version of finding out.
 from codesage_api.main import create_app
 from codesage_api.schemas import (
     BranchOut,
+    CreateWorkspaceIn,
     RepoOut,
     ScoreProfileIn,
     SessionOut,
     SwitchWorkspaceIn,
+    UpdateWorkspaceIn,
     WorkspaceSummaryOut,
 )
 from codesage_api.scoring.enums import Category, ScanPhase, Source
@@ -20,7 +22,8 @@ EXPECTED_PRODUCT_PATHS = {
     "/api/auth/login": {"get"},
     "/api/auth/callback": {"get"},
     "/api/auth/session": {"get"},
-    "/api/auth/workspaces": {"get"},
+    "/api/auth/workspaces": {"get", "post"},
+    "/api/auth/workspaces/{workspace_id}": {"patch"},
     "/api/auth/workspaces/active": {"put"},
     "/api/auth/logout": {"post"},
     "/api/healthz": {"get"},
@@ -133,16 +136,21 @@ def test_a_provider_that_shares_nothing_still_produces_a_session() -> None:
 
 def test_workspace_selection_shapes_are_complete() -> None:
     request = SwitchWorkspaceIn(workspace_id="22222222-2222-2222-2222-222222222222")
+    create = CreateWorkspaceIn(name="  Platform Team  ")
+    update = UpdateWorkspaceIn(name="Core Services")
     workspace = WorkspaceSummaryOut(
         workspace_id=request.workspace_id,
+        name=create.name,
         role="manager",
         is_active=True,
     )
     assert workspace.model_dump() == {
         "workspace_id": request.workspace_id,
+        "name": "Platform Team",
         "role": "manager",
         "is_active": True,
     }
+    assert update.name == "Core Services"
 
 
 def test_no_shape_leaks_camel_case() -> None:
