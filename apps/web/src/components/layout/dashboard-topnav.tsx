@@ -26,6 +26,7 @@ import { shortSha } from "@/lib/utils"
 
 export type SnapshotNavigation = {
   isHistorical: boolean
+  isLatest: boolean
   positionLabel?: string
   canGoOlder: boolean
   canGoNewer: boolean
@@ -115,7 +116,7 @@ export function DashboardTopNav({
               aria-hidden="true"
             />
             <Select
-              value={activeBranch}
+              value={branchesReady && activeBranch ? activeBranch : undefined}
               onValueChange={onBranchChange}
               disabled={!branchesReady}
             >
@@ -129,7 +130,7 @@ export function DashboardTopNav({
                   }
                 />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent align="end" className="z-50">
                 {branches.map((b) => (
                   <SelectItem key={b.name} value={b.name}>
                     {b.name}
@@ -160,8 +161,15 @@ export function DashboardTopNav({
               >
                 <ChevronLeft />
               </Button>
-              <span className="min-w-14 px-1 text-center text-[0.625rem] font-medium text-muted-foreground">
-                {snapshotNavigation.positionLabel ?? "Latest"}
+              <span className="flex min-w-14 flex-col items-center px-1 text-center leading-none">
+                {snapshotNavigation.isLatest ? (
+                  <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wide text-primary">
+                    Latest
+                  </span>
+                ) : null}
+                <span className="mt-0.5 text-[0.625rem] font-medium text-muted-foreground">
+                  {snapshotNavigation.positionLabel ?? "Latest"}
+                </span>
               </span>
               <Button
                 type="button"
