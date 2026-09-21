@@ -114,7 +114,7 @@ test("the selected project survives profiles, dashboard, refresh and history", a
 }) => {
   await repoRows(page)
     .filter({ hasText: "web-store" })
-    .getByRole("button", { name: /select/i })
+    .getByRole("link", { name: /open dashboard/i })
     .click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
 
