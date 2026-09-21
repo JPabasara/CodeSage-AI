@@ -29,6 +29,7 @@ export type SnapshotNavigation = {
   positionLabel?: string
   canGoOlder: boolean
   canGoNewer: boolean
+  showLatestButton: boolean
   onOlder: () => void
   onNewer: () => void
   onLatest: () => void
@@ -173,7 +174,7 @@ export function DashboardTopNav({
               >
                 <ChevronRight />
               </Button>
-              {snapshotNavigation.isHistorical ? (
+              {snapshotNavigation.showLatestButton ? (
                 <Button
                   type="button"
                   variant="secondary"
