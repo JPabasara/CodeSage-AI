@@ -59,6 +59,8 @@ def test_route_inventory_has_no_unclassified_operations():
         ("GET", "/api/auth/callback"),
         ("POST", "/api/auth/logout"),
         ("GET", "/api/auth/session"),
+        ("GET", "/api/auth/workspaces"),
+        ("PUT", "/api/auth/workspaces/active"),
         ("GET", "/api/healthz"),
         ("GET", "/readyz"),
         ("GET", "/version"),
