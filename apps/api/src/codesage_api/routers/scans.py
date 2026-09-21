@@ -1,5 +1,5 @@
 """Scan lifecycle endpoints.
-    idle → queued → running NN% → done | error | cancelled
+idle → queued → running NN% → done | error | cancelled
 """
 
 from __future__ import annotations
@@ -10,17 +10,28 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from codesage_api.deps import get_db, get_workspace_id
+from codesage_api.authorization.routes import (
+    require_repository_permission,
+    require_scan_cancel,
+    require_scan_read,
+)
+from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
 from codesage_api.schemas import ScanStatusOut, ScanSummaryOut, StartScanIn
 from codesage_api.services import analysis
 
 router = APIRouter(prefix="/repos/{repo_id}", tags=["scans"])
 
 
-@router.post("/scan", response_model=ScanStatusOut, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/scan",
+    response_model=ScanStatusOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_repository_permission("scan:start"))],
+)
 def start_scan(
     repo_id: uuid.UUID,
     body: StartScanIn,
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
 ) -> ScanStatusOut:
@@ -33,10 +44,12 @@ def start_scan(
 
     Skip-if-unchanged is decided here, before anything is queued.
     """
-    return analysis.start(db, workspace_id, repo_id, body.branch)
+    return analysis.start(db, workspace_id, repo_id, body.branch, actor_user_id=user_id)
 
 
-@router.get("/scan/{scan_id}", response_model=ScanStatusOut)
+@router.get(
+    "/scan/{scan_id}", response_model=ScanStatusOut, dependencies=[Depends(require_scan_read)]
+)
 def get_scan_status(
     repo_id: uuid.UUID,
     scan_id: uuid.UUID,
@@ -58,7 +71,11 @@ def get_scan_status(
     return analysis.get_status(db, workspace_id, repo_id, scan_id)
 
 
-@router.post("/scan/{scan_id}/stop", response_model=ScanStatusOut)
+@router.post(
+    "/scan/{scan_id}/stop",
+    response_model=ScanStatusOut,
+    dependencies=[Depends(require_scan_cancel)],
+)
 def stop_scan(
     repo_id: uuid.UUID,
     scan_id: uuid.UUID,
@@ -84,7 +101,11 @@ def stop_scan(
     return analysis.cancel(db, workspace_id, repo_id, scan_id)
 
 
-@router.get("/scans", response_model=list[ScanSummaryOut])
+@router.get(
+    "/scans",
+    response_model=list[ScanSummaryOut],
+    dependencies=[Depends(require_repository_permission("history:read"))],
+)
 def list_scan_history(
     repo_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],

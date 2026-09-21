@@ -80,6 +80,8 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
         3. detect   — rule engine
         4. finalize — one transaction
     """
+    # Authorization is checked when queued. Role changes do not revoke this job;
+    # worker database access remains constrained by the recorded workspace.
     attempt_uuid = uuid.UUID(attempt_id)
     workspace_uuid = uuid.UUID(workspace_id)
     clone_dir: str | None = None

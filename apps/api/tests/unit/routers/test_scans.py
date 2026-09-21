@@ -7,7 +7,9 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
+from codesage_api.authorization.routes import repository_context
+from codesage_api.authorization.context import AuthorizationContext
+from codesage_api.deps import get_authorization_context, get_current_user_id, get_db, get_workspace_id
 from codesage_api.main import create_app
 from codesage_api.services import analysis
 
@@ -23,6 +25,13 @@ def _client() -> tuple[TestClient, MagicMock, uuid.UUID]:
     app.dependency_overrides[get_current_user_id] = lambda: uuid.uuid4()
     app.dependency_overrides[get_workspace_id] = lambda: workspace_id
     app.dependency_overrides[get_db] = database
+    app.dependency_overrides[get_authorization_context] = lambda: AuthorizationContext(
+        user_id=uuid.uuid4(), workspace_id=workspace_id, membership_id=uuid.uuid4(),
+        role_id="org-admin", permissions=frozenset({
+            "project:read", "repository:connect", "profile:read", "profile:update", "history:read"
+        }),
+    )
+    app.dependency_overrides[repository_context] = app.dependency_overrides[get_authorization_context]
     return TestClient(app), db, workspace_id
 
 

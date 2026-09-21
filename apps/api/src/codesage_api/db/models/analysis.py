@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -16,13 +26,20 @@ if TYPE_CHECKING:
     from codesage_api.db.models.source import FileTreeNode, SourceFile
 
 
-def values(enum: type[AnalysisStatus] | type[AnalysisTriggerType]) -> list[str]:
+def values(enum: type[AnalysisStatus | AnalysisTriggerType]) -> list[str]:
     return [item.value for item in enum]
 
 
 class AnalysisAttempt(UUIDPrimaryKey, Base):
     __tablename__ = "analysis_attempt"
 
+    # Nullable for historical attempts; new API scans always record both.
+    initiated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    initiating_workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspace.id", ondelete="CASCADE")
+    )
     branch_id: Mapped[uuid.UUID] = mapped_column(
                     ForeignKey("branch.id", ondelete="CASCADE"), index=True)
     analysis_engine_version_id: Mapped[uuid.UUID] = mapped_column(

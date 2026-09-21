@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from codesage_api.db.rls import set_workspace_context
-from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
+from codesage_api.deps import get_current_user_id, get_db, get_workspace_id, require_permission
 from codesage_api.logging import get_logger
 from codesage_api.schemas import ScoreProfileIn, ScoreProfileOut
 from codesage_api.services import profiles
@@ -18,7 +18,11 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["profiles"])
 
 
-@router.get("/profiles", response_model=list[ScoreProfileOut])
+@router.get(
+    "/profiles",
+    response_model=list[ScoreProfileOut],
+    dependencies=[Depends(require_permission("profile:read"))],
+)
 def list_profiles(
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
@@ -27,16 +31,24 @@ def list_profiles(
     return profiles.list_available(db, workspace_id)
 
 
-@router.get("/profiles/active", response_model=ScoreProfileOut)
+@router.get(
+    "/profiles/active",
+    response_model=ScoreProfileOut,
+    dependencies=[Depends(require_permission("profile:read"))],
+)
 def get_active_profile(
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
 ) -> ScoreProfileOut:
- 
+
     return profiles.get_active_output(db, workspace_id)
 
 
-@router.put("/profiles/active", response_model=ScoreProfileOut)
+@router.put(
+    "/profiles/active",
+    response_model=ScoreProfileOut,
+    dependencies=[Depends(require_permission("profile:update"))],
+)
 def apply_profile(
     body: ScoreProfileIn,
     db: Annotated[Session, Depends(get_db)],
@@ -54,9 +66,7 @@ def apply_profile(
     )
     db.commit()
     try:
-        celery_app.send_task(
-            "codesage.warm_workspace_scores", args=[str(workspace_id)]
-        )
+        celery_app.send_task("codesage.warm_workspace_scores", args=[str(workspace_id)])
     except Exception:
         logger.exception("Could not enqueue score warm-up after profile change")
         set_workspace_context(db, workspace_id)

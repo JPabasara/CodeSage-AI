@@ -26,6 +26,18 @@ class NotAuthenticated(CodeSageError):
     message = "Sign in to continue."
 
 
+class Forbidden(CodeSageError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "FORBIDDEN"
+    message = "You do not have permission to perform this operation."
+
+
+class Conflict(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "CONFLICT"
+    message = "The requested change conflicts with the current workspace state."
+
+
 class RepositoryNotPublic(CodeSageError):
     
 

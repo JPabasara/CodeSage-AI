@@ -867,6 +867,7 @@ components:
         - REPOSITORY_NOT_PUBLIC   # 400
         - REPOSITORY_UNREACHABLE  # 400
         - ALREADY_CONNECTED       # 409
+        - CONFLICT                # 409
         - SCAN_ALREADY_RUNNING    # 409
         - SCAN_NOT_CANCELLABLE    # 409
         - VALIDATION_FAILED       # 422
