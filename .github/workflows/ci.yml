@@ -252,6 +252,20 @@ jobs:
             type=sha,format=long
             type=ref,event=pr
 
+      # The fallback cannot use the normal web image: Next.js bakes both the
+      # public API address and the session-cookie name into its browser bundle.
+      # These tags are emitted only for the web matrix leg, but are built on PRs
+      # too so the exact production build is still proven before it is pushed.
+      - name: Railway fallback web image tags
+        if: matrix.name == 'web'
+        id: railway-web-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/web
+          tags: |
+            type=raw,value=railway,enable={{is_default_branch}}
+            type=raw,value=railway-sha-${{ github.sha }}
+
       - name: Build${{ github.event_name == 'push' && ' and push' || '' }} ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
@@ -268,12 +282,31 @@ jobs:
           # the published web image points at whatever this says — a runtime
           # environment variable on Railway cannot change it.
           #
-          # Set the repository variable WEB_API_BASE_URL to the real API
-          # address, then re-run this workflow. Until then the published image
-          # is only good for local use.
+          # WEB_API_BASE_URL may override the primary API address. Its default
+          # is the canonical public primary API, so the image is usable without
+          # adding a repository variable.
           #   Settings → Secrets and variables → Actions → Variables
           build-args: |
-            NEXT_PUBLIC_API_BASE_URL=${{ vars.WEB_API_BASE_URL || 'http://localhost:8000' }}
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.WEB_API_BASE_URL || 'https://api.codesageai.dev' }}
+            NEXT_PUBLIC_SESSION_COOKIE_NAME=codesage_session
+
+      # A separately built frontend for Railway's permanent fallback domain.
+      # After this image is published, Railway web must use `web:railway`, not
+      # `web:latest`. These defaults are the correct fallback values; repository
+      # variables are available only if the fallback domains ever change.
+      - name: Build${{ github.event_name == 'push' && ' and push' || '' }} Railway fallback web
+        if: matrix.name == 'web'
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/web
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.railway-web-meta.outputs.tags }}
+          labels: ${{ steps.railway-web-meta.outputs.labels }}
+          cache-from: type=gha,scope=web-railway
+          cache-to: type=gha,mode=max,scope=web-railway
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.RAILWAY_WEB_API_BASE_URL || 'https://api.railway.codesageai.dev' }}
+            NEXT_PUBLIC_SESSION_COOKIE_NAME=${{ vars.RAILWAY_WEB_SESSION_COOKIE_NAME || 'codesage_session_railway' }}
 
   # ── Deploy ─────────────────────────────────────────────────────────────────
   # CI publishes the images, then tells Railway to pull them.
