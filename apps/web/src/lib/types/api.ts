@@ -102,11 +102,39 @@ export interface paths {
          */
         get: operations["list_active_workspaces"];
         put?: never;
-        post?: never;
+        /**
+         * Create and select another workspace
+         * @description Requires the signed-in user to be an org-admin of the active workspace.
+         *     Creates a named workspace with that user as its active org-admin,
+         *     provisions the default scoring profile and demo repository, and selects
+         *     it for only the current server-side session.
+         */
+        post: operations["create_workspace"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/auth/workspaces/{workspace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename the active workspace
+         * @description Requires org-admin access. The path must identify the session's active
+         *     workspace; another workspace returns 404 even if the user belongs to it.
+         */
+        patch: operations["rename_workspace"];
         trace?: never;
     };
     "/api/auth/workspaces/active": {
@@ -752,6 +780,7 @@ export interface components {
         WorkspaceSummary: {
             /** Format: uuid */
             workspace_id: string;
+            name: string;
             /** @enum {string} */
             role: "org-admin" | "manager" | "developer" | "viewer";
             /** @description Whether this workspace is selected by the current session. */
@@ -760,6 +789,12 @@ export interface components {
         SwitchWorkspaceRequest: {
             /** Format: uuid */
             workspace_id: string;
+        };
+        CreateWorkspaceRequest: {
+            name: string;
+        };
+        UpdateWorkspaceRequest: {
+            name: string;
         };
         /** @enum {string} */
         Role: "org-admin" | "manager" | "developer" | "viewer";
@@ -1308,6 +1343,7 @@ export interface components {
         };
     };
     parameters: {
+        WorkspaceId: string;
         /** @description The connected repository's identifier. */
         RepoId: string;
         /**
@@ -1428,6 +1464,61 @@ export interface operations {
                 };
             };
             401: components["responses"]["NotAuthenticated"];
+        };
+    };
+    create_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly created and active workspace. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    rename_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description The renamed active workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     switch_active_workspace: {
