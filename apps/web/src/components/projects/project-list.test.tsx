@@ -11,11 +11,22 @@ test("lists repositories and fires onSelect from the dashboard action", async ()
   expect(screen.getByText("acme-payments")).toBeInTheDocument()
 
   const dashboardLink = screen.getByRole("link", {
-    name: /open dashboard for acme\/acme-payments/i,
+    name: /go to dashboard for acme\/acme-payments/i,
   })
   dashboardLink.addEventListener("click", (event) => event.preventDefault())
   await userEvent.click(dashboardLink)
   expect(onSelect).toHaveBeenCalledWith(mockRepos[0])
+})
+
+test("fires onSelect from the select action without navigation", async () => {
+  const onSelect = vi.fn()
+  render(<ProjectList repos={mockRepos} onSelect={onSelect} />)
+
+  await userEvent.click(
+    screen.getByRole("button", { name: /select acme\/web-store/i }),
+  )
+
+  expect(onSelect).toHaveBeenCalledWith(mockRepos[1])
 })
 
 test("fires onHistory from the history action", async () => {

@@ -18,7 +18,8 @@ test("shows the grade, positive delta, and red-issue count", () => {
     />,
   )
   expect(screen.getByText("A")).toBeInTheDocument()
-  expect(screen.getByText(/Up \+3 since last scan/)).toBeInTheDocument()
+  expect(screen.getByText("Up +3")).toBeInTheDocument()
+  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
   expect(screen.getByText(/2 red issues/)).toBeInTheDocument()
 })
 
@@ -32,7 +33,8 @@ test("renders a negative delta with a down label and singular issue", () => {
       categoryBreakdown={[{ category: "code-design", count: 1, debt: 3 }]}
     />,
   )
-  expect(screen.getByText(/Down -5 since last scan/)).toBeInTheDocument()
+  expect(screen.getByText("Down -5")).toBeInTheDocument()
+  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
   expect(screen.getByText(/1 red issue$/)).toBeInTheDocument()
 })
 
