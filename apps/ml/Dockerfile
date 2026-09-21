@@ -10,14 +10,20 @@
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
+# Runtime dependencies change much less often than application source. Keep them
+# in their own cached layer so editing src/ never redownloads NumPy/SciPy.
+COPY requirements-runtime.lock ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --requirement requirements-runtime.lock
+
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-build-isolation --no-deps .
 
 ENV CODESAGE_ML_ARTIFACT_DIR=/models
 VOLUME ["/models"]

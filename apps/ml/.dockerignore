@@ -12,6 +12,8 @@
 
 # Datasets. Training happens offline; the image only answers questions.
 data
+dataset
+experiments
 
 # Trained artifacts. Mounted at /models at run time, deliberately NOT baked in,
 # so swapping a model is a restart rather than a rebuild (MAINT-05).
