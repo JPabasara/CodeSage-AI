@@ -40,48 +40,52 @@ export function OverallHealthCard({
   redIssueCount,
   categoryBreakdown,
 }: Readonly<OverallHealthCardProps>) {
+  const deltaLabel =
+    delta === 0
+      ? "No change since last scan"
+      : delta > 0
+        ? `Up +${delta} since last scan`
+        : `Down ${delta} since last scan`
+
   const chartConfig = useMemo(
     () =>
       Object.fromEntries(
-        categoryBreakdown.map((c) => [
-          c.category,
-          { label: c.category, color: CATEGORY_COLORS[c.category] },
+        categoryBreakdown.map((item) => [
+          item.category,
+          { label: item.category, color: CATEGORY_COLORS[item.category] },
         ]),
       ) as ChartConfig,
     [categoryBreakdown],
   )
 
   const totalFindings = useMemo(
-    () => categoryBreakdown.reduce((sum, c) => sum + c.count, 0),
+    () => categoryBreakdown.reduce((sum, item) => sum + item.count, 0),
     [categoryBreakdown],
   )
 
   const ariaLabel = useMemo(() => {
-    if (totalFindings === 0) {
-      return "Category breakdown: zero findings"
-    }
+    if (totalFindings === 0) return "Category breakdown: zero findings"
     const splitSummary = categoryBreakdown
-      .filter((c) => c.count > 0)
-      .map((c) => `${c.count} ${c.category}`)
+      .filter((item) => item.count > 0)
+      .map((item) => `${item.count} ${item.category}`)
       .join(", ")
     return `Category breakdown: ${splitSummary}. Total: ${totalFindings}`
   }, [categoryBreakdown, totalFindings])
 
-  // Recharts colours each slice from a `fill` field on the datum (Cell is deprecated in v3).
   const pieData = useMemo(() => {
     if (totalFindings === 0) {
       return [{ category: "none", count: 1, fill: "var(--muted)" }]
     }
     return categoryBreakdown
-      .filter((c) => c.count > 0)
-      .map((c) => ({
-        ...c,
-        fill: CATEGORY_COLORS[c.category] ?? "var(--category-code-design)",
+      .filter((item) => item.count > 0)
+      .map((item) => ({
+        ...item,
+        fill: CATEGORY_COLORS[item.category] ?? "var(--category-code-design)",
       }))
   }, [categoryBreakdown, totalFindings])
 
   return (
-    <Card>
+    <Card className="border-t-2 border-t-primary/60 shadow-sm">
       <CardHeader>
         <CardTitle>Code Health</CardTitle>
         <CardDescription>
@@ -98,11 +102,9 @@ export function OverallHealthCard({
               >
                 {grade}
               </span>
-              <span className="text-muted-foreground text-lg">{score}/100</span>
+              <span className="text-lg text-muted-foreground">{score}/100</span>
             </div>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {delta >= 0 ? `▲ +${delta}` : `▼ ${delta}`} since last scan
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{deltaLabel}</p>
           </div>
 
           <div className="relative aspect-square h-24 w-24 shrink-0 sm:h-28 sm:w-28">
@@ -112,13 +114,13 @@ export function OverallHealthCard({
               aria-label={ariaLabel}
             >
               <PieChart>
-                {totalFindings > 0 && (
+                {totalFindings > 0 ? (
                   <ChartTooltip
                     content={
                       <ChartTooltipContent nameKey="category" hideLabel />
                     }
                   />
-                )}
+                ) : null}
                 <Pie
                   data={pieData}
                   dataKey="count"
@@ -146,7 +148,7 @@ export function OverallHealthCard({
           </div>
         </div>
 
-        {categoryBreakdown.length > 0 && (
+        {categoryBreakdown.length > 0 ? (
           <div className="mt-4 border-t pt-3">
             <ul
               className="space-y-1.5 text-xs"
@@ -162,7 +164,7 @@ export function OverallHealthCard({
                     key={item.category}
                     className="flex items-center justify-between gap-2 py-0.5"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
                       <span
                         className="h-2.5 w-2.5 shrink-0 rounded-full"
                         style={{
@@ -172,11 +174,11 @@ export function OverallHealthCard({
                         }}
                         aria-hidden="true"
                       />
-                      <span className="text-muted-foreground capitalize truncate">
+                      <span className="truncate capitalize text-muted-foreground">
                         {item.category}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 items-center gap-2">
                       <span className="text-[10px] text-muted-foreground tabular-nums">
                         {pct}%
                       </span>
@@ -189,7 +191,7 @@ export function OverallHealthCard({
               })}
             </ul>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   )

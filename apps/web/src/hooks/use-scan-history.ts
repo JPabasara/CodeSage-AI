@@ -14,6 +14,11 @@ import { useQuery, type QueryState } from "./use-query"
  * Scores are derived per request under the active profile, so changing a profile
  * re-ranks this list too — which is why nothing is cached beyond the query key.
  */
-export function useScanHistory(repoId: string): QueryState<ScanSummary[]> {
-  return useQuery(`scans:${repoId}`, () => getScanHistory(repoId))
+export function useScanHistory(
+  repoId: string,
+  branch?: string,
+): QueryState<ScanSummary[]> {
+  return useQuery(`scans:${repoId}:${branch ?? "default"}`, () =>
+    getScanHistory(repoId, branch),
+  )
 }
