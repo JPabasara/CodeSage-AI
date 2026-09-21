@@ -293,10 +293,12 @@ Scaling goal:
 
 - `worker` watches Redis queue/list `scans`.
 - `score-worker` watches Redis queue/list `scoring`.
-- Keep `minReplicaCount: 1`.
+- Keep `minReplicaCount: 0` while protecting the Redis free tier.
 - Set `maxReplicaCount: 3` on the 8 GB server at first.
 
-Do not scale scan workers to zero. The first scan would start too slowly.
+Scale workers to zero while the queues are empty. This keeps idle Celery workers
+from polling Redis continuously. The first scan can start a little slower because
+KEDA must observe the queued job and Kubernetes must start a worker pod.
 
 ---
 
@@ -336,6 +338,9 @@ Required secret values:
 CODESAGE_DATABASE_URL
 CODESAGE_MIGRATION_DATABASE_URL
 CODESAGE_REDIS_URL
+CODESAGE_KEDA_REDIS_ADDRESS
+CODESAGE_KEDA_REDIS_USERNAME
+CODESAGE_KEDA_REDIS_PASSWORD
 CODESAGE_SECRET_KEY
 CODESAGE_ASGARDEO_BASE_URL
 CODESAGE_ASGARDEO_CLIENT_ID
@@ -363,7 +368,14 @@ CODESAGE_ML_SERVICE_URL=http://ml:8001
 For Redis:
 
 - Use the existing Upstash `rediss://...` URL.
-- KEDA may also need Redis host, port, username, password, and TLS settings depending on the final scaler manifest.
+- KEDA uses split Redis settings because the Redis Lists scaler expects
+  `host:port` plus auth/TLS fields, not the full `rediss://...` app URL.
+  For Upstash, split `rediss://default:PASSWORD@HOST:6379` into:
+  - `CODESAGE_KEDA_REDIS_ADDRESS=HOST:6379`
+  - `CODESAGE_KEDA_REDIS_USERNAME=default`
+  - `CODESAGE_KEDA_REDIS_PASSWORD=PASSWORD`
+  - Upstash Redis should use `rediss://...` in `CODESAGE_REDIS_URL`, and
+    KEDA has `enableTLS: "true"` in the scaler manifests.
 
 ---
 
@@ -598,12 +610,12 @@ Initial scaling targets:
 ```text
 worker:
   queue/list: scans
-  min replicas: 1
+  min replicas: 0
   max replicas: 3
 
 score-worker:
   queue/list: scoring
-  min replicas: 1
+  min replicas: 0
   max replicas: 2
 ```
 
