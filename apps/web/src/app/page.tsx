@@ -171,7 +171,7 @@ function DashboardPreview() {
 
 export default function Home() {
   return (
-    <main className="min-h-screen overflow-hidden bg-background text-foreground">
+    <main id="main-content" tabIndex={-1} className="min-h-screen overflow-hidden bg-background text-foreground outline-none">
       <section className="relative isolate min-h-[88svh] overflow-hidden border-b bg-zinc-950 px-5 py-5 text-white sm:px-8 lg:px-10">
         <DashboardPreview />
 
