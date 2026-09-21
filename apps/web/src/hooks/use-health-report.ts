@@ -61,8 +61,9 @@ const isScorePending = (error: unknown) =>
 export function useHealthReport(
   repoId: string,
   branch: string,
+  snapshotId?: string,
 ): HealthReportState {
-  const key = `health:${repoId}:${branch}`
+  const key = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
 
   const [result, setResult] = useState<{
     key: string
@@ -94,7 +95,7 @@ export function useHealthReport(
 
     const ask = async () => {
       try {
-        const data = await getHealthReport(repoId, branch)
+        const data = await getHealthReport(repoId, branch, snapshotId)
         if (alive) setResult({ key, data })
       } catch (thrown: unknown) {
         if (!alive) return
@@ -126,7 +127,7 @@ export function useHealthReport(
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [key, nonce, repoId, branch])
+  }, [key, nonce, repoId, branch, snapshotId])
 
   // `key` guards against a stale answer: a response for the previous branch is
   // dropped rather than rendered under the new one.

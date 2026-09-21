@@ -54,6 +54,11 @@ test("sorts findings by priority, highest first", () => {
   expect(within(rows[1]).getByText("critical one")).toBeInTheDocument()
 })
 
+test("labels the list as ranked by priority", () => {
+  render(<RefactorFirstList findings={findings} />)
+  expect(screen.getByText(/ranked by priority/i)).toBeInTheDocument()
+})
+
 test("clicking a row fires onSelect with that finding", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
