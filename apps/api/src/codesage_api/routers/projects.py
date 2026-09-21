@@ -8,14 +8,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
+from codesage_api.deps import get_current_user_id, get_db, get_workspace_id, require_permission
 from codesage_api.schemas import ConnectRepoIn, RepoOut
 from codesage_api.services import repositories
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("", response_model=list[RepoOut])
+@router.get(
+    "", response_model=list[RepoOut], dependencies=[Depends(require_permission("project:read"))]
+)
 def list_projects(
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
@@ -24,7 +26,12 @@ def list_projects(
     return repositories.list_projects(db, workspace_id)
 
 
-@router.post("", response_model=RepoOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=RepoOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("repository:connect"))],
+)
 def connect_repository(
     body: ConnectRepoIn,
     db: Annotated[Session, Depends(get_db)],
