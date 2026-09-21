@@ -77,7 +77,8 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# The build argument. The default is the local stack, so a bare `docker build`
+# The public build arguments. The defaults keep a bare `docker build` working
+# against the local stack; production overrides them for each environment.
 # still produces something that works on a laptop. Override it for anywhere real:
 #
 #   docker build --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.example.com .
@@ -85,7 +86,11 @@ COPY . .
 # To prove it works: build twice with different values and grep the two images'
 # .next/static chunks — the string differs.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+# Must match CODESAGE_SESSION_COOKIE_NAME in the API environment. Railway uses
+# a distinct value so that its fallback session cannot collide with k3s.
+ARG NEXT_PUBLIC_SESSION_COOKIE_NAME=codesage_session
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL} \
+    NEXT_PUBLIC_SESSION_COOKIE_NAME=${NEXT_PUBLIC_SESSION_COOKIE_NAME}
 
 # Hard-off, not merely absent. The app starts its MSW fake backend when this is
 # "enabled", and .env.local sets exactly that locally. A production image that
