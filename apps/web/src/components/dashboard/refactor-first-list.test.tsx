@@ -54,6 +54,36 @@ test("sorts findings by priority, highest first", () => {
   expect(within(rows[1]).getByText("critical one")).toBeInTheDocument()
 })
 
+test("renders explicit rank (#) column with 1-based sequential rank numbers", () => {
+  render(<RefactorFirstList findings={findings} />)
+  expect(screen.getByRole("columnheader", { name: "#" })).toBeInTheDocument()
+  const rows = screen.getAllByRole("row")
+  // Row 1 (critical one) is rank 1
+  expect(within(rows[1]).getByText("1")).toBeInTheDocument()
+  // Row 2 (medium one) is rank 2
+  expect(within(rows[2]).getByText("2")).toBeInTheDocument()
+  // Row 3 (low one) is rank 3
+  expect(within(rows[3]).getByText("3")).toBeInTheDocument()
+})
+
+test("renders count badge and explanatory ranking subtitle", () => {
+  render(<RefactorFirstList findings={findings} />)
+  const heading = screen.getByRole("heading", { name: /refactor first/i })
+  expect(heading).toBeInTheDocument()
+  expect(
+    screen.getByText("Ranked by severity × risk — start at the top."),
+  ).toBeInTheDocument()
+  // Badge next to heading contains total count
+  expect(within(heading.parentElement!).getByText("3")).toBeInTheDocument()
+})
+
+test("renders detector source chip in each row", () => {
+  render(<RefactorFirstList findings={findings} />)
+  // All test findings have source: "rule"
+  const sourceBadges = screen.getAllByText("rule")
+  expect(sourceBadges.length).toBe(3)
+})
+
 test("clicking a row fires onSelect with that finding", async () => {
   const onSelect = vi.fn()
   render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
@@ -61,9 +91,12 @@ test("clicking a row fires onSelect with that finding", async () => {
   expect(onSelect).toHaveBeenCalledWith(findings[1])
 })
 
-test("filters the list by debt type", async () => {
+test("filters the list by debt type and updates count badge", async () => {
   const user = userEvent.setup()
   render(<RefactorFirstList findings={findings} />)
+
+  const heading = screen.getByRole("heading", { name: /refactor first/i })
+  expect(within(heading.parentElement!).getByText("3")).toBeInTheDocument()
 
   await user.click(
     screen.getByRole("combobox", { name: /filter by debt type/i }),
@@ -72,6 +105,10 @@ test("filters the list by debt type", async () => {
 
   expect(screen.getByText("critical one")).toBeInTheDocument()
   expect(screen.queryByText("low one")).not.toBeInTheDocument()
+  // Badge reflects filtered count out of total (1 of 3)
+  expect(
+    within(heading.parentElement!).getByText("1 of 3"),
+  ).toBeInTheDocument()
 })
 
 test("zero findings displays the celebratory empty state (U-14)", () => {

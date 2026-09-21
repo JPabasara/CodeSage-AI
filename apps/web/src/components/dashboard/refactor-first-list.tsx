@@ -79,7 +79,20 @@ export function RefactorFirstList({
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Refactor first</h2>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Refactor first</h2>
+              <Badge
+                variant="secondary"
+                className="px-1.5 py-0 text-xs font-mono"
+              >
+                0
+              </Badge>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Ranked by severity × risk — start at the top.
+            </p>
+          </div>
         </div>
         <div className="rounded-md border p-6 text-center space-y-2">
           <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
@@ -103,8 +116,23 @@ export function RefactorFirstList({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Refactor first</h2>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Refactor first</h2>
+            <Badge
+              variant="secondary"
+              className="px-1.5 py-0 text-xs font-mono"
+            >
+              {category === "all" || rows.length === findings.length
+                ? findings.length
+                : `${rows.length} of ${findings.length}`}
+            </Badge>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Ranked by severity × risk — start at the top.
+          </p>
+        </div>
         <Select
           value={category}
           onValueChange={(v) => setCategory(v as Category | "all")}
@@ -146,6 +174,7 @@ export function RefactorFirstList({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 text-center">#</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Location</TableHead>
@@ -153,7 +182,7 @@ export function RefactorFirstList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((f) => (
+            {rows.map((f, index) => (
               <TableRow
                 key={f.fingerprint}
                 // U-9. This row was `onClick` on a plain <tr>: no tab stop, no
@@ -186,6 +215,9 @@ export function RefactorFirstList({
                 // edge of the scroll container does not lose half of it.
                 className="focus-visible:outline-ring cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2"
               >
+                <TableCell className="w-10 text-center font-mono text-xs text-muted-foreground">
+                  {index + 1}
+                </TableCell>
                 <TableCell>
                   <Badge
                     variant="outline"
@@ -197,8 +229,18 @@ export function RefactorFirstList({
                     {f.severity}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {f.category}
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">{f.category}</span>
+                    {f.source ? (
+                      <Badge
+                        variant="secondary"
+                        className="px-1 py-0 text-[10px] font-normal text-muted-foreground"
+                      >
+                        {f.source}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="font-mono text-xs">
                   {f.file}:{f.line}
