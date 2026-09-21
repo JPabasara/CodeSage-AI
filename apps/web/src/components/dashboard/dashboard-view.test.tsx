@@ -185,7 +185,7 @@ test("renders the ranked-list label and tree legend", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
-  expect(screen.getByText(/ranked by priority/i)).toBeInTheDocument()
+  expect(screen.getByText(/ranked by severity.*risk/i)).toBeInTheDocument()
   expect(screen.getByLabelText("Heat map legend")).toBeInTheDocument()
 })
 
