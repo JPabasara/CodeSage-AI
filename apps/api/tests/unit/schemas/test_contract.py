@@ -6,13 +6,22 @@ compile error. These tests are the cheap version of finding out.
 """
 
 from codesage_api.main import create_app
-from codesage_api.schemas import BranchOut, RepoOut, ScoreProfileIn, SessionOut
+from codesage_api.schemas import (
+    BranchOut,
+    RepoOut,
+    ScoreProfileIn,
+    SessionOut,
+    SwitchWorkspaceIn,
+    WorkspaceSummaryOut,
+)
 from codesage_api.scoring.enums import Category, ScanPhase, Source
 
 EXPECTED_PRODUCT_PATHS = {
     "/api/auth/login": {"get"},
     "/api/auth/callback": {"get"},
     "/api/auth/session": {"get"},
+    "/api/auth/workspaces": {"get"},
+    "/api/auth/workspaces/active": {"put"},
     "/api/auth/logout": {"post"},
     "/api/healthz": {"get"},
     "/api/projects": {"get", "post"},
@@ -122,6 +131,20 @@ def test_a_provider_that_shares_nothing_still_produces_a_session() -> None:
     assert required == {"user_id", "workspace_id"}
 
 
+def test_workspace_selection_shapes_are_complete() -> None:
+    request = SwitchWorkspaceIn(workspace_id="22222222-2222-2222-2222-222222222222")
+    workspace = WorkspaceSummaryOut(
+        workspace_id=request.workspace_id,
+        role="manager",
+        is_active=True,
+    )
+    assert workspace.model_dump() == {
+        "workspace_id": request.workspace_id,
+        "role": "manager",
+        "is_active": True,
+    }
+
+
 def test_no_shape_leaks_camel_case() -> None:
     """One sweep over the whole generated document, so a new shape added later
     cannot quietly reintroduce camelCase."""
@@ -158,22 +181,20 @@ def test_dashboard_is_keyed_on_the_snapshot_not_the_attempt() -> None:
 
 def test_every_error_code_exists_in_the_contract() -> None:
     """Clients branch on `code`, so a typo here is a bug they cannot work around."""
+    from pathlib import Path
+
     import yaml
 
     from codesage_api import errors
-    from pathlib import Path
 
     # tests/unit/schemas/ -> tests -> apps/api -> apps -> repository root
     repo_root = Path(__file__).resolve().parents[5]
-    contract = yaml.safe_load(
-        (repo_root / "docs/api/openapi.yaml").read_text(encoding="utf-8")
-    )
+    contract = yaml.safe_load((repo_root / "docs/api/openapi.yaml").read_text(encoding="utf-8"))
     allowed = set(contract["components"]["schemas"]["ErrorCode"]["enum"])
 
     used = {
         value.code
         for value in vars(errors).values()
-        if isinstance(value, type)
-        and issubclass(value, errors.CodeSageError)
+        if isinstance(value, type) and issubclass(value, errors.CodeSageError)
     }
     assert used <= allowed, f"not in the contract's ErrorCode list: {used - allowed}"
