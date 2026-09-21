@@ -74,6 +74,7 @@ test("dashboard links go to Projects when no repository can be selected", () => 
 
   renderRail()
 
+  expect(screen.getAllByRole("link", { name: "Dashboard" })).toHaveLength(1)
   expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
     "href",
     "/projects",

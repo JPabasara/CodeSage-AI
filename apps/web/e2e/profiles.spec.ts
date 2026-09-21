@@ -19,6 +19,11 @@ function watchRequests(page: import("@playwright/test").Page) {
   }
 }
 
+const findingCards = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("list", { name: /ranked refactor findings/i })
+    .getByRole("button")
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/profiles")
   await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
@@ -124,12 +129,12 @@ test("out-of-range values come back clamped, and the sliders adopt what was stor
  */
 async function rankings(page: import("@playwright/test").Page) {
   await expect(
-    page.getByRole("row").filter({ hasText: /940 lines long/ }),
+    findingCards(page).filter({ hasText: /940 lines long/ }),
   ).toBeVisible()
-  const rows = await page.getByRole("row").allInnerTexts()
+  const cards = await findingCards(page).allInnerTexts()
   return {
-    longFile: rows.findIndex((r) => /940 lines long/.test(r)),
-    sqlInjection: rows.findIndex((r) => /string concatenation/.test(r)),
+    longFile: cards.findIndex((r) => /940 lines long/.test(r)),
+    sqlInjection: cards.findIndex((r) => /string concatenation/.test(r)),
   }
 }
 
@@ -168,7 +173,7 @@ test("the trust slider cannot de-weight a security finding (FR-24)", async ({
   page,
 }) => {
   const securityRow = (p: import("@playwright/test").Page) =>
-    p.getByRole("row").filter({ hasText: "hardcoded" })
+    findingCards(p).filter({ hasText: "hardcoded" })
 
   // Push trust all the way to "trust the model".
   const trust = page.getByRole("slider", { name: "Trust slider" })
@@ -181,6 +186,6 @@ test("the trust slider cannot de-weight a security finding (FR-24)", async ({
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   // source_trust is pinned at 1.0 for the security category, so no position of
   // this slider can push the critical secret off the top of the list.
-  await expect(page.getByRole("row").nth(1)).toContainText(/hardcoded/i)
+  await expect(findingCards(page).first()).toContainText(/hardcoded/i)
   await expect(securityRow(page)).toBeVisible()
 })

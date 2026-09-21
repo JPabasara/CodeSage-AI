@@ -2,7 +2,12 @@
 
 import type { ReactNode } from "react"
 import { useMemo, useState } from "react"
-import { ArrowDownWideNarrow, CheckCircle2, FilterX } from "lucide-react"
+import {
+  ArrowDownWideNarrow,
+  CheckCircle2,
+  FileCode2,
+  FilterX,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,16 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import type { Category, Finding, Severity } from "@/lib/types"
-import { severityColor } from "@/lib/utils"
+import { cn, severityColor } from "@/lib/utils"
 
 const SEVERITY_RANK: Record<Severity, number> = {
   critical: 4,
@@ -42,6 +39,23 @@ export const ALL_CATEGORIES: Category[] = [
   "test",
   "security",
 ]
+
+const CATEGORY_BADGE_COLORS: Record<Category, string> = {
+  "code-design": "var(--category-code-design)",
+  requirement: "var(--category-requirement)",
+  documentation: "var(--category-documentation)",
+  test: "var(--category-test)",
+  security: "var(--category-security)",
+}
+
+function truncateText(value: string, max: number) {
+  if (value.length <= max) return value
+  return `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`
+}
+
+function findingLocation(finding: Finding) {
+  return `${finding.file}:${finding.line}`
+}
 
 export type RefactorFirstListProps = {
   findings: Finding[]
@@ -173,74 +187,82 @@ export function RefactorFirstList({
           className="min-h-0 flex-1 overflow-y-auto"
           data-testid="refactor-first-scroll"
         >
-          <Table className="table-fixed">
-            <TableHeader className="sticky top-0 z-10 bg-card">
-              <TableRow>
-                <TableHead className="w-28">Priority</TableHead>
-                <TableHead>Finding</TableHead>
-                <TableHead className="w-[34%]">Location</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((finding) => (
-                <TableRow
-                  key={finding.fingerprint}
-                  tabIndex={0}
-                  onClick={() => onSelect?.(finding)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault()
-                      onSelect?.(finding)
-                    }
-                  }}
-                  aria-current={
-                    finding.fingerprint === selectedFingerprint
-                      ? "true"
-                      : undefined
-                  }
-                  data-state={
-                    finding.fingerprint === selectedFingerprint
-                      ? "selected"
-                      : undefined
-                  }
-                  className="cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-                >
-                  <TableCell className="whitespace-normal align-top">
-                    <div className="flex flex-col items-start gap-1">
+          <ul className="space-y-2 p-3" aria-label="Ranked refactor findings">
+            {rows.map((finding) => {
+              const location = findingLocation(finding)
+              const selected = finding.fingerprint === selectedFingerprint
+
+              return (
+                <li key={finding.fingerprint}>
+                  <button
+                    type="button"
+                    key={finding.fingerprint}
+                    onClick={() => onSelect?.(finding)}
+                    aria-current={selected ? "true" : undefined}
+                    data-state={selected ? "selected" : undefined}
+                    aria-label={`${finding.severity} priority ${Math.round(finding.priority)} finding: ${finding.reason} at ${location}`}
+                    className={cn(
+                      "group w-full rounded-md border bg-background/70 p-3 text-left shadow-sm transition hover:border-primary/50 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      selected &&
+                        "border-primary bg-accent/45 ring-1 ring-primary/20",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Badge
-                        variant="outline"
+                        variant="default"
+                        className="border-transparent text-white"
                         style={{
-                          borderColor: severityColor(finding.severity),
-                          color: severityColor(finding.severity),
+                          backgroundColor: severityColor(finding.severity),
                         }}
                       >
                         {finding.severity}
                       </Badge>
-                      <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[0.625rem] text-muted-foreground">
+                      <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 font-mono text-[0.625rem] text-muted-foreground">
                         P{Math.round(finding.priority)}
                       </span>
+                      <Badge
+                        variant="default"
+                        className="border-transparent text-white"
+                        style={{
+                          backgroundColor:
+                            CATEGORY_BADGE_COLORS[finding.category],
+                        }}
+                      >
+                        {finding.category}
+                      </Badge>
+                      <Badge
+                        variant="default"
+                        className="border-transparent bg-slate-700 text-white dark:bg-slate-500"
+                      >
+                        {finding.source}
+                      </Badge>
                     </div>
-                  </TableCell>
-                  <TableCell className="whitespace-normal align-top">
-                    <div className="space-y-2">
-                      <p className="break-words text-xs text-foreground">
-                        {finding.reason}
+
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.34fr)]">
+                      <p
+                        className="break-words text-xs font-medium leading-5 text-foreground"
+                        title={finding.reason}
+                      >
+                        {truncateText(finding.reason, 155)}
                       </p>
-                      <div className="flex flex-wrap gap-1">
-                        <Badge variant="secondary">{finding.category}</Badge>
-                        <Badge variant="secondary">{finding.source}</Badge>
+                      <div className="flex min-w-0 items-start gap-1.5 text-muted-foreground">
+                        <FileCode2
+                          className="mt-0.5 size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span
+                          className="break-all font-mono text-[0.6875rem] leading-5"
+                          title={location}
+                        >
+                          {truncateText(location, 76)}
+                        </span>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell className="whitespace-normal align-top font-mono text-[0.6875rem] text-muted-foreground">
-                    <span className="break-all">
-                      {finding.file}:{finding.line}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
     </ListPanel>

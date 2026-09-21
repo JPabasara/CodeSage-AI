@@ -32,17 +32,17 @@ export function HealthGraphCard({ history }: Readonly<HealthGraphCardProps>) {
 
   return (
     <Card className="border-t-2 border-t-primary/60 shadow-sm">
-      <CardHeader>
+      <CardHeader className="pb-2">
         <CardTitle>Health trend</CardTitle>
         <CardDescription>Snapshot score over time</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         {data.length === 0 ? (
-          <div className="flex h-44 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+          <div className="flex h-36 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
             No trend data yet
           </div>
         ) : (
-          <ChartContainer config={chartConfig} className="h-44 w-full">
+          <ChartContainer config={chartConfig} className="h-36 w-full">
             <AreaChart
               data={data}
               margin={{ left: -12, right: 8, top: 8, bottom: 0 }}
