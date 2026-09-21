@@ -43,14 +43,14 @@ async function tabTo(
   throw new Error(`not reachable by keyboard within ${max} tab presses`)
 }
 
-test("tab from a cold load reaches skip to main content link first (#140)", async ({
+test("tab from a cold load reaches skip to content link first (#140)", async ({
   page,
 }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
 
   await page.keyboard.press("Tab")
-  const skipLink = page.getByRole("link", { name: /skip to main content/i })
+  const skipLink = page.getByRole("link", { name: /skip to content/i })
   await expect(skipLink).toBeFocused()
   await expect(skipLink).toBeVisible()
 })
