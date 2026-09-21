@@ -21,10 +21,11 @@ performance only.
 
 **Not in the v1.0 schema, deliberately:** no suppression or finding-action table
 (v1.0 is view-only, FR-17b); no webhook-event table (scans are user-initiated
-only, FR-6); no role or permission tables beyond Membership.role (RBAC is v2,
-DBR-5).
+only, FR-6). The v2 RBAC catalogue is now stored for DBR-5; API enforcement
+is a separate implementation step.
 """
 
+from codesage_api.db.models.authorization import Permission, Role, RolePermission
 from codesage_api.db.models.analysis import AnalysisAttempt, Snapshot
 from codesage_api.db.models.finding import DebtCategory, Finding
 from codesage_api.db.models.ml import BugRiskPrediction, MLModelVersion, SATDPrediction
@@ -47,6 +48,7 @@ from codesage_api.db.models.tenancy import (
     User,
     UserSession,
     Workspace,
+    WorkspaceInvitation,
 )
 
 __all__ = [
@@ -61,6 +63,9 @@ __all__ = [
     "Finding",
     "MLModelVersion",
     "Membership",
+    "Permission",
+    "Role",
+    "RolePermission",
     "ProcessMetric",
     "Repository",
     "RuleDefinition",
@@ -77,4 +82,5 @@ __all__ = [
     "User",
     "UserSession",
     "Workspace",
+    "WorkspaceInvitation",
 ]
