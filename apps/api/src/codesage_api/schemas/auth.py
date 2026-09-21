@@ -8,6 +8,16 @@ from __future__ import annotations
 from codesage_api.schemas.base import ApiModel
 
 
+class WorkspaceSummaryOut(ApiModel):
+    workspace_id: str
+    role: str
+    is_active: bool
+
+
+class SwitchWorkspaceIn(ApiModel):
+    workspace_id: str
+
+
 class SessionOut(ApiModel):
     """The signed-in user.
 
