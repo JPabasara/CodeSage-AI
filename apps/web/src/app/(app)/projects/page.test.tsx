@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, test, vi } from "vitest"
 
@@ -34,9 +34,13 @@ beforeEach(() => {
   toastSuccess.mockClear()
 })
 
-/** Wait for the projects list to finish its first load. Rows render "owner/name". */
+/** Wait for the projects list to finish its first load. */
 async function ready() {
-  expect(await screen.findByText("acme/acme-payments")).toBeInTheDocument()
+  const list = await screen.findByRole("list", {
+    name: /connected repositories/i,
+  })
+  expect(within(list).getByText("acme-payments")).toBeInTheDocument()
+  return list
 }
 
 async function connect(url: string) {
@@ -53,13 +57,17 @@ async function failureMessage(): Promise<string> {
 test("connecting a public URL adds it to the list", async () => {
   render(<ProjectsPage />)
   await ready()
-  expect(screen.queryByText("octocat/hello-world")).not.toBeInTheDocument()
+  expect(screen.queryByText("hello-world")).not.toBeInTheDocument()
 
   await connect("https://github.com/octocat/hello-world")
 
   // The list is a separate read from the write, so this only passes if the page
   // actually reloads it afterwards.
-  expect(await screen.findByText("octocat/hello-world")).toBeInTheDocument()
+  const list = await screen.findByRole("list", {
+    name: /connected repositories/i,
+  })
+  expect(within(list).getByText("hello-world")).toBeInTheDocument()
+  expect(within(list).getByText("octocat")).toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world")
   expect(toastError).not.toHaveBeenCalled()
 })
@@ -68,12 +76,15 @@ test("selecting a project stores it before opening the dashboard", async () => {
   render(<ProjectsPage />)
   await ready()
 
-  await userEvent.click(
-    screen.getByRole("button", { name: /select acme\/web-store/i }),
-  )
+  const dashboardLink = screen.getByRole("link", {
+    name: /open dashboard for acme\/web-store/i,
+  })
+  dashboardLink.addEventListener("click", (event) => event.preventDefault())
+  await userEvent.click(dashboardLink)
+
+  expect(dashboardLink).toHaveAttribute("href", `/dashboard/${mockRepos[1].id}`)
 
   expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
-  expect(pushMock).toHaveBeenCalledWith(`/dashboard/${mockRepos[1].id}`)
 })
 
 test("a private repository explains itself instead of failing generically", async () => {
@@ -219,15 +230,20 @@ test("a failed list offers a Retry that actually reloads it", async () => {
   )
 
   render(<ProjectsPage />)
-  expect(await screen.findByText(/couldn’t load projects/i)).toBeInTheDocument()
+  expect(
+    await screen.findByText(/could not load projects/i),
+  ).toBeInTheDocument()
 
   // Before #110 this screen had no Retry at all: a failed load was a dead end
   // and the only way out was refreshing the browser.
   broken = false
   await userEvent.click(screen.getByRole("button", { name: "Retry" }))
 
-  expect(await screen.findByText("acme/acme-payments")).toBeInTheDocument()
-  expect(screen.queryByText(/couldn’t load projects/i)).not.toBeInTheDocument()
+  const list = await screen.findByRole("list", {
+    name: /connected repositories/i,
+  })
+  expect(within(list).getByText("acme-payments")).toBeInTheDocument()
+  expect(screen.queryByText(/could not load projects/i)).not.toBeInTheDocument()
 })
 
 test("connecting a repository refreshes the list without blanking it", async () => {
@@ -255,7 +271,11 @@ test("connecting a repository refreshes the list without blanking it", async () 
   // The refresh has not answered yet, and the list the user was reading is
   // still on screen. This is `reload`, and it is why `refetch` had to be a
   // second function rather than a change to this one.
-  expect(screen.getByText("acme/acme-payments")).toBeInTheDocument()
+  expect(
+    within(
+      screen.getByRole("list", { name: /connected repositories/i }),
+    ).getByText("acme-payments"),
+  ).toBeInTheDocument()
   expect(screen.queryByTestId("projects-loading")).not.toBeInTheDocument()
 
   release()
