@@ -17,7 +17,7 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:  
+  workflow_dispatch:
 
 # A second push to the same branch makes the first run pointless. Cancel it
 # rather than queueing behind it — except on main, where every commit that
@@ -251,6 +251,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long
             type=ref,event=pr
+            type=raw,value=k3s-sha-${{ github.sha }},enable=${{ matrix.name == 'web' }}
 
       # The fallback cannot use the normal web image: Next.js bakes both the
       # public API address and the session-cookie name into its browser bundle.
@@ -315,14 +316,19 @@ jobs:
   # code itself, discarding the images the job above just built and tested, so
   # what runs would not be what passed. The artefact CI built is the artefact
   # that runs.
-  deploy:
-    name: deploy — Railway
+  deploy-staging:
+    name: deploy — Railway staging
     runs-on: ubuntu-latest
     needs: [images]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     # Scopes the token to this environment and lists every deploy on the
     # repository's Deployments tab — a free audit trail.
-    environment: production
+    environment: staging
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
@@ -337,13 +343,269 @@ jobs:
       - name: Deploy api (runs migrations)
         run: railway redeploy --service api --yes
 
+      - name: Deploy ml
+        run: railway redeploy --service ml --yes
+
+      # Workers call ML during a scan, so deploy ML successfully before either
+      # worker is restarted against the release's images and variables.
       - name: Deploy worker
         run: railway redeploy --service worker --yes
+
+      - name: Deploy score-worker
+        run: railway redeploy --service score-worker --yes
 
       - name: Deploy web
         run: railway redeploy --service web --yes
 
-      # Nothing calls ml yet, so a failure here must not paint the deploy red.
-      - name: Deploy ml
-        continue-on-error: true
-        run: railway redeploy --service ml --yes
+  # Public browser smoke testing has to wait for Railway to verify the fallback
+  # domains and issue certificates. It stays an explicit staging Environment
+  # variable so an unverified domain cannot make every main deployment red.
+  smoke-staging:
+    name: smoke — Railway staging
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    outputs:
+      ran: ${{ steps.gate.outputs.ran }}
+    steps:
+      - name: Decide whether public smoke is enabled
+        id: gate
+        env:
+          STAGING_SMOKE_ENABLED: ${{ vars.STAGING_SMOKE_ENABLED || 'false' }}
+        run: |
+          if [ "$STAGING_SMOKE_ENABLED" = "true" ]; then
+            echo "ran=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            echo "Public staging smoke is disabled until Railway TLS is ready."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.ran == 'true'
+
+      - uses: pnpm/action-setup@v4
+        if: steps.gate.outputs.ran == 'true'
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ran == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install web test dependencies
+        if: steps.gate.outputs.ran == 'true'
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        if: steps.gate.outputs.ran == 'true'
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Wait for Railway API health
+        if: steps.gate.outputs.ran == 'true'
+        env:
+          DEPLOY_API_URL: https://api.railway.codesageai.dev
+        run: |
+          for attempt in {1..24}; do
+            if curl --fail --silent --show-error "$DEPLOY_API_URL/api/healthz"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Railway API health check did not succeed within two minutes."
+          exit 1
+
+      - name: Wait for Railway web
+        if: steps.gate.outputs.ran == 'true'
+        env:
+          DEPLOY_WEB_URL: https://railway.codesageai.dev
+        run: |
+          for attempt in {1..24}; do
+            if curl --fail --silent --show-error --output /dev/null "$DEPLOY_WEB_URL/"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Railway web did not succeed within two minutes."
+          exit 1
+
+      - name: Run deployed Railway browser smoke test
+        if: steps.gate.outputs.ran == 'true'
+        working-directory: apps/web
+        env:
+          DEPLOY_WEB_URL: https://railway.codesageai.dev
+          DEPLOY_API_URL: https://api.railway.codesageai.dev
+        run: pnpm test:smoke:deployment
+
+      - name: Upload Railway smoke evidence
+        if: failure() && steps.gate.outputs.ran == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: railway-staging-smoke-${{ github.sha }}
+          path: apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # This job is doubly gated: Railway's browser smoke must have run and passed,
+  # and the production Environment must explicitly opt in. That prevents a
+  # missing kubeconfig or unfinished private network path from reaching k3s.
+  deploy-production:
+    name: deploy — k3s production
+    runs-on: ubuntu-latest
+    needs: [images, smoke-staging]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.smoke-staging.outputs.ran == 'true' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      K3S_NAMESPACE: ${{ vars.K3S_NAMESPACE }}
+      KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+      API_IMAGE: ghcr.io/jpabasara/codesage-ai/api:sha-${{ github.sha }}
+      ML_IMAGE: ghcr.io/jpabasara/codesage-ai/ml:sha-${{ github.sha }}
+      WEB_IMAGE: ghcr.io/jpabasara/codesage-ai/web:k3s-sha-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Restore restricted kubeconfig
+        run: |
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "KUBECONFIG_B64 is required after secure GitHub-to-k3s access is configured."
+            exit 1
+          fi
+          kubeconfig_path="$RUNNER_TEMP/codesage-kubeconfig"
+          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$kubeconfig_path"
+          chmod 600 "$kubeconfig_path"
+          echo "KUBECONFIG=$kubeconfig_path" >> "$GITHUB_ENV"
+
+      - name: Verify cluster and namespace access
+        run: |
+          if [ "$K3S_NAMESPACE" != "codesageai" ]; then
+            echo "K3S_NAMESPACE must be codesageai."
+            exit 1
+          fi
+          kubectl -n "$K3S_NAMESPACE" get deployment/api
+
+      - name: Run the migration Job for this release
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          job_name="codesage-migrate-$short_sha"
+          job_manifest="$RUNNER_TEMP/$job_name.yaml"
+          sed \
+            -e "s/name: codesage-migrate/name: $job_name/" \
+            -e "s|ghcr.io/jpabasara/codesage-ai/api:latest|$API_IMAGE|" \
+            infra/k3s/linode/migrate-job.yaml > "$job_manifest"
+          kubectl -n "$K3S_NAMESPACE" create -f "$job_manifest"
+          kubectl -n "$K3S_NAMESPACE" wait --for=condition=complete \
+            --timeout=10m "job/$job_name"
+
+      - name: Roll out immutable application images
+        run: |
+          kubectl -n "$K3S_NAMESPACE" set image deployment/api "api=$API_IMAGE"
+          kubectl -n "$K3S_NAMESPACE" set image deployment/ml "ml=$ML_IMAGE"
+          kubectl -n "$K3S_NAMESPACE" set image deployment/worker "worker=$API_IMAGE"
+          kubectl -n "$K3S_NAMESPACE" set image deployment/score-worker "score-worker=$API_IMAGE"
+          kubectl -n "$K3S_NAMESPACE" set image deployment/web "web=$WEB_IMAGE"
+
+      - name: Wait for all k3s rollouts
+        run: |
+          for deployment in api ml worker score-worker web; do
+            kubectl -n "$K3S_NAMESPACE" rollout status "deployment/$deployment" --timeout=10m
+          done
+
+      - name: Record deployed k3s images
+        run: kubectl -n "$K3S_NAMESPACE" get deployments
+
+  # This is enabled only after Phase 20 DNS cutover. Before then the canonical
+  # public domains still resolve to Railway, so a GitHub-hosted browser cannot
+  # truthfully smoke-test k3s through them.
+  smoke-production:
+    name: smoke — k3s production public edge
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: >-
+      needs.deploy-production.result == 'success' &&
+      vars.PRODUCTION_PUBLIC_SMOKE_ENABLED == 'true'
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install web test dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Wait for k3s public API health
+        env:
+          DEPLOY_API_URL: https://api.codesageai.dev
+        run: |
+          for attempt in {1..24}; do
+            if curl --fail --silent --show-error "$DEPLOY_API_URL/api/healthz"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "k3s public API health check did not succeed within two minutes."
+          exit 1
+
+      - name: Wait for k3s public web
+        env:
+          DEPLOY_WEB_URL: https://codesageai.dev
+        run: |
+          for attempt in {1..24}; do
+            if curl --fail --silent --show-error --output /dev/null "$DEPLOY_WEB_URL/"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "k3s public web did not succeed within two minutes."
+          exit 1
+
+      - name: Run deployed k3s browser smoke test
+        working-directory: apps/web
+        env:
+          DEPLOY_WEB_URL: https://codesageai.dev
+          DEPLOY_API_URL: https://api.codesageai.dev
+        run: pnpm test:smoke:deployment
+
+      - name: Upload k3s smoke evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k3s-production-smoke-${{ github.sha }}
+          path: apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
