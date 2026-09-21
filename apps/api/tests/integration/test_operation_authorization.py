@@ -31,7 +31,8 @@ PROFILE = {
 }
 
 # All workspace business operations. Auth/session is identity-only; login,
-# callback, logout, healthz and the two unimplemented ops probes are public.
+# callback, logout, healthz and workspace discovery/selection are handled by
+# their dedicated authorization tests.
 INVENTORY = {
     ("GET", "/api/projects"): "project:read",
     ("POST", "/api/projects"): "repository:connect",
@@ -65,6 +66,8 @@ def test_route_inventory_has_no_unclassified_operations():
         ("POST", "/api/auth/logout"),
         ("GET", "/api/auth/session"),
         ("GET", "/api/auth/workspaces"),
+        ("POST", "/api/auth/workspaces"),
+        ("PATCH", "/api/auth/workspaces/{workspace_id}"),
         ("PUT", "/api/auth/workspaces/active"),
         ("POST", "/api/invitations/accept"),
         ("GET", "/api/healthz"),
@@ -373,8 +376,10 @@ def test_initiator_migration_preserves_unknown_legacy_ownership(database):
     workspace = uuid.uuid4()
     attempt_id = uuid.uuid4()
     with Session(engine) as db:
-        db.add(Workspace(id=workspace))
-        db.flush()
+        # This test deliberately stops at migration 0010. Use that historical
+        # schema directly: the current Workspace model includes `name`, which
+        # is not added until migration 0014.
+        db.execute(text("INSERT INTO workspace (id) VALUES (:id)"), {"id": workspace})
         _, branch = make_repo(db, workspace)
         version = attempts.get_or_create_engine_version(db)
         db.execute(
