@@ -199,7 +199,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     // stall. The hook keeps asking; nothing here has to.
     if (loading || scorePending) {
       return (
-        <div className="min-h-0 flex-1 space-y-4 p-4 max-w-[1600px] w-full mx-auto">
+        <div className="min-h-0 flex-1 space-y-4 overflow-hidden p-4">
           <div className="grid gap-4 lg:grid-cols-2">
             <Skeleton className="h-64 w-full" />
             <Skeleton className="h-64 w-full" />
@@ -257,8 +257,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     const findingFiles = new Set(report.findings.map((finding) => finding.file))
 
     return (
-      <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-2 max-w-[1600px] w-full mx-auto min-w-0">
-        <div className="flex min-h-0 min-w-0 flex-col gap-4">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)]">
+        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           {/* The one region that swaps, so the tree and the list stay usable. */}
           {detailMode ? (
             <FindingDetailPanel
@@ -289,7 +289,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 overflow-y-auto max-h-[70vh] rounded-lg border p-2">
+        <div className="min-h-0 overflow-hidden">
           <FileTree
             nodes={report.tree}
             colorFor={(node) => healthColor(node.health_score)}

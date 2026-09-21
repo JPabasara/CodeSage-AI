@@ -88,21 +88,21 @@
   --sidebar-ring: oklch(0.64 0.13 160);
 
   /* category palette — validated colourblind-safe against light/dark */
-  --category-code-design: #2a78d6; /* blue    */
-  --category-security: #eb6834; /* orange  */
-  --category-test: #1baf7a; /* aqua    */
-  --category-documentation: #eda100; /* yellow  */
-  --category-requirement: #e87ba4; /* magenta */
+  --category-code-design: #2563eb; /* blue    */
+  --category-security: #ea580c; /* orange  */
+  --category-test: #059669; /* aqua    */
+  --category-documentation: #d97706; /* yellow  */
+  --category-requirement: #db2777; /* magenta */
 
-  /* severity — drives finding badges (darkened for WCAG AA ≥4.5:1 on white cards) */
-  --severity-critical: 0 74% 42%; /* red    - 6.4:1 */
-  --severity-high: 21 90% 35%; /* orange - 6.1:1 */
-  --severity-medium: 26 90% 33%; /* amber  - 6.0:1 */
-  --severity-low: 215 19% 35%; /* slate  - 7.5:1 */
+  /* severity — drives finding badges */
+  --severity-critical: 0 72% 51%; /* red    */
+  --severity-high: 25 95% 53%; /* orange */
+  --severity-medium: 38 92% 50%; /* amber  */
+  --severity-low: 215 16% 47%; /* slate  */
   /* health heat map — tree tint from bad → good */
-  --health-bad: 0 74% 42%; /* 6.4:1 */
-  --health-mid: 26 90% 33%; /* 6.0:1 */
-  --health-good: 142 72% 29%; /* 5.1:1 */
+  --health-bad: 0 72% 51%;
+  --health-mid: 38 92% 50%;
+  --health-good: 142 71% 45%;
 }
 
 .dark {
@@ -156,14 +156,10 @@
     health-mid IS medium, so a file tinted "bad" and a badge marked "critical"
     can never drift apart.
   */
-  --severity-critical: 0 91% 71%;
-  /* red    */
-  --severity-high: 27 96% 61%;
-  /* orange */
-  --severity-medium: 43 96% 56%;
-  /* amber  */
-  --severity-low: 215 20% 65%;
-  /* slate  */
+  --severity-critical: 0 91% 71%; /* red    */
+  --severity-high: 27 96% 61%; /* orange */
+  --severity-medium: 43 96% 56%; /* amber  */
+  --severity-low: 215 20% 65%; /* slate  */
   --health-bad: 0 91% 71%;
   --health-mid: 43 96% 56%;
   --health-good: 142 69% 58%;
@@ -173,11 +169,9 @@
   * {
     @apply border-border outline-ring/50;
   }
-
   body {
     @apply bg-background text-foreground;
   }
-
   html {
     @apply font-sans;
   }

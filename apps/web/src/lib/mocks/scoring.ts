@@ -262,21 +262,6 @@ export const FINDING_FACTS: FindingFact[] = [
     comment_text: "// FIXME: document the timezone handling",
     confidence: 0.66,
   },
-  {
-    fingerprint: "f-comment-2",
-    source: "satd",
-    category: "code-design",
-    severity: "low",
-    file: "src/payments/stripe_client.ts",
-    line: 52,
-    symbol: "createCustomer()",
-    reason: "Self-admitted debt: legacy retry logic needs cleanup.",
-    status: "open",
-    pinned_by_floor: false,
-    comment_text:
-      "// TODO: clean up legacy retry logic once webhook is verified",
-    confidence: 0.65,
-  },
 ]
 
 /** Folder structure only. Every number on a tree node is derived, never stored. */
@@ -385,7 +370,7 @@ export const SNAPSHOTS: SnapshotFact[] = [
     scan_id: "8f6c4b19-0a7d-4ec3-9514-b607c9da4f58",
     t: "2026-07-22T18:35:00.000Z",
     commit_sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
-    finding_count: 11, // matches FINDING_FACTS.length — the newest snapshot IS today
+    finding_count: 10, // matches FINDING_FACTS.length — the newest snapshot IS today
     debt_multiplier: 1.0,
   },
 ]

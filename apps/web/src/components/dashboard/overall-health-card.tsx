@@ -109,7 +109,6 @@ export function OverallHealthCard({
 
           <div className="relative aspect-square h-32 w-32 shrink-0 overflow-visible">
             <ChartContainer
-              role="img"
               config={chartConfig}
               className="aspect-square h-full w-full overflow-visible"
               aria-label={ariaLabel}

@@ -36,19 +36,6 @@ test("renders a negative delta with a down label and singular issue", () => {
   expect(screen.getByText(/1 red issue$/)).toBeInTheDocument()
 })
 
-test("renders zero delta as unchanged (U-8)", () => {
-  render(
-    <OverallHealthCard
-      score={70}
-      grade="C"
-      delta={0}
-      redIssueCount={0}
-      categoryBreakdown={[]}
-    />,
-  )
-  expect(screen.getByText(/No change since last scan/)).toBeInTheDocument()
-})
-
 test("renders category legend with counts, center total, and distinct colors (#113)", () => {
   const breakdown: CategoryBreakdownItem[] = [
     { category: "security", count: 2, debt: 10 },

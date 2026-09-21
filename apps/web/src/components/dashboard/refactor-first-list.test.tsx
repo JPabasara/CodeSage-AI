@@ -151,9 +151,7 @@ test("filters the list by debt type and updates count badge", async () => {
 
   expect(screen.getByText("critical one")).toBeInTheDocument()
   expect(screen.queryByText("low one")).not.toBeInTheDocument()
-  expect(
-    within(heading.parentElement!).getByText("1 of 3"),
-  ).toBeInTheDocument()
+  expect(within(heading.parentElement!).getByText("1 of 3")).toBeInTheDocument()
 })
 
 test("zero findings displays the celebratory empty state (U-14)", () => {

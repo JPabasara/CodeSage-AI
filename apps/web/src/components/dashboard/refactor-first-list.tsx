@@ -233,7 +233,10 @@ export function RefactorFirstList({
                         {finding.severity}
                       </Badge>
                       <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 font-mono text-[0.625rem] text-muted-foreground">
-                        P{Math.round(finding.priority ?? SEVERITY_RANK[finding.severity])}
+                        P
+                        {Math.round(
+                          finding.priority ?? SEVERITY_RANK[finding.severity],
+                        )}
                       </span>
                       <Badge
                         variant="default"

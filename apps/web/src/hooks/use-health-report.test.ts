@@ -70,7 +70,7 @@ test("starts loading, then resolves the report for the branch", async () => {
 
   expect(result.current.error).toBeUndefined()
   expect(result.current.pending).toBe(false)
-  expect(result.current.data?.health_score).toBe(71)
+  expect(result.current.data?.health_score).toBe(72)
   expect(result.current.data?.grade).toBe("B")
 })
 
@@ -80,7 +80,7 @@ test("refetches when the branch changes", async () => {
     { initialProps: { branch: "main" } },
   )
 
-  await waitFor(() => expect(result.current.data?.health_score).toBe(71))
+  await waitFor(() => expect(result.current.data?.health_score).toBe(72))
 
   rerender({ branch: "develop" })
 
