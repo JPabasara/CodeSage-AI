@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from codesage_api.db.models.repository import Repository
 
 
-def enum_values(enum: type[Theme] | type[MembershipStatus]) -> list[str]:
+def enum_values(enum: type[Theme | MembershipStatus]) -> list[str]:
     return [item.value for item in enum]
 
 
@@ -67,6 +67,11 @@ class Membership(UUIDPrimaryKey, Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"), index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspace.id", ondelete="CASCADE"), index=True)
+    role_id: Mapped[str] = mapped_column(
+        ForeignKey("role.id", ondelete="RESTRICT"),
+        nullable=False,
+        server_default="viewer",
+    )
     status: Mapped[MembershipStatus] = mapped_column(
         Enum(MembershipStatus, name="membership_status", values_callable=enum_values), nullable=False
     )

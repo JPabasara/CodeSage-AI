@@ -122,7 +122,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        run_scan.delay(str(args.attempt_id))
+        run_scan.delay(str(args.attempt_id), str(args.workspace))
         print("enqueued codesage.scan")
 
     client = redis.from_url(get_settings().redis_url, decode_responses=True)

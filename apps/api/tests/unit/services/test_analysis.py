@@ -52,7 +52,7 @@ def test_start_creates_commits_and_enqueues_queued_attempt(
     github_fetch.return_value = GitHubBranch("main", "new-sha")
 
     workspace_id = uuid.uuid4()
-    result = analysis.start(session, workspace_id, uuid.uuid4(), "main")
+    result = analysis.start(session, workspace_id, uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
 
     assert result.phase is ScanPhase.QUEUED
     assert result.progress == 0
@@ -81,6 +81,7 @@ def test_start_skips_when_latest_successful_sha_matches(
         uuid.uuid4(),
         uuid.uuid4(),
         "main",
+        actor_user_id=uuid.uuid4(),
     )
 
     assert result.phase is ScanPhase.DONE

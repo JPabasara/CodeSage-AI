@@ -8,7 +8,7 @@ from collections.abc import Sequence
 import uuid
 
 from alembic import op
-from sqlalchemy import Enum, insert
+from sqlalchemy import Enum, MetaData, insert
 from sqlalchemy.schema import CreateIndex, CreateTable, DropTable
 
 from codesage_api.db.base import Base
@@ -45,16 +45,46 @@ DESCENDANT_POLICIES = {
 }
 
 
+def _baseline_metadata() -> MetaData:
+    # This historical migration uses live ORM metadata. RBAC belongs to 0010,
+    # including on fresh installs; exclude it from both upgrade and downgrade.
+    metadata = MetaData(naming_convention=Base.metadata.naming_convention)
+    for table in Base.metadata.tables.values():
+        if table.name not in {
+            "role",
+            "permission",
+            "role_permission",
+            "workspace_invitation",
+        }:
+            table.to_metadata(metadata)
+    for table_name, columns in {
+        "membership": ("role_id",),
+        "app_user": ("email_verified",),
+        "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),
+    }.items():
+        table = metadata.tables[table_name]
+        for name in columns:
+            if name not in table.c:
+                continue
+            column = table.c[name]
+            for fk in list(column.foreign_keys):
+                table.foreign_keys.remove(fk)
+                table.constraints.remove(fk.constraint)
+            table._columns.remove(column)
+    return metadata
+
+
 def upgrade() -> None:
     bind = op.get_bind()
+    metadata = _baseline_metadata()
     enum_types: dict[str, Enum] = {}
-    for table in Base.metadata.sorted_tables:
+    for table in metadata.sorted_tables:
         for column in table.columns:
             if isinstance(column.type, Enum) and column.type.name:
                 enum_types[column.type.name] = column.type
     for enum_type in enum_types.values():
         enum_type.create(bind, checkfirst=True)
-    for table in Base.metadata.sorted_tables:
+    for table in metadata.sorted_tables:
         op.execute(CreateTable(table))
         for index in table.indexes:
             op.execute(CreateIndex(index))
@@ -109,8 +139,9 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS app_workspace_for_user(uuid)")
     op.execute("DROP FUNCTION IF EXISTS app_current_workspace_id()")
     bind = op.get_bind()
+    metadata = _baseline_metadata()
     enum_types: dict[str, Enum] = {}
-    for table in reversed(Base.metadata.sorted_tables):
+    for table in reversed(metadata.sorted_tables):
         for column in table.columns:
             if isinstance(column.type, Enum) and column.type.name:
                 enum_types[column.type.name] = column.type

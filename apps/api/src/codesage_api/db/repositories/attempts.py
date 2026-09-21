@@ -105,11 +105,14 @@ def get_or_create_engine_version(session: Session) -> AnalysisEngineVersion:
 
 
 def create_queued(
-    session: Session, branch_id: uuid.UUID, commit_sha: str
+    session: Session, branch_id: uuid.UUID, commit_sha: str,
+    *, actor_user_id: uuid.UUID, workspace_id: uuid.UUID,
 ) -> AnalysisAttempt:
     version = get_or_create_engine_version(session)
     attempt = AnalysisAttempt(
         branch_id=branch_id,
+        initiated_by_user_id=actor_user_id,
+        initiating_workspace_id=workspace_id,
         analysis_engine_version_id=version.id,
         commit_sha=commit_sha,
         trigger_type=AnalysisTriggerType.MANUAL,
