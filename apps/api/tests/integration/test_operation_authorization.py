@@ -19,7 +19,7 @@ from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.integrations.github import GitHubBranch
 from codesage_api.main import create_app
-from codesage_api.services import analysis, dashboard, member_admin, profiles, repositories
+from codesage_api.services import analysis, dashboard, profiles, repositories
 
 from .test_account_provisioning import account as account  # noqa: PLC0414
 from .test_rbac_migration import database as database  # noqa: PLC0414
@@ -44,11 +44,6 @@ INVENTORY = {
     ("GET", "/api/profiles"): "profile:read",
     ("GET", "/api/profiles/active"): "profile:read",
     ("PUT", "/api/profiles/active"): "profile:update",
-    ("GET", "/api/members"): "member:read",
-    ("POST", "/api/invitations"): "member:manage",
-    ("DELETE", "/api/invitations/{invitation_id}"): "member:manage",
-    ("PATCH", "/api/members/{membership_id}/role"): "member:manage",
-    ("DELETE", "/api/members/{membership_id}"): "member:manage",
 }
 
 
@@ -64,9 +59,6 @@ def test_route_inventory_has_no_unclassified_operations():
         ("GET", "/api/auth/callback"),
         ("POST", "/api/auth/logout"),
         ("GET", "/api/auth/session"),
-        ("GET", "/api/auth/workspaces"),
-        ("PUT", "/api/auth/workspaces/active"),
-        ("POST", "/api/invitations/accept"),
         ("GET", "/api/healthz"),
         ("GET", "/readyz"),
         ("GET", "/version"),
@@ -187,16 +179,6 @@ def test_every_operation_checks_role_before_business_service(
         (analysis, ["start", "get_status", "cancel", "get_history"]),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
-        (
-            member_admin,
-            [
-                "list_members",
-                "create_invitation",
-                "revoke_invitation",
-                "change_role",
-                "deactivate_member",
-            ],
-        ),
     ]:
         for name in names:
             monkeypatch.setattr(module, name, reached)
@@ -348,17 +330,15 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
         (analysis, ["start", "get_status", "cancel", "get_history"]),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
-        (
-            member_admin,
-            ["list_members", "create_invitation", "revoke_invitation", "change_role", "deactivate_member"],
-        ),
     ]:
         for name in names:
             monkeypatch.setattr(module, name, forbidden_service)
     for method, template in INVENTORY:
         path = template.format(
-            repo_id=resources["repo"], scan_id=resources["own"],
-            invitation_id=uuid.uuid4(), membership_id=uuid.uuid4(),
+            repo_id=resources["repo"],
+            scan_id=resources["own"],
+            invitation_id=uuid.uuid4(),
+            membership_id=uuid.uuid4(),
         )
         response = client.request(method, path, **request_args(method, path))
         assert response.status_code == 403, (path, response.text)

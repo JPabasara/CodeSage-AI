@@ -25,8 +25,8 @@ only, FR-6). The v2 RBAC catalogue is now stored for DBR-5; API enforcement
 is a separate implementation step.
 """
 
-from codesage_api.db.models.authorization import Permission, Role, RolePermission
 from codesage_api.db.models.analysis import AnalysisAttempt, Snapshot
+from codesage_api.db.models.authorization import Permission, Role, RolePermission
 from codesage_api.db.models.finding import DebtCategory, Finding
 from codesage_api.db.models.ml import BugRiskPrediction, MLModelVersion, SATDPrediction
 from codesage_api.db.models.profile import ScoringPreset, ScoringProfile
@@ -48,7 +48,6 @@ from codesage_api.db.models.tenancy import (
     User,
     UserSession,
     Workspace,
-    WorkspaceInvitation,
 )
 
 __all__ = [
@@ -64,10 +63,10 @@ __all__ = [
     "MLModelVersion",
     "Membership",
     "Permission",
-    "Role",
-    "RolePermission",
     "ProcessMetric",
     "Repository",
+    "Role",
+    "RolePermission",
     "RuleDefinition",
     "SATDMarkerPattern",
     "SATDPrediction",
@@ -82,5 +81,4 @@ __all__ = [
     "User",
     "UserSession",
     "Workspace",
-    "WorkspaceInvitation",
 ]

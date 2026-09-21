@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from sqlalchemy import func, select
@@ -44,6 +44,7 @@ from codesage_api.errors import (
 from codesage_api.integrations.github import fetch_repository, parse_github_url
 from codesage_api.scoring.config_loader import get_presets
 from codesage_api.scoring.enums import Category
+from codesage_api.services.memberships import get_active_membership
 
 logger = logging.getLogger(__name__)
 
@@ -224,8 +225,11 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
         user.avatar_url = claims.picture or user.avatar_url
 
     workspace_id = resolve_workspace(db, user.id)
+    set_workspace_context(db, workspace_id)
+    if get_active_membership(db, user.id, workspace_id) is None:
+        raise NotAuthenticated
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     settings = get_settings()
     session = UserSession(
         user_id=user.id,
@@ -272,6 +276,7 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
             user_id=user.id,
             workspace_id=workspace_id,
             status=MembershipStatus.ACTIVE,
+            role_id="org-admin",
         )
     )
 
@@ -322,10 +327,15 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
         return None
 
     session = db.get(UserSession, session_id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if session is None:
         return None
     if session.expires_at <= now:
+        db.delete(session)
+        return None
+
+    set_workspace_context(db, session.workspace_id)
+    if get_active_membership(db, session.user_id, session.workspace_id) is None:
         db.delete(session)
         return None
 
