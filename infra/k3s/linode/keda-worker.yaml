@@ -31,9 +31,10 @@ metadata:
 spec:
   scaleTargetRef:
     name: worker
-  pollingInterval: 15
+  pollingInterval: 30
   cooldownPeriod: 300
-  minReplicaCount: 1
+  idleReplicaCount: 0
+  minReplicaCount: 0
   maxReplicaCount: 3
   triggers:
     - type: redis
@@ -41,7 +42,7 @@ spec:
         listName: scans
         listLength: "1"
         activationListLength: "1"
-        enableTLS: "false"
+        enableTLS: "true"
         databaseIndex: "0"
       authenticationRef:
         name: keda-worker-redis-auth
