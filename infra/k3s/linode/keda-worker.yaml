@@ -41,7 +41,7 @@ spec:
         listName: scans
         listLength: "1"
         activationListLength: "1"
-        enableTLS: "true"
+        enableTLS: "false"
         databaseIndex: "0"
       authenticationRef:
         name: keda-worker-redis-auth

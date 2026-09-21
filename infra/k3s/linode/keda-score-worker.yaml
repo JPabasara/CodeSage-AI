@@ -41,7 +41,7 @@ spec:
         listName: scoring
         listLength: "1"
         activationListLength: "1"
-        enableTLS: "true"
+        enableTLS: "false"
         databaseIndex: "0"
       authenticationRef:
         name: keda-score-worker-redis-auth
