@@ -1,0 +1,50 @@
+# GitHub Actions' k3s identity. This is intentionally namespace-scoped: it can
+# update this application's workloads and create its per-release migration Job,
+# but it cannot read Secrets, change cluster-wide resources, or administer k3s.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-deployer
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: github-deployer
+    app.kubernetes.io/part-of: codesage-ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-deployer
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: github-deployer
+    app.kubernetes.io/part-of: codesage-ai
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-deployer
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: github-deployer
+    app.kubernetes.io/part-of: codesage-ai
+subjects:
+  - kind: ServiceAccount
+    name: github-deployer
+    namespace: codesageai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-deployer
