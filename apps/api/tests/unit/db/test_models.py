@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "source_location",
     "static_metric",
     "workspace",
+    "workspace_invitation",
 }
 
 

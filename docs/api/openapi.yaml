@@ -190,6 +190,164 @@ paths:
               schema: { $ref: '#/components/schemas/Session' }
         '401': { $ref: '#/components/responses/NotAuthenticated' }
 
+  /api/auth/workspaces:
+    get:
+      tags: [auth]
+      operationId: list_active_workspaces
+      summary: List the signed-in user's active workspaces
+      description: |
+        Returns only active memberships belonging to the authenticated user.
+        Invited and inactive memberships, and every other user's memberships,
+        are excluded. Exactly one item matches the session's active workspace.
+      responses:
+        '200':
+          description: Active workspaces available to this session.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WorkspaceSummary' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+  /api/auth/workspaces/active:
+    put:
+      tags: [auth]
+      operationId: switch_active_workspace
+      summary: Switch the session's active workspace
+      description: |
+        Updates only the current server-side session after verifying that the
+        authenticated user has an active membership in the requested workspace.
+        A missing, inactive, invited, or foreign membership returns the same 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwitchWorkspaceRequest' }
+      responses:
+        '200':
+          description: The newly active workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceSummary' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/members:
+    get:
+      tags: [members]
+      operationId: list_members
+      summary: List workspace members and pending invitations
+      responses:
+        '200':
+          description: Members and unexpired pending invitations in the active workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberList' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/invitations:
+    post:
+      tags: [members]
+      operationId: create_invitation
+      summary: Invite an email address to the active workspace
+      description: |
+        Creates the invitation and sends its one-time acceptance link through
+        Resend. The transaction is rolled back if delivery cannot be requested.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInvitationRequest' }
+      responses:
+        '201':
+          description: Invitation created and submitted for email delivery. The URL is also returned for copying.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedInvitation' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+
+  /api/invitations/accept:
+    post:
+      tags: [members]
+      operationId: accept_invitation
+      summary: Accept an invitation as the signed-in, verified identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptInvitationRequest' }
+      responses:
+        '200':
+          description: Membership activated with the role stored on the invitation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedInvitation' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/invitations/{invitation_id}:
+    delete:
+      tags: [members]
+      operationId: revoke_invitation
+      summary: Revoke a pending invitation
+      parameters:
+        - name: invitation_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Invitation revoked. }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/members/{membership_id}/role:
+    patch:
+      tags: [members]
+      operationId: change_member_role
+      summary: Change a workspace member's role
+      parameters:
+        - name: membership_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeMemberRoleRequest' }
+      responses:
+        '200':
+          description: Updated member.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/members/{membership_id}:
+    delete:
+      tags: [members]
+      operationId: deactivate_member
+      summary: Deactivate a workspace membership
+      parameters:
+        - name: membership_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Membership deactivated. }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /api/auth/logout:
     post:
       tags: [auth]
@@ -773,6 +931,11 @@ components:
           example:
             detail: Not found.
             code: NOT_FOUND
+    Conflict:
+      description: The operation would violate a workspace invariant.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     ValidationFailed:
       description: |
         The request body is malformed — a wrong type, a missing key, or an unknown
@@ -863,11 +1026,11 @@ components:
         - NOT_AUTHENTICATED       # 401
         - FORBIDDEN               # 403
         - NOT_FOUND               # 404
+        - CONFLICT                # 409
         - INVALID_REPOSITORY_URL  # 400
         - REPOSITORY_NOT_PUBLIC   # 400
         - REPOSITORY_UNREACHABLE  # 400
         - ALREADY_CONNECTED       # 409
-        - CONFLICT                # 409
         - SCAN_ALREADY_RUNNING    # 409
         - SCAN_NOT_CANCELLABLE    # 409
         - VALIDATION_FAILED       # 422
@@ -981,6 +1144,104 @@ components:
             `google` or `local`. Display only; the application's identity is the
             Asgardeo subject, not this.
           examples: [github]
+
+    WorkspaceSummary:
+      type: object
+      required: [workspace_id, role, is_active]
+      additionalProperties: false
+      properties:
+        workspace_id: { type: string, format: uuid }
+        role:
+          type: string
+          enum: [org-admin, manager, developer, viewer]
+        is_active:
+          type: boolean
+          description: Whether this workspace is selected by the current session.
+
+    SwitchWorkspaceRequest:
+      type: object
+      required: [workspace_id]
+      additionalProperties: false
+      properties:
+        workspace_id: { type: string, format: uuid }
+
+    Role:
+      type: string
+      enum: [org-admin, manager, developer, viewer]
+
+    Member:
+      type: object
+      required: [membership_id, user_id, role, status]
+      additionalProperties: false
+      properties:
+        membership_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        email: { type: [string, 'null'], format: email }
+        name: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { type: string, enum: [active, inactive, invited] }
+
+    Invitation:
+      type: object
+      required: [invitation_id, email, role, expires_at]
+      additionalProperties: false
+      properties:
+        invitation_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        expires_at: { type: string, format: date-time }
+
+    MemberList:
+      type: object
+      required: [members, pending_invitations]
+      additionalProperties: false
+      properties:
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/Member' }
+        pending_invitations:
+          type: array
+          items: { $ref: '#/components/schemas/Invitation' }
+
+    CreateInvitationRequest:
+      type: object
+      required: [email, role]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        expires_in_hours: { type: integer, minimum: 1, maximum: 168, default: 72 }
+
+    CreatedInvitation:
+      allOf:
+        - $ref: '#/components/schemas/Invitation'
+        - type: object
+          required: [invitation_url]
+          properties:
+            invitation_url: { type: string, format: uri }
+
+    AcceptInvitationRequest:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, minLength: 32, maxLength: 512 }
+
+    AcceptedInvitation:
+      type: object
+      required: [workspace_id, membership_id, role]
+      additionalProperties: false
+      properties:
+        workspace_id: { type: string, format: uuid }
+        membership_id: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/Role' }
+
+    ChangeMemberRoleRequest:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
 
     # ---- projects -------------------------------------------------------
     ConnectRepoRequest:
