@@ -1,7 +1,13 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { useMemo, useState } from "react"
-import { CheckCircle2, FilterX } from "lucide-react"
+import {
+  ArrowDownWideNarrow,
+  CheckCircle2,
+  FileCode2,
+  FilterX,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,16 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import type { Category, Finding, Severity } from "@/lib/types"
-import { severityColor } from "@/lib/utils"
+import { cn, severityColor } from "@/lib/utils"
 
 const SEVERITY_RANK: Record<Severity, number> = {
   critical: 4,
@@ -30,8 +28,8 @@ const SEVERITY_RANK: Record<Severity, number> = {
   low: 1,
 }
 
-function sortKey(f: Finding) {
-  return f.priority ?? SEVERITY_RANK[f.severity]
+function sortKey(finding: Finding) {
+  return finding.priority ?? SEVERITY_RANK[finding.severity]
 }
 
 export const ALL_CATEGORIES: Category[] = [
@@ -42,10 +40,56 @@ export const ALL_CATEGORIES: Category[] = [
   "security",
 ]
 
+const CATEGORY_BADGE_COLORS: Record<Category, string> = {
+  "code-design": "var(--category-code-design)",
+  requirement: "var(--category-requirement)",
+  documentation: "var(--category-documentation)",
+  test: "var(--category-test)",
+  security: "var(--category-security)",
+}
+
+function truncateText(value: string, max: number) {
+  if (value.length <= max) return value
+  return `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`
+}
+
+function findingLocation(finding: Finding) {
+  return `${finding.file}:${finding.line}`
+}
+
 export type RefactorFirstListProps = {
   findings: Finding[]
   onSelect?: (finding: Finding) => void
   selectedFingerprint?: string
+}
+
+function ListPanel({
+  children,
+  action,
+  count,
+}: Readonly<{
+  children: ReactNode
+  action?: ReactNode
+  count: number
+}>) {
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border-t-2 border-t-primary/60 bg-card shadow-sm ring-1 ring-foreground/10">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b px-3 py-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold">Refactor first</h2>
+            <Badge variant="outline">{count}</Badge>
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <ArrowDownWideNarrow className="size-3.5" aria-hidden="true" />
+            Ranked by priority
+          </p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
 }
 
 export function RefactorFirstList({
@@ -67,7 +111,7 @@ export function RefactorFirstList({
     const filtered =
       category === "all"
         ? findings
-        : findings.filter((f) => f.category === category)
+        : findings.filter((finding) => finding.category === category)
     return [...filtered].sort(
       (a, b) =>
         sortKey(b) - sortKey(a) ||
@@ -75,62 +119,58 @@ export function RefactorFirstList({
     )
   }, [findings, category])
 
+  const filter = findings.length ? (
+    <Select
+      value={category}
+      onValueChange={(value) => setCategory(value as Category | "all")}
+    >
+      <SelectTrigger className="w-40" aria-label="Filter by debt type">
+        <SelectValue placeholder="All types" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All types</SelectItem>
+        {categories.map((item) => (
+          <SelectItem key={item} value={item}>
+            {item}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : null
+
   if (findings.length === 0) {
     return (
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Refactor first</h2>
-        </div>
-        <div className="rounded-md border p-6 text-center space-y-2">
+      <ListPanel count={0}>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center space-y-2">
           <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">No refactoring issues found</p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               The scan found no technical debt or refactoring issues on this
               branch.
             </p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               Run a new scan after pushing code changes to keep track of code
               health.
             </p>
           </div>
         </div>
-      </div>
+      </ListPanel>
     )
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Refactor first</h2>
-        <Select
-          value={category}
-          onValueChange={(v) => setCategory(v as Category | "all")}
-        >
-          <SelectTrigger className="w-40" aria-label="Filter by debt type">
-            <SelectValue placeholder="All types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            {categories.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
+    <ListPanel action={filter} count={rows.length}>
       {rows.length === 0 ? (
-        <div className="rounded-md border p-6 text-center space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center space-y-3">
           <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <FilterX className="size-5" />
           </div>
           <div className="space-y-1">
             <p className="text-sm font-medium">No findings match this filter</p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               No findings match the &ldquo;{category}&rdquo; filter.
             </p>
           </div>
@@ -143,72 +183,88 @@ export function RefactorFirstList({
           </Button>
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Severity</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Reason</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((f) => (
-              <TableRow
-                key={f.fingerprint}
-                // U-9. This row was `onClick` on a plain <tr>: no tab stop, no
-                // key handler, so the core triage flow could not be reached by
-                // keyboard at all. A tab stop plus Enter/Space is the smallest
-                // fix that keeps this a real table — swapping the table for a
-                // list of buttons would take the column alignment with it.
-                tabIndex={0}
-                onClick={() => onSelect?.(f)}
-                onKeyDown={(event) => {
-                  // Both keys, because that is what a button answers to and
-                  // this row now behaves like one. Space scrolls the page by
-                  // default, so activating on it is only safe once prevented.
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault()
-                    onSelect?.(f)
-                  }
-                }}
-                // `aria-current` carries the selection to a screen reader;
-                // `data-state` is what shadcn's row styling reads. Both,
-                // because neither one does the other's job.
-                aria-current={
-                  f.fingerprint === selectedFingerprint ? "true" : undefined
-                }
-                data-state={
-                  f.fingerprint === selectedFingerprint ? "selected" : undefined
-                }
-                // An outline rather than a ring: a ring on `display: table-row`
-                // renders inconsistently across browsers. Inset, so a row at the
-                // edge of the scroll container does not lose half of it.
-                className="focus-visible:outline-ring cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2"
-              >
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    style={{
-                      borderColor: severityColor(f.severity),
-                      color: severityColor(f.severity),
-                    }}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          data-testid="refactor-first-scroll"
+        >
+          <ul className="space-y-2 p-3" aria-label="Ranked refactor findings">
+            {rows.map((finding) => {
+              const location = findingLocation(finding)
+              const selected = finding.fingerprint === selectedFingerprint
+
+              return (
+                <li key={finding.fingerprint}>
+                  <button
+                    type="button"
+                    key={finding.fingerprint}
+                    onClick={() => onSelect?.(finding)}
+                    aria-current={selected ? "true" : undefined}
+                    data-state={selected ? "selected" : undefined}
+                    aria-label={`${finding.severity} priority ${Math.round(finding.priority)} finding: ${finding.reason} at ${location}`}
+                    className={cn(
+                      "group w-full rounded-md border bg-background/70 p-3 text-left shadow-sm transition hover:border-primary/50 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      selected &&
+                        "border-primary bg-accent/45 ring-1 ring-primary/20",
+                    )}
                   >
-                    {f.severity}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {f.category}
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {f.file}:{f.line}
-                </TableCell>
-                <TableCell className="max-w-md truncate">{f.reason}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        variant="default"
+                        className="border-transparent text-white"
+                        style={{
+                          backgroundColor: severityColor(finding.severity),
+                        }}
+                      >
+                        {finding.severity}
+                      </Badge>
+                      <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 font-mono text-[0.625rem] text-muted-foreground">
+                        P{Math.round(finding.priority)}
+                      </span>
+                      <Badge
+                        variant="default"
+                        className="border-transparent text-white"
+                        style={{
+                          backgroundColor:
+                            CATEGORY_BADGE_COLORS[finding.category],
+                        }}
+                      >
+                        {finding.category}
+                      </Badge>
+                      <Badge
+                        variant="default"
+                        className="border-transparent bg-slate-700 text-white dark:bg-slate-500"
+                      >
+                        {finding.source}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.34fr)]">
+                      <p
+                        className="break-words text-xs font-medium leading-5 text-foreground"
+                        title={finding.reason}
+                      >
+                        {truncateText(finding.reason, 155)}
+                      </p>
+                      <div className="flex min-w-0 items-start gap-1.5 text-muted-foreground">
+                        <FileCode2
+                          className="mt-0.5 size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span
+                          className="break-all font-mono text-[0.6875rem] leading-5"
+                          title={location}
+                        >
+                          {truncateText(location, 76)}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       )}
-    </div>
+    </ListPanel>
   )
 }

@@ -110,27 +110,27 @@ export function AppRail() {
 
   return (
     <Sidebar collapsible="icon" className="border-sidebar-border/80">
-      <SidebarHeader className="px-2 py-3">
+      <SidebarHeader className="px-2 py-4">
         <Link
           href="/projects"
           title="CodeSage AI"
           onClick={() => setOpenMobile(false)}
-          className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+          className="flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
         >
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-sidebar-primary/10 ring-1 ring-sidebar-border">
+          <span className="grid size-11 shrink-0 place-items-center rounded-md bg-background ring-1 ring-sidebar-border">
             <Image
               src="/codesage-refactor-branch-mark.svg"
               alt=""
-              width={28}
-              height={28}
-              className="size-7"
+              width={38}
+              height={38}
+              className="size-[38px]"
             />
           </span>
           <span className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <span className="block truncate text-sm font-semibold leading-5">
+            <span className="block truncate text-lg font-semibold leading-5">
               CodeSage AI
             </span>
-            <span className="block truncate text-[0.625rem] font-medium text-sidebar-foreground/55">
+            <span className="block truncate text-sm font-medium text-sidebar-foreground/55">
               Refactor-first analytics
             </span>
           </span>
@@ -144,11 +144,13 @@ export function AppRail() {
               {nav.map((item) => {
                 const Icon = item.icon
                 return (
-                  <SidebarMenuItem key={item.href}>
+                  <SidebarMenuItem key={item.label}>
                     <SidebarMenuButton
                       asChild
                       isActive={item.isActive(pathname)}
+                      size="lg"
                       tooltip={item.label}
+                      className="text-sm"
                     >
                       <Link
                         href={item.href}
@@ -190,18 +192,6 @@ export function AppRail() {
               </div>
             </SidebarMenuItem>
           ) : null}
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              type="button"
-              onClick={toggleSidebar}
-              tooltip={sidebarStateLabel}
-              aria-label={sidebarStateLabel}
-              className="hidden md:flex"
-            >
-              <SidebarStateIcon />
-              <span>{sidebarStateLabel}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           {/* FR-22's theme switch, in the account area the requirement names. */}
           <SidebarMenuItem>
             <ThemeToggle />
@@ -216,10 +206,29 @@ export function AppRail() {
               POST, not a link: a GET is prefetchable, and ending a session must
               not fire on a guess.
             */}
-            <form action={`${API_BASE}/api/auth/logout`} method="POST">
-              <SidebarMenuButton type="submit" tooltip="Sign out">
+            <form
+              action={`${API_BASE}/api/auth/logout`}
+              method="POST"
+              className="flex min-w-0 items-center gap-1"
+            >
+              <SidebarMenuButton
+                type="submit"
+                tooltip="Sign out"
+                className="min-w-0 flex-1"
+              >
                 <LogOut />
                 <span>Sign out</span>
+              </SidebarMenuButton>
+              <SidebarMenuButton
+                type="button"
+                onClick={toggleSidebar}
+                tooltip={sidebarStateLabel}
+                aria-label={sidebarStateLabel}
+                title={sidebarStateLabel}
+                className="hidden w-8 shrink-0 justify-center px-0 md:flex"
+              >
+                <SidebarStateIcon />
+                <span className="sr-only">{sidebarStateLabel}</span>
               </SidebarMenuButton>
             </form>
           </SidebarMenuItem>

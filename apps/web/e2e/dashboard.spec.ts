@@ -8,6 +8,11 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 const detailPanel = (page: import("@playwright/test").Page) =>
   page.getByLabel("Finding detail", { exact: true })
 
+const findingCards = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("list", { name: /ranked refactor findings/i })
+    .getByRole("button")
+
 test.beforeEach(async ({ page }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
@@ -18,8 +23,11 @@ test("the health card shows a derived grade, score and red-issue count", async (
 }) => {
   // 72 / B under Balanced, computed by the mock's scoring engine rather than
   // typed into a fixture — so this number moving means the FORMULA moved.
-  await expect(page.getByText("72/100")).toBeVisible()
-  await expect(page.getByText("B", { exact: true })).toBeVisible()
+  const healthCard = page.locator('[data-slot="card"]').filter({
+    hasText: "Code Health",
+  })
+  await expect(healthCard.getByText("72/100")).toBeVisible()
+  await expect(healthCard.getByText("B", { exact: true })).toBeVisible()
   // critical + high = 4 of the ten findings.
   await expect(page.getByText(/4 red issues/i)).toBeVisible()
 })
@@ -27,11 +35,9 @@ test("the health card shows a derived grade, score and red-issue count", async (
 test("the Refactor-First list arrives sorted by priority, worst first", async ({
   page,
 }) => {
-  const rows = page.getByRole("row")
-  // Row 0 is the header. The contract returns the list already sorted, so the
-  // client never re-sorts and the badge can never disagree with the ranking.
-  await expect(rows.nth(1)).toContainText(/hardcoded stripe api key/i)
-  await expect(rows.nth(1)).toContainText("critical")
+  const cards = findingCards(page)
+  await expect(cards.first()).toContainText(/hardcoded stripe api key/i)
+  await expect(cards.first()).toContainText("critical")
 })
 
 test("the file tree is a heat map, not a uniform block of green", async ({
@@ -51,7 +57,7 @@ test("the file tree is a heat map, not a uniform block of green", async ({
 test("selecting a finding swaps the health card for the detail, in place", async ({
   page,
 }) => {
-  await page.getByRole("row").filter({ hasText: "hardcoded" }).click()
+  await findingCards(page).filter({ hasText: "hardcoded" }).click()
 
   const detail = detailPanel(page)
   await expect(detail.getByText(/hardcoded stripe api key/i)).toBeVisible()
@@ -76,13 +82,10 @@ test("selecting a finding swaps the health card for the detail, in place", async
 })
 
 test("moving between findings never closes the detail", async ({ page }) => {
-  await page.getByRole("row").filter({ hasText: "hardcoded" }).click()
+  await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(detailPanel(page)).toBeVisible()
 
-  await page
-    .getByRole("row")
-    .filter({ hasText: "cyclomatic complexity" })
-    .click()
+  await findingCards(page).filter({ hasText: "cyclomatic complexity" }).click()
 
   const detail = detailPanel(page)
   await expect(detail.getByText(/cyclomatic complexity 18/i)).toBeVisible()
@@ -95,7 +98,7 @@ test("moving between findings never closes the detail", async ({ page }) => {
 test("the selection lives in the URL, so refresh and Back both work", async ({
   page,
 }) => {
-  await page.getByRole("row").filter({ hasText: "hardcoded" }).click()
+  await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(page).toHaveURL(/\?finding=f-secret-1/)
 
   await page.reload()
@@ -110,7 +113,7 @@ test("the selection lives in the URL, so refresh and Back both work", async ({
 test("closing restores the health card and the trend chart", async ({
   page,
 }) => {
-  await page.getByRole("row").filter({ hasText: "hardcoded" }).click()
+  await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(detailPanel(page)).toBeVisible()
 
   await page.getByRole("button", { name: /close finding detail/i }).click()
@@ -136,10 +139,7 @@ test("clicking a file in the tree opens that file's finding", async ({
 test("the detail shows a rule finding's evidence: measured value versus limit", async ({
   page,
 }) => {
-  await page
-    .getByRole("row")
-    .filter({ hasText: "cyclomatic complexity" })
-    .click()
+  await findingCards(page).filter({ hasText: "cyclomatic complexity" }).click()
 
   const detail = detailPanel(page)
   await expect(detail.getByText(/Measured/)).toBeVisible()
@@ -151,10 +151,7 @@ test("the detail shows a rule finding's evidence: measured value versus limit", 
 test("a SATD finding shows its source and category, with no rule evidence", async ({
   page,
 }) => {
-  await page
-    .getByRole("row")
-    .filter({ hasText: /knowingly untested/i })
-    .click()
+  await findingCards(page).filter({ hasText: /knowingly untested/i }).click()
 
   const detail = detailPanel(page)
   await expect(detail.getByText("satd")).toBeVisible()
@@ -170,10 +167,53 @@ test("the category filter narrows the list to one debt type", async ({
   await page.getByRole("option", { name: "security" }).click()
 
   await expect(
-    page.getByRole("row").filter({ hasText: "hardcoded" }),
+    findingCards(page).filter({ hasText: "hardcoded" }),
   ).toBeVisible()
   // A code-design finding must be gone.
   await expect(
-    page.getByRole("row").filter({ hasText: /940 lines long/ }),
+    findingCards(page).filter({ hasText: /940 lines long/ }),
   ).toHaveCount(0)
+})
+
+test("the dashboard is viewport-bounded at 1280x720", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
+  await expect(page.getByText("Code Health")).toBeVisible()
+
+  const hasNoHorizontalScroll = await page.evaluate(
+    () => document.documentElement.scrollWidth <= window.innerWidth,
+  )
+  expect(hasNoHorizontalScroll).toBeTruthy()
+
+  const listScroll = page.getByTestId("refactor-first-scroll")
+  const listScrolledInternally = await listScroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+    return (
+      element.scrollTop > 0 && (document.scrollingElement?.scrollTop ?? 0) === 0
+    )
+  })
+  expect(listScrolledInternally).toBeTruthy()
+  await expect(page.getByText("Live dashboard")).toBeVisible()
+
+  await expect(page.getByTestId("file-tree-scroll")).toHaveCSS(
+    "overflow-y",
+    "auto",
+  )
+})
+
+test("clicking a clean file in the tree gives helpful feedback", async ({
+  page,
+}) => {
+  await page
+    .getByLabel("File health tree")
+    .getByRole("button", { name: /formatters\.ts/ })
+    .click()
+
+  await expect(
+    page
+      .getByLabel("File health tree")
+      .getByRole("status")
+      .filter({ hasText: "formatters.ts has no findings in this snapshot." }),
+  ).toBeVisible()
+  await expect(detailPanel(page)).toHaveCount(0)
 })

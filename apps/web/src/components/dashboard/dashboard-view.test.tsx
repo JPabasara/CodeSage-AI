@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { http, HttpResponse } from "msw"
+import { toast } from "sonner"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
@@ -9,6 +10,7 @@ import {
   UNSCANNED_REPO_ID,
   mockFindings,
   mockHealthReport,
+  mockScanHistory,
 } from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
 
@@ -50,6 +52,8 @@ vi.mock("sonner", () => ({
 
 const CRITICAL = mockFindings[0] // the hardcoded Stripe key in payment_service.ts
 const UNKNOWN_REPO_ID = "11111111-2222-3333-4444-555555555555"
+const LATEST_POSITION = `${mockScanHistory.length}/${mockScanHistory.length}`
+const ONE_BEFORE_LATEST_POSITION = `${mockScanHistory.length - 1}/${mockScanHistory.length}`
 
 beforeEach(() => {
   nav.reset()
@@ -67,7 +71,7 @@ test("selecting a finding swaps the health card for the detail, in place", async
 
   // by reason, not symbol: two fixtures share the symbol "charge()"
   await userEvent.click(
-    screen.getByRole("row", { name: /hardcoded stripe api key/i }),
+    screen.getByRole("button", { name: /hardcoded stripe api key/i }),
   )
 
   const detail = await screen.findByLabelText("Finding detail")
@@ -135,6 +139,75 @@ test("clicking a file in the tree opens that file's finding", async () => {
 // scanned, and the top nav lived inside the success branch — so the 404 took
 // the Scan button down with it.
 
+test("a snapshot_id URL loads historical mode and can return to latest", async () => {
+  const older = mockScanHistory[1]
+  nav.navigate(
+    `/dashboard/${DEMO_REPO_ID}?branch=${older.branch}&snapshot_id=${older.snapshot_id}`,
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText("Historical snapshot")).toBeInTheDocument()
+  expect(screen.getByText(ONE_BEFORE_LATEST_POSITION)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: /latest scan/i }))
+
+  expect(nav.read().get("snapshot_id")).toBeNull()
+  expect(nav.read().get("branch")).toBe("main")
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: /latest scan/i }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(screen.getByText(LATEST_POSITION)).toBeInTheDocument()
+})
+
+test("normal dashboard arrows can move to an older scan", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText(LATEST_POSITION)).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /latest scan/i }),
+  ).not.toBeInTheDocument()
+  const older = await screen.findByRole("button", { name: /older scan/i })
+  await waitFor(() => expect(older).not.toBeDisabled())
+  await userEvent.click(older)
+
+  expect(nav.read().get("snapshot_id")).toBe(mockScanHistory[1].snapshot_id)
+  expect(nav.read().get("branch")).toBe("main")
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /latest scan/i })).toBeVisible(),
+  )
+  expect(screen.getByText(ONE_BEFORE_LATEST_POSITION)).toBeInTheDocument()
+})
+
+test("renders the ranked-list label and tree legend", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByText(/ranked by priority/i)).toBeInTheDocument()
+  expect(screen.getByLabelText("Heat map legend")).toBeInTheDocument()
+})
+
+test("clicking a tree file with no finding shows feedback", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const tree = screen.getByLabelText("File health tree")
+  await userEvent.click(
+    within(tree).getByRole("button", { name: /formatters\.ts/i }),
+  )
+
+  const status = await screen.findByRole("status")
+  expect(status).toHaveTextContent(
+    "formatters.ts has no findings in this snapshot.",
+  )
+  expect(toast).toHaveBeenCalledWith(
+    "formatters.ts has no findings in this snapshot.",
+  )
+  expect(screen.queryByLabelText("Finding detail")).not.toBeInTheDocument()
+})
+
 test("a never-scanned repo still gets the top nav, so a scan can be started", async () => {
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
 
@@ -145,7 +218,7 @@ test("a never-scanned repo still gets the top nav, so a scan can be started", as
   ).not.toBeInTheDocument()
 
   // …and the controls that produce the first snapshot are on screen
-  expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^scan$/i })).toBeInTheDocument()
   expect(screen.getByLabelText("Branch")).toBeInTheDocument()
 })
 
@@ -185,7 +258,7 @@ test("a real failure still reads as an error, not as an empty state", async () =
   ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
   // the nav survives this too — switching branch is the obvious recovery
-  expect(screen.getByRole("button", { name: /scan/i })).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^scan$/i })).toBeInTheDocument()
 })
 
 test("finishing the first scan refetches the report, so the empty state fills in", async () => {
@@ -213,7 +286,7 @@ test("finishing the first scan refetches the report, so the empty state fills in
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
   await screen.findByText(/no scans yet/i)
 
-  await userEvent.click(screen.getByRole("button", { name: /scan/i }))
+  await userEvent.click(screen.getByRole("button", { name: /^scan$/i }))
 
   // Without useScan's onComplete wired to the report's reload(), this never
   // arrives and the empty state sits there until a manual refresh.
@@ -392,5 +465,7 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
   expect(
     screen.queryByText("No findings match this filter"),
   ).not.toBeInTheDocument()
-  expect(screen.getByRole("table")).toBeInTheDocument()
+  expect(
+    screen.getByRole("list", { name: /ranked refactor findings/i }),
+  ).toBeInTheDocument()
 })

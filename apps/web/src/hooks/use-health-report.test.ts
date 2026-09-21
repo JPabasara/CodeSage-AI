@@ -89,6 +89,28 @@ test("refetches when the branch changes", async () => {
   await waitFor(() => expect(result.current.data?.health_score).toBe(66))
 })
 
+test("passes snapshot_id and refetches when the snapshot changes", async () => {
+  const seen: Array<string | null> = []
+  server.use(
+    http.get("*/api/repos/:repoId/health", ({ request }) => {
+      seen.push(new URL(request.url).searchParams.get("snapshot_id"))
+      return HttpResponse.json(mockHealthReport)
+    }),
+  )
+
+  const { result, rerender } = renderHook(
+    ({ snapshotId }: { snapshotId?: string }) =>
+      useHealthReport(DEMO_REPO_ID, "main", snapshotId),
+    { initialProps: { snapshotId: "old-snapshot" } },
+  )
+
+  await waitFor(() => expect(result.current.loading).toBe(false))
+  rerender({ snapshotId: "new-snapshot" })
+  await waitFor(() => expect(seen).toContain("new-snapshot"))
+
+  expect(seen).toContain("old-snapshot")
+})
+
 test("surfaces an error for an unknown repo instead of throwing", async () => {
   const { result } = renderHook(() =>
     useHealthReport("11111111-2222-3333-4444-555555555555", "main"),

@@ -282,7 +282,10 @@ export const TREE_SHAPE: ShapeNode[] = [
       {
         path: "src/lib",
         name: "lib",
-        children: [{ path: "src/lib/utils.ts", name: "utils.ts" }],
+        children: [
+          { path: "src/lib/utils.ts", name: "utils.ts" },
+          { path: "src/lib/formatters.ts", name: "formatters.ts" },
+        ],
       },
       {
         path: "src/orders",

@@ -18,6 +18,11 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 const detailPanel = (page: import("@playwright/test").Page) =>
   page.getByLabel("Finding detail", { exact: true })
 
+const findingCards = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("list", { name: /ranked refactor findings/i })
+    .getByRole("button")
+
 /**
  * Tab until `target` has focus, then say how many presses it took.
  *
@@ -42,16 +47,15 @@ test("the top finding opens with the keyboard alone", async ({ page }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
 
-  // Row 0 is the header, so the first data row is the highest-priority finding.
-  const topFinding = page.getByRole("row").nth(1)
+  const topFinding = findingCards(page).first()
   await tabTo(page, topFinding)
 
   // Focus has to be SEEN, not just held (U-9 asks for a visible indicator).
   await expect(topFinding).toBeFocused()
-  const outlineWidth = await topFinding.evaluate(
-    (el) => getComputedStyle(el).outlineWidth,
+  const focusPaint = await topFinding.evaluate(
+    (el) => getComputedStyle(el).outlineWidth + getComputedStyle(el).boxShadow,
   )
-  expect(outlineWidth).not.toBe("0px")
+  expect(focusPaint).not.toBe("0pxnone")
 
   await page.keyboard.press("Enter")
   await expect(detailPanel(page)).toBeVisible()
@@ -63,7 +67,7 @@ test("Space opens a finding too, and does not scroll the page instead", async ({
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
 
-  const topFinding = page.getByRole("row").nth(1)
+  const topFinding = findingCards(page).first()
   await tabTo(page, topFinding)
 
   const scrollBefore = await page.evaluate(() => window.scrollY)
@@ -85,7 +89,7 @@ test("the demo path's controls are all reachable by keyboard, in order", async (
   const branch = page.getByLabel("Branch")
   const scan = page.getByRole("button", { name: /^scan$/i })
   const filter = page.getByRole("combobox", { name: /filter by debt type/i })
-  const topFinding = page.getByRole("row").nth(1)
+  const topFinding = findingCards(page).first()
 
   const order = [
     await tabTo(page, branch),
