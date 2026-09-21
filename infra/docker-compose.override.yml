@@ -1,0 +1,4 @@
+services:
+  ml:
+    ports:
+      - "8001:8001"

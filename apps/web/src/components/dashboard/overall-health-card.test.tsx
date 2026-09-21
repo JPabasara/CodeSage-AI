@@ -46,8 +46,7 @@ test("renders zero delta as unchanged (U-8)", () => {
       categoryBreakdown={[]}
     />,
   )
-  expect(screen.getByText(/0 unchanged/)).toBeInTheDocument()
-  expect(screen.getByText(/since last scan/)).toBeInTheDocument()
+  expect(screen.getByText(/No change since last scan/)).toBeInTheDocument()
 })
 
 test("renders category legend with counts, center total, and distinct colors (#113)", () => {

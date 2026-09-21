@@ -63,26 +63,33 @@ export type RefactorFirstListProps = {
   selectedFingerprint?: string
 }
 
+const PAGE_SIZE = 10
+
 function ListPanel({
   children,
   action,
   count,
+  total,
 }: Readonly<{
   children: ReactNode
   action?: ReactNode
   count: number
+  total?: number
 }>) {
+  const badgeLabel =
+    total !== undefined && total !== count ? `${count} of ${total}` : count
+
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border-t-2 border-t-primary/60 bg-card shadow-sm ring-1 ring-foreground/10">
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b px-3 py-3">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold">Refactor first</h2>
-            <Badge variant="outline">{count}</Badge>
+            <Badge variant="outline">{badgeLabel}</Badge>
           </div>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <ArrowDownWideNarrow className="size-3.5" aria-hidden="true" />
-            Ranked by priority
+            Ranked by severity × risk — start at the top.
           </p>
         </div>
         {action}
@@ -98,6 +105,7 @@ export function RefactorFirstList({
   selectedFingerprint,
 }: Readonly<RefactorFirstListProps>) {
   const [category, setCategory] = useState<Category | "all">("all")
+  const [showAll, setShowAll] = useState(false)
 
   const categories = useMemo(
     () =>
@@ -118,6 +126,11 @@ export function RefactorFirstList({
         SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
     )
   }, [findings, category])
+
+  const visibleRows = useMemo(
+    () => (showAll ? rows : rows.slice(0, PAGE_SIZE)),
+    [rows, showAll],
+  )
 
   const filter = findings.length ? (
     <Select
@@ -162,7 +175,7 @@ export function RefactorFirstList({
   }
 
   return (
-    <ListPanel action={filter} count={rows.length}>
+    <ListPanel action={filter} count={rows.length} total={findings.length}>
       {rows.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center space-y-3">
           <div className="mx-auto flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -184,11 +197,11 @@ export function RefactorFirstList({
         </div>
       ) : (
         <div
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
           data-testid="refactor-first-scroll"
         >
           <ul className="space-y-2 p-3" aria-label="Ranked refactor findings">
-            {rows.map((finding) => {
+            {visibleRows.map((finding, index) => {
               const location = findingLocation(finding)
               const selected = finding.fingerprint === selectedFingerprint
 
@@ -196,11 +209,10 @@ export function RefactorFirstList({
                 <li key={finding.fingerprint}>
                   <button
                     type="button"
-                    key={finding.fingerprint}
                     onClick={() => onSelect?.(finding)}
                     aria-current={selected ? "true" : undefined}
                     data-state={selected ? "selected" : undefined}
-                    aria-label={`${finding.severity} priority ${Math.round(finding.priority)} finding: ${finding.reason} at ${location}`}
+                    aria-label={`${finding.severity} priority ${Math.round(finding.priority ?? SEVERITY_RANK[finding.severity])} finding: ${finding.reason} at ${location}`}
                     className={cn(
                       "group w-full rounded-md border bg-background/70 p-3 text-left shadow-sm transition hover:border-primary/50 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       selected &&
@@ -208,6 +220,9 @@ export function RefactorFirstList({
                     )}
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 font-mono text-[0.625rem] font-semibold text-muted-foreground">
+                        #{index + 1}
+                      </span>
                       <Badge
                         variant="default"
                         className="border-transparent text-white"
@@ -218,7 +233,7 @@ export function RefactorFirstList({
                         {finding.severity}
                       </Badge>
                       <span className="rounded-full border border-border/70 bg-card px-2 py-0.5 font-mono text-[0.625rem] text-muted-foreground">
-                        P{Math.round(finding.priority)}
+                        P{Math.round(finding.priority ?? SEVERITY_RANK[finding.severity])}
                       </span>
                       <Badge
                         variant="default"
@@ -230,12 +245,14 @@ export function RefactorFirstList({
                       >
                         {finding.category}
                       </Badge>
-                      <Badge
-                        variant="default"
-                        className="border-transparent bg-slate-700 text-white dark:bg-slate-500"
-                      >
-                        {finding.source}
-                      </Badge>
+                      {finding.source ? (
+                        <Badge
+                          variant="default"
+                          className="border-transparent bg-slate-700 text-white dark:bg-slate-500"
+                        >
+                          {finding.source}
+                        </Badge>
+                      ) : null}
                     </div>
 
                     <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.34fr)]">
@@ -263,9 +280,23 @@ export function RefactorFirstList({
               )
             })}
           </ul>
+
+          {rows.length > PAGE_SIZE && (
+            <div className="flex justify-center pb-3 pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAll((prev) => !prev)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showAll
+                  ? `Show top ${PAGE_SIZE}`
+                  : `Show all ${rows.length} findings`}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </ListPanel>
->>>>>>> origin/main
   )
 }

@@ -257,7 +257,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     const findingFiles = new Set(report.findings.map((finding) => finding.file))
 
     return (
-      <div className="grid flex-1 gap-4 p-4 lg:grid-cols-2 max-w-[1600px] w-full mx-auto min-w-0">
+      <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-2 max-w-[1600px] w-full mx-auto min-w-0">
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
           {/* The one region that swaps, so the tree and the list stay usable. */}
           {detailMode ? (
@@ -289,7 +289,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 flex-1 flex flex-col">
+        <div className="min-h-0 min-w-0 overflow-y-auto max-h-[70vh] rounded-lg border p-2">
           <FileTree
             nodes={report.tree}
             colorFor={(node) => healthColor(node.health_score)}

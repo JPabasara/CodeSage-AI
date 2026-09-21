@@ -104,11 +104,8 @@ export function FileTree({
             type="button"
             ref={isSelected ? selectedRef : undefined}
             aria-current={isSelected ? "true" : undefined}
-<<<<<<< HEAD
             aria-expanded={isFolder ? isOpen : undefined}
-=======
             aria-label={nodeScoreLabel(node)}
->>>>>>> origin/main
             className={cn(
               "group/file flex h-8 w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-accent/70",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
@@ -128,27 +125,18 @@ export function FileTree({
             ) : (
               <File className="size-4 shrink-0" />
             )}
-<<<<<<< HEAD
-            <span className="truncate flex-1">{node.name}</span>
-            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs tabular-nums">
-              <span className="text-muted-foreground">{Math.round(node.health_score)}</span>
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <span
+              className="ml-2 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background px-1.5 text-[0.625rem] font-medium tabular-nums text-muted-foreground"
+              aria-hidden="true"
+            >
               <span
                 className="font-semibold"
                 style={{ color: gradeColor(node.grade) }}
               >
                 {node.grade}
               </span>
-=======
-            <span className="min-w-0 flex-1 truncate">{node.name}</span>
-            <span
-              className="ml-2 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background px-1.5 text-[0.625rem] font-medium tabular-nums text-muted-foreground"
-              aria-hidden="true"
-            >
-              <span className="font-semibold text-foreground">
-                {node.grade}
-              </span>
               {Math.round(node.health_score)}
->>>>>>> origin/main
             </span>
           </button>
 

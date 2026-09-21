@@ -74,8 +74,6 @@ test("selecting a file without a finding calls the feedback path", async () => {
   )
 })
 
-// Detail mode must reveal the finding's file: tinting a row inside a folder the
-// user collapsed earlier would highlight something invisible.
 test("a selected file re-opens the folders that hide it", async () => {
   const { rerender } = render(
     <FileTree nodes={mockTree} colorFor={() => "red"} />,
@@ -100,7 +98,6 @@ test("a selected file re-opens the folders that hide it", async () => {
 test("renders a named empty state with next action when nodes is empty (U-14)", () => {
   render(<FileTree nodes={[]} colorFor={() => "red"} />)
 
-  // Names what is empty and provides the next action
   expect(screen.getByText("No files in this tree")).toBeInTheDocument()
   expect(
     screen.getByText(/no files were detected in this snapshot/i),
@@ -111,6 +108,5 @@ test("renders a named empty state with next action when nodes is empty (U-14)", 
     ),
   ).toBeInTheDocument()
 
-  // Must not render a list of files
   expect(screen.queryByRole("list")).not.toBeInTheDocument()
 })
