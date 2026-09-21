@@ -86,13 +86,13 @@ export function OverallHealthCard({
 
   return (
     <Card className="border-t-2 border-t-primary/60 shadow-sm">
-      <CardHeader>
+      <CardHeader className="pb-2">
         <CardTitle>Code Health</CardTitle>
         <CardDescription>
           {redIssueCount} red {redIssueCount === 1 ? "issue" : "issues"}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3 pt-0">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-baseline gap-2">
@@ -107,15 +107,18 @@ export function OverallHealthCard({
             <p className="mt-1 text-sm text-muted-foreground">{deltaLabel}</p>
           </div>
 
-          <div className="relative aspect-square h-24 w-24 shrink-0 sm:h-28 sm:w-28">
+          <div className="relative aspect-square h-32 w-32 shrink-0 overflow-visible">
             <ChartContainer
               config={chartConfig}
-              className="aspect-square h-full w-full"
+              className="aspect-square h-full w-full overflow-visible"
               aria-label={ariaLabel}
             >
               <PieChart>
                 {totalFindings > 0 ? (
                   <ChartTooltip
+                    cursor={false}
+                    position={{ x: -120, y: 8 }}
+                    wrapperStyle={{ pointerEvents: "none" }}
                     content={
                       <ChartTooltipContent nameKey="category" hideLabel />
                     }
@@ -125,8 +128,8 @@ export function OverallHealthCard({
                   data={pieData}
                   dataKey="count"
                   nameKey="category"
-                  innerRadius={28}
-                  outerRadius={46}
+                  innerRadius={42}
+                  outerRadius={60}
                   paddingAngle={totalFindings > 0 ? 3 : 0}
                   cornerRadius={totalFindings > 0 ? 3 : 0}
                   stroke="var(--card)"
@@ -149,7 +152,7 @@ export function OverallHealthCard({
         </div>
 
         {categoryBreakdown.length > 0 ? (
-          <div className="mt-4 border-t pt-3">
+          <div className="border-t pt-3">
             <ul
               className="space-y-1.5 text-xs"
               aria-label="Category breakdown legend"
