@@ -157,6 +157,7 @@ class IdentityClaims:
 @dataclass(frozen=True, slots=True)
 class ActiveWorkspace:
     workspace_id: uuid.UUID
+    name: str
     role_id: str
 
 
@@ -275,15 +276,20 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     db.add(user)
     db.flush()
 
+    _create_workspace_records(db, user.id, name="My Workspace")
+    return user
+
+
+def _create_workspace_records(db: DbSession, user_id: uuid.UUID, *, name: str) -> uuid.UUID:
+    """Create a ready-to-use workspace owned by ``user_id`` in this transaction."""
     workspace_id = uuid.uuid4()
     set_workspace_context(db, workspace_id)
 
-    db.add(Workspace(id=workspace_id))
+    db.add(Workspace(id=workspace_id, name=name))
     db.flush()
-
     db.add(
         Membership(
-            user_id=user.id,
+            user_id=user_id,
             workspace_id=workspace_id,
             status=MembershipStatus.ACTIVE,
             role_id="org-admin",
@@ -306,7 +312,25 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     _seed_demo_repository(db, workspace_id)
     db.flush()
-    return user
+    return workspace_id
+
+
+def create_workspace(
+    db: DbSession, *, session_id: uuid.UUID, user_id: uuid.UUID, name: str
+) -> ActiveWorkspace | None:
+    """Create another workspace for a signed-in user and select it for this session.
+
+    The session switch performs the final ownership and active-session check. If
+    that check fails, the caller rolls back the transaction, including every new
+    workspace record created above.
+    """
+    workspace_id = _create_workspace_records(db, user_id, name=name)
+    return switch_session_workspace(
+        db,
+        session_id=session_id,
+        user_id=user_id,
+        workspace_id=workspace_id,
+    )
 
 
 def resolve_workspace(db: DbSession, user_id: uuid.UUID) -> uuid.UUID:
@@ -337,7 +361,13 @@ def list_active_workspaces(
         ),
         {"session_id": session_id, "user_id": user_id},
     ).all()
-    return [ActiveWorkspace(row.workspace_id, row.role_id) for row in rows]
+    workspaces = []
+    for row in rows:
+        set_workspace_context(db, row.workspace_id)
+        name = db.scalar(select(Workspace.name).where(Workspace.id == row.workspace_id))
+        if name is not None:
+            workspaces.append(ActiveWorkspace(row.workspace_id, name, row.role_id))
+    return workspaces
 
 
 def switch_session_workspace(

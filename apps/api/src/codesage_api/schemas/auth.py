@@ -5,13 +5,36 @@ Carries no token and no password. Those never leave this server (SEC-09).
 
 from __future__ import annotations
 
+from pydantic import Field, field_validator
+
 from codesage_api.schemas.base import ApiModel
 
 
 class WorkspaceSummaryOut(ApiModel):
     workspace_id: str
+    name: str
     role: str
     is_active: bool
+
+
+class WorkspaceNameIn(ApiModel):
+    name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Workspace name cannot be blank.")
+        return stripped
+
+
+class CreateWorkspaceIn(WorkspaceNameIn):
+    pass
+
+
+class UpdateWorkspaceIn(WorkspaceNameIn):
+    pass
 
 
 class SwitchWorkspaceIn(ApiModel):
