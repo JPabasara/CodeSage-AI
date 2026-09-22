@@ -27,11 +27,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Invoke-Kubectl {
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+    param(
+        [Parameter(Mandatory)][string[]]$KubectlArguments,
+        [switch]$AllowNonZeroExit
+    )
 
-    $output = & kubectl --kubeconfig $AdminKubeconfig @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "kubectl failed: kubectl --kubeconfig `"$AdminKubeconfig`" $($Arguments -join ' ')"
+    $output = & kubectl --kubeconfig $AdminKubeconfig @KubectlArguments
+    if ($LASTEXITCODE -ne 0 -and -not $AllowNonZeroExit) {
+        throw "kubectl failed: kubectl --kubeconfig `"$AdminKubeconfig`" $($KubectlArguments -join ' ')"
     }
 
     return ($output | Out-String).Trim()
@@ -48,10 +51,12 @@ if (-not (Test-Path -LiteralPath $tokenManifest -PathType Leaf)) {
 
 # Applying the same manifest is idempotent. Kubernetes populates the token
 # asynchronously, so wait briefly instead of reading or printing a partial Secret.
-Invoke-Kubectl apply -f $tokenManifest | Out-Null
+Invoke-Kubectl -KubectlArguments @('apply', '-f', $tokenManifest) | Out-Null
 $tokenBase64 = ''
 for ($attempt = 1; $attempt -le 15; $attempt++) {
-    $tokenBase64 = Invoke-Kubectl get secret $TokenSecretName -n $Namespace -o 'jsonpath={.data.token}'
+    $tokenBase64 = Invoke-Kubectl -KubectlArguments @(
+        'get', 'secret', $TokenSecretName, '-n', $Namespace, '-o', 'jsonpath={.data.token}'
+    )
     if ($tokenBase64) {
         break
     }
@@ -61,14 +66,20 @@ if (-not $tokenBase64) {
     throw "Kubernetes did not populate Secret/$TokenSecretName with a service-account token."
 }
 
-$caData = Invoke-Kubectl config view --raw --minify -o 'jsonpath={.clusters[0].cluster.certificate-authority-data}'
+$caData = Invoke-Kubectl -KubectlArguments @(
+    'config', 'view', '--raw', '--minify', '-o', 'jsonpath={.clusters[0].cluster.certificate-authority-data}'
+)
 if (-not $caData) {
     throw 'The administrator kubeconfig did not contain embedded certificate-authority-data.'
 }
 
 $serviceAccountSubject = "system:serviceaccount:$Namespace`:$ServiceAccount"
-$canPatchDeployments = Invoke-Kubectl auth can-i patch deployments -n $Namespace --as=$serviceAccountSubject
-$canReadSecrets = Invoke-Kubectl auth can-i get secrets -n $Namespace --as=$serviceAccountSubject
+$canPatchDeployments = Invoke-Kubectl -KubectlArguments @(
+    'auth', 'can-i', 'patch', 'deployments', '-n', $Namespace, "--as=$serviceAccountSubject"
+) -AllowNonZeroExit
+$canReadSecrets = Invoke-Kubectl -KubectlArguments @(
+    'auth', 'can-i', 'get', 'secrets', '-n', $Namespace, "--as=$serviceAccountSubject"
+) -AllowNonZeroExit
 if ($canPatchDeployments -ne 'yes' -or $canReadSecrets -ne 'no') {
     throw "RBAC validation failed. Expected patch deployments=yes and get secrets=no; got $canPatchDeployments and $canReadSecrets."
 }
