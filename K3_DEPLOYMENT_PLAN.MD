@@ -1043,9 +1043,12 @@ Environment **variables**:
 | `production` | `PRODUCTION_DEPLOY_ENABLED`       | Secure runner-to-k3s API access works and `KUBECONFIG_B64` contains the restricted deployer kubeconfig. |
 | `production` | `PRODUCTION_PUBLIC_SMOKE_ENABLED` | Phases 20 and 21 are complete: DNS points at k3s and its trusted production TLS certificate is ready.   |
 
-Until a variable is explicitly set to `true`, the corresponding job is safely
-skipped. This permits the workflow to be merged now without testing an
-unverified Railway domain or reaching k3s with no configured credential.
+Until a variable is explicitly set to `true`, the corresponding deployment or
+smoke **steps** are safely skipped. The Environment-referencing gate job still
+starts so GitHub can load that Environment's variables; it does not connect to
+k3s, restore credentials, or run a browser test while its gate is false. This
+permits the workflow to be merged now without testing an unverified Railway
+domain or reaching k3s with no configured credential.
 
 Use a separate deployment concurrency group for each target:
 
