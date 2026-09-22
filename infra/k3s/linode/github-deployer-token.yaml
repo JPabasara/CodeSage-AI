@@ -1,0 +1,18 @@
+# This Secret asks Kubernetes to mint a token for the namespace-scoped
+# github-deployer ServiceAccount. It deliberately contains no token value in
+# Git; Kubernetes fills .data.token after the manifest is applied.
+#
+# The resulting token is long-lived. Keep its derived kubeconfig only in the
+# GitHub production Environment secret and rotate it immediately if exposed.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-deployer-token
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: github-deployer
+    app.kubernetes.io/part-of: codesage-ai
+  annotations:
+    kubernetes.io/service-account.name: github-deployer
+type: kubernetes.io/service-account-token
