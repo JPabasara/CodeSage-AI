@@ -157,7 +157,9 @@ export function AppRail() {
                         onClick={() => setOpenMobile(false)}
                       >
                         <Icon />
-                        <span>{item.label}</span>
+                        <span className="group-data-[collapsible=icon]:hidden">
+                          {item.label}
+                        </span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -217,7 +219,9 @@ export function AppRail() {
                 className="min-w-0 flex-1"
               >
                 <LogOut />
-                <span>Sign out</span>
+                <span className="group-data-[collapsible=icon]:hidden">
+                  Sign out
+                </span>
               </SidebarMenuButton>
               <SidebarMenuButton
                 type="button"

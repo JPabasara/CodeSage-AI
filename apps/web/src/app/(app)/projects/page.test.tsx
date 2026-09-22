@@ -77,7 +77,7 @@ test("selecting a project stores it before opening the dashboard", async () => {
   await ready()
 
   const dashboardLink = screen.getByRole("link", {
-    name: /open dashboard for acme\/web-store/i,
+    name: /go to dashboard for acme\/web-store/i,
   })
   dashboardLink.addEventListener("click", (event) => event.preventDefault())
   await userEvent.click(dashboardLink)
@@ -85,6 +85,18 @@ test("selecting a project stores it before opening the dashboard", async () => {
   expect(dashboardLink).toHaveAttribute("href", `/dashboard/${mockRepos[1].id}`)
 
   expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+})
+
+test("selecting a project can be done without opening the dashboard", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await userEvent.click(
+    screen.getByRole("button", { name: /select acme\/web-store/i }),
+  )
+
+  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+  expect(pushMock).not.toHaveBeenCalled()
 })
 
 test("a private repository explains itself instead of failing generically", async () => {

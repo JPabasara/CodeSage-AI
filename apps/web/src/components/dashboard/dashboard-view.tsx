@@ -47,12 +47,17 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const branchFromUrl = searchParams.get("branch") ?? undefined
   const snapshotId = searchParams.get("snapshot_id") ?? undefined
   const [pickedBranch, setPickedBranch] = useState<string>()
+  const branchNames = branches?.map((branch) => branch.name)
+  const branchIsAvailable = (branch: string | undefined) =>
+    Boolean(branch && (!branchNames || branchNames.includes(branch)))
+  const fallbackBranch =
+    branches?.find((branch) => branch.is_default)?.name ?? branches?.[0]?.name
   const activeBranch =
-    branchFromUrl ??
-    pickedBranch ??
-    branches?.find((b) => b.is_default)?.name ??
-    branches?.[0]?.name ??
-    ""
+    (branchIsAvailable(branchFromUrl)
+      ? branchFromUrl
+      : branchIsAvailable(pickedBranch)
+        ? pickedBranch
+        : fallbackBranch) ?? ""
   const { data: scanHistory } = useScanHistory(repoId, activeBranch)
 
   const {
@@ -140,6 +145,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     scanHistory && scanHistory.length > 0
       ? {
           isHistorical: Boolean(snapshotId),
+          isLatest: currentScanIndex === 0,
           positionLabel:
             currentScanIndex >= 0
               ? `${scanHistory.length - currentScanIndex}/${scanHistory.length}`
@@ -266,7 +272,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               onClose={closeFinding}
             />
           ) : (
-            <div className="grid shrink-0 gap-4 sm:grid-cols-2">
+            <div className="grid shrink-0 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
               <OverallHealthCard
                 score={report.health_score}
                 grade={report.grade}

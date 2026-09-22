@@ -158,6 +158,7 @@ test("a snapshot_id URL loads historical mode and can return to latest", async (
       screen.queryByRole("button", { name: /latest scan/i }),
     ).not.toBeInTheDocument(),
   )
+  expect(screen.getByText("Latest")).toBeInTheDocument()
   expect(screen.getByText(LATEST_POSITION)).toBeInTheDocument()
 })
 
@@ -169,6 +170,7 @@ test("normal dashboard arrows can move to an older scan", async () => {
   expect(
     screen.queryByRole("button", { name: /latest scan/i }),
   ).not.toBeInTheDocument()
+  expect(screen.getByText("Latest")).toBeInTheDocument()
   const older = await screen.findByRole("button", { name: /older scan/i })
   await waitFor(() => expect(older).not.toBeDisabled())
   await userEvent.click(older)
@@ -179,6 +181,23 @@ test("normal dashboard arrows can move to an older scan", async () => {
     expect(screen.getByRole("button", { name: /latest scan/i })).toBeVisible(),
   )
   expect(screen.getByText(ONE_BEFORE_LATEST_POSITION)).toBeInTheDocument()
+})
+
+test("changing branches updates the URL and leaves historical snapshot mode", async () => {
+  const older = mockScanHistory[1]
+  nav.navigate(
+    `/dashboard/${DEMO_REPO_ID}?branch=${older.branch}&snapshot_id=${older.snapshot_id}`,
+  )
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  await user.click(screen.getByLabelText("Branch"))
+  await user.click(await screen.findByRole("option", { name: "develop" }))
+
+  expect(nav.read().get("branch")).toBe("develop")
+  expect(nav.read().get("snapshot_id")).toBeNull()
+  expect(nav.read().get("finding")).toBeNull()
 })
 
 test("renders the ranked-list label and tree legend", async () => {
