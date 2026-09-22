@@ -18,7 +18,10 @@ EXPECTED_TABLES = {
     "membership",
     "ml_model_version",
     "process_metric",
+    "permission",
     "repository",
+    "role",
+    "role_permission",
     "rule_definition",
     "satd_marker_pattern",
     "satd_prediction",
@@ -32,6 +35,7 @@ EXPECTED_TABLES = {
     "source_location",
     "static_metric",
     "workspace",
+    "workspace_invitation",
 }
 
 

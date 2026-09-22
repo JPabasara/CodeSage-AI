@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "permissions": {
+    "project:read": "View all projects in the workspace",
+    "repository:read": "View connected repositories and repository details",
+    "repository:connect": "Connect repositories to the workspace",
+    "repository:disconnect": "Disconnect repositories from the workspace",
+    "scan:start": "Start scans for repositories in the workspace",
+    "scan:cancel_own": "Cancel scans started by the same user",
+    "scan:cancel_any": "Cancel any running scan in the workspace",
+    "result:read": "View findings and analysis results",
+    "history:read": "View scan and analysis history",
+    "profile:read": "View scoring profiles",
+    "profile:update": "Apply/change the workspace scoring profile",
+    "member:read": "View workspace members and their roles",
+    "member:manage": "Invite/remove members and assign roles",
+    "workspace:update": "Modify workspace settings"
+  },
+  "roles": {
+    "org-admin": [
+      "project:read",
+      "repository:read",
+      "repository:connect",
+      "repository:disconnect",
+      "scan:start",
+      "scan:cancel_own",
+      "scan:cancel_any",
+      "result:read",
+      "history:read",
+      "profile:read",
+      "profile:update",
+      "member:read",
+      "member:manage",
+      "workspace:update"
+    ],
+    "manager": [
+      "project:read",
+      "repository:read",
+      "repository:connect",
+      "repository:disconnect",
+      "scan:start",
+      "scan:cancel_own",
+      "scan:cancel_any",
+      "result:read",
+      "history:read",
+      "profile:read",
+      "profile:update",
+      "member:read"
+    ],
+    "developer": [
+      "project:read",
+      "repository:read",
+      "scan:start",
+      "scan:cancel_own",
+      "result:read",
+      "history:read",
+      "profile:read",
+      "member:read"
+    ],
+    "viewer": [
+      "project:read",
+      "repository:read",
+      "result:read",
+      "history:read",
+      "profile:read",
+      "member:read"
+    ]
+  }
+}

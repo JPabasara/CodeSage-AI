@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     asgardeo_redirect_uri: str = "http://localhost:8000/api/auth/callback"
     frontend_base_url: str = "http://localhost:3000"
 
+    # ── Transactional email ────────────────────────────────────────────────
+    # Server-side only. The browser never receives the Resend API key.
+    resend_api_key: str = ""
+    invitation_from_email: str = "CodeSage <onboarding@resend.dev>"
+    email_timeout_seconds: float = 10.0
+
     # ── The session cookie ───────────────────────────────────────────────────
     session_cookie_name: str = "codesage_session"
     # Signed out after an hour of doing nothing...

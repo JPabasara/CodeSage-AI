@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
@@ -44,6 +44,7 @@ from codesage_api.errors import (
 from codesage_api.integrations.github import fetch_repository, parse_github_url
 from codesage_api.scoring.config_loader import get_presets
 from codesage_api.scoring.enums import Category
+from codesage_api.services.memberships import get_active_membership
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,14 @@ class IdentityClaims:
     name: str | None
     picture: str | None
     identity_provider: str | None
+    email_verified: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveWorkspace:
+    workspace_id: uuid.UUID
+    name: str
+    role_id: str
 
 
 def exchange_code_for_identity(code: str, code_verifier: str) -> IdentityClaims:
@@ -209,6 +218,7 @@ def exchange_code_for_identity(code: str, code_verifier: str) -> IdentityClaims:
         name=claims.get("name") or claims.get("username"),
         picture=claims.get("picture"),
         identity_provider=claims.get("idp"),
+        email_verified=claims.get("email_verified") is True,
     )
 
 
@@ -220,10 +230,14 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
     else:
         # Their name or picture may have changed since last time.
         user.email = claims.email or user.email
+        user.email_verified = claims.email_verified
         user.display_name = claims.name or user.display_name
         user.avatar_url = claims.picture or user.avatar_url
 
     workspace_id = resolve_workspace(db, user.id)
+    set_workspace_context(db, workspace_id)
+    if get_active_membership(db, user.id, workspace_id) is None:
+        raise NotAuthenticated
 
     now = datetime.now(timezone.utc)
     settings = get_settings()
@@ -243,7 +257,7 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     """First sign-in: create the user, their workspace, and a starting profile.
 
     Doing it here, once, means every later read can assume a workspace and an
-    active profile exist. 
+    active profile exist.
 
     Note the order. WORKSPACE, MEMBERSHIP and SCORING_PROFILE all carry a policy
     saying "this row must belong to the current workspace", and PostgreSQL checks
@@ -257,21 +271,28 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
         display_name=claims.name,
         avatar_url=claims.picture,
         identity_provider=claims.identity_provider,
+        email_verified=claims.email_verified,
     )
     db.add(user)
     db.flush()
 
+    _create_workspace_records(db, user.id, name="My Workspace")
+    return user
+
+
+def _create_workspace_records(db: DbSession, user_id: uuid.UUID, *, name: str) -> uuid.UUID:
+    """Create a ready-to-use workspace owned by ``user_id`` in this transaction."""
     workspace_id = uuid.uuid4()
     set_workspace_context(db, workspace_id)
 
-    db.add(Workspace(id=workspace_id))
+    db.add(Workspace(id=workspace_id, name=name))
     db.flush()
-
     db.add(
         Membership(
-            user_id=user.id,
+            user_id=user_id,
             workspace_id=workspace_id,
             status=MembershipStatus.ACTIVE,
+            role_id="org-admin",
         )
     )
 
@@ -291,7 +312,25 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     _seed_demo_repository(db, workspace_id)
     db.flush()
-    return user
+    return workspace_id
+
+
+def create_workspace(
+    db: DbSession, *, session_id: uuid.UUID, user_id: uuid.UUID, name: str
+) -> ActiveWorkspace | None:
+    """Create another workspace for a signed-in user and select it for this session.
+
+    The session switch performs the final ownership and active-session check. If
+    that check fails, the caller rolls back the transaction, including every new
+    workspace record created above.
+    """
+    workspace_id = _create_workspace_records(db, user_id, name=name)
+    return switch_session_workspace(
+        db,
+        session_id=session_id,
+        user_id=user_id,
+        workspace_id=workspace_id,
+    )
 
 
 def resolve_workspace(db: DbSession, user_id: uuid.UUID) -> uuid.UUID:
@@ -305,6 +344,53 @@ def resolve_workspace(db: DbSession, user_id: uuid.UUID) -> uuid.UUID:
     if workspace_id is None:
         raise NotAuthenticated
     return workspace_id
+
+
+def list_active_workspaces(
+    db: DbSession, *, session_id: uuid.UUID, user_id: uuid.UUID
+) -> list[ActiveWorkspace]:
+    """Discover only this authenticated user's active memberships.
+
+    The SECURITY DEFINER function is required because no workspace is bound
+    while discovering the set. It returns no user profile or membership rows.
+    """
+    rows = db.execute(
+        text(
+            "SELECT workspace_id, role_id "
+            "FROM app_active_workspaces_for_session(:session_id, :user_id)"
+        ),
+        {"session_id": session_id, "user_id": user_id},
+    ).all()
+    workspaces = []
+    for row in rows:
+        set_workspace_context(db, row.workspace_id)
+        name = db.scalar(select(Workspace.name).where(Workspace.id == row.workspace_id))
+        if name is not None:
+            workspaces.append(ActiveWorkspace(row.workspace_id, name, row.role_id))
+    return workspaces
+
+
+def switch_session_workspace(
+    db: DbSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> ActiveWorkspace | None:
+    """Switch one server-side session after an atomic active-membership check."""
+    switched = db.scalar(
+        select(func.app_switch_session_workspace(session_id, user_id, workspace_id))
+    )
+    if not switched:
+        return None
+    return next(
+        (
+            workspace
+            for workspace in list_active_workspaces(db, session_id=session_id, user_id=user_id)
+            if workspace.workspace_id == workspace_id
+        ),
+        None,
+    )
 
 
 def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | None:
@@ -329,6 +415,14 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
         db.delete(session)
         return None
 
+    # A valid cookie is not sufficient once membership has been revoked.
+    # Bind only the workspace recorded by the server-side session, then check
+    # the current membership. Do not activate invitations during sign-in.
+    set_workspace_context(db, session.workspace_id)
+    if get_active_membership(db, session.user_id, session.workspace_id) is None:
+        db.delete(session)
+        return None
+
     settings = get_settings()
     session.last_used_at = now
     session.expires_at = min(
@@ -339,7 +433,7 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
 
 
 def end_session(db: DbSession, raw_cookie: str | None) -> None:
-    """Delete the row. After this the cookie is a meaningless number """
+    """Delete the row. After this the cookie is a meaningless number"""
     if not raw_cookie:
         return
     try:

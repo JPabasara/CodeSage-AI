@@ -87,6 +87,184 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the signed-in user's active workspaces
+         * @description Returns only active memberships belonging to the authenticated user.
+         *     Invited and inactive memberships, and every other user's memberships,
+         *     are excluded. Exactly one item matches the session's active workspace.
+         */
+        get: operations["list_active_workspaces"];
+        put?: never;
+        /**
+         * Create and select another workspace
+         * @description Requires the signed-in user to be an org-admin of the active workspace.
+         *     Creates a named workspace with that user as its active org-admin,
+         *     provisions the default scoring profile and demo repository, and selects
+         *     it for only the current server-side session.
+         */
+        post: operations["create_workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/workspaces/{workspace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename the active workspace
+         * @description Requires org-admin access. The path must identify the session's active
+         *     workspace; another workspace returns 404 even if the user belongs to it.
+         */
+        patch: operations["rename_workspace"];
+        trace?: never;
+    };
+    "/api/auth/workspaces/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Switch the session's active workspace
+         * @description Updates only the current server-side session after verifying that the
+         *     authenticated user has an active membership in the requested workspace.
+         *     A missing, inactive, invited, or foreign membership returns the same 404.
+         */
+        put: operations["switch_active_workspace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace members and pending invitations */
+        get: operations["list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invite an email address to the active workspace
+         * @description Creates the invitation and sends its one-time acceptance link through
+         *     Resend. The transaction is rolled back if delivery cannot be requested.
+         */
+        post: operations["create_invitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept an invitation as the signed-in, verified identity */
+        post: operations["accept_invitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/{invitation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a pending invitation */
+        delete: operations["revoke_invitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/members/{membership_id}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change a workspace member's role */
+        patch: operations["change_member_role"];
+        trace?: never;
+    };
+    "/api/members/{membership_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deactivate a workspace membership */
+        delete: operations["deactivate_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -503,7 +681,7 @@ export interface components {
          *     members never change meaning.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -598,6 +776,76 @@ export interface components {
              * @example github
              */
             identity_provider?: string | null;
+        };
+        WorkspaceSummary: {
+            /** Format: uuid */
+            workspace_id: string;
+            name: string;
+            /** @enum {string} */
+            role: "org-admin" | "manager" | "developer" | "viewer";
+            /** @description Whether this workspace is selected by the current session. */
+            is_active: boolean;
+        };
+        SwitchWorkspaceRequest: {
+            /** Format: uuid */
+            workspace_id: string;
+        };
+        CreateWorkspaceRequest: {
+            name: string;
+        };
+        UpdateWorkspaceRequest: {
+            name: string;
+        };
+        /** @enum {string} */
+        Role: "org-admin" | "manager" | "developer" | "viewer";
+        Member: {
+            /** Format: uuid */
+            membership_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: email */
+            email?: string | null;
+            name?: string | null;
+            role: components["schemas"]["Role"];
+            /** @enum {string} */
+            status: "active" | "inactive" | "invited";
+        };
+        Invitation: {
+            /** Format: uuid */
+            invitation_id: string;
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["Role"];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        MemberList: {
+            members: components["schemas"]["Member"][];
+            pending_invitations: components["schemas"]["Invitation"][];
+        };
+        CreateInvitationRequest: {
+            /** Format: email */
+            email: string;
+            role: components["schemas"]["Role"];
+            /** @default 72 */
+            expires_in_hours: number;
+        };
+        CreatedInvitation: components["schemas"]["Invitation"] & {
+            /** Format: uri */
+            invitation_url: string;
+        };
+        AcceptInvitationRequest: {
+            token: string;
+        };
+        AcceptedInvitation: {
+            /** Format: uuid */
+            workspace_id: string;
+            /** Format: uuid */
+            membership_id: string;
+            role: components["schemas"]["Role"];
+        };
+        ChangeMemberRoleRequest: {
+            role: components["schemas"]["Role"];
         };
         ConnectRepoRequest: {
             /**
@@ -1009,6 +1257,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The operation would violate a workspace invariant. */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /**
          * @description The request body is malformed — a wrong type, a missing key, or an unknown
          *     category. Distinct from an out-of-range weight, which is clamped and
@@ -1086,6 +1343,7 @@ export interface components {
         };
     };
     parameters: {
+        WorkspaceId: string;
         /** @description The connected repository's identifier. */
         RepoId: string;
         /**
@@ -1185,6 +1443,261 @@ export interface operations {
                 };
             };
             401: components["responses"]["NotAuthenticated"];
+        };
+    };
+    list_active_workspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active workspaces available to this session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"][];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+        };
+    };
+    create_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly created and active workspace. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    rename_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description The renamed active workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    switch_active_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly active workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    list_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Members and unexpired pending invitations in the active workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberList"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    create_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInvitationRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation created and submitted for email delivery. The URL is also returned for copying. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedInvitation"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["UpstreamUnavailable"];
+        };
+    };
+    accept_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInvitationRequest"];
+            };
+        };
+        responses: {
+            /** @description Membership activated with the role stored on the invitation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedInvitation"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revoke_invitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    change_member_role: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeMemberRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated member. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deactivate_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Membership deactivated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     sign_out: {

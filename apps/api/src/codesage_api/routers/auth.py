@@ -4,6 +4,7 @@ import base64
 import hashlib
 import secrets
 import uuid
+from typing import Annotated
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -12,11 +13,24 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.models import User
+from codesage_api.authorization.context import AuthorizationContext
+from codesage_api.db.models import User, Workspace
 from codesage_api.db.session import SessionLocal
-from codesage_api.deps import get_current_user_id, get_db, get_workspace_id
-from codesage_api.errors import MisconfiguredSignIn, SignInFailed
-from codesage_api.schemas.auth import SessionOut
+from codesage_api.deps import (
+    get_current_session_id,
+    get_current_user_id,
+    get_db,
+    get_workspace_id,
+    require_permission,
+)
+from codesage_api.errors import MisconfiguredSignIn, NotFound, SignInFailed
+from codesage_api.schemas.auth import (
+    CreateWorkspaceIn,
+    SessionOut,
+    SwitchWorkspaceIn,
+    UpdateWorkspaceIn,
+    WorkspaceSummaryOut,
+)
 from codesage_api.services import auth as auth_service
 
 public_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -25,6 +39,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 HANDSHAKE_COOKIE = "codesage_signin"
 HANDSHAKE_SECONDS = 600
+WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
 
 
 def _signer() -> URLSafeTimedSerializer:
@@ -49,9 +64,7 @@ def begin_sign_in() -> RedirectResponse:
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
-        .decode()
-        .rstrip("=")
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     )
 
     query = urlencode(
@@ -99,7 +112,6 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     try:
         claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
     except SignInFailed:
-      
         return _back_to_login("failed")
 
     db = SessionLocal()
@@ -118,10 +130,10 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     )
     response.set_cookie(
         key=settings.session_cookie_name,
-        value=session_id,            # a random id, never a token
-        httponly=True,               # JavaScript cannot read it, so XSS cannot steal it
+        value=session_id,  # a random id, never a token
+        httponly=True,  # JavaScript cannot read it, so XSS cannot steal it
         secure=settings.cookie_secure,
-        samesite="lax",              # another website cannot make the browser send it
+        samesite="lax",  # another website cannot make the browser send it
         max_age=settings.session_idle_minutes * 60,
         path="/",
         domain=settings.cookie_domain or None,
@@ -154,6 +166,115 @@ def current_user(
         avatar_url=user.avatar_url,
         identity_provider=user.identity_provider,
     )
+
+
+@router.get("/workspaces", response_model=list[WorkspaceSummaryOut])
+def list_workspaces(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session_id: uuid.UUID = Depends(get_current_session_id),
+    workspace_id: uuid.UUID = Depends(get_workspace_id),
+) -> list[WorkspaceSummaryOut]:
+    db = SessionLocal()
+    try:
+        workspaces = auth_service.list_active_workspaces(db, session_id=session_id, user_id=user_id)
+        return [
+            WorkspaceSummaryOut(
+                workspace_id=str(workspace.workspace_id),
+                name=workspace.name,
+                role=workspace.role_id,
+                is_active=workspace.workspace_id == workspace_id,
+            )
+            for workspace in workspaces
+        ]
+    finally:
+        db.close()
+
+
+@router.post("/workspaces", response_model=WorkspaceSummaryOut, status_code=status.HTTP_201_CREATED)
+def create_workspace(
+    body: CreateWorkspaceIn,
+    context: WorkspaceAdmin,
+    session_id: uuid.UUID = Depends(get_current_session_id),
+) -> WorkspaceSummaryOut:
+    db = SessionLocal()
+    try:
+        created = auth_service.create_workspace(
+            db,
+            session_id=session_id,
+            user_id=context.user_id,
+            name=body.name,
+        )
+        if created is None:
+            raise NotFound
+        db.commit()
+        return WorkspaceSummaryOut(
+            workspace_id=str(created.workspace_id),
+            name=created.name,
+            role=created.role_id,
+            is_active=True,
+        )
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
+def rename_workspace(
+    workspace_id: uuid.UUID,
+    body: UpdateWorkspaceIn,
+    context: WorkspaceAdmin,
+    db: DbSession = Depends(get_db),
+) -> WorkspaceSummaryOut:
+    if workspace_id != context.workspace_id:
+        raise NotFound
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise NotFound
+    workspace.name = body.name
+    db.flush()
+    return WorkspaceSummaryOut(
+        workspace_id=str(workspace.id),
+        name=workspace.name,
+        role=context.role_id,
+        is_active=True,
+    )
+
+
+@router.put("/workspaces/active", response_model=WorkspaceSummaryOut)
+def switch_workspace(
+    body: SwitchWorkspaceIn,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session_id: uuid.UUID = Depends(get_current_session_id),
+) -> WorkspaceSummaryOut:
+    try:
+        workspace_id = uuid.UUID(body.workspace_id)
+    except ValueError as exc:
+        raise NotFound from exc
+
+    db = SessionLocal()
+    try:
+        selected = auth_service.switch_session_workspace(
+            db,
+            session_id=session_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
+        if selected is None:
+            raise NotFound
+        db.commit()
+        return WorkspaceSummaryOut(
+            workspace_id=str(selected.workspace_id),
+            name=selected.name,
+            role=selected.role_id,
+            is_active=True,
+        )
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def _post_logout_redirect() -> str:

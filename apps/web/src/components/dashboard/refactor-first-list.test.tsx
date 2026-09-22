@@ -59,18 +59,22 @@ test("sorts findings by priority, highest first", () => {
   expect(findingCards()[0]).toHaveTextContent("critical one")
 })
 
-test("labels the list as ranked by priority", () => {
+test("renders explicit rank (#) badge with 1-based sequential rank numbers", () => {
   render(<RefactorFirstList findings={findings} />)
-  expect(screen.getByText(/ranked by priority/i)).toBeInTheDocument()
+  const cards = findingCards()
+  expect(cards[0]).toHaveTextContent("#1")
+  expect(cards[1]).toHaveTextContent("#2")
+  expect(cards[2]).toHaveTextContent("#3")
 })
 
-test("clicking a finding card fires onSelect with that finding", async () => {
-  const onSelect = vi.fn()
-  render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
-
-  await userEvent.click(screen.getByRole("button", { name: /critical one/i }))
-
-  expect(onSelect).toHaveBeenCalledWith(findings[1])
+test("renders count badge and explanatory ranking subtitle", () => {
+  render(<RefactorFirstList findings={findings} />)
+  const heading = screen.getByRole("heading", { name: /refactor first/i })
+  expect(heading).toBeInTheDocument()
+  expect(
+    screen.getByText("Ranked by severity × risk — start at the top."),
+  ).toBeInTheDocument()
+  expect(within(heading.parentElement!).getByText("3")).toBeInTheDocument()
 })
 
 test("cards include source, category and compact location", () => {
@@ -82,9 +86,63 @@ test("cards include source, category and compact location", () => {
   expect(critical).toHaveTextContent("b.ts:2")
 })
 
-test("filters the list by debt type", async () => {
+test("renders full reason in title attribute for hover accessibility", () => {
+  render(<RefactorFirstList findings={findings} />)
+  const reasonText = screen.getByText("critical one")
+  expect(reasonText).toHaveAttribute("title", "critical one")
+})
+
+test("caps findings list to 10 items and toggles show all / show top 10", async () => {
+  const fifteenFindings: Finding[] = Array.from({ length: 15 }, (_, i) => ({
+    fingerprint: `f-${i}`,
+    source: "rule",
+    category: "code-design",
+    severity: "medium",
+    file: `file-${i}.ts`,
+    line: i + 1,
+    symbol: `func${i}`,
+    reason: `Finding number ${i + 1}`,
+    status: "open",
+    priority: 15 - i,
+    pinned_by_floor: false,
+  }))
+
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={fifteenFindings} />)
+
+  expect(findingCards().length).toBe(10)
+
+  const toggleBtn = screen.getByRole("button", {
+    name: /show all 15 findings/i,
+  })
+  expect(toggleBtn).toBeInTheDocument()
+
+  await user.click(toggleBtn)
+
+  expect(findingCards().length).toBe(15)
+  expect(
+    screen.getByRole("button", { name: /show top 10/i }),
+  ).toBeInTheDocument()
+
+  await user.click(screen.getByRole("button", { name: /show top 10/i }))
+  expect(findingCards().length).toBe(10)
+})
+
+test("clicking a finding card fires onSelect with that finding", async () => {
+  const onSelect = vi.fn()
+  render(<RefactorFirstList findings={findings} onSelect={onSelect} />)
+
+  await userEvent.click(screen.getByRole("button", { name: /critical one/i }))
+
+  expect(onSelect).toHaveBeenCalledWith(findings[1])
+})
+
+test("filters the list by debt type and updates count badge", async () => {
   const user = userEvent.setup()
   render(<RefactorFirstList findings={findings} />)
+
+  const heading = screen.getByRole("heading", { name: /refactor first/i })
+  expect(within(heading.parentElement!).getByText("3")).toBeInTheDocument()
 
   await user.click(
     screen.getByRole("combobox", { name: /filter by debt type/i }),
@@ -93,6 +151,7 @@ test("filters the list by debt type", async () => {
 
   expect(screen.getByText("critical one")).toBeInTheDocument()
   expect(screen.queryByText("low one")).not.toBeInTheDocument()
+  expect(within(heading.parentElement!).getByText("1 of 3")).toBeInTheDocument()
 })
 
 test("zero findings displays the celebratory empty state (U-14)", () => {
@@ -109,8 +168,6 @@ test("zero findings displays the celebratory empty state (U-14)", () => {
       /run a new scan after pushing code changes to keep track of code health/i,
     ),
   ).toBeInTheDocument()
-
-  expect(screen.queryByRole("table")).not.toBeInTheDocument()
 })
 
 test("filtered to nothing names the active filter and provides a clear filter button (U-14)", async () => {

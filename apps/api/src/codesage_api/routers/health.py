@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from codesage_api.authorization.routes import require_health_read
 from codesage_api.deps import get_db, get_workspace_id
 from codesage_api.schemas import HealthReportOut
 from codesage_api.services import dashboard
@@ -13,7 +14,7 @@ from codesage_api.services import dashboard
 router = APIRouter(prefix="/repos/{repo_id}", tags=["dashboard"])
 
 
-@router.get("/health", response_model=HealthReportOut)
+@router.get("/health", response_model=HealthReportOut, dependencies=[Depends(require_health_read)])
 def get_health_report(
     repo_id: uuid.UUID,
     branch: str,

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from codesage_api.routers import auth, branches, health, profiles, projects, scans, system
+from codesage_api.routers import auth, branches, health, members, profiles, projects, scans, system
 
 # No sign-in required. The two endpoints whose job is to create a session, the
 # one whose job is to destroy it, and the liveness probe. Sign-out belongs here
@@ -23,5 +23,6 @@ api_router.include_router(branches.router)
 api_router.include_router(scans.router)
 api_router.include_router(health.router)
 api_router.include_router(profiles.router)
+api_router.include_router(members.router)
 
 __all__ = ["api_router", "public_router", "system"]

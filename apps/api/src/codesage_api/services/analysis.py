@@ -53,7 +53,8 @@ def _status_out(
 
 
 def start(
-    session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, branch: str
+    session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, branch: str,
+    *, actor_user_id: uuid.UUID,
 ) -> ScanStatusOut:
 
     stored_branch = attempts.get_branch(
@@ -79,7 +80,8 @@ def start(
         return _status_out(completed, stored_branch.name)
 
     attempt = attempts.create_queued(
-        session, stored_branch.id, remote_branch.head_commit_sha
+        session, stored_branch.id, remote_branch.head_commit_sha,
+        actor_user_id=actor_user_id, workspace_id=workspace_id,
     )
 
    
