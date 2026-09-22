@@ -462,6 +462,13 @@ jobs:
   deploy-production:
     name: deploy — k3s production
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      # Lets the Tailscale action exchange this job's GitHub OIDC token for a
+      # short-lived, tagged tailnet node. It does not grant GitHub repository
+      # write access or Kubernetes credentials.
+      id-token: write
     needs: [images, smoke-staging]
     if: >-
       github.ref == 'refs/heads/main' &&
@@ -474,6 +481,7 @@ jobs:
       cancel-in-progress: false
     env:
       K3S_NAMESPACE: ${{ vars.K3S_NAMESPACE }}
+      K3S_API_TAILNET_HOST: ${{ vars.K3S_API_TAILNET_HOST }}
       KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
       API_IMAGE: ghcr.io/jpabasara/codesage-ai/api:sha-${{ github.sha }}
       ML_IMAGE: ghcr.io/jpabasara/codesage-ai/ml:sha-${{ github.sha }}
@@ -481,11 +489,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Connect GitHub runner to k3s over Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:codesage-ci
+          # Wait for the protected k3s node before running kubectl. This avoids
+          # a transient peer-propagation race immediately after authentication.
+          ping: ${{ vars.K3S_API_TAILNET_HOST }}
+
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
 
       - name: Restore restricted kubeconfig
         run: |
+          if [ -z "$K3S_API_TAILNET_HOST" ]; then
+            echo "K3S_API_TAILNET_HOST must be the k3s server's Tailscale IPv4 address."
+            exit 1
+          fi
           if [ -z "$KUBECONFIG_B64" ]; then
             echo "KUBECONFIG_B64 is required after secure GitHub-to-k3s access is configured."
             exit 1
@@ -493,6 +515,12 @@ jobs:
           kubeconfig_path="$RUNNER_TEMP/codesage-kubeconfig"
           printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$kubeconfig_path"
           chmod 600 "$kubeconfig_path"
+          expected_server="https://${K3S_API_TAILNET_HOST}:6443"
+          configured_server="$(kubectl --kubeconfig "$kubeconfig_path" config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')"
+          if [ "$configured_server" != "$expected_server" ]; then
+            echo "The deployer kubeconfig must use $expected_server, not a public or admin endpoint."
+            exit 1
+          fi
           echo "KUBECONFIG=$kubeconfig_path" >> "$GITHUB_ENV"
 
       - name: Verify cluster and namespace access
@@ -501,12 +529,23 @@ jobs:
             echo "K3S_NAMESPACE must be codesageai."
             exit 1
           fi
+          if [ "$(kubectl -n "$K3S_NAMESPACE" auth can-i patch deployments)" != "yes" ]; then
+            echo "github-deployer must be able to patch deployments."
+            exit 1
+          fi
+          if [ "$(kubectl -n "$K3S_NAMESPACE" auth can-i get secrets)" != "no" ]; then
+            echo "github-deployer must not be able to read secrets."
+            exit 1
+          fi
           kubectl -n "$K3S_NAMESPACE" get deployment/api
 
       - name: Run the migration Job for this release
         run: |
           short_sha="${GITHUB_SHA::12}"
-          job_name="codesage-migrate-$short_sha"
+          # A workflow re-run must be able to run the migration check again.
+          # Including the run ID prevents a same-SHA Job collision without
+          # granting the deployer permission to delete historical Jobs.
+          job_name="codesage-migrate-$short_sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           job_manifest="$RUNNER_TEMP/$job_name.yaml"
           sed \
             -e "s/name: codesage-migrate/name: $job_name/" \
@@ -533,9 +572,9 @@ jobs:
       - name: Record deployed k3s images
         run: kubectl -n "$K3S_NAMESPACE" get deployments
 
-  # This is enabled only after Phase 20 DNS cutover. Before then the canonical
-  # public domains still resolve to Railway, so a GitHub-hosted browser cannot
-  # truthfully smoke-test k3s through them.
+  # This is enabled only after Phase 20 DNS cutover and Phase 21 production TLS
+  # issuance. Before then the canonical public domains either resolve to
+  # Railway or present the intentionally untrusted staging certificate.
   smoke-production:
     name: smoke — k3s production public edge
     runs-on: ubuntu-latest
