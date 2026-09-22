@@ -1,2 +1,143 @@
-# TODO: Add NetworkPolicy after the app works.
-# Apply this last because network rules can make debugging harder.
+# Apply this only after DNS, production TLS, and the complete application smoke
+# test are green. It establishes ingress isolation without guessing static IP
+# ranges for Neon, Upstash, GitHub, Asgardeo, or Resend.
+#
+# Native Kubernetes NetworkPolicy cannot safely restrict those services by
+# hostname. Egress is deliberately left non-isolated until a stable egress
+# proxy or provider-maintained IP policy is introduced.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Only the ingress-nginx controller can reach the two public HTTP services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx-to-web
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx-to-api
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# API and both queue workers are the only application workloads allowed to
+# reach the internal ML service. There is no public Ingress or ServiceLB route
+# for ML.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-ml
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: ml
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [codesage-ai]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [api, worker, score-worker]
+      ports:
+        - protocol: TCP
+          port: 8001
+---
+# cert-manager creates temporary HTTP-01 solver Pods in this namespace during
+# certificate issuance and renewal. They must stay reachable through
+# ingress-nginx despite the namespace-wide default deny policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx-to-acme-solver
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: 8089
