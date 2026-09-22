@@ -9,7 +9,7 @@ if (!webUrl || !apiUrl) {
   )
 }
 
-test("the deployed public web and API agree on the sign-in route", async ({
+test("the deployed public web and API agree on the sign-in handoff", async ({
   page,
   request,
 }) => {
@@ -22,10 +22,19 @@ test("the deployed public web and API agree on the sign-in route", async ({
 
   const signIn = page.getByRole("link", { name: /sign in/i }).first()
   await expect(signIn).toBeVisible()
-  await expect(signIn).toHaveAttribute("href", `${apiUrl}/api/auth/login`)
+  await expect(signIn).toHaveAttribute("href", /\/login$/)
 
   await page.goto("/login")
   await expect(
     page.getByRole("heading", { name: /continue to your dashboard/i }),
   ).toBeVisible()
+
+  const apiSignIn = page.getByRole("link", {
+    name: /sign in with asgardeo/i,
+  })
+  await expect(apiSignIn).toBeVisible()
+  await expect(apiSignIn).toHaveAttribute(
+    "href",
+    `${apiUrl}/api/auth/login`,
+  )
 })

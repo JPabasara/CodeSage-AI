@@ -115,17 +115,15 @@ export function AppRail() {
           href="/projects"
           title="CodeSage AI"
           onClick={() => setOpenMobile(false)}
-          className="flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+          className="flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:py-0"
         >
-          <span className="grid size-11 shrink-0 place-items-center rounded-md bg-background ring-1 ring-sidebar-border">
-            <Image
-              src="/codesage-refactor-branch-mark.svg"
-              alt=""
-              width={38}
-              height={38}
-              className="size-[38px]"
-            />
-          </span>
+          <Image
+            src="/codesage-refactor-branch-mark.svg"
+            alt=""
+            width={32}
+            height={32}
+            className="size-8 shrink-0"
+          />
           <span className="min-w-0 group-data-[collapsible=icon]:hidden">
             <span className="block truncate text-lg font-semibold leading-5">
               CodeSage AI
@@ -172,13 +170,28 @@ export function AppRail() {
 
       <SidebarFooter className="border-t border-sidebar-border/70">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              onClick={toggleSidebar}
+              tooltip={sidebarStateLabel}
+              aria-label={sidebarStateLabel}
+              title={sidebarStateLabel}
+              className="hidden md:flex"
+            >
+              <SidebarStateIcon />
+              <span className="group-data-[collapsible=icon]:hidden">
+                {sidebarStateLabel}
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           {session ? (
             <SidebarMenuItem>
               <div
-                className="flex min-w-0 items-center gap-2 rounded-md border border-sidebar-border/70 bg-sidebar-accent/40 px-2 py-2 text-xs group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                className="flex min-h-9 min-w-0 items-center gap-2 rounded-md border border-sidebar-border/70 bg-sidebar-accent/40 px-2 py-1.5 text-xs group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-h-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:p-0"
                 title={session.email ?? undefined}
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-sidebar-primary/10 text-sidebar-primary">
+                <span className="grid size-8 shrink-0 place-items-center rounded-md bg-sidebar-primary/10 text-sidebar-primary">
                   <UserRound className="size-4" />
                 </span>
                 <span className="min-w-0 group-data-[collapsible=icon]:hidden">
@@ -211,28 +224,17 @@ export function AppRail() {
             <form
               action={`${API_BASE}/api/auth/logout`}
               method="POST"
-              className="flex min-w-0 items-center gap-1"
+              className="min-w-0"
             >
               <SidebarMenuButton
                 type="submit"
                 tooltip="Sign out"
-                className="min-w-0 flex-1"
+                className="min-w-0"
               >
                 <LogOut />
                 <span className="group-data-[collapsible=icon]:hidden">
                   Sign out
                 </span>
-              </SidebarMenuButton>
-              <SidebarMenuButton
-                type="button"
-                onClick={toggleSidebar}
-                tooltip={sidebarStateLabel}
-                aria-label={sidebarStateLabel}
-                title={sidebarStateLabel}
-                className="hidden w-8 shrink-0 justify-center px-0 md:flex"
-              >
-                <SidebarStateIcon />
-                <span className="sr-only">{sidebarStateLabel}</span>
               </SidebarMenuButton>
             </form>
           </SidebarMenuItem>

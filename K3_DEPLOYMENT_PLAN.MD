@@ -1017,7 +1017,8 @@ API (runs Railway Neon migration) -> ML -> worker -> score-worker -> web
 ```
 
 Its deployed-browser smoke test waits for `/api/healthz`, opens the Railway
-landing and login pages in Chromium, and proves that the sign-in link points to
+landing and login pages in Chromium, proves that the public landing CTA reaches
+`/login`, and then proves that the login-page Asgardeo CTA points to
 `api.railway.codesageai.dev`. It deliberately does not complete Asgardeo login
 or start a scan: those are real user/data actions and remain the manual Phase
 17.5 smoke checklist.
