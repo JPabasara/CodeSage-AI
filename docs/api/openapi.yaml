@@ -814,27 +814,305 @@ paths:
     get:
       tags: [profiles]
       operationId: list_profiles
-      summary: Available profiles
+      summary: The workspace profile pool
       description: |
-        The three presets — **Balanced** (the workspace default), **Security-first**
-        and **Delivery-speed** — plus any custom profile. Selecting a preset seeds
-        the sliders in one interaction; adjusting from it is optional.
+        Every profile this workspace can score with: the three built-ins —
+        **Balanced**, **Security-first**, **Delivery-speed** — followed by up to
+        five custom profiles the team authored.
+
+        Each entry says what it is (`is_preset`), whether it is the workspace
+        default (`is_active`), how many projects name it explicitly
+        (`usage_count`) and whether it can be changed at all (`editable`), so the
+        Profiles screen can render the whole pool from one request.
+
+        Built-ins do **not** count toward the five-custom limit.
       responses:
         '200':
-          description: The available profiles.
+          description: The pool, built-ins first.
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ScoreProfile' }
         '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+    post:
+      tags: [profiles]
+      operationId: create_profile
+      summary: Create a custom profile
+      description: |
+        Adds one profile to the pool. It does **not** become the default — that is
+        a separate, deliberate choice via `PUT /api/profiles/default`.
+
+        A workspace holds at most **five** custom profiles. The sixth is refused
+        with `PROFILE_LIMIT_REACHED`, and the count is serialised in the database,
+        so two clients creating the sixth at the same moment cannot both succeed.
+
+        Names are unique per workspace after trimming and lower-casing; a clash
+        returns `PROFILE_NAME_CONFLICT`. Out-of-range weights are clamped and
+        returned as stored, the same as everywhere else in this contract.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProfileRequest' }
+      responses:
+        '201':
+          description: The profile as stored, after clamping.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: The pool is full, or the name is taken.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                limit:
+                  value:
+                    detail: A workspace can hold at most five custom scoring profiles.
+                    code: PROFILE_LIMIT_REACHED
+                name:
+                  value:
+                    detail: Another profile in this workspace already uses that name.
+                    code: PROFILE_NAME_CONFLICT
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/profiles/default:
+    get:
+      tags: [profiles]
+      operationId: get_default_profile
+      summary: The workspace default
+      description: |
+        The profile every project without an explicit override is scored with.
+      responses:
+        '200':
+          description: The workspace default.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+    put:
+      tags: [profiles]
+      operationId: set_default_profile
+      summary: Choose the workspace default
+      description: |
+        Points the workspace at any profile in its own pool, built-in or custom.
+        Replaces the whole selection rather than amending it, so re-sending the
+        same id is a no-op.
+
+        **This starts no scan.** Every project that inherits the default is
+        re-scored from snapshots it already has; no `SNAPSHOT`, `FINDING` or
+        `ANALYSIS_ATTEMPT` row is written. A profile is not a commit.
+
+        A `profile_id` from another workspace answers `404`, the same as an id
+        that exists nowhere.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelectProfileRequest' }
+      responses:
+        '200':
+          description: The profile now in force for the workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/profiles/{profile_id}:
+    parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [profiles]
+      operationId: get_profile
+      summary: One profile
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      tags: [profiles]
+      operationId: update_profile
+      summary: Change a custom profile
+      description: |
+        A **partial** update: send only what changed. Omitted fields keep their
+        stored value, which is what makes this safe to call from a form that only
+        tracks edits.
+
+        **Built-ins are refused** with `PROFILE_BUILT_IN`. They are immutable in
+        the database too, by trigger, so this is a courtesy rather than the
+        enforcement point.
+
+        Editing a profile changes what every project using it scores — that is the
+        point of a shared pool, and it is deliberate. Those projects are re-scored
+        from existing snapshots; no scan is started.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200':
+          description: The profile as stored, after clamping.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScoreProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A built-in was addressed, or the new name is taken.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                built_in:
+                  value:
+                    detail: Built-in profiles cannot be edited or deleted. Clone one instead.
+                    code: PROFILE_BUILT_IN
+                name:
+                  value:
+                    detail: Another profile in this workspace already uses that name.
+                    code: PROFILE_NAME_CONFLICT
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+    delete:
+      tags: [profiles]
+      operationId: delete_profile
+      summary: Delete a custom profile
+      description: |
+        Only an **unused** custom profile can be deleted. A profile that is the
+        workspace default, or that any project has chosen, returns
+        `PROFILE_IN_USE` — change those selections first. Built-ins return
+        `PROFILE_BUILT_IN`.
+
+        Both refusals are backed by the database: the two foreign keys pointing at
+        a profile would reject the delete anyway, so there is no window in which a
+        project could be left pointing at nothing.
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The profile is built-in, or still in use.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                in_use:
+                  value:
+                    detail: >-
+                      This profile is the workspace default or is assigned to a
+                      project. Change those selections before deleting it.
+                    code: PROFILE_IN_USE
+                built_in:
+                  value:
+                    detail: Built-in profiles cannot be edited or deleted. Clone one instead.
+                    code: PROFILE_BUILT_IN
+
+  /api/projects/{repo_id}/profile:
+    parameters:
+      - name: repo_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [profiles]
+      operationId: get_project_profile
+      summary: What this project is scored with
+      description: |
+        The effective profile, whether it is inherited, the workspace default, and
+        the explicit override if there is one — everything the project's settings
+        panel needs, in one request.
+      responses:
+        '200':
+          description: The project's effective profile and where it came from.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    put:
+      tags: [profiles]
+      operationId: set_project_profile
+      summary: Override the default for this project
+      description: |
+        Gives one project a profile of its own, chosen from **this workspace's**
+        pool. A project has at most one override — `repository_id` is the primary
+        key of the assignment table — so this replaces any previous choice rather
+        than adding to it, and re-sending the same id is a no-op.
+
+        A `profile_id` from another workspace answers `404`. The database could not
+        store it either: the assignment's foreign keys both travel through
+        `workspace_id`, which makes a cross-workspace reference unrepresentable
+        rather than merely rejected.
+
+        **This starts no scan.** The project is re-scored from snapshots it already
+        has.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelectProfileRequest' }
+      responses:
+        '200':
+          description: The project's profile after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+    delete:
+      tags: [profiles]
+      operationId: clear_project_profile
+      summary: Go back to inheriting the default
+      description: |
+        Removes the override so the project follows the workspace default again.
+        Idempotent: clearing a project that has no override succeeds and returns
+        the same inherited state.
+      responses:
+        '200':
+          description: The project's profile, now inherited.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectProfile' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/profiles/active:
     get:
       tags: [profiles]
       operationId: get_active_profile
-      summary: The active profile
+      summary: The active profile (superseded)
       description: |
+        **Superseded by `GET /api/profiles/default`**, which it now answers
+        identically. Kept until the web moves over.
+
         The profile currently in force for the workspace. The Profiles screen reads
         this on load, so the sliders always open showing what is really applied
         rather than a client-side guess.
@@ -849,8 +1127,16 @@ paths:
     put:
       tags: [profiles]
       operationId: apply_profile
-      summary: Apply a profile
+      summary: Apply a profile (superseded)
       description: |
+        **Superseded by `POST /api/profiles` plus `PUT /api/profiles/default`**,
+        which separate "author a profile" from "choose the one in force". Kept
+        until the web moves over.
+
+        Values that are exactly a built-in's now *select* that built-in rather than
+        writing to it; anything else is written to the workspace's own custom
+        profile. The response is the profile in force either way.
+
         Replaces the workspace's active profile with exactly the submitted values.
 
         **PUT, not PATCH.** The body carries the **complete** profile — six numbers,
@@ -1105,6 +1391,11 @@ components:
       description: |
         The stable, machine-readable reason. New members may be added; existing
         members never change meaning.
+
+        There is deliberately **no** `PROFILE_WORKSPACE_MISMATCH`. A profile or
+        repository belonging to another workspace answers `NOT_FOUND`, exactly as
+        an id that exists nowhere does, so no caller can tell another tenant's ids
+        apart from nonsense ones.
       enum:
         - NOT_AUTHENTICATED       # 401
         - FORBIDDEN               # 403
@@ -1117,6 +1408,10 @@ components:
         - REPOSITORY_SCAN_RUNNING # 409
         - SCAN_ALREADY_RUNNING    # 409
         - SCAN_NOT_CANCELLABLE    # 409
+        - PROFILE_LIMIT_REACHED   # 409
+        - PROFILE_BUILT_IN        # 409
+        - PROFILE_IN_USE          # 409
+        - PROFILE_NAME_CONFLICT   # 409
         - VALIDATION_FAILED       # 422
         - RATE_LIMITED            # 429
         - UPSTREAM_UNAVAILABLE    # 503
@@ -1744,10 +2039,84 @@ components:
             the `security` category, so no position of this slider can de-weight
             them (FR-24 mechanism 2).
 
+    CategoryWeightsPatch:
+      type: object
+      description: |
+        The same five weights, every one optional. `PATCH` carries only what
+        changed, so an omitted weight keeps its stored value. `null` is not the
+        same as omitted and is rejected: there is no profile with no security
+        weight.
+      additionalProperties: false
+      properties:
+        security: { type: number, minimum: 0.1, maximum: 3.0 }
+        code_design: { type: number, minimum: 0.1, maximum: 3.0 }
+        requirement: { type: number, minimum: 0.1, maximum: 3.0 }
+        documentation: { type: number, minimum: 0.1, maximum: 3.0 }
+        test: { type: number, minimum: 0.1, maximum: 3.0 }
+
+    CreateProfileRequest:
+      type: object
+      description: |
+        A new custom profile for the workspace pool. `name` is required here and
+        optional on the legacy apply endpoint, because a profile that joins a pool
+        has to be tellable apart from the other five.
+      required: [name, weights, trust_s]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200, example: Release gate }
+        weights: { $ref: '#/components/schemas/CategoryWeights' }
+        trust_s: { type: number, minimum: 0, maximum: 1, default: 0.5 }
+
+    UpdateProfileRequest:
+      type: object
+      description: |
+        A partial update. Every field is optional and an omitted one is left
+        alone; an empty body is accepted and changes nothing, which keeps a retry
+        harmless. Out-of-range values are clamped, exactly as on create.
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        weights: { $ref: '#/components/schemas/CategoryWeightsPatch' }
+        trust_s: { type: number, minimum: 0, maximum: 1 }
+
+    SelectProfileRequest:
+      type: object
+      description: |
+        Carries the whole selection rather than a delta, so re-sending it is
+        idempotent — the second `PUT` of the same id changes nothing.
+      required: [profile_id]
+      additionalProperties: false
+      properties:
+        profile_id: { type: string, format: uuid }
+
+    ProjectProfile:
+      type: object
+      description: |
+        Which profile one project is scored with, and where that came from.
+        `effective` and `workspace_default` are both always present so the web can
+        render "inheriting Balanced" without a second request, and `override` is
+        null exactly when `inherited` is true.
+      required: [repo_id, inherited, effective, workspace_default]
+      additionalProperties: false
+      properties:
+        repo_id: { type: string, format: uuid }
+        inherited:
+          type: boolean
+          description: True when this project has no override of its own.
+        effective:
+          allOf: [{ $ref: '#/components/schemas/ScoreProfile' }]
+          description: The profile actually used — the override, else the default.
+        workspace_default: { $ref: '#/components/schemas/ScoreProfile' }
+        override:
+          oneOf:
+            - { $ref: '#/components/schemas/ScoreProfile' }
+            - { type: 'null' }
+          description: The explicit choice for this project, or null.
+
     ScoreProfile:
       type: object
       description: A stored profile, as returned after clamping.
-      required: [id, name, weights, trust_s, is_preset, is_active]
+      required: [id, name, weights, trust_s, is_preset, is_active, usage_count, editable]
       additionalProperties: false
       properties:
         id: { type: string, format: uuid }
@@ -1760,15 +2129,26 @@ components:
         is_active:
           type: boolean
           description: |
-            Whether this is the workspace's active profile. Stored as `is_active` on
-            the profile row, under a partial unique index on `(workspace_id) WHERE
-            is_active` — so "at most one active profile per workspace" is refused by
-            the database on write rather than being a rule a handler must remember
-            (locked decision 11).
+            Whether this is the **workspace default** — the profile every project
+            without an explicit override is scored with.
 
-            The index guarantees *at most* one. That a workspace always has *at
-            least* one is guaranteed separately, by sign-in seeding **Balanced** as
-            active when the workspace is created. `PUT /api/profiles/active` must
-            therefore clear the old row and set the new one in a single transaction;
-            a clear that can commit on its own would leave a workspace with no
-            active profile.
+            One row per workspace in `WORKSPACE_PROFILE_SETTINGS` holds that
+            pointer, with `workspace_id` as its primary key, so "exactly one
+            default per workspace" is the shape of the table rather than a rule a
+            handler has to remember. Its foreign key travels through
+            `workspace_id`, which is what makes a default from another workspace
+            unrepresentable, and refuses to delete a profile while it is still the
+            default.
+        usage_count:
+          type: integer
+          minimum: 0
+          description: |
+            How many projects name this profile explicitly. The workspace default
+            is additionally in force for every project *without* an override,
+            which `is_active` already says, so those are not counted here.
+        editable:
+          type: boolean
+          description: |
+            False for the three built-ins. They are refused every update and
+            delete by a database trigger, not merely by this flag — the flag only
+            saves the client a round trip to find that out.

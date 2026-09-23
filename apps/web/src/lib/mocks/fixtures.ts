@@ -114,6 +114,8 @@ export const mockProfiles: ScoreProfile[] = [
     trust_s: 0.5,
     is_preset: true,
     is_active: true, // Balanced is seeded active for every new workspace
+    usage_count: 0,
+    editable: false,
   },
   {
     id: "6a3c9d25-0e74-4b18-c2f9-4d5e6f7a8b91",
@@ -128,6 +130,8 @@ export const mockProfiles: ScoreProfile[] = [
     trust_s: 0.5,
     is_preset: true,
     is_active: false,
+    usage_count: 0,
+    editable: false,
   },
   {
     id: "7b4d0e36-1f85-4c29-d30a-5e6f7a8b9c02",
@@ -142,6 +146,8 @@ export const mockProfiles: ScoreProfile[] = [
     trust_s: 0.7,
     is_preset: true,
     is_active: false,
+    usage_count: 0,
+    editable: false,
   },
 ]
 

@@ -370,7 +370,7 @@ def build_health_report(
     branch: str,
     snapshot_id: uuid.UUID | None = None,
 ) -> HealthReportOut:
-    profile = profiles.get_active(session, workspace_id)
+    profile = profiles.resolve_effective(session, workspace_id, repository_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
         session, workspace_id, repository_id, branch
     )
@@ -461,7 +461,7 @@ def build_trend(
     repository_id: uuid.UUID,
     branch: str,
 ) -> list[dict[str, object]]:
-    profile = profiles.get_active(session, workspace_id)
+    profile = profiles.resolve_effective(session, workspace_id, repository_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
         session, workspace_id, repository_id, branch
     )
@@ -495,7 +495,7 @@ def build_scan_history(
     repository_id: uuid.UUID,
     branch: str | None,
 ) -> list[ScanSummaryOut]:
-    profile = profiles.get_active(session, workspace_id)
+    profile = profiles.resolve_effective(session, workspace_id, repository_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
         session, workspace_id, repository_id, branch
     )

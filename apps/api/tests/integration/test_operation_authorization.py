@@ -14,7 +14,15 @@ from sqlalchemy.orm import Session
 from codesage_api import deps
 from codesage_api.config import get_settings
 from codesage_api.db.enums import AnalysisStatus
-from codesage_api.db.models import AnalysisAttempt, Branch, Membership, Repository, User, Workspace
+from codesage_api.db.models import (
+    AnalysisAttempt,
+    Branch,
+    Membership,
+    Repository,
+    ScoringProfile,
+    User,
+    Workspace,
+)
 from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.integrations.github import GitHubBranch
@@ -44,8 +52,17 @@ INVENTORY = {
     ("GET", "/api/repos/{repo_id}/scans"): "history:read",
     ("GET", "/api/repos/{repo_id}/health"): "result:read",
     ("GET", "/api/profiles"): "profile:read",
+    ("POST", "/api/profiles"): "profile:update",
     ("GET", "/api/profiles/active"): "profile:read",
     ("PUT", "/api/profiles/active"): "profile:update",
+    ("GET", "/api/profiles/default"): "profile:read",
+    ("PUT", "/api/profiles/default"): "profile:update",
+    ("GET", "/api/profiles/{profile_id}"): "profile:read",
+    ("PATCH", "/api/profiles/{profile_id}"): "profile:update",
+    ("DELETE", "/api/profiles/{profile_id}"): "profile:update",
+    ("GET", "/api/projects/{repo_id}/profile"): "profile:read",
+    ("PUT", "/api/projects/{repo_id}/profile"): "profile:update",
+    ("DELETE", "/api/projects/{repo_id}/profile"): "profile:update",
     ("GET", "/api/members"): "member:read",
     ("POST", "/api/invitations"): "member:manage",
     ("DELETE", "/api/invitations/{invitation_id}"): "member:manage",
@@ -125,7 +142,11 @@ def resources(account):
             actor_user_id=other_user.id,
             workspace_id=foreign_workspace.id,
         )
+        seeded_profile = db.scalar(
+            select(ScoringProfile.id).where(ScoringProfile.workspace_id == workspace)
+        )
         result = {
+            "profile": seeded_profile,
             "repo": repo.id,
             "branch": branch.id,
             "other_repo": other_repo.id,
@@ -159,6 +180,9 @@ def set_role(account, role):
         db.commit()
 
 
+SELECT_PROFILE = {"profile_id": "00000000-0000-0000-0000-000000000001"}
+
+
 def request_args(method, path):
     if path.endswith("/health"):
         return {"params": {"branch": "main"}}
@@ -166,6 +190,12 @@ def request_args(method, path):
         return {"json": {"url": "https://github.com/acme/example"}}
     if method == "POST" and path.endswith("/scan"):
         return {"json": {"branch": "main"}}
+    if method == "POST" and path == "/api/profiles":
+        return {"json": {"name": "Release gate", **PROFILE}}
+    if method == "PATCH" and path.startswith("/api/profiles/"):
+        return {"json": {"name": "Renamed"}}
+    if method == "PUT" and (path == "/api/profiles/default" or path.endswith("/profile")):
+        return {"json": SELECT_PROFILE}
     if method == "PUT":
         return {"json": PROFILE}
     if method == "POST" and path == "/api/invitations":
@@ -189,7 +219,22 @@ def test_every_operation_checks_role_before_business_service(
     for module, names in [
         (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
         (analysis, ["start", "get_status", "cancel", "get_history"]),
-        (profiles, ["list_available", "get_active_output", "apply"]),
+        (
+            profiles,
+            [
+                "list_available",
+                "get_active_output",
+                "apply",
+                "create",
+                "get",
+                "update",
+                "delete",
+                "set_default",
+                "get_project_profile",
+                "assign_project",
+                "clear_project",
+            ],
+        ),
         (dashboard, ["build_health_report"]),
         (
             member_admin,
@@ -214,6 +259,7 @@ def test_every_operation_checks_role_before_business_service(
         path = template.format(
             repo_id=resources["repo"],
             scan_id=resources["own"],
+            profile_id=resources["profile"],
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
         )
@@ -284,6 +330,52 @@ def _profile_pool(db):
         ),
         db.scalars(select(WorkspaceProfileSettings.default_scoring_profile_id)).all(),
     )
+
+
+@pytest.mark.parametrize("role", ["org-admin", "manager", "developer", "viewer"])
+def test_foreign_and_missing_profile_ids_are_both_not_found(
+    account, resources, client, monkeypatch, role
+):
+    """Another workspace's profile must look exactly like one that never existed.
+
+    Checked for every role, because a 403 for a viewer would leak the same fact a
+    404 is there to hide: that the id is real somewhere.
+    """
+    set_role(account, role)
+    with Session(account[0]) as db:
+        foreign_workspace = Workspace()
+        db.add(foreign_workspace)
+        db.flush()
+        foreign_profile = ScoringProfile(
+            workspace_id=foreign_workspace.id,
+            name="Theirs",
+            security_weight=1.0,
+            code_design_weight=1.0,
+            requirement_weight=1.0,
+            documentation_weight=1.0,
+            test_weight=1.0,
+            trust_slider=0.5,
+        )
+        db.add(foreign_profile)
+        db.commit()
+        foreign_id = foreign_profile.id
+
+    for profile_id in (foreign_id, uuid.uuid4()):
+        assert client.get(f"/api/profiles/{profile_id}").status_code == 404
+        assert (
+            client.patch(f"/api/profiles/{profile_id}", json={"name": "x"}).status_code == 404
+        )
+        assert client.delete(f"/api/profiles/{profile_id}").status_code == 404
+
+    for repo_id in (resources["foreign_repo"], uuid.uuid4()):
+        assert client.get(f"/api/projects/{repo_id}/profile").status_code == 404
+        assert (
+            client.put(
+                f"/api/projects/{repo_id}/profile", json={"profile_id": str(resources["profile"])}
+            ).status_code
+            == 404
+        )
+        assert client.delete(f"/api/projects/{repo_id}/profile").status_code == 404
 
 
 def test_denied_writes_leave_database_and_queues_unchanged(account, resources, client, monkeypatch):
@@ -384,6 +476,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
         path = template.format(
             repo_id=resources["repo"],
             scan_id=resources["own"],
+            profile_id=resources["profile"],
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
         )

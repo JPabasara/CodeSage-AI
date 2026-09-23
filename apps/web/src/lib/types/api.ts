@@ -578,15 +578,157 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Available profiles
-         * @description The three presets — **Balanced** (the workspace default), **Security-first**
-         *     and **Delivery-speed** — plus any custom profile. Selecting a preset seeds
-         *     the sliders in one interaction; adjusting from it is optional.
+         * The workspace profile pool
+         * @description Every profile this workspace can score with: the three built-ins —
+         *     **Balanced**, **Security-first**, **Delivery-speed** — followed by up to
+         *     five custom profiles the team authored.
+         *
+         *     Each entry says what it is (`is_preset`), whether it is the workspace
+         *     default (`is_active`), how many projects name it explicitly
+         *     (`usage_count`) and whether it can be changed at all (`editable`), so the
+         *     Profiles screen can render the whole pool from one request.
+         *
+         *     Built-ins do **not** count toward the five-custom limit.
          */
         get: operations["list_profiles"];
         put?: never;
+        /**
+         * Create a custom profile
+         * @description Adds one profile to the pool. It does **not** become the default — that is
+         *     a separate, deliberate choice via `PUT /api/profiles/default`.
+         *
+         *     A workspace holds at most **five** custom profiles. The sixth is refused
+         *     with `PROFILE_LIMIT_REACHED`, and the count is serialised in the database,
+         *     so two clients creating the sixth at the same moment cannot both succeed.
+         *
+         *     Names are unique per workspace after trimming and lower-casing; a clash
+         *     returns `PROFILE_NAME_CONFLICT`. Out-of-range weights are clamped and
+         *     returned as stored, the same as everywhere else in this contract.
+         */
+        post: operations["create_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The workspace default
+         * @description The profile every project without an explicit override is scored with.
+         */
+        get: operations["get_default_profile"];
+        /**
+         * Choose the workspace default
+         * @description Points the workspace at any profile in its own pool, built-in or custom.
+         *     Replaces the whole selection rather than amending it, so re-sending the
+         *     same id is a no-op.
+         *
+         *     **This starts no scan.** Every project that inherits the default is
+         *     re-scored from snapshots it already has; no `SNAPSHOT`, `FINDING` or
+         *     `ANALYSIS_ATTEMPT` row is written. A profile is not a commit.
+         *
+         *     A `profile_id` from another workspace answers `404`, the same as an id
+         *     that exists nowhere.
+         */
+        put: operations["set_default_profile"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        /** One profile */
+        get: operations["get_profile"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a custom profile
+         * @description Only an **unused** custom profile can be deleted. A profile that is the
+         *     workspace default, or that any project has chosen, returns
+         *     `PROFILE_IN_USE` — change those selections first. Built-ins return
+         *     `PROFILE_BUILT_IN`.
+         *
+         *     Both refusals are backed by the database: the two foreign keys pointing at
+         *     a profile would reject the delete anyway, so there is no window in which a
+         *     project could be left pointing at nothing.
+         */
+        delete: operations["delete_profile"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a custom profile
+         * @description A **partial** update: send only what changed. Omitted fields keep their
+         *     stored value, which is what makes this safe to call from a form that only
+         *     tracks edits.
+         *
+         *     **Built-ins are refused** with `PROFILE_BUILT_IN`. They are immutable in
+         *     the database too, by trigger, so this is a courtesy rather than the
+         *     enforcement point.
+         *
+         *     Editing a profile changes what every project using it scores — that is the
+         *     point of a shared pool, and it is deliberate. Those projects are re-scored
+         *     from existing snapshots; no scan is started.
+         */
+        patch: operations["update_profile"];
+        trace?: never;
+    };
+    "/api/projects/{repo_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * What this project is scored with
+         * @description The effective profile, whether it is inherited, the workspace default, and
+         *     the explicit override if there is one — everything the project's settings
+         *     panel needs, in one request.
+         */
+        get: operations["get_project_profile"];
+        /**
+         * Override the default for this project
+         * @description Gives one project a profile of its own, chosen from **this workspace's**
+         *     pool. A project has at most one override — `repository_id` is the primary
+         *     key of the assignment table — so this replaces any previous choice rather
+         *     than adding to it, and re-sending the same id is a no-op.
+         *
+         *     A `profile_id` from another workspace answers `404`. The database could not
+         *     store it either: the assignment's foreign keys both travel through
+         *     `workspace_id`, which makes a cross-workspace reference unrepresentable
+         *     rather than merely rejected.
+         *
+         *     **This starts no scan.** The project is re-scored from snapshots it already
+         *     has.
+         */
+        put: operations["set_project_profile"];
+        post?: never;
+        /**
+         * Go back to inheriting the default
+         * @description Removes the override so the project follows the workspace default again.
+         *     Idempotent: clearing a project that has no override succeeds and returns
+         *     the same inherited state.
+         */
+        delete: operations["clear_project_profile"];
         options?: never;
         head?: never;
         patch?: never;
@@ -600,15 +742,26 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The active profile
-         * @description The profile currently in force for the workspace. The Profiles screen reads
+         * The active profile (superseded)
+         * @description **Superseded by `GET /api/profiles/default`**, which it now answers
+         *     identically. Kept until the web moves over.
+         *
+         *     The profile currently in force for the workspace. The Profiles screen reads
          *     this on load, so the sliders always open showing what is really applied
          *     rather than a client-side guess.
          */
         get: operations["get_active_profile"];
         /**
-         * Apply a profile
-         * @description Replaces the workspace's active profile with exactly the submitted values.
+         * Apply a profile (superseded)
+         * @description **Superseded by `POST /api/profiles` plus `PUT /api/profiles/default`**,
+         *     which separate "author a profile" from "choose the one in force". Kept
+         *     until the web moves over.
+         *
+         *     Values that are exactly a built-in's now *select* that built-in rather than
+         *     writing to it; anything else is written to the workspace's own custom
+         *     profile. The response is the profile in force either way.
+         *
+         *     Replaces the workspace's active profile with exactly the submitted values.
          *
          *     **PUT, not PATCH.** The body carries the **complete** profile — six numbers,
          *     never a delta. That makes the write idempotent, so retrying after a dropped
@@ -708,9 +861,14 @@ export interface components {
         /**
          * @description The stable, machine-readable reason. New members may be added; existing
          *     members never change meaning.
+         *
+         *     There is deliberately **no** `PROFILE_WORKSPACE_MISMATCH`. A profile or
+         *     repository belonging to another workspace answers `NOT_FOUND`, exactly as
+         *     an id that exists nowhere does, so no caller can tell another tenant's ids
+         *     apart from nonsense ones.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -1209,6 +1367,66 @@ export interface components {
              */
             trust_s: number;
         };
+        /**
+         * @description The same five weights, every one optional. `PATCH` carries only what
+         *     changed, so an omitted weight keeps its stored value. `null` is not the
+         *     same as omitted and is rejected: there is no profile with no security
+         *     weight.
+         */
+        CategoryWeightsPatch: {
+            security?: number;
+            code_design?: number;
+            requirement?: number;
+            documentation?: number;
+            test?: number;
+        };
+        /**
+         * @description A new custom profile for the workspace pool. `name` is required here and
+         *     optional on the legacy apply endpoint, because a profile that joins a pool
+         *     has to be tellable apart from the other five.
+         */
+        CreateProfileRequest: {
+            /** @example Release gate */
+            name: string;
+            weights: components["schemas"]["CategoryWeights"];
+            /** @default 0.5 */
+            trust_s: number;
+        };
+        /**
+         * @description A partial update. Every field is optional and an omitted one is left
+         *     alone; an empty body is accepted and changes nothing, which keeps a retry
+         *     harmless. Out-of-range values are clamped, exactly as on create.
+         */
+        UpdateProfileRequest: {
+            name?: string;
+            weights?: components["schemas"]["CategoryWeightsPatch"];
+            trust_s?: number;
+        };
+        /**
+         * @description Carries the whole selection rather than a delta, so re-sending it is
+         *     idempotent — the second `PUT` of the same id changes nothing.
+         */
+        SelectProfileRequest: {
+            /** Format: uuid */
+            profile_id: string;
+        };
+        /**
+         * @description Which profile one project is scored with, and where that came from.
+         *     `effective` and `workspace_default` are both always present so the web can
+         *     render "inheriting Balanced" without a second request, and `override` is
+         *     null exactly when `inherited` is true.
+         */
+        ProjectProfile: {
+            /** Format: uuid */
+            repo_id: string;
+            /** @description True when this project has no override of its own. */
+            inherited: boolean;
+            /** @description The profile actually used — the override, else the default. */
+            effective: components["schemas"]["ScoreProfile"];
+            workspace_default: components["schemas"]["ScoreProfile"];
+            /** @description The explicit choice for this project, or null. */
+            override?: components["schemas"]["ScoreProfile"] | null;
+        };
         /** @description A stored profile, as returned after clamping. */
         ScoreProfile: {
             /** Format: uuid */
@@ -1220,20 +1438,30 @@ export interface components {
             /** @description Presets are read-only templates that seed the sliders. */
             is_preset: boolean;
             /**
-             * @description Whether this is the workspace's active profile. Stored as `is_active` on
-             *     the profile row, under a partial unique index on `(workspace_id) WHERE
-             *     is_active` — so "at most one active profile per workspace" is refused by
-             *     the database on write rather than being a rule a handler must remember
-             *     (locked decision 11).
+             * @description Whether this is the **workspace default** — the profile every project
+             *     without an explicit override is scored with.
              *
-             *     The index guarantees *at most* one. That a workspace always has *at
-             *     least* one is guaranteed separately, by sign-in seeding **Balanced** as
-             *     active when the workspace is created. `PUT /api/profiles/active` must
-             *     therefore clear the old row and set the new one in a single transaction;
-             *     a clear that can commit on its own would leave a workspace with no
-             *     active profile.
+             *     One row per workspace in `WORKSPACE_PROFILE_SETTINGS` holds that
+             *     pointer, with `workspace_id` as its primary key, so "exactly one
+             *     default per workspace" is the shape of the table rather than a rule a
+             *     handler has to remember. Its foreign key travels through
+             *     `workspace_id`, which is what makes a default from another workspace
+             *     unrepresentable, and refuses to delete a profile while it is still the
+             *     default.
              */
             is_active: boolean;
+            /**
+             * @description How many projects name this profile explicitly. The workspace default
+             *     is additionally in force for every project *without* an override,
+             *     which `is_active` already says, so those are not counted here.
+             */
+            usage_count: number;
+            /**
+             * @description False for the three built-ins. They are refused every update and
+             *     delete by a database trigger, not merely by this flag — the flag only
+             *     saves the client a round trip to find that out.
+             */
+            editable: boolean;
         };
     };
     responses: {
@@ -2114,7 +2342,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The available profiles. */
+            /** @description The pool, built-ins first. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2124,6 +2352,269 @@ export interface operations {
                 };
             };
             401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    create_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description The profile as stored, after clamping. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description The pool is full, or the name is taken. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    get_default_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workspace default. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    set_default_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description The profile now in force for the workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    get_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    delete_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The profile is built-in, or still in use. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    update_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description The profile as stored, after clamping. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoreProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description A built-in was addressed, or the new name is taken. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    get_project_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project's effective profile and where it came from. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    set_project_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description The project's profile after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    clear_project_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project's profile, now inherited. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectProfile"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     get_active_profile: {
