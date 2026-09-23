@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import uuid
@@ -36,30 +34,28 @@ def _status_out(
         progress=percent,
         branch=branch_name,
         commit_sha=attempt.commit_sha,
-        started_at=(
-            attempt.start_time.isoformat() if attempt.start_time else None
-        ),
-        finished_at=(
-            attempt.completion_time.isoformat()
-            if attempt.completion_time
-            else None
-        ),
-        error=(
-            attempt.failure_information
-            if attempt.status == AnalysisStatus.ERROR
-            else None
-        ),
+        started_at=(attempt.start_time.isoformat() if attempt.start_time else None),
+        finished_at=(attempt.completion_time.isoformat() if attempt.completion_time else None),
+        error=(attempt.failure_information if attempt.status == AnalysisStatus.ERROR else None),
     )
 
 
 def start(
-    session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, branch: str,
-    *, actor_user_id: uuid.UUID,
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    *,
+    actor_user_id: uuid.UUID,
 ) -> ScanStatusOut:
 
-    stored_branch = attempts.get_branch(
-        session, workspace_id, repository_id, branch
-    )
+    # Repository removal takes this same row lock. Keep it until the queued
+    # attempt is committed so a concurrent delete cannot pass its active-scan
+    # check in the gap between this check and create_queued().
+    if attempts.lock_repository_for_scan(session, workspace_id, repository_id) is None:
+        raise NotFound
+
+    stored_branch = attempts.get_branch(session, workspace_id, repository_id, branch)
     if stored_branch is None:
         raise NotFound
 
@@ -80,11 +76,13 @@ def start(
         return _status_out(completed, stored_branch.name)
 
     attempt = attempts.create_queued(
-        session, stored_branch.id, remote_branch.head_commit_sha,
-        actor_user_id=actor_user_id, workspace_id=workspace_id,
+        session,
+        stored_branch.id,
+        remote_branch.head_commit_sha,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
     )
 
-   
     session.commit()
 
     set_workspace_context(session, workspace_id)
@@ -107,9 +105,7 @@ def get_status(
     attempt_id: uuid.UUID,
 ) -> ScanStatusOut:
 
-    attempt = attempts.get_for_repository(
-        session, workspace_id, repository_id, attempt_id
-    )
+    attempt = attempts.get_for_repository(session, workspace_id, repository_id, attempt_id)
     if attempt is None:
         raise NotFound
     return _status_out(attempt, attempt.branch.name)
