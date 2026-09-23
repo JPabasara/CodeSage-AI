@@ -244,14 +244,14 @@ def test_foreign_resources_are_404_before_work(account, resources, client, monke
     monkeypatch.setattr(analysis, "cancel", side_effect)
     monkeypatch.setattr(analysis, "get_status", side_effect)
     monkeypatch.setattr(dashboard, "build_health_report", side_effect)
+    monkeypatch.setattr(repositories, "disconnect", side_effect)
     for method, template in INVENTORY:
         if "{repo_id}" not in template:
-            continue
-        if method == "DELETE" and template.startswith("/api/projects"):
             continue
         path = template.format(repo_id=resources["foreign_repo"], scan_id=resources["foreign"])
         response = client.request(method, path, **request_args(method, path))
         assert response.status_code == 404, (path, response.text)
+    assert client.delete(f"/api/projects/{uuid.uuid4()}").status_code == 404
     for scan in (resources["foreign"], uuid.uuid4()):
         response = client.post(f"/api/repos/{resources['repo']}/scan/{scan}/stop")
         assert response.status_code == 404
@@ -356,15 +356,23 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
         (dashboard, ["build_health_report"]),
         (
             member_admin,
-            ["list_members", "create_invitation", "revoke_invitation", "change_role", "deactivate_member"],
+            [
+                "list_members",
+                "create_invitation",
+                "revoke_invitation",
+                "change_role",
+                "deactivate_member",
+            ],
         ),
     ]:
         for name in names:
             monkeypatch.setattr(module, name, forbidden_service)
     for method, template in INVENTORY:
         path = template.format(
-            repo_id=resources["repo"], scan_id=resources["own"],
-            invitation_id=uuid.uuid4(), membership_id=uuid.uuid4(),
+            repo_id=resources["repo"],
+            scan_id=resources["own"],
+            invitation_id=uuid.uuid4(),
+            membership_id=uuid.uuid4(),
         )
         response = client.request(method, path, **request_args(method, path))
         assert response.status_code == 403, (path, response.text)
