@@ -64,7 +64,26 @@ export const mockSession: Session = {
   workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
   needs_workspace_setup: false,
   role: "org-admin",
-  permissions: ["project:read", "profile:read", "result:read"],
+  // The org-admin grants from the role-permission matrix, not a shortened
+  // sample of them: the web hides controls it reads off this list, so a fixture
+  // that omits `profile:update` would show a read-only Profiles screen to the
+  // one role that can change everything.
+  permissions: [
+    "project:read",
+    "repository:read",
+    "repository:connect",
+    "repository:disconnect",
+    "scan:start",
+    "scan:cancel_own",
+    "scan:cancel_any",
+    "result:read",
+    "history:read",
+    "profile:read",
+    "profile:update",
+    "member:read",
+    "member:manage",
+    "workspace:update",
+  ],
   email: "janidu@example.com",
   name: "Janidu Pabasara",
   avatar_url: "https://avatars.githubusercontent.com/u/1024?v=4",
@@ -74,6 +93,28 @@ export const mockSession: Session = {
 export const mockSessionMinimal: Session = {
   user_id: "2c4a6e80-1b3d-4f57-9a80-c1d2e3f4a5b6",
   workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
+}
+
+/**
+ * A viewer: every read, no writes. Kept beside the org-admin one because
+ * "the control is hidden for a role that cannot use it" is only testable against
+ * a session that really lacks the grant.
+ */
+export const mockSessionViewer: Session = {
+  user_id: "4d5e6f70-8a9b-4c1d-8e2f-3a4b5c6d7e8f",
+  workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
+  needs_workspace_setup: false,
+  role: "viewer",
+  permissions: [
+    "project:read",
+    "repository:read",
+    "result:read",
+    "history:read",
+    "profile:read",
+    "member:read",
+  ],
+  email: "viewer@example.com",
+  name: "Read Only",
 }
 
 /** Signed in, but with nowhere to work yet — the onboarding state. */
