@@ -23,6 +23,27 @@ docker compose ps         # all six (healthy)
 
 `web` → <http://localhost:3000> · `api` → <http://localhost:8000>
 
+### Optional log GUI
+
+Start the local observability profile and open <http://localhost:8080>:
+
+```powershell
+docker compose --profile observability up -d dozzle
+```
+
+Dozzle shows searchable live logs for the CodeSage containers, including
+`worker`, `score-worker`, `ml`, and `api`. Container actions and shell access
+remain disabled. Stop and remove the optional UI with:
+
+```powershell
+docker compose --profile observability rm -sf dozzle
+```
+
+This facility is intentionally isolated to one Compose service. It binds only
+to localhost and is not part of the production Kubernetes configuration. The
+Docker socket is highly privileged despite the read-only bind, so do not expose
+port 8080 to another machine.
+
 Start over (**`-v` deletes the database**):
 
 ```powershell
@@ -34,6 +55,7 @@ docker compose down -v --remove-orphans && docker compose build && docker compos
 | Command | Does |
 |---|---|
 | `docker compose logs -f api` | Follow one service. **First thing when something breaks** |
+| `docker compose --profile observability up -d dozzle` | Open the optional live-log GUI on `127.0.0.1:8080` |
 | `docker compose config` | Print the file with every `${...}` resolved — fastest way to see what a variable became |
 | `docker compose exec postgres psql -U codesage_owner codesage` | The database, without opening a port |
 | `docker compose exec api alembic upgrade head` | Run migrations by hand |

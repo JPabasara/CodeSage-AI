@@ -196,6 +196,20 @@ services:
     depends_on:
       - api
 
+  # Optional local-only log GUI. It is excluded from normal `docker compose up`
+  # and has no application dependencies, so removing this block removes the
+  # facility completely.
+  dozzle:
+    profiles: ["observability"]
+    image: ghcr.io/amir20/dozzle:v10.7.5
+    environment:
+      DOZZLE_FILTER: "label=com.docker.compose.project=codesage"
+      DOZZLE_HOSTNAME: "CodeSage local"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+
 volumes:
   pgdata:
   redisdata:

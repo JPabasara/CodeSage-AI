@@ -342,6 +342,22 @@ def _finalize(
                     )
                 )
 
+        # Comment extraction intentionally scans every Java source file, while
+        # CK may omit files it cannot analyse. Preserve valid SATD predictions
+        # for those files by creating the source-file fact without inventing
+        # static or process metrics.
+        for result in results.satd_predictions:
+            path = result.comment.file_path
+            if path not in files_by_path:
+                source_file = SourceFile(
+                    snapshot=snapshot,
+                    relative_path=path,
+                    language="java",
+                )
+                session.add(source_file)
+                session.flush()
+                files_by_path[path] = source_file
+
         for detected in results.findings:
             finding_file = files_by_path.get(detected.file_path)
             if finding_file is None:
@@ -379,7 +395,10 @@ def _finalize(
                 raise RuntimeError("A debt prediction is missing its category.")
             finding_file = files_by_path.get(result.comment.file_path)
             if finding_file is None:
-                raise RuntimeError("A SATD prediction references an unknown source file.")
+                raise RuntimeError(
+                    "A SATD prediction references an unknown source file: "
+                    f"{result.comment.file_path}"
+                )
 
             model_version = model_versions.get(result.model_version)
             if model_version is None:

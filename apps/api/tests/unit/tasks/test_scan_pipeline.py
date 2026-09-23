@@ -12,7 +12,12 @@ from codesage_api.db.enums import (
     ModelDeploymentStatus,
     Severity,
 )
-from codesage_api.db.models import AnalysisAttempt, MLModelVersion
+from codesage_api.db.models import (
+    AnalysisAttempt,
+    MLModelVersion,
+    SATDPrediction,
+    SourceFile,
+)
 from codesage_api.db.repositories.attempts import WorkerScanInput
 from codesage_api.detection.risk.client import RiskClientResult
 from codesage_api.detection.satd.client import SATDResult
@@ -84,6 +89,73 @@ def test_finalize_records_trained_risk_provenance(
         getattr(added, "model_version_id", None) == model_version.id
         for added in (call.args[0] for call in session.add.call_args_list)
     )
+
+
+@patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
+@patch("codesage_api.tasks.scan_pipeline.attempts.get_worker_attempt")
+@patch("codesage_api.tasks.scan_pipeline.session_scope")
+def test_finalize_persists_satd_when_ck_omits_source_file(
+    session_scope: Mock,
+    get_attempt: Mock,
+    _set_workspace: Mock,
+) -> None:
+    attempt = AnalysisAttempt(
+        id=uuid.uuid4(),
+        branch_id=uuid.uuid4(),
+        analysis_engine_version_id=uuid.uuid4(),
+        commit_sha="a" * 40,
+        trigger_type=AnalysisTriggerType.MANUAL,
+        status=AnalysisStatus.RUNNING,
+        retry_count=0,
+    )
+    get_attempt.return_value = attempt
+    model_version = MLModelVersion(
+        id=uuid.uuid4(),
+        model_type=MLModelType.SATD,
+        version_identifier="satd-1.0.0",
+        training_date=SimpleNamespace(),
+        deployment_status=ModelDeploymentStatus.DEPLOYED,
+        evaluation_dataset_reference="SATDAUG",
+        evaluation_metrics={},
+    )
+    session = session_scope.return_value.__enter__.return_value
+    session.scalar.return_value = model_version
+    session.get.return_value = None
+    comment = ExtractedComment(
+        "src/generated/Skipped.java",
+        4,
+        "// TODO: replace generated workaround",
+    )
+
+    _finalize(
+        attempt.id,
+        uuid.uuid4(),
+        PipelineResults(
+            ExtractionResult(
+                static_metrics=[],
+                class_metrics=[],
+                process_metrics=[],
+                comments=[comment],
+            ),
+            [],
+            satd_predictions=[
+                SATDResult(
+                    comment=comment,
+                    is_debt=True,
+                    category=Category.CODE_DESIGN,
+                    confidence=0.91,
+                    model_version="satd-1.0.0",
+                )
+            ],
+        ),
+    )
+
+    added = [call.args[0] for call in session.add.call_args_list]
+    source_file = next(item for item in added if isinstance(item, SourceFile))
+    prediction = next(item for item in added if isinstance(item, SATDPrediction))
+
+    assert source_file.relative_path == "src/generated/Skipped.java"
+    assert prediction.source_location.source_file is source_file
 
 
 @patch("codesage_api.tasks.scan_pipeline.risk_client.predict")
