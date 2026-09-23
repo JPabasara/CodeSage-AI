@@ -27,20 +27,41 @@ _COMMITS = [
         hash="old",
         committer_date=_ANCHOR - timedelta(days=120),
         author=SimpleNamespace(email="old@example.com", name="Old"),
-        modified_files=[SimpleNamespace(new_path="src/A.java")],
+        modified_files=[
+            SimpleNamespace(
+                old_path=None,
+                new_path="src/A.java",
+                added_lines=0,
+                deleted_lines=0,
+            )
+        ],
     ),
     SimpleNamespace(
         hash="recent-1",
         committer_date=_ANCHOR - timedelta(days=20),
         author=SimpleNamespace(email="one@example.com", name="One"),
-        modified_files=[SimpleNamespace(new_path="src/A.java")],
+        modified_files=[
+            SimpleNamespace(
+                old_path=None,
+                new_path="src/A.java",
+                added_lines=0,
+                deleted_lines=0,
+            )
+        ],
     ),
     SimpleNamespace(
         hash="recent-2",
         committer_date=_ANCHOR - timedelta(days=5),
         author=SimpleNamespace(email="two@example.com", name="Two"),
         # PyDriller exposes platform-native separators for local repositories.
-        modified_files=[SimpleNamespace(new_path=r"src\A.java")],
+        modified_files=[
+            SimpleNamespace(
+                old_path=None,
+                new_path=r"src\A.java",
+                added_lines=0,
+                deleted_lines=0,
+            )
+        ],
     ),
 ]
 
@@ -61,9 +82,9 @@ def test_process_window_is_anchored_to_scanned_commit(
     assert len(metrics) == 1
     assert metrics[0].path == "src/A.java"
     assert metrics[0].commits_90d == 2
-    assert metrics[0].author_count == 3
-    assert metrics[0].file_age_days == 120
-    assert metrics[0].recency_days == 5
+    assert metrics[0].number_of_versions_until == 3
+    assert metrics[0].number_of_authors_until == 3
+    assert metrics[0].age_with_respect_to == 120 / 7
     summary = next(
         record for record in caplog.records if record.msg == "Repository history extraction completed"
     )
@@ -79,6 +100,7 @@ def test_unmodified_checked_out_file_receives_zero_metrics(monkeypatch, tmp_path
     metrics = extract_process_metrics(tmp_path, "scanned-sha", _ANCHOR)
 
     assert metrics[0].commits_90d == 0
-    assert metrics[0].author_count == 0
-    assert metrics[0].file_age_days == 0
-    assert metrics[0].recency_days == 0
+    assert metrics[0].number_of_versions_until == 0
+    assert metrics[0].number_of_authors_until == 0
+    assert metrics[0].age_with_respect_to == 0
+    assert metrics[0].weighted_age_with_respect_to == 0

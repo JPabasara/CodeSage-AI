@@ -59,7 +59,12 @@ def test_finalize_records_heuristic_risk_provenance_honestly(
         attempt.id,
         uuid.uuid4(),
         PipelineResults(
-            ExtractionResult([], [], []),
+            ExtractionResult(
+                static_metrics=[],
+                class_metrics=[],
+                process_metrics=[],
+                comments=[],
+            ),
             [],
             RiskClientResult(
                 scores={"src/Main.java": 0.7},
@@ -125,7 +130,12 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
         committer_date=SimpleNamespace(),
     )
     comment = ExtractedComment("A.java", 3, "// TODO: temporary workaround")
-    extracted = ExtractionResult([], [], [comment])
+    extracted = ExtractionResult(
+        static_metrics=[],
+        class_metrics=[],
+        process_metrics=[],
+        comments=[comment],
+    )
     extract.return_value = extracted
     detect.return_value = []
     risk_res = RiskClientResult(
@@ -195,7 +205,12 @@ def test_task_handles_ml_service_degraded_mode(
         commit_sha="a" * 40,
         committer_date=SimpleNamespace(),
     )
-    extracted = ExtractionResult([], [], [])
+    extracted = ExtractionResult(
+        static_metrics=[],
+        class_metrics=[],
+        process_metrics=[],
+        comments=[],
+    )
     extract.return_value = extracted
     detect.return_value = []
 

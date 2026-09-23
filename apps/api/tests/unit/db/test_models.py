@@ -71,6 +71,7 @@ def test_process_metric_uses_the_aeeem_process_feature_contract() -> None:
     expected = {
         "id",
         "source_file_id",
+        "commits_90d",
         "number_of_versions_until",
         "number_of_authors_until",
         "lines_added_until",

@@ -45,6 +45,7 @@ def _process_metrics(
     """Build a complete file-level process observation."""
     return FileProcessMetrics(
         path=path,
+        commits_90d=7,
         number_of_versions_until=15,
         number_of_authors_until=3,
         lines_added_until=500,
@@ -123,6 +124,7 @@ def test_risk_client_predict_success():
     metrics = sent_class["metrics"]
 
     assert len(metrics) == 21
+    assert "commits_90d" not in metrics
 
     # Class-level CK features
     assert metrics["wmc"] == 12.0

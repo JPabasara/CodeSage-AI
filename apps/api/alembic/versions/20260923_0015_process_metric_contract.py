@@ -81,7 +81,7 @@ def upgrade() -> None:
             for name in _check_names()
             if name.endswith("author_count_nonnegative")
         )
-        op.drop_constraint(constraint_name, "process_metric", type_="check")
+        op.drop_constraint(op.f(constraint_name), "process_metric", type_="check")
     columns = _column_names()
     for name in ("author_count", "file_age", "recency"):
         if name in columns:
@@ -125,7 +125,9 @@ def downgrade() -> None:
                 for existing in _check_names()
                 if existing.endswith(name)
             )
-            op.drop_constraint(constraint_name, "process_metric", type_="check")
+            op.drop_constraint(
+                op.f(constraint_name), "process_metric", type_="check"
+            )
 
     legacy_columns: tuple[tuple[str, sa.types.TypeEngine], ...] = (
         ("author_count", sa.Integer()),

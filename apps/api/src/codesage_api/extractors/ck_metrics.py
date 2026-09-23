@@ -16,9 +16,9 @@ class ClassMetrics:
     class_name: str
     class_type: str
 
-    loc: int
+    number_of_lines_of_code: int
     wmc: float
-    method_count: int
+    number_of_methods: int
 
     cbo: float
     dit: float
