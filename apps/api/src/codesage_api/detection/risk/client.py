@@ -27,7 +27,6 @@ class RiskClientResult:
     scores: dict[str, float]
 
     model_version: str
-    model_kind: str
 
 
 # These names form the wire contract between the API and ML service.
@@ -196,7 +195,6 @@ def predict(
         return RiskClientResult(
             scores={},
             model_version="",
-            model_kind="",
         )
 
     settings = get_settings()
@@ -254,7 +252,6 @@ def predict(
         data = response.json()
 
         model_version = data.get("model_version")
-        model_kind = data.get("model_kind")
         raw_scores = data.get("scores")
 
         if (
@@ -263,14 +260,6 @@ def predict(
         ):
             raise ValueError(
                 "Risk response is missing model_version"
-            )
-
-        if model_kind not in {
-            "trained",
-            "heuristic",
-        }:
-            raise ValueError(
-                "Risk response has an invalid model_kind"
             )
 
         if not isinstance(raw_scores, list):
@@ -343,7 +332,6 @@ def predict(
         return RiskClientResult(
             scores=file_scores,
             model_version=model_version.strip(),
-            model_kind=model_kind,
         )
 
     except MLServiceUnavailable:

@@ -66,14 +66,12 @@ def _mock_response(
     *,
     scores: list[dict[str, object]],
     model_version: str = "risk-2.0.0",
-    model_kind: str = "trained",
 ) -> MagicMock:
     response = MagicMock()
     response.status_code = 200
     response.json.return_value = {
         "scores": scores,
         "model_version": model_version,
-        "model_kind": model_kind,
     }
     return response
 
@@ -107,7 +105,6 @@ def test_risk_client_predict_success():
         "src/Main.java": pytest.approx(0.78)
     }
     assert result.model_version == "risk-2.0.0"
-    assert result.model_kind == "trained"
 
     mock_post.assert_called_once()
 
@@ -160,7 +157,6 @@ def test_risk_client_empty_inputs():
     assert result == RiskClientResult(
         scores={},
         model_version="",
-        model_kind="",
     )
 
     mock_post.assert_not_called()
@@ -231,7 +227,7 @@ def test_risk_client_handles_malformed_response_schema():
                 "risk_score": 0.5,
             }
         ]
-        # model_version and model_kind intentionally absent
+        # model_version intentionally absent
     }
 
     with (
@@ -287,7 +283,6 @@ def test_risk_client_ignores_process_only_paths():
     assert result == RiskClientResult(
         scores={},
         model_version="",
-        model_kind="",
     )
 
     mock_post.assert_not_called()
@@ -558,7 +553,6 @@ def test_risk_client_filters_non_class_ck_entities():
         {
             "scores": [],
             "model_version": "risk-2.0.0",
-            "model_kind": "trained",
         },
 
         # Duplicate class identity.
@@ -576,7 +570,6 @@ def test_risk_client_filters_non_class_ck_entities():
                 },
             ],
             "model_version": "risk-2.0.0",
-            "model_kind": "trained",
         },
 
         # Unexpected path.
@@ -589,7 +582,6 @@ def test_risk_client_filters_non_class_ck_entities():
                 }
             ],
             "model_version": "risk-2.0.0",
-            "model_kind": "trained",
         },
 
         # Unexpected class.
@@ -602,7 +594,6 @@ def test_risk_client_filters_non_class_ck_entities():
                 }
             ],
             "model_version": "risk-2.0.0",
-            "model_kind": "trained",
         },
 
         # Missing model version.
@@ -614,20 +605,6 @@ def test_risk_client_filters_non_class_ck_entities():
                     "risk_score": 0.4,
                 }
             ],
-            "model_kind": "trained",
-        },
-
-        # Invalid model kind.
-        {
-            "scores": [
-                {
-                    "path": "src/A.java",
-                    "class_name": "A",
-                    "risk_score": 0.4,
-                }
-            ],
-            "model_version": "risk-2.0.0",
-            "model_kind": "something-else",
         },
 
         # Probability greater than one.
@@ -640,7 +617,6 @@ def test_risk_client_filters_non_class_ck_entities():
                 }
             ],
             "model_version": "risk-2.0.0",
-            "model_kind": "trained",
         },
 
         # Negative probability.
@@ -653,7 +629,6 @@ def test_risk_client_filters_non_class_ck_entities():
                 }
             ],
             "model_version": "risk-2.0.0",
-            "model_kind": "trained",
         },
     ],
 )
