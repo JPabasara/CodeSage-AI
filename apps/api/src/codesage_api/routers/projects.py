@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from codesage_api.deps import get_current_user_id, get_db, get_workspace_id, require_permission
@@ -40,3 +40,18 @@ def connect_repository(
 ) -> RepoOut:
 
     return repositories.connect(db, workspace_id, str(body.url), user_id)
+
+
+@router.delete(
+    "/{repo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("repository:disconnect"))],
+)
+def disconnect_repository(
+    repo_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+) -> Response:
+    repositories.disconnect(db, workspace_id, repo_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

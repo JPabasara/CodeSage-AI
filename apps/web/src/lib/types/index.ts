@@ -12,6 +12,8 @@
 //
 // React component props are internal and stay camelCase.
 
+import type { components } from "./api"
+
 // ── enums ───────────────────────────────────────────────────────────────────
 
 /**
@@ -54,25 +56,7 @@ export type Grade = "A" | "B" | "C" | "D" | "E"
  * The stable, machine-readable reason a request failed. New members may be added;
  * existing members never change meaning — so it is safe to branch on.
  */
-export type ErrorCode =
-  | "NOT_AUTHENTICATED"
-  | "FORBIDDEN"
-  | "NOT_FOUND"
-  | "INVALID_REPOSITORY_URL"
-  | "REPOSITORY_NOT_PUBLIC"
-  | "REPOSITORY_UNREACHABLE"
-  | "ALREADY_CONNECTED"
-  | "SCAN_ALREADY_RUNNING"
-  | "SCAN_NOT_CANCELLABLE"
-  | "VALIDATION_FAILED"
-  | "RATE_LIMITED"
-  | "UPSTREAM_UNAVAILABLE"
-  // 503 while a stored snapshot's score is still being computed. Added when the
-  // async scoring layer landed; the generated api.ts has carried it since, and
-  // this mirror had not caught up — so the one code the dashboard most needs to
-  // branch on was the one it could not name.
-  | "SCORE_PENDING"
-  | "INTERNAL_ERROR"
+export type ErrorCode = components["schemas"]["ErrorCode"]
 
 /** The body of `POST /api/projects`. */
 export interface ConnectRepoRequest {

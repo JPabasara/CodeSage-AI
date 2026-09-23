@@ -65,6 +65,12 @@ class RepositoryMissingDefaultBranch(CodeSageError):
     message = "The connected repository has no default branch."
 
 
+class RepositoryScanRunning(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "REPOSITORY_SCAN_RUNNING"
+    message = "Stop the running scan before removing this repository."
+
+
 class RateLimited(CodeSageError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "RATE_LIMITED"

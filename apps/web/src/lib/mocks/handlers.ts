@@ -293,6 +293,13 @@ export const handlers = [
   // ── projects ──────────────────────────────────────────────────────────────
   http.get("*/api/projects", () => HttpResponse.json(connected)),
 
+  http.delete("*/api/projects/:repoId", ({ params }) => {
+    const index = connected.findIndex((repo) => repo.id === params.repoId)
+    if (index < 0) return fail(404, "NOT_FOUND", "Not found.")
+    connected.splice(index, 1)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
   // Connect a repository. Each failure code needs its own message on screen —
   // "400 Bad Request" tells someone who pasted a private repo nothing useful.
   http.post("*/api/projects", async ({ request }) => {
