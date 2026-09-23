@@ -83,12 +83,44 @@ class StaticMetric(UUIDPrimaryKey, Base):
 class ProcessMetric(UUIDPrimaryKey, Base):
     __tablename__ = "process_metric"
     source_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_file.id", ondelete="CASCADE"), unique=True)
-    commits_90d: Mapped[int] = mapped_column(Integer)
-    author_count: Mapped[int] = mapped_column(Integer)
-    file_age: Mapped[float] = mapped_column(Double)
-    recency: Mapped[float] = mapped_column(Double)
+    number_of_versions_until: Mapped[int] = mapped_column(Integer)
+    number_of_authors_until: Mapped[int] = mapped_column(Integer)
+    lines_added_until: Mapped[int] = mapped_column(Integer)
+    max_lines_added_until: Mapped[int] = mapped_column(Integer)
+    avg_lines_added_until: Mapped[float] = mapped_column(Double)
+    lines_removed_until: Mapped[int] = mapped_column(Integer)
+    max_lines_removed_until: Mapped[int] = mapped_column(Integer)
+    avg_lines_removed_until: Mapped[float] = mapped_column(Double)
+    code_churn_until: Mapped[int] = mapped_column(Integer)
+    max_code_churn_until: Mapped[int] = mapped_column(Integer)
+    avg_code_churn_until: Mapped[float] = mapped_column(Double)
+    age_with_respect_to: Mapped[float] = mapped_column(Double)
+    weighted_age_with_respect_to: Mapped[float] = mapped_column(Double)
     source_file: Mapped[SourceFile] = relationship(back_populates="process_metric")
-    __table_args__ = (CheckConstraint("author_count >= 0", name="author_count_nonnegative"),)
+    __table_args__ = (
+        CheckConstraint(
+            "number_of_versions_until >= 0",
+            name="number_of_versions_until_nonnegative",
+        ),
+        CheckConstraint(
+            "number_of_authors_until >= 0",
+            name="number_of_authors_until_nonnegative",
+        ),
+        CheckConstraint(
+            "lines_added_until >= 0 AND max_lines_added_until >= 0 "
+            "AND avg_lines_added_until >= 0",
+            name="lines_added_nonnegative",
+        ),
+        CheckConstraint(
+            "lines_removed_until >= 0 AND max_lines_removed_until >= 0 "
+            "AND avg_lines_removed_until >= 0",
+            name="lines_removed_nonnegative",
+        ),
+        CheckConstraint(
+            "age_with_respect_to >= 0 AND weighted_age_with_respect_to >= 0",
+            name="process_ages_nonnegative",
+        ),
+    )
 
 
 class FileTreeNode(UUIDPrimaryKey, Base):
