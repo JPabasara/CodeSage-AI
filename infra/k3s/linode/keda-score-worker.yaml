@@ -41,7 +41,7 @@ spec:
       metadata:
         listName: scoring
         listLength: "1"
-        activationListLength: "1"
+        activationListLength: "0"
         enableTLS: "true"
         databaseIndex: "0"
       authenticationRef:
