@@ -151,7 +151,9 @@ test("the detail shows a rule finding's evidence: measured value versus limit", 
 test("a SATD finding shows its source and category, with no rule evidence", async ({
   page,
 }) => {
-  await findingCards(page).filter({ hasText: /knowingly untested/i }).click()
+  await findingCards(page)
+    .filter({ hasText: /knowingly untested/i })
+    .click()
 
   const detail = detailPanel(page)
   await expect(detail.getByText("satd")).toBeVisible()
