@@ -1,5 +1,4 @@
 from pathlib import Path
-from unittest.mock import Mock
 
 import joblib
 import pytest
@@ -15,36 +14,68 @@ def _clear_registry_cache() -> None:
     registry.load_risk_model.cache_clear()
 
 
+class _ValidRiskPipeline:
+    classes_ = [0, 1]
+
+    def predict_proba(self, features):
+        return features
+
+
+class _NoProbabilityPipeline:
+    classes_ = [0, 1]
+
+    def predict(self, features):
+        return features
+
+
+class _WrongClassesPipeline:
+    classes_ = [0, 2]
+
+    def predict_proba(self, features):
+        return features
+
+
 def _configure_artifact(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     *,
-    feature_order: list[str],
-) -> Mock:
-    (tmp_path / "risk_v1.joblib").touch()
-    pipeline = Mock()
-    pipeline.predict_proba = Mock()
-    monkeypatch.setattr(registry, "artifact_dir", lambda: tmp_path)
+    pipeline,
+    feature_order: list[str] | None = None,
+) -> None:
+    model_path = tmp_path / "risk_v2.joblib"
+    model_path.touch()
+
+    monkeypatch.setattr(
+        registry,
+        "artifact_dir",
+        lambda: tmp_path,
+    )
+
     monkeypatch.setattr(
         joblib,
         "load",
         lambda _path: {
             "version": "risk-test",
-            "feature_order": feature_order,
+            "feature_order": (
+                list(FEATURE_ORDER)
+                if feature_order is None
+                else feature_order
+            ),
             "pipeline": pipeline,
         },
     )
-    return pipeline
 
 
-def test_risk_registry_accepts_the_current_artifact_contract(
+def test_risk_registry_accepts_current_artifact_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    pipeline = _configure_artifact(
+    pipeline = _ValidRiskPipeline()
+
+    _configure_artifact(
         monkeypatch,
         tmp_path,
-        feature_order=list(FEATURE_ORDER),
+        pipeline=pipeline,
     )
 
     loaded = registry.load_risk_model()
@@ -53,18 +84,53 @@ def test_risk_registry_accepts_the_current_artifact_contract(
     assert loaded.artifact is pipeline
 
 
-def test_risk_registry_rejects_a_stale_artifact_contract(
+def test_risk_registry_rejects_stale_feature_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     _configure_artifact(
         monkeypatch,
         tmp_path,
+        pipeline=_ValidRiskPipeline(),
         feature_order=["commits_90d"],
     )
 
     with pytest.raises(
         ValueError,
         match="feature order does not match",
+    ):
+        registry.load_risk_model()
+
+
+def test_risk_registry_rejects_pipeline_without_predict_proba(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_artifact(
+        monkeypatch,
+        tmp_path,
+        pipeline=_NoProbabilityPipeline(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="must expose predict_proba",
+    ):
+        registry.load_risk_model()
+
+
+def test_risk_registry_rejects_wrong_class_labels(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_artifact(
+        monkeypatch,
+        tmp_path,
+        pipeline=_WrongClassesPipeline(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"classes \{0, 1\}",
     ):
         registry.load_risk_model()

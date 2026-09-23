@@ -15,7 +15,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from codesage_ml.risk.features import FEATURE_ORDER
+from codesage_ml.risk.features import (
+    FEATURE_ORDER,
+    NEGATIVE_CLASS,
+    POSITIVE_CLASS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,7 +27,7 @@ class LoadedModel:
     name: str
     version: str
     artifact: Any
-    kind: str = "trained"
+
 
 
 class _FallbackPipeline:
@@ -94,7 +98,7 @@ def load_risk_model() -> LoadedModel:
     """
     import joblib
 
-    model_path = artifact_dir() / "risk_v1.joblib"
+    model_path = artifact_dir() / "risk_v2.joblib"
 
     if not model_path.exists():
         raise FileNotFoundError(
@@ -130,20 +134,33 @@ def load_risk_model() -> LoadedModel:
 
     pipeline = loaded["pipeline"]
 
-    if not (
-        hasattr(pipeline, "predict_proba")
-        or hasattr(pipeline, "predict")
+    if not hasattr(pipeline, "predict_proba"):
+        raise ValueError(
+            "ML-2 artifact must expose predict_proba"
+        )
+
+    classes = getattr(pipeline, "classes_", None)
+
+    if classes is None:
+        raise ValueError(
+            "ML-2 artifact does not expose fitted class labels"
+        )
+
+    class_labels = list(classes)
+
+    if (
+        len(class_labels) != 2
+        or set(class_labels) != {NEGATIVE_CLASS, POSITIVE_CLASS}
     ):
         raise ValueError(
-            "ML-2 artifact does not expose a supported "
-            "prediction interface"
+            "ML-2 artifact must be a binary classifier "
+            f"with classes {{{NEGATIVE_CLASS}, {POSITIVE_CLASS}}}"
         )
 
     return LoadedModel(
         name="risk_model",
         version=version.strip(),
         artifact=pipeline,
-        kind="trained",
     )
 
 
