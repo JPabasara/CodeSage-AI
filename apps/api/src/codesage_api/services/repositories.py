@@ -26,6 +26,7 @@ from codesage_api.logging import get_logger
 from codesage_api.schemas import BranchOut, LatestHealthOut, RepoOut
 from codesage_api.scoring.cache import profile_payload
 from codesage_api.scoring.enums import Grade
+from codesage_api.scoring.models import Profile
 from codesage_api.services import audit, dashboard, profiles
 from codesage_api.tasks.app import celery_app
 
@@ -136,11 +137,15 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
         .order_by(Repository.created_at.desc(), Repository.id.desc())
     )
     stored_repositories = session.scalars(statement).all()
-    profile = profiles.get_active(session, workspace_id) if stored_repositories else None
+    # One read of the pool for the whole list. Each card's health hint is scored
+    # with THAT project's effective profile, so two projects in one workspace can
+    # legitimately show numbers derived from different profiles.
+    pool = profiles.load_pool(session, workspace_id) if stored_repositories else None
     output: list[RepoOut] = []
-    pending: list[SnapshotScore] = []
+    pending: list[tuple[SnapshotScore, Profile]] = []
     for repository in stored_repositories:
-        assert profile is not None
+        assert pool is not None
+        profile = profiles.to_scoring_profile(pool.for_repository(repository.id))
         default_branch = next(
             (branch.name for branch in repository.branches if branch.is_default), None
         )
@@ -158,7 +163,7 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
             default_branch,
             profile,
         )
-        pending.extend(prepared)
+        pending.extend((cached, profile) for cached in prepared)
         latest_health = None
         if health is not None:
             cached, delta = health
@@ -170,19 +175,22 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
                 delta=delta,
             )
         output.append(_to_output(repository, default_branch, latest_health))
-    if pending and profile is not None:
+    if pending:
         session.commit()
-        payload = profile_payload(profile)
         try:
-            for cached in pending:
+            for cached, cached_profile in pending:
                 celery_app.send_task(
                     "codesage.score_snapshot",
-                    args=[str(cached.id), str(workspace_id), payload],
+                    args=[
+                        str(cached.id),
+                        str(workspace_id),
+                        profile_payload(cached_profile),
+                    ],
                 )
         except Exception:
             logger.exception("Could not enqueue project score calculation")
             set_workspace_context(session, workspace_id)
-            for cached in pending:
+            for cached, _ in pending:
                 stored = session.get(SnapshotScore, cached.id)
                 if stored is not None and stored.status == "pending":
                     stored.status = "error"

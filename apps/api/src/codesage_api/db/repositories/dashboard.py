@@ -115,6 +115,21 @@ def list_completed_snapshot_refs(
     return list(session.scalars(statement).all())
 
 
+def repository_id_for_snapshot(
+    session: Session,
+    workspace_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+) -> uuid.UUID | None:
+    """Which project a snapshot belongs to — the key to its effective profile."""
+    return session.scalar(
+        select(Repository.id)
+        .join(Branch, Branch.repository_id == Repository.id)
+        .join(AnalysisAttempt, AnalysisAttempt.branch_id == Branch.id)
+        .join(Snapshot, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
+        .where(Snapshot.id == snapshot_id, Repository.workspace_id == workspace_id)
+    )
+
+
 def get_snapshot_for_scoring(
     session: Session,
     workspace_id: uuid.UUID,

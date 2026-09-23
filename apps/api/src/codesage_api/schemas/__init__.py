@@ -26,7 +26,16 @@ from codesage_api.schemas.health import (
     HealthReportOut,
     TreeNodeOut,
 )
-from codesage_api.schemas.profile import CategoryWeights, ScoreProfileIn, ScoreProfileOut
+from codesage_api.schemas.profile import (
+    CategoryWeights,
+    CategoryWeightsPatch,
+    CreateProfileIn,
+    ProjectProfileOut,
+    ScoreProfileIn,
+    ScoreProfileOut,
+    SelectProfileIn,
+    UpdateProfileIn,
+)
 from codesage_api.schemas.repo import ConnectRepoIn, LatestHealthOut, RepoOut
 from codesage_api.schemas.scan import ScanStatusOut, ScanSummaryOut, StartScanIn
 
@@ -35,22 +44,27 @@ __all__ = [
     "BranchOut",
     "CategoryBreakdownItemOut",
     "CategoryWeights",
+    "CategoryWeightsPatch",
     "ConnectRepoIn",
+    "CreateProfileIn",
     "CreateWorkspaceIn",
     "FileScoreOut",
     "FindingOut",
     "HealthPointOut",
     "HealthReportOut",
     "LatestHealthOut",
+    "ProjectProfileOut",
     "RepoOut",
     "ScanStatusOut",
     "ScanSummaryOut",
     "ScoreProfileIn",
     "ScoreProfileOut",
+    "SelectProfileIn",
     "SessionOut",
     "StartScanIn",
     "SwitchWorkspaceIn",
     "TreeNodeOut",
+    "UpdateProfileIn",
     "UpdateWorkspaceIn",
     "WorkspaceSummaryOut",
 ]
