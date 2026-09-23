@@ -17,13 +17,13 @@ questions; it never learns.
 from fastapi import FastAPI
 
 from codesage_ml.registry import load_risk_model, load_satd_model
-from codesage_ml.risk.features import build_vector
+from codesage_ml.risk.features import POSITIVE_CLASS, build_vector
 from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 from codesage_ml.schemas import (
     ClassifyRequest,
     ClassifyResponse,
+    ClassRisk,
     CommentPrediction,
-    FileRisk,
     RiskRequest,
     RiskResponse,
     VersionResponse,
@@ -79,7 +79,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
 
 @app.post("/risk", response_model=RiskResponse)
 def risk(body: RiskRequest) -> RiskResponse:
-    """ML-2: per-file bug-proneness, 0–1 (SRS FR-10).
+    """ML-2: per-class bug-proneness, 0–1 (SRS FR-10).
 
     Produces a score, never a finding, and assigns neither category nor severity.
 
@@ -89,32 +89,44 @@ def risk(body: RiskRequest) -> RiskResponse:
     """
     risk_info = load_risk_model()
 
-    if not body.files:
+    if not body.classes:
         return RiskResponse(
-            scores=[], model_version=risk_info.version, model_kind=risk_info.kind
+            scores=[],
+            model_version=risk_info.version,
         )
 
-    # Build 13-element feature vectors in strict canonical order
-    vectors = [build_vector(file.metrics) for file in body.files]
+    vectors = [
+        build_vector(class_.metrics)
+        for class_ in body.classes
+    ]
 
-    # Predict continuous bug-proneness probability [0.0, 1.0]
-    if hasattr(risk_info.artifact, "predict_proba"):
-        probs = risk_info.artifact.predict_proba(vectors)
-        # Class 1 is defective/bug-prone probability
-        risk_scores = [float(p[1]) if len(p) > 1 else float(p[0]) for p in probs]
-    else:
-        preds = risk_info.artifact.predict(vectors)
-        risk_scores = [float(p) for p in preds]
+    # Predict continuous bug-proneness probability [0.0, 1.0].
+    #
+    # The registry guarantees a fitted binary classifier with classes {0, 1}.
+    # Locate the defective class explicitly instead of assuming probability
+    # column 1 always corresponds to class 1.
+    class_labels = list(risk_info.artifact.classes_)
+    positive_index = class_labels.index(POSITIVE_CLASS)
+
+    probabilities = risk_info.artifact.predict_proba(vectors)
+
+    risk_scores = [
+        float(row[positive_index])
+        for row in probabilities
+    ]
 
     scores = [
-        FileRisk(path=file.path, risk_score=score)
-        for file, score in zip(body.files, risk_scores)
+        ClassRisk(
+            path=class_.path,
+            class_name=class_.class_name,
+            risk_score=score,
+        )
+        for class_, score in zip(body.classes, risk_scores)
     ]
 
     return RiskResponse(
         scores=scores,
         model_version=risk_info.version,
-        model_kind=risk_info.kind,
     )
 
 

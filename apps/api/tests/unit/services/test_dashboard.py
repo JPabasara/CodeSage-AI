@@ -109,10 +109,19 @@ def _snapshot(
     source_file.process_metric = ProcessMetric(
         id=uuid.uuid4(),
         source_file_id=source_file.id,
-        commits_90d=0,
-        author_count=1,
-        file_age=10,
-        recency=1,
+        number_of_versions_until=2,
+        number_of_authors_until=1,
+        lines_added_until=20,
+        max_lines_added_until=12,
+        avg_lines_added_until=10,
+        lines_removed_until=5,
+        max_lines_removed_until=3,
+        avg_lines_removed_until=2.5,
+        code_churn_until=15,
+        max_code_churn_until=10,
+        avg_code_churn_until=7.5,
+        age_with_respect_to=10,
+        weighted_age_with_respect_to=4,
     )
     source_file.bug_risk_predictions = []
     source_file.source_locations = []

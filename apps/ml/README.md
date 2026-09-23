@@ -35,30 +35,32 @@ apps/ml/
 │   └── risk/          #   ML-2 feature ordering — must match training exactly
 ├── training/          # OFFLINE. Never deployed; the Dockerfile omits these deps.
 ├── notebooks/         # exploration & training notebooks
-├── models/            # trained artifacts (*.pkl) — NOT committed, MOUNTED at runtime
-└── data/              # datasets — NOT committed (see data/README.md + .gitignore)
+├── models/            # trained artifacts; the production ML-2 joblib is committed
+└── data/              # datasets; only the final ML-2 processed table is committed
     ├── raw/           #   original downloads, immutable
     ├── interim/       #   cleaned / intermediate transforms
     ├── processed/     #   final train / test-ready tables
     └── external/      #   third-party sources kept as-is
 ```
 
-**Raw data and model artifacts are git-ignored on purpose** (size + licence).
+Raw research data and non-production model artifacts remain git-ignored. The
+processed ML-2 dataset, evaluation evidence, and `models/risk_v2.joblib` are
+intentional repository artifacts.
 
-**Artifacts are mounted, not baked in.** `infra/docker-compose.yml` mounts
-`./models` at `/models` read-only, so replacing a model is *drop the file, restart* —
-no rebuild and no application change.
+The production image includes `models/risk_v2.joblib` at `/models`. Local
+Compose additionally mounts `./models` at `/models` read-only for development.
 
-Before starting a clean environment, generate `models/risk_v1.joblib` with:
+The final production artifact is `models/risk_v2.joblib`. Training remains an
+offline workflow:
 
 ```powershell
 python training/risk/prepare_aeeem.py ../../external/Large-Defect-Prediction-Benchmark/AEEEM-defect-dataset
 python training/risk/train.py
 ```
 
-The `/risk` response reports `model_kind: "trained"` when that artifact is loaded
-and `model_kind: "heuristic"` when it is absent. This makes fallback operation
-visible to the worker and prevents it being recorded as an AEEEM-trained result.
+The `/risk` response contains class scores and the model version. ML-2 has no
+fallback; when the service or artifact is unavailable, scans continue without
+bug-risk predictions.
 
 ## Training data
 

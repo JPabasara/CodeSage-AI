@@ -27,7 +27,7 @@ from codesage_api.tasks.scan_pipeline import PipelineResults, _finalize, run_sca
 @patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
 @patch("codesage_api.tasks.scan_pipeline.attempts.get_worker_attempt")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
-def test_finalize_records_heuristic_risk_provenance_honestly(
+def test_finalize_records_trained_risk_provenance(
     session_scope: Mock,
     get_attempt: Mock,
     _set_workspace: Mock,
@@ -45,10 +45,10 @@ def test_finalize_records_heuristic_risk_provenance_honestly(
     model_version = MLModelVersion(
         id=uuid.uuid4(),
         model_type=MLModelType.BUG_RISK,
-        version_identifier="risk-fallback-heuristic-1.0",
+        version_identifier="risk-2.0.0",
         training_date=SimpleNamespace(),
         deployment_status=ModelDeploymentStatus.DEPLOYED,
-        evaluation_dataset_reference="none (deterministic heuristic)",
+        evaluation_dataset_reference="D'Ambros/AEEEM",
         evaluation_metrics={},
     )
     session = session_scope.return_value.__enter__.return_value
@@ -59,12 +59,16 @@ def test_finalize_records_heuristic_risk_provenance_honestly(
         attempt.id,
         uuid.uuid4(),
         PipelineResults(
-            ExtractionResult([], [], []),
+            ExtractionResult(
+                static_metrics=[],
+                class_metrics=[],
+                process_metrics=[],
+                comments=[],
+            ),
             [],
             RiskClientResult(
                 scores={"src/Main.java": 0.7},
-                model_version="risk-fallback-heuristic-1.0",
-                model_kind="heuristic",
+                model_version="risk-2.0.0",
             ),
         ),
     )
@@ -72,10 +76,10 @@ def test_finalize_records_heuristic_risk_provenance_honestly(
     assert session.execute.called
     assert session.scalar.called
     registration = session.execute.call_args_list[0].args[0].compile().params
-    assert registration["evaluation_dataset_reference"] == (
-        "none (deterministic heuristic)"
-    )
-    assert registration["evaluation_metrics"]["model_kind"] == "heuristic"
+    assert registration["evaluation_dataset_reference"] == "D'Ambros/AEEEM"
+    assert registration["evaluation_metrics"] == {
+        "registration": "runtime model response",
+    }
     assert any(
         getattr(added, "model_version_id", None) == model_version.id
         for added in (call.args[0] for call in session.add.call_args_list)
@@ -125,13 +129,17 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
         committer_date=SimpleNamespace(),
     )
     comment = ExtractedComment("A.java", 3, "// TODO: temporary workaround")
-    extracted = ExtractionResult([], [], [comment])
+    extracted = ExtractionResult(
+        static_metrics=[],
+        class_metrics=[],
+        process_metrics=[],
+        comments=[comment],
+    )
     extract.return_value = extracted
     detect.return_value = []
     risk_res = RiskClientResult(
         scores={"Main.java": 0.85},
-        model_version="risk-1.0.0",
-        model_kind="trained",
+        model_version="risk-2.0.0",
     )
     predict.return_value = risk_res
     prediction = SATDResult(
@@ -195,7 +203,12 @@ def test_task_handles_ml_service_degraded_mode(
         commit_sha="a" * 40,
         committer_date=SimpleNamespace(),
     )
-    extracted = ExtractionResult([], [], [])
+    extracted = ExtractionResult(
+        static_metrics=[],
+        class_metrics=[],
+        process_metrics=[],
+        comments=[],
+    )
     extract.return_value = extracted
     detect.return_value = []
 

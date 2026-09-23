@@ -11,6 +11,30 @@ from codesage_api.config import get_settings
 
 
 @dataclass(frozen=True, slots=True)
+class ClassMetrics:
+    path: str
+    class_name: str
+    class_type: str
+
+    number_of_lines_of_code: int
+    wmc: float
+    number_of_methods: int
+
+    cbo: float
+    dit: float
+    lcom: float
+    rfc: float
+    noc: float
+
+
+
+
+
+
+
+
+
+@dataclass(frozen=True, slots=True)
 class FileMetrics:
     path: str
     loc: int
@@ -39,6 +63,7 @@ class MethodMetrics:
 @dataclass(frozen=True, slots=True)
 class CKMetrics:
     files: list[FileMetrics]
+    classes: list[ClassMetrics]
     methods: list[MethodMetrics]
 
 
@@ -108,12 +133,29 @@ def extract_ck_analysis(
         method_rows = _read_rows(output / "method.csv")
 
     aggregated: dict[str, dict[str, float]] = {}
+    classes: list[ClassMetrics] = []
 
 
     for row in class_rows:
         path = _relative_path(row.get("file", ""), repository_path)
         if not path.endswith(".java"):
             continue
+
+        classes.append(
+            ClassMetrics(
+                path=path,
+                class_name=row.get("class", ""),
+                class_type=row.get("type", ""),
+                wmc=_number(row, "wmc"),
+                cbo=_number(row, "cbo"),
+                dit=_number(row, "dit"),
+                lcom=_number(row, "lcom"),
+                rfc=_number(row, "rfc"),
+                noc=_number(row, "noc"),
+                number_of_lines_of_code=int(_number(row, "loc")),
+                number_of_methods=int(_number(row, "totalMethodsQty")),
+            )
+            )
         values = aggregated.setdefault(
             path,
             {
@@ -177,8 +219,26 @@ def extract_ck_analysis(
         for row in method_rows
         if _relative_path(row.get("file", ""), repository_path).endswith(".java")
     ]
-    methods.sort(key=lambda item: (item.path, item.line, item.class_name, item.method_name))
-    return CKMetrics(files=files, methods=methods)
+    methods.sort(
+        key=lambda item: (
+            item.path, 
+            item.line, 
+            item.class_name, 
+            item.method_name))
+
+
+    classes.sort(
+        key=lambda item: (
+            item.path,
+            item.class_name,
+            item.class_type,
+        )
+    )
+    return CKMetrics(
+        files=files,
+        classes=classes,
+        methods=methods,
+    )
 
 
 def extract_ck_metrics(

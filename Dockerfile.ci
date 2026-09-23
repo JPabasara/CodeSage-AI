@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1.7
+
+# Local reproduction of the web, API, and ML test jobs in .github/workflows/ci.yml.
+# PostgreSQL integration tests use Testcontainers through the mounted host Docker
+# socket; this image does not run a nested Docker daemon.
+FROM node:22-bookworm-slim AS node-runtime
+
+FROM python:3.12-slim-bookworm
+
+ARG PNPM_VERSION=11.15.1
+
+ENV CI=true \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Add the official Node runtime to Python's image. Keeping Python as the base is
+# important because its ssl extension depends on system libraries installed by
+# that image, not only files under /usr/local.
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
+    && npm install --global "pnpm@${PNPM_VERSION}" \
+    && python -m venv /opt/api-venv \
+    && python -m venv /opt/ml-venv
+
+WORKDIR /workspace
+
+# Keep API and ML dependencies isolated, just as GitHub Actions installs them in
+# separate jobs. Their version constraints are intentionally not one environment.
+COPY apps/api/pyproject.toml apps/api/README.md ./apps/api/
+COPY apps/api/src ./apps/api/src
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/api-venv/bin/pip install -e "./apps/api[dev]"
+
+COPY apps/ml/pyproject.toml apps/ml/README.md ./apps/ml/
+COPY apps/ml/src ./apps/ml/src
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/ml-venv/bin/pip install -e "./apps/ml[dev]"
+
+COPY apps/web/package.json apps/web/pnpm-lock.yaml apps/web/pnpm-workspace.yaml ./apps/web/
+RUN --mount=type=cache,target=/pnpm/store \
+    cd apps/web \
+    && pnpm config set store-dir /pnpm/store \
+    && pnpm install --frozen-lockfile
+
+COPY apps/api ./apps/api
+COPY apps/ml ./apps/ml
+COPY apps/web ./apps/web
+COPY docs/api ./docs/api
+COPY scripts/run-ci-in-container.sh ./scripts/run-ci-in-container.sh
+
+RUN chmod +x ./scripts/run-ci-in-container.sh
+
+CMD ["./scripts/run-ci-in-container.sh"]

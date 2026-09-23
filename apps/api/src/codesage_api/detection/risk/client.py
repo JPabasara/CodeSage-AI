@@ -1,122 +1,344 @@
-"""ML-2 client: file metrics in, per-file risk score out (SRS FR-10).
+"""ML-2 client: class-level metrics in, per-file bug-risk score out.
 
-Calls the /risk endpoint on the ML service. Degrades gracefully by raising
-MLServiceUnavailable when the container is down or returns a malformed response.
+The ML model predicts bug-proneness for individual Java classes using
+class-specific CK metrics and file-level process metrics.
+
+Class probabilities are aggregated into one file-level probability before
+being returned to the scan pipeline.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
+from math import prod
 
 import httpx
 
 from codesage_api.config import get_settings
 from codesage_api.errors import MLServiceUnavailable
-from codesage_api.extractors.ck_metrics import FileMetrics
+from codesage_api.extractors.ck_metrics import ClassMetrics
 from codesage_api.extractors.process_metrics import FileProcessMetrics
 
 
 @dataclass(frozen=True, slots=True)
 class RiskClientResult:
+    # Final file-level probabilities consumed by the scan/scoring pipeline.
     scores: dict[str, float]
+
     model_version: str
-    model_kind: str
 
 
+# These names form the wire contract between the API and ML service.
+#
+# They intentionally match the D'Ambros/AEEEM training feature names.
 RISK_FEATURES = (
+    # Class-level CK metrics
     "wmc",
     "cbo",
     "dit",
     "lcom",
     "rfc",
     "noc",
-    "loc",
-    "max_nested_blocks",
-    "comment_ratio",
-    "commits_90d",
-    "author_count",
-    "file_age_days",
-    "recency_days",
+    "numberOfLinesOfCode",
+    "numberOfMethods",
+
+    # File-level process metrics
+    "numberOfVersionsUntil",
+    "numberOfAuthorsUntil",
+    "linesAddedUntil",
+    "maxLinesAddedUntil",
+    "avgLinesAddedUntil",
+    "linesRemovedUntil",
+    "maxLinesRemovedUntil",
+    "avgLinesRemovedUntil",
+    "codeChurnUntil",
+    "maxCodeChurnUntil",
+    "avgCodeChurnUntil",
+    "ageWithRespectTo",
+    "weightedAgeWithRespectTo",
 )
 
 
-def predict(files: list[FileMetrics], process: dict[str, FileProcessMetrics]) -> RiskClientResult:
-    """Batch-predict per-file bug-proneness risk scores (0.0 – 1.0) and model version."""
-    if not files:
-        return RiskClientResult(scores={}, model_version="", model_kind="")
+def _is_ml_eligible_class(metrics: ClassMetrics) -> bool:
+    """
+    Return whether a CK class row is eligible for ML-2 prediction.
+
+    D'Ambros-style prediction operates on classes rather than CK's synthetic
+    inner/anonymous entities. For v1 we predict ordinary top-level classes.
+    """
+    return metrics.class_type.lower() == "class"
+
+
+def _build_metrics(
+    class_metrics: ClassMetrics,
+    process_metrics: FileProcessMetrics | None,
+) -> dict[str, float]:
+    """
+    Build one class-level ML-2 observation.
+
+    CK features vary by class. Process features describe the containing file
+    and are therefore intentionally shared by all classes in that file.
+    """
+    metrics = dict.fromkeys(RISK_FEATURES, 0.0)
+
+    # -------------------------------------------------------------
+    # Class-level CK metrics
+    # -------------------------------------------------------------
+
+    metrics["wmc"] = float(class_metrics.wmc)
+    metrics["cbo"] = float(class_metrics.cbo)
+    metrics["dit"] = float(class_metrics.dit)
+    metrics["lcom"] = float(class_metrics.lcom)
+    metrics["rfc"] = float(class_metrics.rfc)
+    metrics["noc"] = float(class_metrics.noc)
+
+    metrics["numberOfLinesOfCode"] = float(
+        class_metrics.number_of_lines_of_code
+    )
+    metrics["numberOfMethods"] = float(
+        class_metrics.number_of_methods
+    )
+
+    # -------------------------------------------------------------
+    # File-level process metrics
+    # -------------------------------------------------------------
+
+    if process_metrics is not None:
+        metrics["numberOfVersionsUntil"] = float(
+            process_metrics.number_of_versions_until
+        )
+        metrics["numberOfAuthorsUntil"] = float(
+            process_metrics.number_of_authors_until
+        )
+
+        metrics["linesAddedUntil"] = float(
+            process_metrics.lines_added_until
+        )
+        metrics["maxLinesAddedUntil"] = float(
+            process_metrics.max_lines_added_until
+        )
+        metrics["avgLinesAddedUntil"] = float(
+            process_metrics.avg_lines_added_until
+        )
+
+        metrics["linesRemovedUntil"] = float(
+            process_metrics.lines_removed_until
+        )
+        metrics["maxLinesRemovedUntil"] = float(
+            process_metrics.max_lines_removed_until
+        )
+        metrics["avgLinesRemovedUntil"] = float(
+            process_metrics.avg_lines_removed_until
+        )
+
+        metrics["codeChurnUntil"] = float(
+            process_metrics.code_churn_until
+        )
+        metrics["maxCodeChurnUntil"] = float(
+            process_metrics.max_code_churn_until
+        )
+        metrics["avgCodeChurnUntil"] = float(
+            process_metrics.avg_code_churn_until
+        )
+
+        metrics["ageWithRespectTo"] = float(
+            process_metrics.age_with_respect_to
+        )
+        metrics["weightedAgeWithRespectTo"] = float(
+            process_metrics.weighted_age_with_respect_to
+        )
+
+    return metrics
+
+
+def _aggregate_file_scores(
+    class_scores: dict[str, list[float]],
+) -> dict[str, float]:
+    """
+    Aggregate class probabilities into one file-level probability.
+
+    Uses noisy-OR:
+
+        P(file defective) = 1 - Π(1 - P(class defective))
+
+    For a file containing one predicted class, its file probability is
+    therefore exactly that class probability.
+    """
+    return {
+        path: 1.0 - prod(1.0 - score for score in scores)
+        for path, scores in class_scores.items()
+        if scores
+    }
+
+
+def predict(
+    classes: list[ClassMetrics],
+    process: dict[str, FileProcessMetrics],
+) -> RiskClientResult:
+    """
+    Batch-predict class-level bug-proneness and return per-file risk.
+
+    Each ML observation represents one Java class.
+
+    File-level process metrics are joined to each class using the class's
+    source-file path. The returned class probabilities are then aggregated
+    into one probability per file.
+    """
+    eligible_classes = [
+        metrics
+        for metrics in classes
+        if _is_ml_eligible_class(metrics)
+    ]
+
+    if not eligible_classes:
+        return RiskClientResult(
+            scores={},
+            model_version="",
+        )
 
     settings = get_settings()
     url = f"{settings.ml_service_url.rstrip('/')}/risk"
 
-    # ML-2 is Java/file scoped. History can contain deleted or non-Java paths,
-    # but those have no compatible CK vector and must not be predicted.
-    all_paths = {f.path for f in files}
-    files_by_path = {f.path: f for f in files}
+    # A class identity must be unique within the request.
+    expected_classes: set[tuple[str, str]] = set()
 
-    payload_files = []
-    for path in sorted(all_paths):
-        file_metrics = files_by_path.get(path)
-        proc_metrics = process.get(path)
+    payload_classes = []
 
-        # Newly created files may have no Git history. Send the complete wire
-        # contract anyway: absence is represented by zero, not a missing key.
-        metrics = dict.fromkeys(RISK_FEATURES, 0.0)
-        if file_metrics:
-            metrics["loc"] = float(file_metrics.loc)
-            metrics["wmc"] = float(file_metrics.cyclomatic_complexity)
-            metrics["max_nested_blocks"] = float(file_metrics.max_nesting_depth)
-            metrics["cbo"] = float(file_metrics.cbo)
-            metrics["dit"] = float(file_metrics.dit)
-            metrics["lcom"] = float(file_metrics.lcom)
-            metrics["rfc"] = float(file_metrics.rfc)
-            metrics["noc"] = float(file_metrics.noc)
-            # CK does not currently emit comment lines. Keep the constant
-            # explicit so the wire contract still has all 13 canonical fields.
-            metrics["comment_ratio"] = 0.0
-        if proc_metrics:
-            metrics["commits_90d"] = float(proc_metrics.commits_90d)
-            metrics["author_count"] = float(proc_metrics.author_count)
-            metrics["file_age_days"] = float(proc_metrics.file_age_days)
-            metrics["recency_days"] = float(proc_metrics.recency_days)
+    for class_metrics in sorted(
+        eligible_classes,
+        key=lambda item: (item.path, item.class_name),
+    ):
+        identity = (
+            class_metrics.path,
+            class_metrics.class_name,
+        )
 
-        payload_files.append({"path": path, "metrics": metrics})
+        if identity in expected_classes:
+            raise MLServiceUnavailable(
+                "Duplicate ML-2 class identity encountered: "
+                f"{class_metrics.path}:{class_metrics.class_name}"
+            )
 
-    payload = {"files": payload_files}
+        expected_classes.add(identity)
+
+        process_metrics = process.get(
+            class_metrics.path
+        )
+
+        payload_classes.append(
+            {
+                "path": class_metrics.path,
+                "class_name": class_metrics.class_name,
+                "metrics": _build_metrics(
+                    class_metrics,
+                    process_metrics,
+                ),
+            }
+        )
+
+    payload = {
+        "classes": payload_classes,
+    }
 
     try:
-        response = httpx.post(url, json=payload, timeout=settings.ml_timeout_seconds)
+        response = httpx.post(
+            url,
+            json=payload,
+            timeout=settings.ml_timeout_seconds,
+        )
+
         response.raise_for_status()
         data = response.json()
+
         model_version = data.get("model_version")
-        model_kind = data.get("model_kind")
         raw_scores = data.get("scores")
-        if not isinstance(model_version, str) or not model_version.strip():
-            raise ValueError("Risk response is missing model_version")
+
+        if (
+            not isinstance(model_version, str)
+            or not model_version.strip()
+        ):
+            raise ValueError(
+                "Risk response is missing model_version"
+            )
+
         if not isinstance(raw_scores, list):
-            raise TypeError("Risk response scores must be a list")
-        if model_kind not in {"trained", "heuristic"}:
-            raise ValueError("Risk response has an invalid model_kind")
+            raise TypeError(
+                "Risk response scores must be a list"
+            )
 
-        scores: dict[str, float] = {}
+        received_classes: set[tuple[str, str]] = set()
+
+        class_scores_by_file: dict[
+            str,
+            list[float],
+        ] = defaultdict(list)
+
         for item in raw_scores:
-            p = str(item["path"])
-            if p not in all_paths:
-                raise ValueError(f"Risk response contains unexpected path {p!r}")
-            if p in scores:
-                raise ValueError(f"Risk response contains duplicate path {p!r}")
-            score = float(item["risk_score"])
-            if not (0.0 <= score <= 1.0):
-                raise ValueError(f"Risk score {score} out of bounds [0.0, 1.0]")
-            scores[p] = score
+            path = str(item["path"])
+            class_name = str(item["class_name"])
 
-        missing_paths = all_paths - scores.keys()
-        if missing_paths:
-            raise ValueError(f"Risk response is missing paths: {', '.join(sorted(missing_paths))}")
+            identity = (
+                path,
+                class_name,
+            )
+
+            if identity not in expected_classes:
+                raise ValueError(
+                    "Risk response contains unexpected class "
+                    f"{path}:{class_name}"
+                )
+
+            if identity in received_classes:
+                raise ValueError(
+                    "Risk response contains duplicate class "
+                    f"{path}:{class_name}"
+                )
+
+            score = float(item["risk_score"])
+
+            if not 0.0 <= score <= 1.0:
+                raise ValueError(
+                    f"Risk score {score} out of bounds "
+                    "[0.0, 1.0]"
+                )
+
+            received_classes.add(identity)
+
+            class_scores_by_file[path].append(
+                score
+            )
+
+        missing_classes = (
+            expected_classes - received_classes
+        )
+
+        if missing_classes:
+            formatted = ", ".join(
+                f"{path}:{class_name}"
+                for path, class_name
+                in sorted(missing_classes)
+            )
+
+            raise ValueError(
+                "Risk response is missing classes: "
+                f"{formatted}"
+            )
+
+        file_scores = _aggregate_file_scores(
+            class_scores_by_file
+        )
 
         return RiskClientResult(
-            scores=scores,
+            scores=file_scores,
             model_version=model_version.strip(),
-            model_kind=model_kind,
         )
+
+    except MLServiceUnavailable:
+        raise
+
     except Exception as exc:
-        raise MLServiceUnavailable(f"Failed to communicate with ML risk service: {exc}") from exc
+        raise MLServiceUnavailable(
+            "Failed to communicate with ML risk service: "
+            f"{exc}"
+        ) from exc
