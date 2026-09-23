@@ -136,36 +136,38 @@ export function AppRail() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {nav.map((item) => {
-                const Icon = item.icon
-                return (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={item.isActive(pathname)}
-                      size="lg"
-                      tooltip={item.label}
-                      className="text-sm"
-                    >
-                      <Link
-                        href={item.href}
-                        onClick={() => setOpenMobile(false)}
+        <nav aria-label="Main navigation">
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {nav.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <SidebarMenuItem key={item.label}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={item.isActive(pathname)}
+                        size="lg"
+                        tooltip={item.label}
+                        className="text-sm"
                       >
-                        <Icon />
-                        <span className="group-data-[collapsible=icon]:hidden">
-                          {item.label}
-                        </span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                        <Link
+                          href={item.href}
+                          onClick={() => setOpenMobile(false)}
+                        >
+                          <Icon />
+                          <span className="group-data-[collapsible=icon]:hidden">
+                            {item.label}
+                          </span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </nav>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border/70">
