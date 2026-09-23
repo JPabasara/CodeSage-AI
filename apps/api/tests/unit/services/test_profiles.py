@@ -8,9 +8,24 @@ import pytest
 from sqlalchemy.orm import Session
 
 from codesage_api.db.enums import ScoringPresetType, ScoringProfileKind
-from codesage_api.db.models import ScoringProfile, WorkspaceProfileSettings
+from codesage_api.db.models import (
+    RepositoryProfileAssignment,
+    ScoringProfile,
+    WorkspaceProfileSettings,
+)
+from codesage_api.errors import (
+    NotFound,
+    ProfileBuiltIn,
+    ProfileInUse,
+    ProfileLimitReached,
+    ProfileNameConflict,
+)
+from codesage_api.schemas import CategoryWeightsPatch
 from codesage_api.scoring.enums import Category
 from codesage_api.services import profiles
+
+REPOSITORY = uuid.uuid4()
+OTHER_REPOSITORY = uuid.uuid4()
 
 WORKSPACE = uuid.uuid4()
 NOW = datetime(2026, 9, 23, tzinfo=UTC)
@@ -63,23 +78,72 @@ def _custom(name: str = "Custom", *, age: int = 0, **overrides: float) -> Scorin
     )
 
 
-def _pool(*stored: ScoringProfile, default: ScoringProfile | None = None) -> Mock:
-    """A session answering the two reads the profile service makes."""
+def _assignment(repository_id: uuid.UUID, profile: ScoringProfile) -> RepositoryProfileAssignment:
+    return RepositoryProfileAssignment(
+        repository_id=repository_id,
+        workspace_id=WORKSPACE,
+        scoring_profile_id=profile.id,
+    )
+
+
+def _pool(
+    *stored: ScoringProfile,
+    default: ScoringProfile | None = None,
+    assignments: list[RepositoryProfileAssignment] | None = None,
+) -> Mock:
+    """A session answering the reads the profile service makes.
+
+    `scalars` is keyed off the entity being selected rather than call order, so a
+    service function is free to load the pool more than once without the stub
+    silently handing back the wrong rows.
+    """
     chosen = default if default is not None else stored[0]
     settings = WorkspaceProfileSettings(
         workspace_id=WORKSPACE, default_scoring_profile_id=chosen.id
     )
     session = Mock(spec=Session)
-    session.get.return_value = settings
-    session.scalars.return_value.all.return_value = list(stored)
+    session.rows = list(stored)
+    session.assignments = list(assignments or [])
+
+    def scalars(statement: object) -> Mock:
+        entity = statement.column_descriptions[0]["entity"]  # type: ignore[attr-defined]
+        if entity is RepositoryProfileAssignment:
+            rows: list[object] = session.assignments
+        else:
+            rows = session.rows
+        return Mock(all=Mock(return_value=list(rows)))
+
+    def get(model: type, key: object) -> object | None:
+        if model is WorkspaceProfileSettings:
+            return settings
+        return next(
+            (item for item in session.assignments if item.repository_id == key), None
+        )
+
+    session.scalars.side_effect = scalars
+    session.get.side_effect = get
+    session.settings = settings
     session.added = []
     session.add.side_effect = session.added.append
+    session.deleted = []
+    session.delete.side_effect = session.deleted.append
     return session
 
 
-def _full_pool(default: ScoringProfile | None = None) -> tuple[Mock, list[ScoringProfile]]:
+def _full_pool(
+    default: ScoringProfile | None = None,
+    *,
+    custom: list[ScoringProfile] | None = None,
+    assignments: list[RepositoryProfileAssignment] | None = None,
+) -> tuple[Mock, list[ScoringProfile]]:
     rows = [_built_in(key) for key in PRESET_VALUES]
-    return _pool(*rows, default=default or rows[0]), rows
+    session = _pool(
+        *rows,
+        *(custom or []),
+        default=default or rows[0],
+        assignments=assignments,
+    )
+    return session, rows
 
 
 # ── reads ───────────────────────────────────────────────────────────────────
@@ -88,8 +152,8 @@ def _full_pool(default: ScoringProfile | None = None) -> tuple[Mock, list[Scorin
 def test_get_active_returns_the_workspace_default() -> None:
     custom = _custom(security_weight=1.2, code_design_weight=1.1, trust_slider=0.5)
     session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [*rows, custom]
-    session.get.return_value.default_scoring_profile_id = custom.id
+    session.rows = [*rows, custom]
+    session.settings.default_scoring_profile_id = custom.id
 
     profile = profiles.get_active(session, WORKSPACE)
 
@@ -102,20 +166,21 @@ def test_get_active_returns_the_workspace_default() -> None:
 def test_reads_fail_when_a_workspace_has_no_pool() -> None:
     session = Mock(spec=Session)
     session.get.return_value = None
+    session.scalars.return_value.all.return_value = []
     with pytest.raises(RuntimeError, match="does not have a scoring profile pool"):
         profiles.get_active(session, WORKSPACE)
 
 
 def test_reads_fail_when_the_default_is_not_in_the_pool() -> None:
     session, _ = _full_pool()
-    session.get.return_value.default_scoring_profile_id = uuid.uuid4()
+    session.settings.default_scoring_profile_id = uuid.uuid4()
     with pytest.raises(RuntimeError, match="default scoring profile is missing"):
         profiles.get_active(session, WORKSPACE)
 
 
 def test_list_available_returns_the_built_ins_in_preset_order() -> None:
     session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [rows[2], rows[0], rows[1]]
+    session.rows = [rows[2], rows[0], rows[1]]
 
     result = profiles.list_available(session, WORKSPACE)
 
@@ -124,21 +189,33 @@ def test_list_available_returns_the_built_ins_in_preset_order() -> None:
     assert [item.name for item in result if item.is_active] == ["Balanced"]
 
 
-def test_list_available_hides_custom_profiles_the_page_cannot_manage() -> None:
-    """Phase 7B lists the whole pool; the page as it stands draws one button each."""
-    session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [*rows, _custom("Left over")]
+def test_list_available_returns_the_whole_pool_with_usage_and_mutability() -> None:
+    chosen = _custom("Release gate")
+    session, _rows = _full_pool(custom=[chosen, _custom("Unused")])
+    session.assignments = [_assignment(REPOSITORY, chosen), _assignment(OTHER_REPOSITORY, chosen)]
 
     result = profiles.list_available(session, WORKSPACE)
 
-    assert [item.name for item in result] == ["Balanced", "Security-first", "Delivery-speed"]
+    assert [item.name for item in result] == [
+        "Balanced",
+        "Security-first",
+        "Delivery-speed",
+        "Release gate",
+        "Unused",
+    ]
+    assert [item.is_preset for item in result] == [True, True, True, False, False]
+    assert [item.editable for item in result] == [False, False, False, True, True]
+    # The default is in force for every project without an override, which
+    # is_active already says, so it is not double-counted as usage.
+    assert [item.usage_count for item in result] == [0, 0, 0, 2, 0]
+    assert [item.name for item in result if item.is_active] == ["Balanced"]
 
 
 def test_list_available_marks_the_custom_default_active() -> None:
     custom = _custom()
     session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [*rows, custom]
-    session.get.return_value.default_scoring_profile_id = custom.id
+    session.rows = [*rows, custom]
+    session.settings.default_scoring_profile_id = custom.id
 
     result = profiles.list_available(session, WORKSPACE)
 
@@ -205,7 +282,7 @@ def test_apply_selects_a_built_in_instead_of_writing_to_it(
     assert result.id == str(security_first.id)
     assert result.is_preset is True
     assert result.is_active is True
-    assert session.get.return_value.default_scoring_profile_id == security_first.id
+    assert session.settings.default_scoring_profile_id == security_first.id
     assert session.added == []
     assert security_first.updated_by_user_id is None
 
@@ -245,7 +322,7 @@ def test_apply_clamps_and_creates_one_custom_profile(
     assert result.weights.code_design == pytest.approx(0.1)
     assert result.trust_s == pytest.approx(1.0)
     assert result.is_preset is False
-    assert session.get.return_value.default_scoring_profile_id == created.id
+    assert session.settings.default_scoring_profile_id == created.id
     session.flush.assert_called_once_with()
     record.assert_called_once_with(
         session,
@@ -261,8 +338,8 @@ def test_apply_clamps_and_creates_one_custom_profile(
 def test_apply_rewrites_the_custom_default_in_place(monkeypatch: pytest.MonkeyPatch) -> None:
     custom = _custom()
     session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [*rows, custom]
-    session.get.return_value.default_scoring_profile_id = custom.id
+    session.rows = [*rows, custom]
+    session.settings.default_scoring_profile_id = custom.id
     monkeypatch.setattr(profiles.audit, "record", Mock())
 
     result = profiles.apply(
@@ -293,7 +370,7 @@ def test_apply_reuses_the_newest_custom_row_rather_than_adding_a_sixth(
     newest = _custom("Newest", age=0)
     older = _custom("Older", age=3)
     session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [*rows, older, newest]
+    session.rows = [*rows, older, newest]
     monkeypatch.setattr(profiles.audit, "record", Mock())
 
     result = profiles.apply(
@@ -320,8 +397,8 @@ def test_apply_is_idempotent_for_the_complete_profile(
 ) -> None:
     custom = _custom()
     session, rows = _full_pool()
-    session.scalars.return_value.all.return_value = [*rows, custom]
-    session.get.return_value.default_scoring_profile_id = custom.id
+    session.rows = [*rows, custom]
+    session.settings.default_scoring_profile_id = custom.id
     monkeypatch.setattr(profiles.audit, "record", Mock())
     body = {
         "security": 1.5,
@@ -338,3 +415,262 @@ def test_apply_is_idempotent_for_the_complete_profile(
     assert first.id == str(rows[2].id)
     assert first.is_preset is True
     assert session.added == []
+
+
+# ── pool CRUD ───────────────────────────────────────────────────────────────
+
+
+def _weights(security: float = 1.0) -> dict[str, float]:
+    return {
+        "security": security,
+        "code_design": 1.0,
+        "requirement": 1.0,
+        "documentation": 1.0,
+        "test": 1.0,
+    }
+
+
+def test_create_clamps_and_adds_a_custom_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    actor = uuid.uuid4()
+    session, _ = _full_pool()
+    record = Mock()
+    monkeypatch.setattr(profiles.audit, "record", record)
+
+    result = profiles.create(session, WORKSPACE, "  Release gate  ", _weights(9.0), 5.0, actor)
+
+    created = session.added[0]
+    assert created.kind is ScoringProfileKind.CUSTOM
+    assert created.preset_key is None
+    assert created.name == "Release gate"
+    assert created.created_by_user_id == actor
+    assert created.security_weight == pytest.approx(3.0)
+    assert created.trust_slider == pytest.approx(1.0)
+    # Creating does not change what the workspace scores with.
+    assert session.settings.default_scoring_profile_id != created.id
+    assert result.is_active is False
+    assert result.editable is True
+    assert record.call_args.kwargs["event_type"] == "profile_created"
+
+
+def test_create_refuses_the_sixth_custom_profile() -> None:
+    session, _ = _full_pool(custom=[_custom(f"Custom {index}") for index in range(5)])
+
+    with pytest.raises(ProfileLimitReached):
+        profiles.create(session, WORKSPACE, "One too many", _weights(), 0.5, None)
+
+    assert session.added == []
+
+
+def test_create_refuses_a_name_another_profile_already_uses() -> None:
+    session, _ = _full_pool()
+
+    with pytest.raises(ProfileNameConflict):
+        profiles.create(session, WORKSPACE, "  balanced ", _weights(), 0.5, None)
+
+    assert session.added == []
+
+
+def test_update_merges_only_the_fields_that_were_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = _custom("Ours", security_weight=2.0, code_design_weight=1.4, trust_slider=0.3)
+    session, _ = _full_pool(custom=[target])
+    monkeypatch.setattr(profiles.audit, "record", Mock())
+
+    result = profiles.update(
+        session,
+        WORKSPACE,
+        target.id,
+        "Renamed",
+        CategoryWeightsPatch(security=9.0),
+        None,
+        uuid.uuid4(),
+    )
+
+    assert target.name == "Renamed"
+    assert target.security_weight == pytest.approx(3.0)  # clamped
+    assert target.code_design_weight == pytest.approx(1.4)  # untouched
+    assert target.trust_slider == pytest.approx(0.3)  # untouched
+    assert result.name == "Renamed"
+
+
+def test_update_with_an_empty_body_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = _custom("Ours", security_weight=2.0)
+    session, _ = _full_pool(custom=[target])
+    monkeypatch.setattr(profiles.audit, "record", Mock())
+
+    profiles.update(session, WORKSPACE, target.id, None, None, None, None)
+
+    assert target.name == "Ours"
+    assert target.security_weight == pytest.approx(2.0)
+
+
+def test_update_and_delete_refuse_built_ins() -> None:
+    session, rows = _full_pool()
+
+    with pytest.raises(ProfileBuiltIn):
+        profiles.update(session, WORKSPACE, rows[1].id, "Renamed", None, None, None)
+    with pytest.raises(ProfileBuiltIn):
+        profiles.delete(session, WORKSPACE, rows[1].id, None)
+
+    assert rows[1].name == "Security-first"
+    assert session.deleted == []
+
+
+def test_update_refuses_a_name_another_profile_holds_but_allows_its_own() -> None:
+    target = _custom("Ours")
+    session, _ = _full_pool(custom=[target, _custom("Theirs")])
+
+    with pytest.raises(ProfileNameConflict):
+        profiles.update(session, WORKSPACE, target.id, "theirs", None, None, None)
+
+    # Re-sending its own name is not a clash with itself.
+    profiles.update(session, WORKSPACE, target.id, "Ours", None, None, None)
+    assert target.name == "Ours"
+
+
+def test_delete_refuses_the_default_and_any_assigned_profile() -> None:
+    chosen = _custom("Chosen")
+    assigned = _custom("Assigned")
+    session, _ = _full_pool(
+        default=None,
+        custom=[chosen, assigned],
+        assignments=[_assignment(REPOSITORY, assigned)],
+    )
+    session.settings.default_scoring_profile_id = chosen.id
+
+    with pytest.raises(ProfileInUse):
+        profiles.delete(session, WORKSPACE, chosen.id, None)
+    with pytest.raises(ProfileInUse):
+        profiles.delete(session, WORKSPACE, assigned.id, None)
+
+    assert session.deleted == []
+
+
+def test_delete_removes_an_unused_custom_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    unused = _custom("Unused")
+    session, _ = _full_pool(custom=[unused])
+    monkeypatch.setattr(profiles.audit, "record", Mock())
+
+    profiles.delete(session, WORKSPACE, unused.id, None)
+
+    assert session.deleted == [unused]
+
+
+def test_another_workspaces_profile_is_indistinguishable_from_a_missing_one() -> None:
+    session, _ = _full_pool()
+    foreign = uuid.uuid4()
+
+    for call in (
+        lambda: profiles.get(session, WORKSPACE, foreign),
+        lambda: profiles.update(session, WORKSPACE, foreign, "x", None, None, None),
+        lambda: profiles.delete(session, WORKSPACE, foreign, None),
+        lambda: profiles.set_default(session, WORKSPACE, foreign, None),
+        lambda: profiles.assign_project(session, WORKSPACE, REPOSITORY, foreign, None),
+    ):
+        with pytest.raises(NotFound):
+            call()
+
+
+# ── the workspace default ───────────────────────────────────────────────────
+
+
+def test_set_default_selects_any_pool_member_and_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, rows = _full_pool()
+    monkeypatch.setattr(profiles.audit, "record", Mock())
+
+    first = profiles.set_default(session, WORKSPACE, rows[2].id, uuid.uuid4())
+    second = profiles.set_default(session, WORKSPACE, rows[2].id, uuid.uuid4())
+
+    assert first.id == second.id == str(rows[2].id)
+    assert first.is_active is True
+    assert session.settings.default_scoring_profile_id == rows[2].id
+    assert session.added == []
+    assert session.deleted == []
+
+
+# ── project overrides ───────────────────────────────────────────────────────
+
+
+def test_a_project_with_no_override_inherits_the_workspace_default() -> None:
+    session, rows = _full_pool()
+
+    result = profiles.get_project_profile(session, WORKSPACE, REPOSITORY)
+
+    assert result.inherited is True
+    assert result.override is None
+    assert result.effective.id == str(rows[0].id)
+    assert result.workspace_default.id == str(rows[0].id)
+
+
+def test_assigning_an_override_replaces_rather_than_adds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, rows = _full_pool()
+    monkeypatch.setattr(profiles.audit, "record", Mock())
+
+    first = profiles.assign_project(session, WORKSPACE, REPOSITORY, rows[1].id, None)
+    assert first.inherited is False
+    assert first.override is not None
+    assert first.effective.id == str(rows[1].id)
+    assert len(session.added) == 1
+
+    session.assignments = [item for item in session.added]
+    second = profiles.assign_project(session, WORKSPACE, REPOSITORY, rows[2].id, None)
+
+    assert second.effective.id == str(rows[2].id)
+    assert len(session.added) == 1, "a second choice must not add a second override"
+
+
+def test_clearing_an_override_restores_inheritance(monkeypatch: pytest.MonkeyPatch) -> None:
+    session, rows = _full_pool()
+    assignment = _assignment(REPOSITORY, rows[1])
+    session.assignments = [assignment]
+    monkeypatch.setattr(profiles.audit, "record", Mock())
+
+    result = profiles.clear_project(session, WORKSPACE, REPOSITORY, None)
+
+    assert session.deleted == [assignment]
+    assert result.inherited is True
+    assert result.override is None
+    assert result.effective.id == str(rows[0].id)
+
+
+def test_clearing_a_project_that_never_had_an_override_is_a_no_op() -> None:
+    session, rows = _full_pool()
+
+    result = profiles.clear_project(session, WORKSPACE, REPOSITORY, None)
+
+    assert session.deleted == []
+    assert result.inherited is True
+    assert result.effective.id == str(rows[0].id)
+
+
+def test_resolve_effective_prefers_the_override_over_the_default() -> None:
+    session, rows = _full_pool()
+    session.assignments = [_assignment(REPOSITORY, rows[1])]
+
+    overridden = profiles.resolve_effective(session, WORKSPACE, REPOSITORY)
+    inheriting = profiles.resolve_effective(session, WORKSPACE, OTHER_REPOSITORY)
+
+    assert overridden.name == "Security-first"
+    assert overridden.weights[Category.SECURITY] == pytest.approx(3.0)
+    assert inheriting.name == "Balanced"
+    assert inheriting.weights[Category.SECURITY] == pytest.approx(1.0)
+
+
+def test_two_projects_in_one_workspace_can_resolve_to_different_profiles() -> None:
+    """The reason the dashboard and the project cards resolve per project."""
+    session, rows = _full_pool()
+    session.assignments = [
+        _assignment(REPOSITORY, rows[1]),
+        _assignment(OTHER_REPOSITORY, rows[2]),
+    ]
+
+    first = profiles.resolve_effective(session, WORKSPACE, REPOSITORY)
+    second = profiles.resolve_effective(session, WORKSPACE, OTHER_REPOSITORY)
+
+    assert first.name != second.name
+    assert first.s != second.s
