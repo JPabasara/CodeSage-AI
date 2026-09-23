@@ -12,18 +12,20 @@ from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
 
-from codesage_api.config import get_settings
 from codesage_api.authorization.context import AuthorizationContext
+from codesage_api.config import get_settings
 from codesage_api.db.models import User, Workspace
+from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import SessionLocal
 from codesage_api.deps import (
+    get_authorization_context,
     get_current_session_id,
     get_current_user_id,
     get_db,
-    get_workspace_id,
+    get_optional_workspace_id,
     require_permission,
 )
-from codesage_api.errors import MisconfiguredSignIn, NotFound, SignInFailed
+from codesage_api.errors import Forbidden, MisconfiguredSignIn, NotFound, SignInFailed
 from codesage_api.schemas.auth import (
     CreateWorkspaceIn,
     SessionOut,
@@ -32,6 +34,9 @@ from codesage_api.schemas.auth import (
     WorkspaceSummaryOut,
 )
 from codesage_api.services import auth as auth_service
+from codesage_api.services.memberships import (
+    resolve_authorization_context,
+)
 
 public_router = APIRouter(prefix="/auth", tags=["auth"])
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -40,6 +45,21 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 HANDSHAKE_COOKIE = "codesage_signin"
 HANDSHAKE_SECONDS = 600
 WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
+
+
+def _summary(workspace: auth_service.ActiveWorkspace, *, is_active: bool) -> WorkspaceSummaryOut:
+    return WorkspaceSummaryOut(
+        workspace_id=str(workspace.workspace_id),
+        name=workspace.name,
+        role=workspace.role_id,
+        is_active=is_active,
+        description=workspace.description,
+        website_url=workspace.website_url,
+        created_at=workspace.created_at,
+        updated_at=workspace.updated_at,
+        project_count=workspace.project_count,
+        member_count=workspace.member_count,
+    )
 
 
 def _signer() -> URLSafeTimedSerializer:
@@ -118,6 +138,7 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     try:
         session = auth_service.establish_session(db, claims)
         session_id = str(session.id)
+        needs_workspace = session.workspace_id is None
         db.commit()
     except Exception:
         db.rollback()
@@ -125,8 +146,11 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
+    # A user with no workspace has nowhere to land. Sending them to /projects
+    # would render a page that can only answer WORKSPACE_REQUIRED.
+    landing = "/onboarding/workspace" if needs_workspace else "/projects"
     response = RedirectResponse(
-        f"{settings.frontend_base_url}/projects", status_code=status.HTTP_302_FOUND
+        f"{settings.frontend_base_url}{landing}", status_code=status.HTTP_302_FOUND
     )
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -153,37 +177,51 @@ def _back_to_login(reason: str) -> RedirectResponse:
 @router.get("/session", response_model=SessionOut)
 def current_user(
     user_id: uuid.UUID = Depends(get_current_user_id),
-    workspace_id: uuid.UUID = Depends(get_workspace_id),
-    db: DbSession = Depends(get_db),
+    workspace_id: uuid.UUID | None = Depends(get_optional_workspace_id),
 ) -> SessionOut:
+    """Who is signed in, and whether they have anywhere to work yet.
 
-    user = db.get_one(User, user_id)
-    return SessionOut(
-        user_id=str(user_id),
-        workspace_id=str(workspace_id),
-        email=user.email,
-        name=user.display_name,
-        avatar_url=user.avatar_url,
-        identity_provider=user.identity_provider,
-    )
+    Deliberately does not depend on `get_db`: that binds a workspace, and this is
+    precisely the endpoint a user with no workspace must be able to call. It opens
+    its own session instead.
+    """
+    db = SessionLocal()
+    try:
+        user = db.get_one(User, user_id)
+        role: str | None = None
+        permissions: list[str] = []
+        if workspace_id is not None:
+            set_workspace_context(db, workspace_id)
+            context = resolve_authorization_context(db, user_id, workspace_id)
+            role = context.role_id
+            permissions = sorted(context.permissions)
+        return SessionOut(
+            user_id=str(user_id),
+            workspace_id=None if workspace_id is None else str(workspace_id),
+            needs_workspace_setup=workspace_id is None,
+            role=role,
+            permissions=permissions,
+            email=user.email,
+            name=user.display_name,
+            avatar_url=user.avatar_url,
+            identity_provider=user.identity_provider,
+        )
+    finally:
+        db.close()
 
 
 @router.get("/workspaces", response_model=list[WorkspaceSummaryOut])
 def list_workspaces(
     user_id: uuid.UUID = Depends(get_current_user_id),
     session_id: uuid.UUID = Depends(get_current_session_id),
-    workspace_id: uuid.UUID = Depends(get_workspace_id),
+    workspace_id: uuid.UUID | None = Depends(get_optional_workspace_id),
 ) -> list[WorkspaceSummaryOut]:
+    """Every workspace this user may act in. Empty during onboarding."""
     db = SessionLocal()
     try:
         workspaces = auth_service.list_active_workspaces(db, session_id=session_id, user_id=user_id)
         return [
-            WorkspaceSummaryOut(
-                workspace_id=str(workspace.workspace_id),
-                name=workspace.name,
-                role=workspace.role_id,
-                is_active=workspace.workspace_id == workspace_id,
-            )
+            _summary(workspace, is_active=workspace.workspace_id == workspace_id)
             for workspace in workspaces
         ]
     finally:
@@ -193,26 +231,37 @@ def list_workspaces(
 @router.post("/workspaces", response_model=WorkspaceSummaryOut, status_code=status.HTTP_201_CREATED)
 def create_workspace(
     body: CreateWorkspaceIn,
-    context: WorkspaceAdmin,
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session_id: uuid.UUID = Depends(get_current_session_id),
+    workspace_id: uuid.UUID | None = Depends(get_optional_workspace_id),
 ) -> WorkspaceSummaryOut:
+    """Create a workspace and make it this session's active one.
+
+    Two callers, one endpoint. During onboarding the session has no workspace and
+    being authenticated is the whole check — there is no workspace in which to
+    hold a permission, and refusing here would leave the user permanently unable
+    to start. Afterwards it is an ordinary org-admin operation in the workspace
+    they are currently in, so a developer cannot spin up workspaces at will.
+    """
     db = SessionLocal()
     try:
+        if workspace_id is not None:
+            set_workspace_context(db, workspace_id)
+            context = resolve_authorization_context(db, user_id, workspace_id)
+            if "workspace:update" not in context.permissions:
+                raise Forbidden
         created = auth_service.create_workspace(
             db,
             session_id=session_id,
-            user_id=context.user_id,
+            user_id=user_id,
             name=body.name,
+            description=body.description,
+            website_url=body.website_url,
         )
         if created is None:
             raise NotFound
         db.commit()
-        return WorkspaceSummaryOut(
-            workspace_id=str(created.workspace_id),
-            name=created.name,
-            role=created.role_id,
-            is_active=True,
-        )
+        return _summary(created, is_active=True)
     except Exception:
         db.rollback()
         raise
@@ -220,25 +269,57 @@ def create_workspace(
         db.close()
 
 
-@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
-def rename_workspace(
+@router.get("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
+def get_workspace(
     workspace_id: uuid.UUID,
-    body: UpdateWorkspaceIn,
-    context: WorkspaceAdmin,
+    context: Annotated[AuthorizationContext, Depends(get_authorization_context)],
     db: DbSession = Depends(get_db),
 ) -> WorkspaceSummaryOut:
+    """The active workspace's own metadata.
+
+    Only the active one is readable. Another workspace the user belongs to is a
+    404 rather than a cross-tenant read: switch to it first, which rebinds
+    row-level security, and then read it.
+    """
     if workspace_id != context.workspace_id:
         raise NotFound
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
         raise NotFound
-    workspace.name = body.name
+    return _summary(
+        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
+    )
+
+
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
+def update_workspace(
+    workspace_id: uuid.UUID,
+    body: UpdateWorkspaceIn,
+    context: WorkspaceAdmin,
+    db: DbSession = Depends(get_db),
+) -> WorkspaceSummaryOut:
+    """Partial metadata update. Omitted fields are left alone.
+
+    Only the active workspace can be edited, for the same reason it is the only
+    one readable: the session binds one workspace, and editing another would mean
+    writing outside the tenant this transaction is isolated to.
+    """
+    if workspace_id != context.workspace_id:
+        raise NotFound
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise NotFound
+
+    fields = body.model_dump(exclude_unset=True)
+    if "name" in fields and fields["name"] is not None:
+        workspace.name = fields["name"]
+    if "description" in fields:
+        workspace.description = fields["description"]
+    if "website_url" in fields:
+        workspace.website_url = fields["website_url"]
     db.flush()
-    return WorkspaceSummaryOut(
-        workspace_id=str(workspace.id),
-        name=workspace.name,
-        role=context.role_id,
-        is_active=True,
+    return _summary(
+        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
     )
 
 
@@ -264,12 +345,7 @@ def switch_workspace(
         if selected is None:
             raise NotFound
         db.commit()
-        return WorkspaceSummaryOut(
-            workspace_id=str(selected.workspace_id),
-            name=selected.name,
-            role=selected.role_id,
-            is_active=True,
-        )
+        return _summary(selected, is_active=True)
     except Exception:
         db.rollback()
         raise
