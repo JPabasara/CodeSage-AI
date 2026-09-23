@@ -11,7 +11,7 @@ from codesage_api.db.base import Base, UUIDPrimaryKey
 from codesage_api.db.enums import MembershipStatus, Theme
 
 if TYPE_CHECKING:
-    from codesage_api.db.models.profile import ScoringProfile
+    from codesage_api.db.models.profile import ScoringProfile, WorkspaceProfileSettings
     from codesage_api.db.models.repository import Repository
 
 
@@ -59,6 +59,9 @@ class Workspace(UUIDPrimaryKey, Base):
     memberships: Mapped[list[Membership]] = relationship(back_populates="workspace", passive_deletes=True)
     repositories: Mapped[list[Repository]] = relationship(back_populates="workspace", passive_deletes=True)
     scoring_profiles: Mapped[list[ScoringProfile]] = relationship(back_populates="workspace", passive_deletes=True)
+    profile_settings: Mapped[WorkspaceProfileSettings | None] = relationship(
+        back_populates="workspace", uselist=False, passive_deletes=True
+    )
     security_audit_records: Mapped[list[SecurityAuditRecord]] = relationship(
         back_populates="workspace", passive_deletes=True
     )

@@ -7,6 +7,9 @@ import { http, HttpResponse } from "msw"
 import { server } from "@/lib/mocks/server"
 import { mockRepos } from "@/lib/mocks/fixtures"
 import { SELECTED_PROJECT_KEY } from "@/hooks/use-selected-project"
+import { AppRail } from "@/components/layout/app-rail"
+import { SidebarProvider } from "@/components/ui/sidebar"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import ProjectsPage from "./page"
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
@@ -14,6 +17,14 @@ const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
 vi.mock("next/navigation", () => ({
   usePathname: () => "/projects",
   useRouter: () => ({ push: pushMock }),
+}))
+
+vi.mock("next/image", () => ({
+  default: () => <span data-testid="mock-next-image" />,
+}))
+
+vi.mock("@/hooks/use-session", () => ({
+  useSession: () => ({ data: null }),
 }))
 
 // <Toaster> lives in the root layout, not in this page, so rendering the page
@@ -46,6 +57,17 @@ async function ready() {
 async function connect(url: string) {
   await userEvent.type(screen.getByLabelText(/repository url/i), url)
   await userEvent.click(screen.getByRole("button", { name: /connect/i }))
+}
+
+function renderWithAppRail() {
+  return render(
+    <TooltipProvider>
+      <SidebarProvider>
+        <AppRail />
+        <ProjectsPage />
+      </SidebarProvider>
+    </TooltipProvider>,
+  )
 }
 
 /** The message shown for the last failed connect. */
@@ -87,7 +109,7 @@ test("selecting a project stores it before opening the dashboard", async () => {
   expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
 })
 
-test("removing the active project confirms its name and clears the selection", async () => {
+test("removing the active project confirms its name and selects a safe remaining project", async () => {
   let projects = [...mockRepos]
   server.use(
     http.get("*/api/projects", () => HttpResponse.json(projects)),
@@ -113,8 +135,88 @@ test("removing the active project confirms its name and clears the selection", a
   await waitFor(() =>
     expect(screen.queryByText("acme-payments")).not.toBeInTheDocument(),
   )
-  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBeNull()
+  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
   expect(toastSuccess).toHaveBeenCalledWith("Removed acme/acme-payments")
+})
+
+test("the page and AppRail cannot restore a deleted active project", async () => {
+  let projects = [...mockRepos]
+  server.use(
+    http.get("*/api/projects", () => HttpResponse.json(projects)),
+    http.delete("*/api/projects/:repoId", ({ params }) => {
+      projects = projects.filter((repo) => repo.id !== params.repoId)
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  localStorage.setItem(SELECTED_PROJECT_KEY, mockRepos[0].id)
+  renderWithAppRail()
+  await ready()
+  await waitFor(() =>
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "href",
+      `/dashboard/${mockRepos[0].id}`,
+    ),
+  )
+
+  await userEvent.click(
+    screen.getByRole("button", {
+      name: /remove acme\/acme-payments repository/i,
+    }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /^remove repository$/i }),
+  )
+
+  await waitFor(() => {
+    expect(screen.queryByText("acme-payments")).not.toBeInTheDocument()
+    expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "href",
+      `/dashboard/${mockRepos[1].id}`,
+    )
+    expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
+      "href",
+      `/dashboard/${mockRepos[1].id}/history`,
+    )
+  })
+})
+
+test("removing the last project clears storage and sends rail links to Projects", async () => {
+  let projects = [mockRepos[0]]
+  server.use(
+    http.get("*/api/projects", () => HttpResponse.json(projects)),
+    http.delete("*/api/projects/:repoId", () => {
+      projects = []
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  localStorage.setItem(SELECTED_PROJECT_KEY, mockRepos[0].id)
+  renderWithAppRail()
+  await ready()
+
+  await userEvent.click(
+    screen.getByRole("button", {
+      name: /remove acme\/acme-payments repository/i,
+    }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /^remove repository$/i }),
+  )
+
+  expect(
+    await screen.findByText(/no repositories connected/i),
+  ).toBeInTheDocument()
+  await waitFor(() => {
+    expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBeNull()
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "href",
+      "/projects",
+    )
+    expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
+      "href",
+      "/projects",
+    )
+  })
 })
 
 test("a running scan prevents repository removal", async () => {
@@ -122,7 +224,8 @@ test("a running scan prevents repository removal", async () => {
     http.delete("*/api/projects/:repoId", () =>
       HttpResponse.json(
         {
-          detail: "Stop the running scan before removing this repository.",
+          detail:
+            "Stop or wait for the queued or running scan before removing this repository.",
           code: "REPOSITORY_SCAN_RUNNING",
         },
         { status: 409 },
@@ -141,7 +244,7 @@ test("a running scan prevents repository removal", async () => {
     screen.getByRole("button", { name: /^remove repository$/i }),
   )
 
-  expect(await failureMessage()).toMatch(/stop the running scan/i)
+  expect(await failureMessage()).toMatch(/queued or running scan/i)
   expect(screen.getByRole("dialog")).toBeInTheDocument()
   // Radix marks background content aria-hidden while the modal is open, so
   // accessible queries correctly cannot see the list at this point. Inspect

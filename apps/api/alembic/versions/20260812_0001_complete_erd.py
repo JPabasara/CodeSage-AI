@@ -8,7 +8,17 @@ from collections.abc import Sequence
 import uuid
 
 from alembic import op
-from sqlalchemy import Enum, MetaData, insert
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Enum,
+    Index,
+    MetaData,
+    Table,
+    UniqueConstraint,
+    insert,
+    text,
+)
 from sqlalchemy.schema import CreateIndex, CreateTable, DropTable
 
 from codesage_api.db.base import Base
@@ -45,24 +55,79 @@ DESCENDANT_POLICIES = {
 }
 
 
+# Everything below is bookkeeping for one awkward fact: this historical
+# migration builds its tables from LIVE ORM metadata, so every later schema
+# change would otherwise travel backwards in time and appear at revision 0001.
+# A fresh install would then reach a state no upgrade path ever produced, and an
+# upgrade test could not seed the old shape it is meant to be testing.
+
+# Tables introduced after 0001, excluded from both upgrade and downgrade.
+LATER_TABLES = {
+    "role",  # 0010
+    "permission",  # 0010
+    "role_permission",  # 0010
+    "workspace_invitation",  # 0013
+    "workspace_profile_settings",  # 0015
+    "repository_profile_assignment",  # 0015
+}
+
+# Columns introduced after 0001.
+LATER_COLUMNS = {
+    "workspace": ("name",),  # 0014
+    "membership": ("role_id",),  # 0010
+    "app_user": ("email_verified",),  # 0013
+    "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),  # 0011
+    "scoring_profile": (  # 0015
+        "kind",
+        "preset_key",
+        "created_by_user_id",
+        "updated_by_user_id",
+    ),
+}
+
+# Table constraints and indexes introduced after 0001. Named explicitly rather
+# than inferred from the stripped columns, because a CHECK written as text
+# carries no column references to inspect.
+LATER_CONSTRAINTS = {
+    "scoring_profile": {  # 0015
+        "ck_scoring_profile_kind_preset_key",
+        "uq_scoring_profile_workspace_id_id",
+        "uq_scoring_profile_workspace_id_preset_key",
+    },
+    "repository": {"uq_repository_workspace_id_id"},  # 0015
+}
+LATER_INDEXES = {
+    "scoring_profile": {"uq_scoring_profile_workspace_name_normalized"},  # 0015
+}
+
+
+def _restore_scoring_profile_active_flag(table: Table) -> None:
+    """Put back the single-active-profile design that 0015 replaced.
+
+    Until 0015 a workspace had one mutable profile row and `is_active` said so,
+    guarded by a partial unique index. Both are gone from the ORM now, so they
+    have to be described here for 0001 to remain a faithful account of the
+    schema 0015 upgrades FROM.
+    """
+    table.append_column(
+        Column("is_active", Boolean, nullable=False, server_default=text("false"))
+    )
+    table.append_constraint(UniqueConstraint("workspace_id", "name"))
+    Index(
+        "uq_scoring_profile_one_active",
+        table.c.workspace_id,
+        unique=True,
+        postgresql_where=text("is_active"),
+        _table=table,
+    )
+
+
 def _baseline_metadata() -> MetaData:
-    # This historical migration uses live ORM metadata. RBAC belongs to 0010,
-    # including on fresh installs; exclude it from both upgrade and downgrade.
     metadata = MetaData(naming_convention=Base.metadata.naming_convention)
     for table in Base.metadata.tables.values():
-        if table.name not in {
-            "role",
-            "permission",
-            "role_permission",
-            "workspace_invitation",
-        }:
+        if table.name not in LATER_TABLES:
             table.to_metadata(metadata)
-    for table_name, columns in {
-        "workspace": ("name",),
-        "membership": ("role_id",),
-        "app_user": ("email_verified",),
-        "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),
-    }.items():
+    for table_name, columns in LATER_COLUMNS.items():
         table = metadata.tables[table_name]
         for name in columns:
             if name not in table.c:
@@ -72,6 +137,17 @@ def _baseline_metadata() -> MetaData:
                 table.foreign_keys.remove(fk)
                 table.constraints.remove(fk.constraint)
             table._columns.remove(column)
+    for table_name, names in LATER_CONSTRAINTS.items():
+        table = metadata.tables[table_name]
+        for constraint in list(table.constraints):
+            if constraint.name in names:
+                table.constraints.discard(constraint)
+    for table_name, names in LATER_INDEXES.items():
+        table = metadata.tables[table_name]
+        for index in list(table.indexes):
+            if index.name in names:
+                table.indexes.discard(index)
+    _restore_scoring_profile_active_flag(metadata.tables["scoring_profile"])
     return metadata
 
 

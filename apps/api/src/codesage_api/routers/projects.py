@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from codesage_api.authorization.routes import require_repository_permission
 from codesage_api.deps import get_current_user_id, get_db, get_workspace_id, require_permission
 from codesage_api.schemas import ConnectRepoIn, RepoOut
 from codesage_api.services import repositories
@@ -45,7 +46,7 @@ def connect_repository(
 @router.delete(
     "/{repo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_permission("repository:disconnect"))],
+    dependencies=[Depends(require_repository_permission("repository:disconnect"))],
 )
 def disconnect_repository(
     repo_id: uuid.UUID,

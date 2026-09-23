@@ -45,6 +45,7 @@ def test_start_creates_commits_and_enqueues_queued_attempt(
     session = Mock()
     branch = _branch()
     queued = _attempt(AnalysisStatus.QUEUED)
+    attempt_repository.lock_repository_for_scan.return_value = SimpleNamespace()
     attempt_repository.get_branch.return_value = branch
     attempt_repository.find_active_for_branch.return_value = None
     attempt_repository.find_latest_completed.return_value = None
@@ -71,6 +72,7 @@ def test_start_skips_when_latest_successful_sha_matches(
     session = Mock()
     branch = _branch()
     completed = _attempt(AnalysisStatus.DONE, commit_sha="same-sha")
+    attempt_repository.lock_repository_for_scan.return_value = SimpleNamespace()
     attempt_repository.get_branch.return_value = branch
     attempt_repository.find_active_for_branch.return_value = None
     attempt_repository.find_latest_completed.return_value = completed
@@ -90,6 +92,24 @@ def test_start_skips_when_latest_successful_sha_matches(
     session.commit.assert_not_called()
 
 
+@patch("codesage_api.services.analysis.attempts")
+def test_start_rejects_repository_removed_before_scan_lock(
+    attempt_repository: Mock,
+) -> None:
+    attempt_repository.lock_repository_for_scan.return_value = None
+
+    with pytest.raises(NotFound):
+        analysis.start(
+            Mock(),
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "main",
+            actor_user_id=uuid.uuid4(),
+        )
+
+    attempt_repository.get_branch.assert_not_called()
+
+
 @patch("codesage_api.services.analysis.progress.read_progress", return_value=47)
 @patch("codesage_api.services.analysis.attempts")
 def test_get_status_reads_durable_phase_and_ephemeral_progress(
@@ -99,9 +119,7 @@ def test_get_status_reads_durable_phase_and_ephemeral_progress(
     running = _attempt(AnalysisStatus.RUNNING)
     attempt_repository.get_for_repository.return_value = running
 
-    result = analysis.get_status(
-        Mock(), uuid.uuid4(), uuid.uuid4(), running.id
-    )
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
 
     assert result.phase is ScanPhase.RUNNING
     assert result.progress == 47
@@ -130,9 +148,7 @@ def test_status_maps_every_database_phase(
     attempt = _attempt(status)
     attempt_repository.get_for_repository.return_value = attempt
 
-    result = analysis.get_status(
-        Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id
-    )
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
 
     assert result.phase is expected_phase
     assert result.progress == expected_progress
@@ -149,9 +165,7 @@ def test_cancel_requests_cooperative_stop_for_active_attempt(
     attempt = _attempt(status)
     attempt_repository.get_for_repository.return_value = attempt
 
-    result = analysis.cancel(
-        Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id
-    )
+    result = analysis.cancel(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
 
     request_cancel.assert_called_once_with(str(attempt.id))
     assert result.phase is ScanPhase(status.value)

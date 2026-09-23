@@ -531,7 +531,7 @@ paths:
 
         Requires `repository:disconnect`, which is granted only to org-admin and
         manager roles. Removal is refused while any scan for the repository is
-        running; clients switch on `REPOSITORY_SCAN_RUNNING` to explain why.
+        queued or running; clients switch on `REPOSITORY_SCAN_RUNNING` to explain why.
       responses:
         '204':
           description: Repository and all descendants removed successfully.
@@ -539,12 +539,12 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: The repository has a scan in progress and cannot be removed.
+          description: The repository has a queued or running scan and cannot be removed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
               example:
-                detail: Stop the running scan before removing this repository.
+                detail: Stop or wait for the queued or running scan before removing this repository.
                 code: REPOSITORY_SCAN_RUNNING
 
   # ══════════════════════════════════════════════════════════════════════════
