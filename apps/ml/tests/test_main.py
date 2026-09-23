@@ -4,11 +4,36 @@ import pytest
 from fastapi.testclient import TestClient
 
 from codesage_ml.main import app, classify
+from codesage_ml.registry import LoadedModel
 from codesage_ml.risk.features import FEATURE_ORDER, build_vector
 from codesage_ml.schemas import ClassifyRequest
 
-
 client = TestClient(app)
+
+
+class _DeterministicRiskModel:
+    """Test double for the current 21-feature class-level ML-2 contract."""
+
+    def predict_proba(self, vectors: list[list[float]]) -> list[list[float]]:
+        probabilities: list[list[float]] = []
+        for vector in vectors:
+            if len(vector) != len(FEATURE_ORDER):
+                raise ValueError("Expected the complete ML-2 feature vector")
+            magnitude = sum(abs(value) for value in vector)
+            risk_score = magnitude / (magnitude + 1_000.0)
+            probabilities.append([1.0 - risk_score, risk_score])
+        return probabilities
+
+
+@pytest.fixture(autouse=True)
+def _isolate_api_tests_from_risk_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = LoadedModel(
+        name="risk_model",
+        version="risk-test-21-features",
+        artifact=_DeterministicRiskModel(),
+        kind="trained",
+    )
+    monkeypatch.setattr("codesage_ml.main.load_risk_model", lambda: model)
 
 
 # ---------------------------------------------------------------------------
