@@ -134,8 +134,15 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
             # ML-2 Risk Model prediction with graceful degradation
             risk_result: RiskClientResult | None = None
             try:
-                process_by_path = {p.path: p for p in extracted.process_metrics}
-                risk_result = risk_client.predict(extracted.static_metrics, process_by_path)
+                process_by_path = {
+                    p.path: p
+                    for p in extracted.process_metrics
+                }
+
+                risk_result = risk_client.predict(
+                    extracted.class_metrics,
+                    process_by_path,
+                )
             except MLServiceUnavailable as exc:
                 logger.warning(
                     "ML risk service unavailable; scan proceeding in degraded mode",
@@ -264,7 +271,11 @@ def _finalize(
                     )
                 )
 
-        process_by_path = {item.path: item for item in results.extraction.process_metrics}
+
+        process_by_path = {
+            item.path: item for item in results.extraction.process_metrics
+        }
+
         files_by_path: dict[str, SourceFile] = {}
         for metrics in results.extraction.static_metrics:
             source_file = SourceFile(
@@ -296,10 +307,25 @@ def _finalize(
                 session.add(
                     ProcessMetric(
                         source_file=source_file,
-                        commits_90d=process_metrics.commits_90d,
-                        author_count=process_metrics.author_count,
-                        file_age=process_metrics.file_age_days,
-                        recency=process_metrics.recency_days,
+                        number_of_versions_until=(
+                            process_metrics.number_of_versions_until
+                        ),
+                        number_of_authors_until=(
+                            process_metrics.number_of_authors_until
+                        ),
+                        lines_added_until=process_metrics.lines_added_until,
+                        max_lines_added_until=process_metrics.max_lines_added_until,
+                        avg_lines_added_until=process_metrics.avg_lines_added_until,
+                        lines_removed_until=process_metrics.lines_removed_until,
+                        max_lines_removed_until=process_metrics.max_lines_removed_until,
+                        avg_lines_removed_until=process_metrics.avg_lines_removed_until,
+                        code_churn_until=process_metrics.code_churn_until,
+                        max_code_churn_until=process_metrics.max_code_churn_until,
+                        avg_code_churn_until=process_metrics.avg_code_churn_until,
+                        age_with_respect_to=process_metrics.age_with_respect_to,
+                        weighted_age_with_respect_to=(
+                            process_metrics.weighted_age_with_respect_to
+                        ),
                     )
                 )
 
