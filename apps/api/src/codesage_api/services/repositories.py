@@ -8,16 +8,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from codesage_api.db.enums import (
+    AnalysisStatus,
     RepositoryConnectionStatus,
     RepositoryPlatform,
     RepositoryVisibility,
 )
-from codesage_api.db.models import Branch, Repository, SnapshotScore
+from codesage_api.db.models import AnalysisAttempt, Branch, Repository, SnapshotScore
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import (
     NotFound,
     RepositoryAlreadyConnected,
     RepositoryMissingDefaultBranch,
+    RepositoryScanRunning,
 )
 from codesage_api.integrations.github import fetch_branches, fetch_repository
 from codesage_api.logging import get_logger
@@ -28,6 +30,48 @@ from codesage_api.services import audit, dashboard, profiles
 from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
+
+
+def disconnect(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+) -> None:
+    repository = session.scalar(
+        select(Repository)
+        .where(
+            Repository.id == repository_id,
+            Repository.workspace_id == workspace_id,
+        )
+        .with_for_update()
+    )
+    if repository is None:
+        raise NotFound
+
+    active_attempt = session.scalar(
+        select(AnalysisAttempt.id)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .where(
+            Branch.repository_id == repository.id,
+            AnalysisAttempt.status.in_((AnalysisStatus.QUEUED, AnalysisStatus.RUNNING)),
+        )
+        .limit(1)
+    )
+    if active_attempt is not None:
+        raise RepositoryScanRunning
+
+    audit.record(
+        session,
+        event_type="repository_disconnected",
+        outcome="success",
+        workspace_id=workspace_id,
+        actor_user_id=actor_user_id,
+        resource_type="repository",
+        resource_id=str(repository.id),
+    )
+    session.delete(repository)
+    session.flush()
 
 
 def connect(

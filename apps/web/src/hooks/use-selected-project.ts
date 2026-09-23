@@ -93,11 +93,13 @@ export function resolveSelectedProjectId({
   storedRepoId,
   availableRepoIds,
   demoRepoId,
+  fallbackToFirstAvailable = true,
 }: {
   urlRepoId?: string
   storedRepoId?: string
   availableRepoIds?: readonly string[]
   demoRepoId?: string
+  fallbackToFirstAvailable?: boolean
 }) {
   const available = availableRepoIds?.filter(isValidProjectId)
   const isAvailable = (repoId: string) =>
@@ -105,7 +107,9 @@ export function resolveSelectedProjectId({
 
   if (urlRepoId && isAvailable(urlRepoId)) return urlRepoId
   if (storedRepoId && isAvailable(storedRepoId)) return storedRepoId
-  if (available && available.length > 0) return available[0]
+  if (fallbackToFirstAvailable && available && available.length > 0) {
+    return available[0]
+  }
   if (demoRepoId && isValidProjectId(demoRepoId)) return demoRepoId
   return undefined
 }
@@ -113,9 +117,11 @@ export function resolveSelectedProjectId({
 export function useSelectedProject({
   availableRepoIds,
   demoRepoId,
+  fallbackToFirstAvailable = true,
 }: {
   availableRepoIds?: readonly string[]
   demoRepoId?: string
+  fallbackToFirstAvailable?: boolean
 } = {}) {
   const pathname = usePathname()
   const urlRepoId = repoIdFromDashboardPath(pathname)
@@ -132,8 +138,15 @@ export function useSelectedProject({
         storedRepoId,
         availableRepoIds,
         demoRepoId,
+        fallbackToFirstAvailable,
       }),
-    [availableRepoIds, demoRepoId, storedRepoId, urlRepoId],
+    [
+      availableRepoIds,
+      demoRepoId,
+      fallbackToFirstAvailable,
+      storedRepoId,
+      urlRepoId,
+    ],
   )
 
   useEffect(() => {
