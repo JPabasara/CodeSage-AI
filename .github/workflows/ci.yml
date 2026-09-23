@@ -175,7 +175,7 @@ jobs:
           cache-dependency-path: apps/ml/pyproject.toml
 
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,training]"
 
       # The `|| [ $? -eq 5 ]` mask that used to be here treated "no tests
       # collected" as a pass, back when the suite was empty. Now it would only
