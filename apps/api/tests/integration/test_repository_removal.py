@@ -163,9 +163,19 @@ def _seed_complete_graph(
     process_metric = ProcessMetric(
         source_file_id=source_file.id,
         commits_90d=2,
-        author_count=1,
-        file_age=30,
-        recency=2,
+        number_of_versions_until=1,
+        number_of_authors_until=1,
+        lines_added_until=10,
+        max_lines_added_until=10,
+        avg_lines_added_until=10.0,
+        lines_removed_until=2,
+        max_lines_removed_until=2,
+        avg_lines_removed_until=2.0,
+        code_churn_until=8,
+        max_code_churn_until=8,
+        avg_code_churn_until=8.0,
+        age_with_respect_to=4.0,
+        weighted_age_with_respect_to=3.0,
     )
     file_node = FileTreeNode(
         snapshot_id=snapshot.id,
