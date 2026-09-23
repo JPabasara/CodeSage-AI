@@ -78,24 +78,26 @@ infra/
 
 What each file is for:
 
-| File                        | Purpose                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| `namespace.yaml`            | Creates the Kubernetes namespace `codesageai`                                   |
-| `secrets.example.env`       | Lists required secret names without real values                                 |
-| `configmap.yaml`            | Non-secret app settings                                                         |
-| `migrate-job.yaml`          | Runs `alembic upgrade head` once before API rollout                             |
-| `api.yaml`                  | FastAPI Deployment and internal Service                                         |
-| `web.yaml`                  | Next.js Deployment and internal Service                                         |
-| `ml.yaml`                   | ML FastAPI Deployment and internal Service                                      |
-| `worker.yaml`               | Celery scan worker, queue `scans`                                               |
-| `score-worker.yaml`         | Celery score worker, queue `scoring`                                            |
-| `ingress.yaml`              | Routes real hostnames to web and api                                            |
-| `keda-worker.yaml`          | Scales scan workers from Redis queue length                                     |
-| `keda-score-worker.yaml`    | Optional scaling for score workers                                              |
-| `networkpolicy.yaml`        | Locks internal traffic after the app works                                      |
-| `github-deployer-rbac.yaml` | Namespace-only ServiceAccount and RBAC for the future GitHub k3s deployment job |
-| `bootstrap-linode-k3s.sh`   | Server setup script run over SSH                                                |
-| `apply-linode-k3s.ps1`      | Local Windows helper for `kubectl apply`                                        |
+| File                                 | Purpose                                                                             |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `namespace.yaml`                     | Creates the Kubernetes namespace `codesageai`                                       |
+| `secrets.example.env`                | Lists required secret names without real values                                     |
+| `configmap.yaml`                     | Non-secret app settings                                                             |
+| `migrate-job.yaml`                   | Runs `alembic upgrade head` once before API rollout                                 |
+| `api.yaml`                           | FastAPI Deployment and internal Service                                             |
+| `web.yaml`                           | Next.js Deployment and internal Service                                             |
+| `ml.yaml`                            | ML FastAPI Deployment and internal Service                                          |
+| `worker.yaml`                        | Celery scan worker, queue `scans`                                                   |
+| `score-worker.yaml`                  | Celery score worker, queue `scoring`                                                |
+| `ingress.yaml`                       | Routes real hostnames to web and api                                                |
+| `keda-worker.yaml`                   | Scales scan workers from Redis queue length                                         |
+| `keda-score-worker.yaml`             | Optional scaling for score workers                                                  |
+| `networkpolicy.yaml`                 | Locks internal traffic after the app works                                          |
+| `github-deployer-rbac.yaml`          | Namespace-only ServiceAccount and RBAC for the future GitHub k3s deployment job     |
+| `github-deployer-token.yaml`         | Deliberately tokenless manifest that asks k3s to mint the restricted deployer token |
+| `new-github-deployer-kubeconfig.ps1` | Creates and clipboard-encodes the private, restricted GitHub deployer kubeconfig    |
+| `bootstrap-linode-k3s.sh`            | Server setup script run over SSH                                                    |
+| `apply-linode-k3s.ps1`               | Local Windows helper for `kubectl apply`                                            |
 
 Do not commit real secrets. Real values come from Railway, Neon, Upstash, Asgardeo, and GitHub.
 
@@ -902,34 +904,87 @@ baseline in this plan permits port `6443` only from the administrator's IP (or
 keeps it closed), so a GitHub-hosted runner cannot reach it by default. Do not
 open the Kubernetes API to the entire internet just to make CI work.
 
-Before adding the k3s production deploy job, choose and document one secure
-access design, such as a hardened self-hosted GitHub Actions runner with local
-cluster access, or a private VPN/tunnel from the runner to the server. Then:
+This repository is public, so do **not** register a self-hosted GitHub Actions
+runner on the Linode or give this repository access to a runner that can reach
+k3s. A public-repository pull request can execute untrusted workflow code.
+Use a GitHub-hosted runner joined temporarily to a tightly scoped Tailscale
+network instead. Port `6443` must remain unavailable on the public internet.
 
-1. Apply the dedicated `github-deployer` ServiceAccount and namespace RBAC:
+The committed CI workflow uses Tailscale workload identity federation (WIF):
+the production job exchanges its GitHub OIDC token for one ephemeral
+`tag:codesage-ci` tailnet node. It does not store a Tailscale auth key or run a
+permanent GitHub runner on the VPS.
 
-   ```bash
-   kubectl apply -f infra/k3s/linode/github-deployer-rbac.yaml
-   kubectl auth can-i patch deployments -n codesageai \
-     --as=system:serviceaccount:codesageai:github-deployer
-   kubectl auth can-i get secrets -n codesageai \
-     --as=system:serviceaccount:codesageai:github-deployer
+1. In the Tailscale policy, create/retain these tags and add the narrow grant.
+   Replace `<TAILSCALE_ADMIN_EMAIL>` with the owner/admin identity for the
+   tailnet. Merge these entries with the existing policy; do not replace its
+   existing `tagOwners` or `grants` arrays.
+
+   ```json
+   "tagOwners": {
+     "tag:codesage-k3s": ["<TAILSCALE_ADMIN_EMAIL>"],
+     "tag:codesage-ci": ["<TAILSCALE_ADMIN_EMAIL>"]
+   },
+   "grants": [
+     {
+       "src": ["tag:codesage-ci"],
+       "dst": ["tag:codesage-k3s"],
+       "ip": ["tcp:6443"]
+     }
+   ]
    ```
 
-   The first command must answer `yes`; the second must answer `no`.
+2. In **Tailscale Admin Console -> Trust credentials**, create a GitHub Actions
+   OpenID Connect credential with `auth_keys` write scope and tag
+   `tag:codesage-ci`. Restrict its subject to:
 
-2. Keep its permissions limited to the migration Job and the five application
-   Deployments. It must never receive permission to read Kubernetes Secrets or
-   modify cluster-scoped resources.
-3. Create the deployment kubeconfig from that ServiceAccount, with the correct
-   reachable API endpoint and cluster CA data.
-4. Base64-encode that complete restricted kubeconfig without line wrapping and
-   store it as the GitHub `production` secret `KUBECONFIG_B64`.
-5. Rotate it if the runner, GitHub secret, or deployment credential is exposed.
+   ```text
+   repo:JPabasara/CodeSage-AI:environment:production
+   ```
 
-Kubernetes recommends short-lived service-account tokens where possible; a
-long-lived token secret is acceptable only when the selected CI access design
-cannot use short-lived credentials.
+   If the console offers additional GitHub-claim restrictions, also restrict it
+   to repository `JPabasara/CodeSage-AI` and the production environment. Save
+   the generated Client ID and Audience.
+
+3. Install Tailscale on the k3s VPS as `tag:codesage-k3s`. Record its Tailscale
+   IPv4 address (a `100.x.y.z` value), add that exact IP to k3s `tls-san`, and
+   restart k3s so its API certificate is valid at the private address. Do not
+   add a public firewall rule for port `6443`.
+
+4. In GitHub **Settings -> Environments -> production**, add these before
+   enabling the deployment gate:
+
+   | Type     | Name                   | Value                                                           |
+   | -------- | ---------------------- | --------------------------------------------------------------- |
+   | Variable | `K3S_NAMESPACE`        | `codesageai`                                                    |
+   | Variable | `K3S_API_TAILNET_HOST` | The exact k3s VPS Tailscale IPv4, without `https://` or `:6443` |
+   | Secret   | `TS_OAUTH_CLIENT_ID`   | Tailscale WIF Client ID                                         |
+   | Secret   | `TS_AUDIENCE`          | Tailscale WIF Audience                                          |
+   | Secret   | `KUBECONFIG_B64`       | Generated in step 6; never the k3s admin kubeconfig             |
+
+   Leave `PRODUCTION_DEPLOY_ENABLED` and `PRODUCTION_PUBLIC_SMOKE_ENABLED`
+   unset until their respective checks below pass.
+
+5. Apply the dedicated `github-deployer` ServiceAccount and namespace RBAC,
+   which must remain limited to the migration Job and five Deployments. It must
+   never read Kubernetes Secrets or modify cluster-scoped resources.
+
+6. Apply `github-deployer-token.yaml`, then run
+   `new-github-deployer-kubeconfig.ps1` from the administrator-connected Windows
+   machine. The script creates an isolated kubeconfig containing only the
+   namespace-scoped token, the cluster CA, and the private Tailscale API URL. It
+   copies its one-line base64 encoding to the clipboard for `KUBECONFIG_B64` and
+   never prints the credential.
+
+7. Set `PRODUCTION_DEPLOY_ENABLED=true`, manually run CI from `main`, and
+   require a green Railway staging smoke followed by a green k3s production
+   deployment. The job checks that its kubeconfig points exactly to the
+   Tailscale address, can patch Deployments, and cannot read Secrets.
+
+Kubernetes recommends short-lived service-account tokens where possible. The
+explicit token Secret used here is intentionally long-lived because GitHub
+Environment secrets are static; it is namespace-scoped and must be rotated if
+the runner, GitHub secret, or deployment credential is exposed.
 
 ### 19.1 - Image rules
 
@@ -975,8 +1030,8 @@ tests
   -> deploy — Railway staging       (GitHub Environment: staging)
   -> browser smoke — Railway staging, when STAGING_SMOKE_ENABLED=true
   -> production approval and k3s deploy, when PRODUCTION_DEPLOY_ENABLED=true
-  -> public browser smoke — k3s, after Phase 20 DNS cutover and
-     PRODUCTION_PUBLIC_SMOKE_ENABLED=true
+  -> public browser smoke — k3s, after Phase 20 DNS cutover *and* Phase 21
+     production TLS issuance, when PRODUCTION_PUBLIC_SMOKE_ENABLED=true
 ```
 
 The workflow's browser smoke jobs are intentionally gated by GitHub
@@ -986,11 +1041,14 @@ Environment **variables**:
 | ------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `staging`    | `STAGING_SMOKE_ENABLED`           | Both Railway fallback domains have valid HTTPS certificates.                                            |
 | `production` | `PRODUCTION_DEPLOY_ENABLED`       | Secure runner-to-k3s API access works and `KUBECONFIG_B64` contains the restricted deployer kubeconfig. |
-| `production` | `PRODUCTION_PUBLIC_SMOKE_ENABLED` | Phase 20 has pointed the public DNS records at k3s.                                                     |
+| `production` | `PRODUCTION_PUBLIC_SMOKE_ENABLED` | Phases 20 and 21 are complete: DNS points at k3s and its trusted production TLS certificate is ready.   |
 
-Until a variable is explicitly set to `true`, the corresponding job is safely
-skipped. This permits the workflow to be merged now without testing an
-unverified Railway domain or reaching k3s with no configured credential.
+Until a variable is explicitly set to `true`, the corresponding deployment or
+smoke **steps** are safely skipped. The Environment-referencing gate job still
+starts so GitHub can load that Environment's variables; it does not connect to
+k3s, restore credentials, or run a browser test while its gate is false. This
+permits the workflow to be merged now without testing an unverified Railway
+domain or reaching k3s with no configured credential.
 
 Use a separate deployment concurrency group for each target:
 
@@ -1017,7 +1075,8 @@ API (runs Railway Neon migration) -> ML -> worker -> score-worker -> web
 ```
 
 Its deployed-browser smoke test waits for `/api/healthz`, opens the Railway
-landing and login pages in Chromium, and proves that the sign-in link points to
+landing and login pages in Chromium, proves that the public landing CTA reaches
+`/login`, and then proves that the login-page Asgardeo CTA points to
 `api.railway.codesageai.dev`. It deliberately does not complete Asgardeo login
 or start a scan: those are real user/data actions and remain the manual Phase
 17.5 smoke checklist.
@@ -1060,9 +1119,10 @@ kubectl rollout status deployment/web -n codesageai --timeout=10m
 ```
 
 Before Phase 20, the production job validates Kubernetes rollout status only.
-After Phase 20, set `PRODUCTION_PUBLIC_SMOKE_ENABLED=true`; the workflow then
+After Phase 21, set `PRODUCTION_PUBLIC_SMOKE_ENABLED=true`; the workflow then
 runs the same Chromium deployment smoke against `https://codesageai.dev` and
-`https://api.codesageai.dev`.
+`https://api.codesageai.dev`. Do not enable it while the primary hosts present
+the intentionally untrusted Let's Encrypt staging certificate.
 
 Use GitHub's deployment history as the release audit trail: a commit must first
 be visible as a successful `staging` deployment, then as an approved and
@@ -1081,6 +1141,9 @@ Do these steps in order.
    git add apps/web/playwright.deployment.config.ts
    git add apps/web/e2e/deployment-smoke.spec.ts
    git add infra/k3s/linode/github-deployer-rbac.yaml
+   git add infra/k3s/linode/github-deployer-token.yaml
+   git add infra/k3s/linode/new-github-deployer-kubeconfig.ps1
+   git add infra/k3s/linode/networkpolicy.yaml
    git add K3_DEPLOYMENT_PLAN.MD
    git diff --cached --check
    git commit -m "ci: add staged Railway and k3s promotion pipeline"
@@ -1110,17 +1173,24 @@ Do these steps in order.
    your administrator connection to the k3s cluster:
 
    ```powershell
-   kubectl apply -f infra/k3s/linode/github-deployer-rbac.yaml
-   kubectl auth can-i patch deployments -n codesageai --as=system:serviceaccount:codesageai:github-deployer
-   kubectl auth can-i get secrets -n codesageai --as=system:serviceaccount:codesageai:github-deployer
+   kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" apply -f infra/k3s/linode/github-deployer-rbac.yaml
+   kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" auth can-i patch deployments -n codesageai --as=system:serviceaccount:codesageai:github-deployer
+   kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" auth can-i get secrets -n codesageai --as=system:serviceaccount:codesageai:github-deployer
    ```
 
    Expect `yes` and then `no`.
 
-6. **Stop before the production gate.** Do not set `KUBECONFIG_B64`,
-   `PRODUCTION_DEPLOY_ENABLED`, or `PRODUCTION_PUBLIC_SMOKE_ENABLED` until the
-   secure GitHub-runner-to-k3s connection has been selected and tested. The
-   production jobs are present but safely skipped until then.
+6. **Configure the private production gate.** Complete section 19.0's
+   Tailscale WIF, VPS API certificate, and restricted kubeconfig steps. Add
+   `KUBECONFIG_B64` only after its server field points at the Tailscale IP—not
+   the public Linode address or the administrator kubeconfig. Then set only:
+
+   ```text
+   PRODUCTION_DEPLOY_ENABLED=true
+   ```
+
+   Run CI from `main` and require a green k3s production deployment. Do not set
+   `PRODUCTION_PUBLIC_SMOKE_ENABLED` until Phases 20 and 21 are complete.
 
 ---
 
@@ -1130,6 +1200,8 @@ Only do this after all of the following are true:
 
 - The Phase 15 hosts-file test has passed against k3s.
 - The Railway fallback smoke test in Phase 17.5 has passed.
+- A GitHub production deployment has successfully rolled out the k3s
+  `web:k3s-sha-<SHA>` image and its matching API/worker/ML images.
 - The k3s web deployment uses `web:k3s-sha-<SHA>`, not the Railway web image.
 - k3s uses only its own Neon, Redis, secret key, cookie name, and cookie domain.
 - The current Railway DNS records have been recorded for rollback.
@@ -1170,11 +1242,16 @@ Verify from a network that is not using the temporary hosts file:
 ```bash
 nslookup codesageai.dev
 nslookup api.codesageai.dev
-curl -fsS https://api.codesageai.dev/api/healthz
+curl -kfsS https://api.codesageai.dev/api/healthz
 ```
 
 Expected result: both names resolve to the Linode IPv4 address and the public
-API health endpoint succeeds. Then complete the full production smoke test:
+API health endpoint succeeds. `-k` is temporary: the initial staging ACME
+certificate is intentionally untrusted. Do not use this as a browser-security
+check and do not enable the public GitHub smoke gate yet.
+
+Complete the full production smoke test only after Phase 21 has issued the
+trusted production certificate:
 
 - Load `https://codesageai.dev`.
 - Log in through `https://api.codesageai.dev`.
@@ -1210,16 +1287,26 @@ Ingress routing works:
 
 2. Apply the changed Ingress.
 
-   ```bash
-   kubectl apply -f infra/k3s/linode/ingress.yaml
-   kubectl get certificate -n codesageai
-   kubectl describe certificate -n codesageai
+   ```powershell
+   kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" apply -f infra/k3s/linode/ingress.yaml
+   kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" get certificate codesageai-tls -n codesageai
+   kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" describe certificate codesageai-tls -n codesageai
    ```
 
 3. Confirm the Certificate's issuer reference is `letsencrypt-production` and
    wait until it reports `Ready=True`.
 4. Test both URLs in a clean browser session. The browser must show a trusted
    certificate with no staging warning.
+5. In GitHub **Settings -> Environments -> production**, add the Environment
+   variable:
+
+   ```text
+   PRODUCTION_PUBLIC_SMOKE_ENABLED=true
+   ```
+
+   Then run **Actions -> CI -> Run workflow -> main**. The workflow redeploys
+   the already-promoted commit in its safe order and runs the public Chromium
+   smoke test against the primary k3s domains.
 
 If the Certificate continues to reference the staging issuer after reapplying
 the Ingress, inspect it before deleting anything. Delete and reissue only the
@@ -1239,19 +1326,31 @@ connection failures.
 
 Apply:
 
-```bash
-kubectl apply -f infra/k3s/linode/networkpolicy.yaml
+```powershell
+kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" apply -f infra/k3s/linode/networkpolicy.yaml
 ```
 
-Policy goal:
+Before applying, confirm the installed controller still has the labels selected
+by the manifest. If either command returns no matching controller Pod or the
+namespace does not show `kubernetes.io/metadata.name=ingress-nginx`, stop and
+correct the selectors in `networkpolicy.yaml` first.
 
-- Public Ingress can reach only k3s `web` and `api`.
-- k3s `worker` and `score-worker` can reach k3s `ml`, production Neon, and
-  production Upstash.
-- k3s `api` can reach production Neon and production Upstash.
-- k3s `web` calls the public API through the user's browser, not through an
-  internal API address.
-- k3s `ml` is never public.
+```powershell
+kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" get namespace ingress-nginx --show-labels
+kubectl --kubeconfig "C:\Users\jpaba\.kube\codesageai-k3s.yaml" get pods -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller
+```
+
+Policy behavior:
+
+- The namespace is default-deny for ingress.
+- Only `ingress-nginx` can reach k3s `web` and `api` on their service ports.
+- Only k3s `api`, `worker`, and `score-worker` can reach internal k3s `ml`.
+- Temporary cert-manager HTTP-01 solver Pods remain reachable for certificate
+  renewals.
+- Egress remains intentionally unrestricted. Native Kubernetes NetworkPolicy
+  cannot safely allow external Neon, Upstash, GitHub, Asgardeo, and Resend by
+  hostname. Add an egress proxy or provider-maintained IP policy before adding
+  an egress deny rule.
 
 Re-run the production smoke test after applying the policy. Also confirm that
 the Railway fallback still works; it is outside this Kubernetes policy and

@@ -4,6 +4,7 @@ import Link from "next/link"
 import {
   Activity,
   CalendarClock,
+  CheckCircle2,
   ExternalLink,
   GitBranch,
   History,
@@ -137,14 +138,25 @@ export function ProjectList({
                   </div>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant={isActive ? "secondary" : "outline"}
+                      disabled={isActive}
+                      aria-label={`${isActive ? "Selected" : "Select"} ${repoLabel}`}
+                      onClick={() => onSelect?.(repo)}
+                    >
+                      <CheckCircle2 className="size-4" />
+                      {isActive ? "Selected" : "Select"}
+                    </Button>
                     <Button asChild size="lg">
                       <Link
                         href={`/dashboard/${repo.id}`}
-                        aria-label={`Open dashboard for ${repoLabel}`}
+                        aria-label={`Go to dashboard for ${repoLabel}`}
                         onClick={() => onSelect?.(repo)}
                       >
                         <LayoutDashboard className="size-4" />
-                        Dashboard
+                        Go to Dashboard
                       </Link>
                     </Button>
                     <Button asChild size="lg" variant="secondary">

@@ -456,36 +456,75 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # This job is doubly gated: Railway's browser smoke must have run and passed,
-  # and the production Environment must explicitly opt in. That prevents a
-  # missing kubeconfig or unfinished private network path from reaching k3s.
+  # Railway's browser smoke must have run and passed before this production job
+  # starts. The production opt-in is evaluated in its first step, after GitHub
+  # has loaded the production Environment's variables.
   deploy-production:
     name: deploy — k3s production
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      # Lets the Tailscale action exchange this job's GitHub OIDC token for a
+      # short-lived, tagged tailnet node. It does not grant GitHub repository
+      # write access or Kubernetes credentials.
+      id-token: write
     needs: [images, smoke-staging]
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      needs.smoke-staging.outputs.ran == 'true' &&
-      vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+      needs.smoke-staging.outputs.ran == 'true'
     environment: production
     concurrency:
       group: deploy-production
       cancel-in-progress: false
     env:
       K3S_NAMESPACE: ${{ vars.K3S_NAMESPACE }}
+      K3S_API_TAILNET_HOST: ${{ vars.K3S_API_TAILNET_HOST }}
       KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
       API_IMAGE: ghcr.io/jpabasara/codesage-ai/api:sha-${{ github.sha }}
       ML_IMAGE: ghcr.io/jpabasara/codesage-ai/ml:sha-${{ github.sha }}
       WEB_IMAGE: ghcr.io/jpabasara/codesage-ai/web:k3s-sha-${{ github.sha }}
+    outputs:
+      deployed: ${{ steps.gate.outputs.deployed }}
     steps:
+      - name: Decide whether k3s deployment is enabled
+        id: gate
+        env:
+          PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED || 'false' }}
+        run: |
+          if [ "$PRODUCTION_DEPLOY_ENABLED" = "true" ]; then
+            echo "deployed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
+            echo "k3s production deployment is disabled."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.deployed == 'true'
+
+      - name: Connect GitHub runner to k3s over Tailscale
+        if: steps.gate.outputs.deployed == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:codesage-ci
+          # Wait for the protected k3s node before running kubectl. This avoids
+          # a transient peer-propagation race immediately after authentication.
+          ping: ${{ vars.K3S_API_TAILNET_HOST }}
 
       - name: Install kubectl
+        if: steps.gate.outputs.deployed == 'true'
         uses: azure/setup-kubectl@v4
 
       - name: Restore restricted kubeconfig
+        if: steps.gate.outputs.deployed == 'true'
         run: |
+          if [ -z "$K3S_API_TAILNET_HOST" ]; then
+            echo "K3S_API_TAILNET_HOST must be the k3s server's Tailscale IPv4 address."
+            exit 1
+          fi
           if [ -z "$KUBECONFIG_B64" ]; then
             echo "KUBECONFIG_B64 is required after secure GitHub-to-k3s access is configured."
             exit 1
@@ -493,20 +532,39 @@ jobs:
           kubeconfig_path="$RUNNER_TEMP/codesage-kubeconfig"
           printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$kubeconfig_path"
           chmod 600 "$kubeconfig_path"
+          expected_server="https://${K3S_API_TAILNET_HOST}:6443"
+          configured_server="$(kubectl --kubeconfig "$kubeconfig_path" config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')"
+          if [ "$configured_server" != "$expected_server" ]; then
+            echo "The deployer kubeconfig must use $expected_server, not a public or admin endpoint."
+            exit 1
+          fi
           echo "KUBECONFIG=$kubeconfig_path" >> "$GITHUB_ENV"
 
       - name: Verify cluster and namespace access
+        if: steps.gate.outputs.deployed == 'true'
         run: |
           if [ "$K3S_NAMESPACE" != "codesageai" ]; then
             echo "K3S_NAMESPACE must be codesageai."
             exit 1
           fi
+          if [ "$(kubectl -n "$K3S_NAMESPACE" auth can-i patch deployments)" != "yes" ]; then
+            echo "github-deployer must be able to patch deployments."
+            exit 1
+          fi
+          if [ "$(kubectl -n "$K3S_NAMESPACE" auth can-i get secrets)" != "no" ]; then
+            echo "github-deployer must not be able to read secrets."
+            exit 1
+          fi
           kubectl -n "$K3S_NAMESPACE" get deployment/api
 
       - name: Run the migration Job for this release
+        if: steps.gate.outputs.deployed == 'true'
         run: |
           short_sha="${GITHUB_SHA::12}"
-          job_name="codesage-migrate-$short_sha"
+          # A workflow re-run must be able to run the migration check again.
+          # Including the run ID prevents a same-SHA Job collision without
+          # granting the deployer permission to delete historical Jobs.
+          job_name="codesage-migrate-$short_sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           job_manifest="$RUNNER_TEMP/$job_name.yaml"
           sed \
             -e "s/name: codesage-migrate/name: $job_name/" \
@@ -517,6 +575,7 @@ jobs:
             --timeout=10m "job/$job_name"
 
       - name: Roll out immutable application images
+        if: steps.gate.outputs.deployed == 'true'
         run: |
           kubectl -n "$K3S_NAMESPACE" set image deployment/api "api=$API_IMAGE"
           kubectl -n "$K3S_NAMESPACE" set image deployment/ml "ml=$ML_IMAGE"
@@ -525,50 +584,70 @@ jobs:
           kubectl -n "$K3S_NAMESPACE" set image deployment/web "web=$WEB_IMAGE"
 
       - name: Wait for all k3s rollouts
+        if: steps.gate.outputs.deployed == 'true'
         run: |
           for deployment in api ml worker score-worker web; do
             kubectl -n "$K3S_NAMESPACE" rollout status "deployment/$deployment" --timeout=10m
           done
 
       - name: Record deployed k3s images
+        if: steps.gate.outputs.deployed == 'true'
         run: kubectl -n "$K3S_NAMESPACE" get deployments
 
-  # This is enabled only after Phase 20 DNS cutover. Before then the canonical
-  # public domains still resolve to Railway, so a GitHub-hosted browser cannot
-  # truthfully smoke-test k3s through them.
+  # This is enabled only after Phase 20 DNS cutover and Phase 21 production TLS
+  # issuance. Before then the canonical public domains either resolve to
+  # Railway or present the intentionally untrusted staging certificate.
   smoke-production:
     name: smoke — k3s production public edge
     runs-on: ubuntu-latest
     needs: [deploy-production]
     if: >-
       needs.deploy-production.result == 'success' &&
-      vars.PRODUCTION_PUBLIC_SMOKE_ENABLED == 'true'
+      needs.deploy-production.outputs.deployed == 'true'
     environment: production
     concurrency:
       group: deploy-production
       cancel-in-progress: false
     steps:
+      - name: Decide whether public k3s smoke is enabled
+        id: gate
+        env:
+          PRODUCTION_PUBLIC_SMOKE_ENABLED: ${{ vars.PRODUCTION_PUBLIC_SMOKE_ENABLED || 'false' }}
+        run: |
+          if [ "$PRODUCTION_PUBLIC_SMOKE_ENABLED" = "true" ]; then
+            echo "ran=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            echo "Public k3s smoke is disabled until primary DNS and production TLS are ready."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.ran == 'true'
 
       - uses: pnpm/action-setup@v4
+        if: steps.gate.outputs.ran == 'true'
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ran == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
 
       - name: Install web test dependencies
+        if: steps.gate.outputs.ran == 'true'
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
 
       - name: Install Chromium
+        if: steps.gate.outputs.ran == 'true'
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Wait for k3s public API health
+        if: steps.gate.outputs.ran == 'true'
         env:
           DEPLOY_API_URL: https://api.codesageai.dev
         run: |
@@ -582,6 +661,7 @@ jobs:
           exit 1
 
       - name: Wait for k3s public web
+        if: steps.gate.outputs.ran == 'true'
         env:
           DEPLOY_WEB_URL: https://codesageai.dev
         run: |
@@ -595,6 +675,7 @@ jobs:
           exit 1
 
       - name: Run deployed k3s browser smoke test
+        if: steps.gate.outputs.ran == 'true'
         working-directory: apps/web
         env:
           DEPLOY_WEB_URL: https://codesageai.dev
@@ -602,7 +683,7 @@ jobs:
         run: pnpm test:smoke:deployment
 
       - name: Upload k3s smoke evidence
-        if: failure()
+        if: failure() && steps.gate.outputs.ran == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: k3s-production-smoke-${{ github.sha }}

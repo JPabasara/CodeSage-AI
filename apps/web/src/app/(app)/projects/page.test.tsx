@@ -77,7 +77,7 @@ test("selecting a project stores it before opening the dashboard", async () => {
   await ready()
 
   const dashboardLink = screen.getByRole("link", {
-    name: /open dashboard for acme\/web-store/i,
+    name: /go to dashboard for acme\/web-store/i,
   })
   dashboardLink.addEventListener("click", (event) => event.preventDefault())
   await userEvent.click(dashboardLink)

@@ -56,7 +56,7 @@ export function ThemeToggle() {
       aria-label={`Switch to ${target} mode`}
     >
       <Icon />
-      <span>{label}</span>
+      <span className="group-data-[collapsible=icon]:hidden">{label}</span>
     </SidebarMenuButton>
   )
 }

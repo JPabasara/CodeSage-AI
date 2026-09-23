@@ -40,12 +40,8 @@ export function OverallHealthCard({
   redIssueCount,
   categoryBreakdown,
 }: Readonly<OverallHealthCardProps>) {
-  const deltaLabel =
-    delta === 0
-      ? "No change since last scan"
-      : delta > 0
-        ? `Up +${delta} since last scan`
-        : `Down ${delta} since last scan`
+  const deltaSummary =
+    delta === 0 ? "No change" : delta > 0 ? `Up +${delta}` : `Down ${delta}`
 
   const chartConfig = useMemo(
     () =>
@@ -85,29 +81,34 @@ export function OverallHealthCard({
   }, [categoryBreakdown, totalFindings])
 
   return (
-    <Card className="border-t-2 border-t-primary/60 shadow-sm">
-      <CardHeader className="pb-2">
+    <Card className="border-t-2 border-t-primary/60 shadow-sm [--card-spacing:--spacing(3)]">
+      <CardHeader className="pb-0">
         <CardTitle>Code Health</CardTitle>
         <CardDescription>
           {redIssueCount} red {redIssueCount === 1 ? "issue" : "issues"}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3 pt-0">
-        <div className="flex items-center justify-between gap-4">
-          <div>
+      <CardContent className="pt-0">
+        <div className="grid gap-3 sm:grid-cols-[minmax(6.25rem,0.75fr)_auto_minmax(0,1.45fr)] sm:items-center">
+          <div className="min-w-0">
             <div className="flex items-baseline gap-2">
               <span
-                className="text-4xl font-bold"
+                className="text-3xl font-bold"
                 style={{ color: gradeColor(grade) }}
               >
                 {grade}
               </span>
-              <span className="text-lg text-muted-foreground">{score}/100</span>
+              <span className="text-base text-muted-foreground">
+                {score}/100
+              </span>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{deltaLabel}</p>
+            <p className="mt-1 text-xs leading-4 text-muted-foreground">
+              <span className="block sm:inline">{deltaSummary}</span>{" "}
+              <span>since last scan</span>
+            </p>
           </div>
 
-          <div className="relative aspect-square h-32 w-32 shrink-0 overflow-visible">
+          <div className="relative aspect-square h-20 w-20 shrink-0 overflow-visible sm:justify-self-center">
             <ChartContainer
               config={chartConfig}
               className="aspect-square h-full w-full overflow-visible"
@@ -117,7 +118,7 @@ export function OverallHealthCard({
                 {totalFindings > 0 ? (
                   <ChartTooltip
                     cursor={false}
-                    position={{ x: -120, y: 8 }}
+                    position={{ x: -112, y: 8 }}
                     wrapperStyle={{ pointerEvents: "none" }}
                     content={
                       <ChartTooltipContent nameKey="category" hideLabel />
@@ -128,8 +129,8 @@ export function OverallHealthCard({
                   data={pieData}
                   dataKey="count"
                   nameKey="category"
-                  innerRadius={42}
-                  outerRadius={60}
+                  innerRadius={26}
+                  outerRadius={37}
                   paddingAngle={totalFindings > 0 ? 3 : 0}
                   cornerRadius={totalFindings > 0 ? 3 : 0}
                   stroke="var(--card)"
@@ -141,20 +142,18 @@ export function OverallHealthCard({
               className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"
               aria-hidden="true"
             >
-              <span className="text-lg font-bold tracking-tight text-foreground tabular-nums sm:text-xl">
+              <span className="text-base font-bold tracking-tight text-foreground tabular-nums">
                 {totalFindings}
               </span>
-              <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+              <span className="text-[8px] font-medium uppercase tracking-wider text-muted-foreground">
                 total
               </span>
             </div>
           </div>
-        </div>
 
-        {categoryBreakdown.length > 0 ? (
-          <div className="border-t pt-3">
+          {categoryBreakdown.length > 0 ? (
             <ul
-              className="space-y-1.5 text-xs"
+              className="grid min-w-0 gap-x-3 gap-y-1 text-[0.6875rem] sm:grid-cols-2"
               aria-label="Category breakdown legend"
             >
               {categoryBreakdown.map((item) => {
@@ -165,11 +164,11 @@ export function OverallHealthCard({
                 return (
                   <li
                     key={item.category}
-                    className="flex items-center justify-between gap-2 py-0.5"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_2rem_1.85rem] items-center gap-1"
                   >
-                    <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
                       <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        className="size-2 shrink-0 rounded-full"
                         style={{
                           backgroundColor:
                             CATEGORY_COLORS[item.category] ??
@@ -181,20 +180,18 @@ export function OverallHealthCard({
                         {item.category}
                       </span>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground tabular-nums">
-                        {pct}%
-                      </span>
-                      <span className="min-w-[1.25rem] rounded bg-muted/70 px-1.5 py-0.5 text-center font-mono text-[11px] font-medium text-foreground tabular-nums">
-                        {item.count}
-                      </span>
-                    </div>
+                    <span className="text-right text-[0.625rem] text-muted-foreground tabular-nums">
+                      {pct}%
+                    </span>
+                    <span className="rounded bg-muted/70 px-1 py-0.5 text-center font-mono text-[0.625rem] font-medium text-foreground tabular-nums">
+                      {item.count}
+                    </span>
                   </li>
                 )
               })}
             </ul>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   )
