@@ -18,12 +18,21 @@ import type {
   ApplyProfileRequest,
   CategoryWeights,
   ConnectRepoRequest,
+  CreateProfileRequest,
+  ProjectProfile,
   Repo,
   ScanStatus,
   ScoreProfile,
   Session,
+  UpdateProfileRequest,
 } from "@/lib/types"
-import { WEIGHT_MAX, WEIGHT_MIN, TRUST_MAX, TRUST_MIN } from "@/lib/types"
+import {
+  MAX_CUSTOM_PROFILES,
+  WEIGHT_MAX,
+  WEIGHT_MIN,
+  TRUST_MAX,
+  TRUST_MIN,
+} from "@/lib/types"
 import {
   balancedProfile,
   DEMO_REPO_ID,
@@ -31,6 +40,7 @@ import {
   mockProfiles,
   mockRepos,
   mockSession,
+  mockSessionViewer,
   reportFor,
   UNSCANNED_REPO_ID,
 } from "./fixtures"
@@ -75,13 +85,43 @@ function restore<T>(key: string, fallback: T): T {
 }
 
 const PROJECTS_KEY = "codesage.mock.projects"
-const PROFILE_KEY = "codesage.mock.active-profile"
+const POOL_KEY = "codesage.mock.profile-pool"
+const DEFAULT_PROFILE_KEY = "codesage.mock.default-profile"
+const ASSIGNMENTS_KEY = "codesage.mock.profile-assignments"
 
 /** Connecting adds to the workspace, so the list is state, not a fixture array. */
 let connected: Repo[] = restore(PROJECTS_KEY, [...mockRepos])
 
-/** Applying replaces the single active profile in place; profiles are not versioned. */
-let activeProfile: ScoreProfile = restore(PROFILE_KEY, balancedProfile)
+/**
+ * The half of a profile the workspace actually stores.
+ *
+ * `is_active`, `usage_count` and `editable` are deliberately not in here: they
+ * are facts about the pool, not about the row, and storing them would let the
+ * default flag drift on to two profiles at once. They are derived in `out()` on
+ * every read, exactly as the API derives them.
+ */
+type StoredProfile = Pick<
+  ScoreProfile,
+  "id" | "name" | "weights" | "trust_s" | "is_preset"
+>
+
+const seedPool = (): StoredProfile[] =>
+  mockProfiles.map(({ id, name, weights, trust_s, is_preset }) => ({
+    id,
+    name,
+    weights,
+    trust_s,
+    is_preset,
+  }))
+
+/** Three built-ins, then whatever this workspace has authored — at most five. */
+let pool: StoredProfile[] = restore(POOL_KEY, seedPool())
+
+/** One pointer per workspace, which is why "exactly one default" needs no rule. */
+let defaultProfileId: string = restore(DEFAULT_PROFILE_KEY, balancedProfile.id)
+
+/** repo id → the profile it names explicitly. Absent means it inherits. */
+let assignments: Record<string, string> = restore(ASSIGNMENTS_KEY, {})
 
 const defaultBranch = mockBranches.find((b) => b.is_default) ?? mockBranches[0]
 
@@ -197,13 +237,17 @@ export function resetMockBackend() {
   cancelRequested.clear()
   lastSuccessfulSha.clear()
   pendingScores.clear()
-  activeProfile = balancedProfile
+  pool = seedPool()
+  defaultProfileId = balancedProfile.id
+  assignments = {}
   connected = [...mockRepos]
   storage()?.removeItem(PROJECTS_KEY)
-  storage()?.removeItem(PROFILE_KEY)
+  storage()?.removeItem(POOL_KEY)
+  storage()?.removeItem(DEFAULT_PROFILE_KEY)
+  storage()?.removeItem(ASSIGNMENTS_KEY)
 }
 
-// ── profile application ─────────────────────────────────────────────────────
+// ── the workspace profile pool ──────────────────────────────────────────────
 
 const clamp = (n: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, n))
@@ -215,6 +259,111 @@ const WEIGHT_KEYS: (keyof CategoryWeights)[] = [
   "documentation",
   "test",
 ]
+
+const clampWeights = (weights: CategoryWeights): CategoryWeights => ({
+  security: clamp(weights.security, WEIGHT_MIN, WEIGHT_MAX),
+  code_design: clamp(weights.code_design, WEIGHT_MIN, WEIGHT_MAX),
+  requirement: clamp(weights.requirement, WEIGHT_MIN, WEIGHT_MAX),
+  documentation: clamp(weights.documentation, WEIGHT_MIN, WEIGHT_MAX),
+  test: clamp(weights.test, WEIGHT_MIN, WEIGHT_MAX),
+})
+
+/** How many projects name this profile explicitly. The default is not counted. */
+const usageCount = (profileId: string) =>
+  Object.values(assignments).filter((id) => id === profileId).length
+
+/** A stored row as the wire shows it, with the pool-level facts derived. */
+function out(stored: StoredProfile): ScoreProfile {
+  return {
+    ...stored,
+    is_active: stored.id === defaultProfileId,
+    usage_count: usageCount(stored.id),
+    // The three built-ins are refused every write by the database itself; the
+    // flag only saves the client a round trip to find that out.
+    editable: !stored.is_preset,
+  }
+}
+
+const customProfiles = () => pool.filter((profile) => !profile.is_preset)
+
+/** Built-ins in their seeded order first, then the workspace's own by name. */
+function poolOut(): ScoreProfile[] {
+  const builtIns = pool.filter((profile) => profile.is_preset)
+  const custom = [...customProfiles()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )
+  return [...builtIns, ...custom].map(out)
+}
+
+function persistPool() {
+  persist(POOL_KEY, pool)
+  persist(DEFAULT_PROFILE_KEY, defaultProfileId)
+  persist(ASSIGNMENTS_KEY, assignments)
+}
+
+const findProfile = (profileId: string | undefined) =>
+  profileId ? pool.find((profile) => profile.id === profileId) : undefined
+
+/** The workspace default. One always exists, so this never falls through. */
+const defaultProfile = (): StoredProfile =>
+  findProfile(defaultProfileId) ?? pool[0]
+
+/**
+ * The profile one repository is really scored with: its override if it has one,
+ * otherwise the workspace default. Every derived read — the dashboard and the
+ * scan history — goes through here, which is what makes an override visible
+ * everywhere at once.
+ */
+const effectiveFor = (repoId: string): ScoreProfile =>
+  out(findProfile(assignments[repoId]) ?? defaultProfile())
+
+function projectProfileOut(repoId: string): ProjectProfile {
+  const override = findProfile(assignments[repoId])
+  const workspaceDefault = out(defaultProfile())
+  return {
+    repo_id: repoId,
+    inherited: !override,
+    effective: override ? out(override) : workspaceDefault,
+    workspace_default: workspaceDefault,
+    // Null exactly when `inherited` is true — the two cannot disagree here
+    // because both are read off the same lookup.
+    override: override ? out(override) : null,
+  }
+}
+
+/** Is the name free, after the same trim and lower-case the database applies? */
+function nameIsTaken(name: string, excludingId?: string) {
+  const normalized = name.trim().toLowerCase()
+  return pool.some(
+    (profile) =>
+      profile.id !== excludingId &&
+      profile.name.trim().toLowerCase() === normalized,
+  )
+}
+
+const nameConflict = () =>
+  fail(
+    409,
+    "PROFILE_NAME_CONFLICT",
+    "Another profile in this workspace already uses that name.",
+  )
+
+const builtInRefused = () =>
+  fail(
+    409,
+    "PROFILE_BUILT_IN",
+    "Built-in profiles cannot be edited or deleted. Clone one instead.",
+  )
+
+const invalid = (errors: { field: string; detail: string }[]) =>
+  HttpResponse.json(
+    {
+      detail: "The request could not be processed.",
+      code: "VALIDATION_FAILED",
+      errors,
+    } satisfies ApiError,
+    { status: 422 },
+  )
 
 /**
  * A malformed body is not the same as an out-of-range one: the first is 422, the
@@ -256,31 +405,117 @@ function validationErrors(body: unknown): { field: string; detail: string }[] {
 }
 
 /**
- * Out-of-range weights are clamped, not rejected: 9.0 is stored and returned as
- * 3.0 with a 200. The response is the profile actually in force, so the client
- * can confirm what was saved instead of trusting what it sent.
+ * The same rules for a PATCH, where every field is optional.
+ *
+ * `null` is not the same as omitted and is rejected: there is no profile with no
+ * security weight, so a client that sends one is confused about what it is
+ * asking for rather than asking for a default.
+ */
+function patchErrors(body: unknown): { field: string; detail: string }[] {
+  const errors: { field: string; detail: string }[] = []
+  if (typeof body !== "object" || body === null) {
+    return [{ field: "body", detail: "Input should be a valid object." }]
+  }
+  const b = body as Record<string, unknown>
+
+  if ("name" in b && (typeof b.name !== "string" || b.name.trim() === "")) {
+    errors.push({ field: "name", detail: "Input should be a valid string." })
+  }
+  if ("weights" in b) {
+    if (typeof b.weights !== "object" || b.weights === null) {
+      errors.push({
+        field: "weights",
+        detail: "Input should be a valid object.",
+      })
+    } else {
+      for (const [key, value] of Object.entries(
+        b.weights as Record<string, unknown>,
+      )) {
+        if (!WEIGHT_KEYS.includes(key as keyof CategoryWeights)) {
+          errors.push({ field: `weights.${key}`, detail: "Unknown category." })
+        } else if (typeof value !== "number" || Number.isNaN(value)) {
+          errors.push({
+            field: `weights.${key}`,
+            detail: "Input should be a valid number.",
+          })
+        }
+      }
+    }
+  }
+  if (
+    "trust_s" in b &&
+    (typeof b.trust_s !== "number" || Number.isNaN(b.trust_s))
+  ) {
+    errors.push({ field: "trust_s", detail: "Input should be a valid number." })
+  }
+  return errors
+}
+
+/**
+ * The built-in these exact numbers are, if they still are one.
+ *
+ * Matched on values rather than on the name the client sent: once a slider has
+ * moved the profile is no longer that preset, and a built-in row cannot be
+ * written to anyway.
+ */
+function matchingBuiltIn(
+  weights: CategoryWeights,
+  trustS: number,
+): StoredProfile | undefined {
+  const near = (x: number, y: number) => Math.abs(x - y) < 1e-9
+  return pool.find(
+    (profile) =>
+      profile.is_preset &&
+      near(profile.trust_s, trustS) &&
+      WEIGHT_KEYS.every((key) => near(profile.weights[key], weights[key])),
+  )
+}
+
+/**
+ * Where the superseded `PUT /api/profiles/active` writes its numbers.
+ *
+ * It re-uses a row rather than adding one, because that endpoint is the pre-pool
+ * "the workspace has a profile and Apply replaces it" contract: creating a row
+ * per Apply would march a workspace into the five-custom limit through a UI that
+ * never offered to name or keep them.
+ */
+function legacyCustomTarget(): StoredProfile {
+  const current = defaultProfile()
+  if (!current.is_preset) return current
+  const existing = customProfiles()
+  if (existing.length > 0) return existing[existing.length - 1]
+  const created: StoredProfile = {
+    id: uuid(),
+    name: "Custom",
+    weights: balancedProfile.weights,
+    trust_s: balancedProfile.trust_s,
+    is_preset: false,
+  }
+  pool = [...pool, created]
+  return created
+}
+
+/**
+ * Clamp these six numbers and make them the workspace default.
+ *
+ * Values that are exactly a built-in's SELECT that built-in rather than writing
+ * to it; anything else is written to the workspace's own custom row.
  */
 function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
-  const w = (n: number) => clamp(n, WEIGHT_MIN, WEIGHT_MAX)
-  const weights: CategoryWeights = {
-    security: w(body.weights.security),
-    code_design: w(body.weights.code_design),
-    requirement: w(body.weights.requirement),
-    documentation: w(body.weights.documentation),
-    test: w(body.weights.test),
+  const weights = clampWeights(body.weights)
+  const trustS = clamp(body.trust_s, TRUST_MIN, TRUST_MAX)
+
+  let target = matchingBuiltIn(weights, trustS)
+  if (!target) {
+    target = legacyCustomTarget()
+    target.name = body.name ?? "Custom"
+    target.weights = weights
+    target.trust_s = trustS
   }
 
-  activeProfile = {
-    ...activeProfile,
-    name: body.name ?? "Custom",
-    weights,
-    trust_s: clamp(body.trust_s, TRUST_MIN, TRUST_MAX),
-    // Editing a preset's numbers produces a custom profile; the preset itself is
-    // a read-only template and is never overwritten.
-    is_preset: false,
-    is_active: true,
-  }
-  return persist(PROFILE_KEY, activeProfile)
+  defaultProfileId = target.id
+  persistPool()
+  return out(target)
 }
 
 // ── the endpoints ───────────────────────────────────────────────────────────
@@ -294,12 +529,22 @@ export const handlers = [
   http.get("*/api/projects", () => HttpResponse.json(connected)),
 
   http.delete("*/api/projects/:repoId", ({ params }) => {
-    const index = connected.findIndex((repo) => repo.id === params.repoId)
+    const repoId = params.repoId as string
+    const index = connected.findIndex((repo) => repo.id === repoId)
     if (index < 0) return fail(404, "NOT_FOUND", "Not found.")
     connected = persist(
       PROJECTS_KEY,
-      connected.filter((repo) => repo.id !== params.repoId),
+      connected.filter((repo) => repo.id !== repoId),
     )
+    // The assignment row is keyed by repository and cascades with it, so a
+    // profile does not stay undeletable because a removed project still names
+    // it.
+    if (assignments[repoId]) {
+      assignments = Object.fromEntries(
+        Object.entries(assignments).filter(([id]) => id !== repoId),
+      )
+      persistPool()
+    }
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -432,14 +677,14 @@ export const handlers = [
         repoId,
         branch,
         branchInfoFor(branch).is_default,
-        activeProfile,
+        effectiveFor(repoId),
         url.searchParams.get("snapshot_id") ?? undefined,
       ),
     )
   }),
 
-  // Scan history, derived under the active profile too — which is why switching
-  // profiles redraws this list as well as the dashboard.
+  // Scan history, derived under the same effective profile — which is why
+  // switching profiles redraws this list as well as the dashboard.
   http.get("*/api/repos/:repoId/scans", ({ params, request }) => {
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
@@ -449,28 +694,187 @@ export const handlers = [
     const info = branchInfoFor(branch)
     const scale =
       (repoId === DEMO_REPO_ID ? 1 : 1.7) * (info.is_default ? 1 : 1.2)
-    return HttpResponse.json(scanHistoryFor(activeProfile, info.name, scale))
+    return HttpResponse.json(
+      scanHistoryFor(effectiveFor(repoId), info.name, scale),
+    )
   }),
 
   // ── profiles ──────────────────────────────────────────────────────────────
-  http.get("*/api/profiles", () => HttpResponse.json(mockProfiles)),
+  //
+  // Route order is load-bearing: `/profiles/active` and `/profiles/default` are
+  // registered before `/profiles/:profileId`, or the parameterised route would
+  // swallow both and answer 404 for a word that is not a uuid.
 
-  http.get("*/api/profiles/active", () => HttpResponse.json(activeProfile)),
+  http.get("*/api/profiles", () => HttpResponse.json(poolOut())),
 
+  http.post("*/api/profiles", async ({ request }) => {
+    const body = await request.json().catch(() => null)
+    const errors = validationErrors(body)
+    const named = body as { name?: unknown } | null
+    if (typeof named?.name !== "string" || named.name.trim() === "") {
+      errors.push({ field: "name", detail: "Input should be a valid string." })
+    }
+    if (errors.length > 0) return invalid(errors)
+
+    const created = body as CreateProfileRequest
+    // Checked before the name, because a full pool is a different thing to fix
+    // than a clashing name and the user should be told the blocking one.
+    if (customProfiles().length >= MAX_CUSTOM_PROFILES) {
+      return fail(
+        409,
+        "PROFILE_LIMIT_REACHED",
+        "A workspace can hold at most five custom scoring profiles.",
+      )
+    }
+    if (nameIsTaken(created.name)) return nameConflict()
+
+    const stored: StoredProfile = {
+      id: uuid(),
+      name: created.name.trim(),
+      weights: clampWeights(created.weights),
+      trust_s: clamp(created.trust_s, TRUST_MIN, TRUST_MAX),
+      is_preset: false,
+    }
+    pool = [...pool, stored]
+    persistPool()
+    // 201, and NOT the default: authoring a profile and choosing the one in
+    // force are separate, deliberate acts.
+    return HttpResponse.json(out(stored), { status: 201 })
+  }),
+
+  // Superseded by GET /api/profiles/default, which it now answers identically.
+  http.get("*/api/profiles/active", () =>
+    HttpResponse.json(out(defaultProfile())),
+  ),
+
+  // Superseded by POST /api/profiles plus PUT /api/profiles/default.
   http.put("*/api/profiles/active", async ({ request }) => {
     const body = await request.json().catch(() => null)
     const errors = validationErrors(body)
-    if (errors.length > 0) {
-      return HttpResponse.json(
-        {
-          detail: "The request could not be processed.",
-          code: "VALIDATION_FAILED",
-          errors,
-        } satisfies ApiError,
-        { status: 422 },
+    if (errors.length > 0) return invalid(errors)
+    return HttpResponse.json(applyToWorkspace(body as ApplyProfileRequest))
+  }),
+
+  http.get("*/api/profiles/default", () =>
+    HttpResponse.json(out(defaultProfile())),
+  ),
+
+  http.put("*/api/profiles/default", async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      profile_id?: unknown
+    } | null
+    if (typeof body?.profile_id !== "string") {
+      return invalid([
+        { field: "profile_id", detail: "Input should be a valid UUID." },
+      ])
+    }
+    const target = findProfile(body.profile_id)
+    // A profile from another workspace answers 404, the same as an id that
+    // exists nowhere: whether a foreign workspace holds one is not ours to say.
+    if (!target) return NOT_FOUND()
+
+    defaultProfileId = target.id
+    persistPool()
+    // Idempotent: the second PUT of the same id changes nothing, and neither
+    // writes a snapshot or starts a scan.
+    return HttpResponse.json(out(target))
+  }),
+
+  http.get("*/api/profiles/:profileId", ({ params }) => {
+    const stored = findProfile(params.profileId as string)
+    return stored ? HttpResponse.json(out(stored)) : NOT_FOUND()
+  }),
+
+  http.patch("*/api/profiles/:profileId", async ({ params, request }) => {
+    const stored = findProfile(params.profileId as string)
+    if (!stored) return NOT_FOUND()
+    if (stored.is_preset) return builtInRefused()
+
+    const body = await request.json().catch(() => null)
+    const errors = patchErrors(body)
+    if (errors.length > 0) return invalid(errors)
+
+    const patch = body as UpdateProfileRequest
+    if (patch.name !== undefined && nameIsTaken(patch.name, stored.id)) {
+      return nameConflict()
+    }
+
+    // A partial update: an omitted weight keeps its stored value, which is what
+    // makes this safe to send from a form that tracks only what changed.
+    const merged = { ...stored.weights, ...(patch.weights ?? {}) }
+    stored.name = patch.name === undefined ? stored.name : patch.name.trim()
+    stored.weights = clampWeights(merged)
+    stored.trust_s = clamp(
+      patch.trust_s === undefined ? stored.trust_s : patch.trust_s,
+      TRUST_MIN,
+      TRUST_MAX,
+    )
+    persistPool()
+    // Every project using it is now scored differently — deliberately, and with
+    // no scan: that is what a shared pool is for.
+    return HttpResponse.json(out(stored))
+  }),
+
+  http.delete("*/api/profiles/:profileId", ({ params }) => {
+    const stored = findProfile(params.profileId as string)
+    if (!stored) return NOT_FOUND()
+    if (stored.is_preset) return builtInRefused()
+    if (stored.id === defaultProfileId || usageCount(stored.id) > 0) {
+      // The two foreign keys would refuse the row anyway; checking first is what
+      // turns that refusal into a code the UI can explain.
+      return fail(
+        409,
+        "PROFILE_IN_USE",
+        "This profile is the workspace default or is assigned to a project. " +
+          "Change those selections before deleting it.",
       )
     }
-    return HttpResponse.json(applyToWorkspace(body as ApplyProfileRequest))
+    pool = pool.filter((profile) => profile.id !== stored.id)
+    persistPool()
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  // ── one project's profile ─────────────────────────────────────────────────
+  http.get("*/api/projects/:repoId/profile", ({ params }) => {
+    const repoId = params.repoId as string
+    if (!knownRepo(repoId)) return NOT_FOUND()
+    return HttpResponse.json(projectProfileOut(repoId))
+  }),
+
+  http.put("*/api/projects/:repoId/profile", async ({ params, request }) => {
+    const repoId = params.repoId as string
+    if (!knownRepo(repoId)) return NOT_FOUND()
+
+    const body = (await request.json().catch(() => null)) as {
+      profile_id?: unknown
+    } | null
+    if (typeof body?.profile_id !== "string") {
+      return invalid([
+        { field: "profile_id", detail: "Input should be a valid UUID." },
+      ])
+    }
+    // Only this workspace's pool is addressable, so a cross-workspace
+    // assignment is unrepresentable rather than merely rejected.
+    if (!findProfile(body.profile_id)) return NOT_FOUND()
+
+    // One override per project — the repository is the key — so this replaces
+    // any previous choice rather than adding to it.
+    assignments = { ...assignments, [repoId]: body.profile_id }
+    persistPool()
+    return HttpResponse.json(projectProfileOut(repoId))
+  }),
+
+  http.delete("*/api/projects/:repoId/profile", ({ params }) => {
+    const repoId = params.repoId as string
+    if (!knownRepo(repoId)) return NOT_FOUND()
+
+    // Idempotent: clearing a project that has no override succeeds and returns
+    // the same inherited state.
+    assignments = Object.fromEntries(
+      Object.entries(assignments).filter(([id]) => id !== repoId),
+    )
+    persistPool()
+    return HttpResponse.json(projectProfileOut(repoId))
   }),
 
   // ── scan lifecycle ────────────────────────────────────────────────────────
@@ -588,6 +992,14 @@ export const authHandlers = [
     if (!cookies[name]) {
       return fail(401, "NOT_AUTHENTICATED", "Sign in to continue.")
     }
-    return HttpResponse.json(mockSession satisfies Session)
+    // A second cookie chooses the role. Sign-in is bypassed in E2E anyway, and
+    // "a viewer is offered no write controls" cannot be journey-tested at all
+    // without a session that really lacks the grant. It is inert in the dev app,
+    // where nothing sets this cookie.
+    const session =
+      cookies["codesage_e2e_role"] === "viewer"
+        ? mockSessionViewer
+        : mockSession
+    return HttpResponse.json(session satisfies Session)
   }),
 ]
