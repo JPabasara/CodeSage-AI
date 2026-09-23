@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 // Shared read-hook engine. Every data hook (useProjects, useHealthReport, …) is
 // a one-liner over this, so the { data, loading, error } shape and the
@@ -33,6 +33,14 @@ export interface QueryState<T> {
   refetch: () => void
 }
 
+export interface MutableQueryState<T> extends QueryState<T> {
+  /**
+   * Apply a local write immediately. Any older request still in flight is
+   * ignored, so it cannot put pre-write data back on screen.
+   */
+  update: (updater: (current: T | undefined) => T | undefined) => void
+}
+
 /**
  * Run `fetcher` whenever `key` changes and expose { data, loading, error }.
  *
@@ -45,7 +53,7 @@ export interface QueryState<T> {
 export function useQuery<T>(
   key: string,
   fetcher: () => Promise<T>,
-): QueryState<T> {
+): MutableQueryState<T> {
   const [result, setResult] = useState<{
     key: string
     data?: T
@@ -53,6 +61,7 @@ export function useQuery<T>(
   }>()
   // Bumping this re-runs the effect without changing the key.
   const [nonce, setNonce] = useState(0)
+  const revision = useRef(0)
   const reload = useCallback(() => setNonce((n) => n + 1), [])
 
   // Same re-run, but the result is dropped first. `settled` then goes false,
@@ -62,14 +71,28 @@ export function useQuery<T>(
     setNonce((n) => n + 1)
   }, [])
 
+  const update = useCallback(
+    (updater: (current: T | undefined) => T | undefined) => {
+      revision.current += 1
+      setResult((current) => ({
+        key,
+        data: updater(current?.key === key ? current.data : undefined),
+      }))
+    },
+    [key],
+  )
+
   useEffect(() => {
     let alive = true
+    const startedAtRevision = revision.current
     fetcher()
       .then((data) => {
-        if (alive) setResult({ key, data })
+        if (alive && startedAtRevision === revision.current) {
+          setResult({ key, data })
+        }
       })
       .catch((error: unknown) => {
-        if (alive)
+        if (alive && startedAtRevision === revision.current)
           setResult({
             key,
             error: error instanceof Error ? error : new Error(String(error)),
@@ -88,5 +111,6 @@ export function useQuery<T>(
     loading: !settled,
     reload,
     refetch,
+    update,
   }
 }
