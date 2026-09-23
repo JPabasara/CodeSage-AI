@@ -20,27 +20,14 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.enums import (
-    MembershipStatus,
-    RepositoryConnectionStatus,
-    RepositoryPlatform,
-    RepositoryVisibility,
-)
-from codesage_api.db.models import (
-    Branch,
-    Membership,
-    Repository,
-    User,
-    UserSession,
-    Workspace,
-)
+from codesage_api.db.enums import MembershipStatus
+from codesage_api.db.models import Membership, Repository, User, UserSession, Workspace
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import (
     NotAuthenticated,
     SignInFailed,
     UpstreamUnavailable,
 )
-from codesage_api.integrations.github import fetch_repository, parse_github_url
 from codesage_api.services import profiles
 from codesage_api.services.memberships import get_active_membership
 
@@ -50,81 +37,6 @@ logger = logging.getLogger(__name__)
 # is down". Both are terminal for this attempt and neither is worth retrying, so
 # they must not be dressed up as a temporary outage.
 _CLIENT_SIDE_GRANT_ERRORS = {"invalid_grant", "invalid_request", "expired_token"}
-_UNKNOWN_HEAD_SHA = "0" * 40
-
-
-@dataclass(frozen=True, slots=True)
-class DemoRepositorySeed:
-    owner: str
-    name: str
-    url: str
-    external_repository_id: str
-    default_branch: str
-    head_commit_sha: str
-
-
-def _demo_repository_seed() -> DemoRepositorySeed | None:
-    settings = get_settings()
-    url = settings.demo_repository_url.strip()
-    if not url:
-        return None
-
-    try:
-        metadata = fetch_repository(url)
-        return DemoRepositorySeed(
-            owner=metadata.owner,
-            name=metadata.name,
-            url=metadata.url,
-            external_repository_id=metadata.external_id,
-            default_branch=metadata.default_branch,
-            head_commit_sha=metadata.default_branch_sha,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Could not read configured demo repository metadata; seeding from URL only: %s",
-            exc,
-        )
-
-    try:
-        owner, name = parse_github_url(url)
-    except Exception:
-        logger.warning("Configured demo repository URL is not a GitHub repository URL")
-        return None
-
-    default_branch = settings.demo_repository_default_branch.strip() or "main"
-    return DemoRepositorySeed(
-        owner=owner,
-        name=name,
-        url=f"https://github.com/{owner}/{name}",
-        external_repository_id=f"demo:{owner}/{name}",
-        default_branch=default_branch,
-        head_commit_sha=_UNKNOWN_HEAD_SHA,
-    )
-
-
-def _seed_demo_repository(db: DbSession, workspace_id: uuid.UUID) -> None:
-    seed = _demo_repository_seed()
-    if seed is None:
-        return
-
-    repository = Repository(
-        workspace_id=workspace_id,
-        source_platform=RepositoryPlatform.GITHUB,
-        external_repository_id=seed.external_repository_id,
-        name=seed.name,
-        owner=seed.owner,
-        url=seed.url,
-        visibility=RepositoryVisibility.PUBLIC,
-        connection_status=RepositoryConnectionStatus.CONNECTED,
-    )
-    repository.branches.append(
-        Branch(
-            name=seed.default_branch,
-            head_commit_sha=seed.head_commit_sha,
-            is_default=True,
-        )
-    )
-    db.add(repository)
 
 
 def _oauth_error(response: httpx.Response) -> str | None:
@@ -157,6 +69,12 @@ class ActiveWorkspace:
     workspace_id: uuid.UUID
     name: str
     role_id: str
+    description: str | None = None
+    website_url: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    project_count: int = 0
+    member_count: int = 0
 
 
 def exchange_code_for_identity(code: str, code_verifier: str) -> IdentityClaims:
@@ -232,10 +150,15 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
         user.display_name = claims.name or user.display_name
         user.avatar_url = claims.picture or user.avatar_url
 
+    # May be None: a brand-new user, or one whose only memberships were revoked.
+    # That is a valid signed-in state, not a failure — the web sends them to
+    # workspace onboarding, and every workspace-bound endpoint refuses them with
+    # WORKSPACE_REQUIRED until they have one.
     workspace_id = resolve_workspace(db, user.id)
-    set_workspace_context(db, workspace_id)
-    if get_active_membership(db, user.id, workspace_id) is None:
-        raise NotAuthenticated
+    if workspace_id is not None:
+        set_workspace_context(db, workspace_id)
+        if get_active_membership(db, user.id, workspace_id) is None:
+            raise NotAuthenticated
 
     now = datetime.now(timezone.utc)
     settings = get_settings()
@@ -252,17 +175,12 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
 
 
 def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """First sign-in: create the user, their workspace, and its profile pool.
+    """First sign-in: create the person, and nothing else.
 
-    Doing it here, once, means every later read can assume a workspace and a
-    workspace default profile exist.
-
-    Note the order. WORKSPACE, MEMBERSHIP, SCORING_PROFILE and
-    WORKSPACE_PROFILE_SETTINGS all carry a policy saying "this row must belong to
-    the current workspace", and PostgreSQL checks that on INSERT as well as on
-    SELECT. So the workspace id is generated here,
-    bound as the current workspace, and only then written — otherwise the very
-    first INSERT is refused by the policy that is meant to protect it.
+    No workspace and no repository. Naming a workspace is the first thing the
+    product asks the user to do, and a "My Workspace" invented here would be a
+    name nobody chose, sitting in the switcher next to the real one they create a
+    moment later.
     """
     user = User(
         asgardeo_sub=claims.sub,
@@ -274,17 +192,42 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     db.add(user)
     db.flush()
-
-    _create_workspace_records(db, user.id, name="My Workspace")
     return user
 
 
-def _create_workspace_records(db: DbSession, user_id: uuid.UUID, *, name: str) -> uuid.UUID:
-    """Create a ready-to-use workspace owned by ``user_id`` in this transaction."""
+def _create_workspace_records(
+    db: DbSession,
+    user_id: uuid.UUID,
+    *,
+    name: str,
+    description: str | None = None,
+    website_url: str | None = None,
+) -> uuid.UUID:
+    """Create a ready-to-use workspace owned by ``user_id`` in this transaction.
+
+    Workspace, org-admin membership, three built-in profiles and a Balanced
+    default, all in one unit of work — so a half-created workspace can never be
+    reached by the next request. No repository is created: a new workspace is
+    genuinely empty, and the Projects page says so.
+
+    Note the order. WORKSPACE, MEMBERSHIP, SCORING_PROFILE and
+    WORKSPACE_PROFILE_SETTINGS all carry a policy saying "this row must belong to
+    the current workspace", and PostgreSQL checks that on INSERT as well as on
+    SELECT. So the workspace id is generated here, bound as the current
+    workspace, and only then written — otherwise the very first INSERT is refused
+    by the policy that is meant to protect it.
+    """
     workspace_id = uuid.uuid4()
     set_workspace_context(db, workspace_id)
 
-    db.add(Workspace(id=workspace_id, name=name))
+    db.add(
+        Workspace(
+            id=workspace_id,
+            name=name,
+            description=description,
+            website_url=website_url,
+        )
+    )
     db.flush()
     db.add(
         Membership(
@@ -294,23 +237,32 @@ def _create_workspace_records(db: DbSession, user_id: uuid.UUID, *, name: str) -
             role_id="org-admin",
         )
     )
-
     profiles.seed_workspace_profiles(db, workspace_id, actor_user_id=user_id)
-    _seed_demo_repository(db, workspace_id)
     db.flush()
     return workspace_id
 
 
 def create_workspace(
-    db: DbSession, *, session_id: uuid.UUID, user_id: uuid.UUID, name: str
+    db: DbSession,
+    *,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    name: str,
+    description: str | None = None,
+    website_url: str | None = None,
 ) -> ActiveWorkspace | None:
-    """Create another workspace for a signed-in user and select it for this session.
+    """Create a workspace for a signed-in user and select it for this session.
+
+    This is both the onboarding path and the "add another workspace" path; the
+    only difference is whether the session had a workspace beforehand.
 
     The session switch performs the final ownership and active-session check. If
     that check fails, the caller rolls back the transaction, including every new
     workspace record created above.
     """
-    workspace_id = _create_workspace_records(db, user_id, name=name)
+    workspace_id = _create_workspace_records(
+        db, user_id, name=name, description=description, website_url=website_url
+    )
     return switch_session_workspace(
         db,
         session_id=session_id,
@@ -319,17 +271,15 @@ def create_workspace(
     )
 
 
-def resolve_workspace(db: DbSession, user_id: uuid.UUID) -> uuid.UUID:
-    """Which workspace this user belongs to.
+def resolve_workspace(db: DbSession, user_id: uuid.UUID) -> uuid.UUID | None:
+    """Which workspace to put this user back into, or None if they have none.
 
-    Goes through MEMBERSHIP rather than a column on USER.
+    Goes through MEMBERSHIP rather than a column on USER, and the lookup is
+    deterministic: the workspace of their most recent session, falling back to
+    the lowest workspace id. Belonging to two workspaces used to mean landing in
+    an arbitrary one of them on each sign-in.
     """
-    workspace_id = db.scalar(
-        select(func.app_workspace_for_user(user_id)),
-    )
-    if workspace_id is None:
-        raise NotAuthenticated
-    return workspace_id
+    return db.scalar(select(func.app_workspace_for_user(user_id)))
 
 
 def list_active_workspaces(
@@ -350,10 +300,44 @@ def list_active_workspaces(
     workspaces = []
     for row in rows:
         set_workspace_context(db, row.workspace_id)
-        name = db.scalar(select(Workspace.name).where(Workspace.id == row.workspace_id))
-        if name is not None:
-            workspaces.append(ActiveWorkspace(row.workspace_id, name, row.role_id))
+        workspace = db.get(Workspace, row.workspace_id)
+        if workspace is not None:
+            workspaces.append(describe_workspace(db, workspace, row.role_id))
     return workspaces
+
+
+def describe_workspace(
+    db: DbSession, workspace: Workspace, role_id: str
+) -> ActiveWorkspace:
+    """One workspace plus the two counts the switcher and settings screen show.
+
+    Counted here rather than stored on the row: both change whenever a project or
+    a member does, and a cached copy would be wrong more often than it was right.
+    The caller must already have bound this workspace, so row-level security is
+    what keeps the counts to it.
+    """
+    project_count = db.scalar(
+        select(func.count()).select_from(Repository).where(
+            Repository.workspace_id == workspace.id
+        )
+    )
+    member_count = db.scalar(
+        select(func.count()).select_from(Membership).where(
+            Membership.workspace_id == workspace.id,
+            Membership.status == MembershipStatus.ACTIVE,
+        )
+    )
+    return ActiveWorkspace(
+        workspace_id=workspace.id,
+        name=workspace.name,
+        role_id=role_id,
+        description=workspace.description,
+        website_url=workspace.website_url,
+        created_at=workspace.created_at,
+        updated_at=workspace.updated_at,
+        project_count=project_count or 0,
+        member_count=member_count or 0,
+    )
 
 
 def switch_session_workspace(
@@ -404,10 +388,16 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
     # A valid cookie is not sufficient once membership has been revoked.
     # Bind only the workspace recorded by the server-side session, then check
     # the current membership. Do not activate invitations during sign-in.
-    set_workspace_context(db, session.workspace_id)
-    if get_active_membership(db, session.user_id, session.workspace_id) is None:
-        db.delete(session)
-        return None
+    #
+    # A session with no workspace skips both checks and stays valid: there is no
+    # membership to verify, and nothing it can reach needs one. Binding "None" as
+    # a tenant would be a type error, and deleting the session would sign the
+    # user out of onboarding halfway through naming their first workspace.
+    if session.workspace_id is not None:
+        set_workspace_context(db, session.workspace_id)
+        if get_active_membership(db, session.user_id, session.workspace_id) is None:
+            db.delete(session)
+            return None
 
     settings = get_settings()
     session.last_used_at = now
