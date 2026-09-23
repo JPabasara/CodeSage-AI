@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 
@@ -17,6 +17,8 @@ SECONDS_PER_WEEK = 7 * 24 * 60 * 60
 @dataclass(frozen=True, slots=True)
 class FileProcessMetrics:
     path: str
+
+    commits_90d: int
 
     number_of_versions_until: int
     number_of_authors_until: int
@@ -40,6 +42,7 @@ class FileProcessMetrics:
 @dataclass(slots=True)
 class _History:
     commits: set[str] = field(default_factory=set)
+    commits_90d: set[str] = field(default_factory=set)
     authors: set[str] = field(default_factory=set)
 
     lines_added: list[int] = field(default_factory=list)
@@ -107,6 +110,7 @@ def extract_process_metrics(
     in weeks.
     """
     started = perf_counter()
+    recent_cutoff = anchor_date - timedelta(days=90)
 
     files = _java_files(repository_path)
 
@@ -179,6 +183,11 @@ def extract_process_metrics(
                 continue
 
             history.commits.add(commit.hash)
+
+            if recent_cutoff <= changed_at <= anchor_date:
+                history.commits_90d.add(commit.hash)
+
+
             history.authors.add(author)
 
             added = int(modified.added_lines or 0)
@@ -291,7 +300,7 @@ def extract_process_metrics(
         results.append(
             FileProcessMetrics(
                 path=path,
-
+                commits_90d=len(history.commits_90d),
                 number_of_versions_until=number_of_versions,
                 number_of_authors_until=len(history.authors),
 

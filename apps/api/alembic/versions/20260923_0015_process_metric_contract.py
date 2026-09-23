@@ -83,7 +83,7 @@ def upgrade() -> None:
         )
         op.drop_constraint(constraint_name, "process_metric", type_="check")
     columns = _column_names()
-    for name in ("commits_90d", "author_count", "file_age", "recency"):
+    for name in ("author_count", "file_age", "recency"):
         if name in columns:
             op.drop_column("process_metric", name)
 
@@ -105,7 +105,9 @@ def upgrade() -> None:
     for name, condition in checks.items():
         if not _has_check(name):
             op.create_check_constraint(
-                f"ck_process_metric_{name}", "process_metric", condition
+                name,
+                "process_metric",
+                condition,
             )
 
 
@@ -126,11 +128,11 @@ def downgrade() -> None:
             op.drop_constraint(constraint_name, "process_metric", type_="check")
 
     legacy_columns: tuple[tuple[str, sa.types.TypeEngine], ...] = (
-        ("commits_90d", sa.Integer()),
         ("author_count", sa.Integer()),
         ("file_age", sa.Double()),
         ("recency", sa.Double()),
     )
+
     columns = _column_names()
     for name, column_type in legacy_columns:
         if name not in columns:
@@ -145,7 +147,7 @@ def downgrade() -> None:
             file_age = age_with_respect_to * 7.0
         """
     )
-    for name in ("commits_90d", "author_count", "file_age", "recency"):
+    for name in ("author_count", "file_age", "recency"):
         op.alter_column("process_metric", name, server_default=None)
 
     for name, _ in reversed(NEW_COLUMNS):
@@ -153,7 +155,7 @@ def downgrade() -> None:
             op.drop_column("process_metric", name)
 
     op.create_check_constraint(
-        "ck_process_metric_author_count_nonnegative",
+        "author_count_nonnegative",
         "process_metric",
         "author_count >= 0",
     )

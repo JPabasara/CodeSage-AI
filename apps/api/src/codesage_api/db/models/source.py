@@ -83,6 +83,9 @@ class StaticMetric(UUIDPrimaryKey, Base):
 class ProcessMetric(UUIDPrimaryKey, Base):
     __tablename__ = "process_metric"
     source_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_file.id", ondelete="CASCADE"), unique=True)
+    
+    commits_90d: Mapped[int] = mapped_column(Integer)
+    
     number_of_versions_until: Mapped[int] = mapped_column(Integer)
     number_of_authors_until: Mapped[int] = mapped_column(Integer)
     lines_added_until: Mapped[int] = mapped_column(Integer)
@@ -120,6 +123,12 @@ class ProcessMetric(UUIDPrimaryKey, Base):
             "age_with_respect_to >= 0 AND weighted_age_with_respect_to >= 0",
             name="process_ages_nonnegative",
         ),
+
+        CheckConstraint(
+            "commits_90d >= 0",
+            name="commits_90d_nonnegative",
+        ),
+
     )
 
 

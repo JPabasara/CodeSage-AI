@@ -307,6 +307,7 @@ def _finalize(
                 session.add(
                     ProcessMetric(
                         source_file=source_file,
+                        commits_90d=process_metrics.commits_90d,
                         number_of_versions_until=(
                             process_metrics.number_of_versions_until
                         ),
