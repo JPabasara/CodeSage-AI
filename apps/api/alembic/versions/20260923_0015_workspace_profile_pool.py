@@ -436,7 +436,9 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS app_scoring_profile_custom_limit()")
     op.execute("DROP FUNCTION IF EXISTS app_scoring_profile_built_in_guard()")
 
-    for table in SEEDING_TABLES:
+    # workspace_profile_settings is read below and carries FORCE too, so it joins
+    # this list. It is dropped a few statements later and never gets FORCE back.
+    for table in (*SEEDING_TABLES, "workspace_profile_settings"):
         op.execute(f'ALTER TABLE "{table}" NO FORCE ROW LEVEL SECURITY')
 
     op.add_column(
@@ -450,6 +452,31 @@ def downgrade() -> None:
           FROM workspace_profile_settings AS s
          WHERE s.workspace_id = p.workspace_id
            AND s.default_scoring_profile_id = p.id
+        """
+    )
+    # The DELETE below is irreversible, and everything it keeps depends on that
+    # one UPDATE having seen the settings rows. A policy this migration forgot to
+    # lift, or a workspace whose pointer went missing, would leave nothing marked
+    # and silently empty the table. Refuse instead.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM workspace AS w
+                 WHERE EXISTS (
+                     SELECT 1 FROM scoring_profile AS p WHERE p.workspace_id = w.id
+                 )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM scoring_profile AS p
+                      WHERE p.workspace_id = w.id AND p.is_active
+                 )
+            ) THEN
+                RAISE EXCEPTION
+                    'downgrade aborted: a workspace has profiles but no restored default, '
+                    'so collapsing the pool would delete all of them';
+            END IF;
+        END $$;
         """
     )
 
