@@ -65,6 +65,39 @@ class RepositoryScanRunning(CodeSageError):
     message = "Stop or wait for the queued or running scan before removing this repository."
 
 
+class ProfileLimitReached(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "PROFILE_LIMIT_REACHED"
+    message = "A workspace can hold at most five custom scoring profiles."
+
+
+class ProfileBuiltIn(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "PROFILE_BUILT_IN"
+    message = "Built-in profiles cannot be edited or deleted. Clone one instead."
+
+
+class ProfileInUse(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "PROFILE_IN_USE"
+    message = (
+        "This profile is the workspace default or is assigned to a project. "
+        "Change those selections before deleting it."
+    )
+
+
+class ProfileNameConflict(CodeSageError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "PROFILE_NAME_CONFLICT"
+    message = "Another profile in this workspace already uses that name."
+
+
+# There is deliberately no PROFILE_WORKSPACE_MISMATCH. A profile or repository
+# belonging to another workspace is answered with NOT_FOUND, exactly as a
+# non-existent id is, so no caller can tell another tenant's ids apart from
+# nonsense ones.
+
+
 class RateLimited(CodeSageError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "RATE_LIMITED"
