@@ -116,6 +116,9 @@ def test_wire_names_are_snake_case() -> None:
         "name",
         "avatar_url",
         "workspace_id",
+        "needs_workspace_setup",
+        "role",
+        "permissions",
         "identity_provider",
     }
 
@@ -133,27 +136,76 @@ def test_a_provider_that_shares_nothing_still_produces_a_session() -> None:
     assert bare.name is None
     assert bare.avatar_url is None
 
+    # Only the user id is guaranteed now: a signed-in user may legitimately have
+    # no workspace yet, and a required workspace_id would make that state
+    # unrepresentable in the very response that has to report it.
     required = set(SessionOut.model_json_schema()["required"])
-    assert required == {"user_id", "workspace_id"}
+    assert required == {"user_id"}
+
+    onboarding = SessionOut(user_id="u", needs_workspace_setup=True)
+    assert onboarding.workspace_id is None
+    assert onboarding.role is None
+    assert onboarding.permissions == []
 
 
 def test_workspace_selection_shapes_are_complete() -> None:
     request = SwitchWorkspaceIn(workspace_id="22222222-2222-2222-2222-222222222222")
-    create = CreateWorkspaceIn(name="  Platform Team  ")
+    create = CreateWorkspaceIn(
+        name="  Platform Team  ",
+        description="  Everything platform  ",
+        website_url="  https://platform.example  ",
+    )
     update = UpdateWorkspaceIn(name="Core Services")
     workspace = WorkspaceSummaryOut(
         workspace_id=request.workspace_id,
         name=create.name,
         role="manager",
         is_active=True,
+        description=create.description,
+        website_url=create.website_url,
+        project_count=3,
+        member_count=7,
     )
     assert workspace.model_dump() == {
         "workspace_id": request.workspace_id,
         "name": "Platform Team",
         "role": "manager",
         "is_active": True,
+        "description": "Everything platform",
+        "website_url": "https://platform.example",
+        "created_at": None,
+        "updated_at": None,
+        "project_count": 3,
+        "member_count": 7,
     }
     assert update.name == "Core Services"
+
+
+def test_workspace_metadata_is_validated_at_the_edge() -> None:
+    import pytest
+
+    # Blank is absent, not content: a description of three spaces is nothing.
+    assert CreateWorkspaceIn(name="Team", description="   ").description is None
+    assert CreateWorkspaceIn(name="Team", website_url="  ").website_url is None
+
+    for blank in ("", "   "):
+        with pytest.raises(ValueError):
+            CreateWorkspaceIn(name=blank)
+    with pytest.raises(ValueError):
+        CreateWorkspaceIn(name="Team", website_url="not-a-url")
+    with pytest.raises(ValueError):
+        CreateWorkspaceIn(name="x" * 256)
+    with pytest.raises(ValueError):
+        UpdateWorkspaceIn(name="   ")
+
+
+def test_a_partial_workspace_update_can_be_told_from_an_omitted_one() -> None:
+    """Clearing a description and not mentioning it must not look the same."""
+    cleared = UpdateWorkspaceIn(description=None)
+    untouched = UpdateWorkspaceIn(name="Core Services")
+
+    assert "description" in cleared.model_dump(exclude_unset=True)
+    assert "description" not in untouched.model_dump(exclude_unset=True)
 
 
 def test_no_shape_leaks_camel_case() -> None:
