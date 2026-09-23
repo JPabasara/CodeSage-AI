@@ -1,0 +1,136 @@
+{
+  "model": "RandomForestClassifier",
+  "evaluation_protocol": "nested_leave_one_project_out",
+  "selection_metric": "macro_inner_pr_auc",
+  "feature_count": 21,
+  "target": "defective",
+  "positive_class": 1,
+  "projects": [
+    "eclipse",
+    "equinox",
+    "lucene",
+    "mylyn",
+    "pde"
+  ],
+  "classes": 5371,
+  "dataset_sha256": "3462b5599ccc823a5749572609559f685b69d992fc72e4e5e8c61582d1a2caa7",
+  "parameter_grid": {
+    "n_estimators": [
+      200
+    ],
+    "max_depth": [
+      null,
+      10,
+      20
+    ],
+    "min_samples_leaf": [
+      1,
+      3,
+      5
+    ],
+    "max_features": [
+      "sqrt",
+      0.5
+    ],
+    "class_weight": [
+      "balanced",
+      "balanced_subsample"
+    ]
+  },
+  "metrics": {
+    "roc_auc": {
+      "mean": 0.7376248530254282,
+      "std": 0.018206573615856148
+    },
+    "pr_auc": {
+      "mean": 0.4487803768179406,
+      "std": 0.1621741285435222
+    },
+    "brier": {
+      "mean": 0.15916009843209494,
+      "std": 0.048217835171351524
+    }
+  },
+  "outer_results": [
+    {
+      "test_project": "eclipse",
+      "n_train": 4374,
+      "n_test": 997,
+      "defective": 206,
+      "prevalence": 0.20661985957873621,
+      "roc_auc": 0.7447927534275158,
+      "pr_auc": 0.5299680892225997,
+      "brier": 0.2186815414249345,
+      "best_inner_pr_auc": 0.42718109983642905,
+      "best_class_weight": "balanced_subsample",
+      "best_max_depth": 10,
+      "best_max_features": "sqrt",
+      "best_min_samples_leaf": 5,
+      "best_n_estimators": 200
+    },
+    {
+      "test_project": "equinox",
+      "n_train": 5047,
+      "n_test": 324,
+      "defective": 129,
+      "prevalence": 0.39814814814814814,
+      "roc_auc": 0.7595706618962432,
+      "pr_auc": 0.6959220237198399,
+      "brier": 0.20136842793503595,
+      "best_inner_pr_auc": 0.377370463819789,
+      "best_class_weight": "balanced",
+      "best_max_depth": 10,
+      "best_max_features": "sqrt",
+      "best_min_samples_leaf": 5,
+      "best_n_estimators": 200
+    },
+    {
+      "test_project": "lucene",
+      "n_train": 4680,
+      "n_test": 691,
+      "defective": 64,
+      "prevalence": 0.09261939218523878,
+      "roc_auc": 0.7457635566188198,
+      "pr_auc": 0.33712930187555235,
+      "brier": 0.11425019931135966,
+      "best_inner_pr_auc": 0.46628877425093196,
+      "best_class_weight": "balanced",
+      "best_max_depth": 10,
+      "best_max_features": "sqrt",
+      "best_min_samples_leaf": 5,
+      "best_n_estimators": 200
+    },
+    {
+      "test_project": "mylyn",
+      "n_train": 3509,
+      "n_test": 1862,
+      "defective": 245,
+      "prevalence": 0.13157894736842105,
+      "roc_auc": 0.7149483169891333,
+      "pr_auc": 0.36864275590003415,
+      "brier": 0.11762870574961701,
+      "best_inner_pr_auc": 0.431235484554476,
+      "best_class_weight": "balanced",
+      "best_max_depth": 10,
+      "best_max_features": "sqrt",
+      "best_min_samples_leaf": 5,
+      "best_n_estimators": 200
+    },
+    {
+      "test_project": "pde",
+      "n_train": 3874,
+      "n_test": 1497,
+      "defective": 209,
+      "prevalence": 0.1396125584502338,
+      "roc_auc": 0.7230489761954293,
+      "pr_auc": 0.3122397133716769,
+      "brier": 0.14387161773952759,
+      "best_inner_pr_auc": 0.4965455629514918,
+      "best_class_weight": "balanced_subsample",
+      "best_max_depth": 20,
+      "best_max_features": "sqrt",
+      "best_min_samples_leaf": 5,
+      "best_n_estimators": 200
+    }
+  ]
+}
