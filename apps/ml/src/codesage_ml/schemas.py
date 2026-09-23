@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# ML-1: SATD
+# ---------------------------------------------------------------------------
 
 
 class CommentIn(BaseModel):
@@ -19,9 +24,11 @@ class ClassifyRequest(BaseModel):
 class CommentPrediction(BaseModel):
     id: str
     is_debt: bool
+
     # One of the four predictable categories, or null when is_debt is false.
     # Never "security" — that is rule-engine territory.
     category: str | None
+
     confidence: float
 
 
@@ -30,25 +37,48 @@ class ClassifyResponse(BaseModel):
     model_version: str
 
 
-class FileFeaturesIn(BaseModel):
+# ---------------------------------------------------------------------------
+# ML-2: Bug-proneness
+# ---------------------------------------------------------------------------
+
+
+class ClassFeaturesIn(BaseModel):
+    """Features for one Java class."""
+
     path: str
-    # Keyed by metric name; assembled into the ordered vector by risk/features.py.
+    class_name: str
+
+    # Named feature values. risk/features.py owns validation and ordering.
     metrics: dict[str, float]
 
 
 class RiskRequest(BaseModel):
-    files: list[FileFeaturesIn]
+    """Batch of class-level observations for ML-2."""
+
+    classes: list[ClassFeaturesIn]
 
 
-class FileRisk(BaseModel):
+class ClassRisk(BaseModel):
+    """Bug-proneness probability predicted for one Java class."""
+
     path: str
-    risk_score: float  # 0.0 – 1.0
+    class_name: str
+
+    risk_score: float = Field(
+        ge=0.0,
+        le=1.0,
+    )
 
 
 class RiskResponse(BaseModel):
-    scores: list[FileRisk]
+    scores: list[ClassRisk]
     model_version: str
     model_kind: Literal["trained", "heuristic"]
+
+
+# ---------------------------------------------------------------------------
+# Service metadata
+# ---------------------------------------------------------------------------
 
 
 class VersionResponse(BaseModel):
