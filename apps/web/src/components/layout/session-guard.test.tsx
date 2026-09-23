@@ -35,7 +35,9 @@ test("a signed-in user with no workspace goes to onboarding, not to sign-in", as
 
   render(<SessionGuard />)
 
-  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/onboarding"))
+  await waitFor(() =>
+    expect(nav.replace).toHaveBeenCalledWith("/onboarding/workspace"),
+  )
 })
 
 test("a user with a workspace is left where they are", async () => {
@@ -57,7 +59,7 @@ test("no session at all goes to sign-in", async () => {
 
 test("the onboarding page itself is not redirected to onboarding", async () => {
   session.data = mockSessionOnboarding
-  nav.pathname = "/onboarding"
+  nav.pathname = "/onboarding/workspace"
 
   render(<SessionGuard />)
 

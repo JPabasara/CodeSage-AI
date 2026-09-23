@@ -11,7 +11,7 @@ import type { Session } from "@/lib/types"
 const nav = vi.hoisted(() => ({ replace: vi.fn() }))
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: nav.replace, push: vi.fn() }),
-  usePathname: () => "/onboarding",
+  usePathname: () => "/onboarding/workspace",
 }))
 
 vi.mock("next/image", () => ({

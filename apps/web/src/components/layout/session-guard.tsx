@@ -32,8 +32,10 @@ export function SessionGuard() {
       router.replace("/login")
       return
     }
-    if (session?.needs_workspace_setup && pathname !== "/onboarding") {
-      router.replace("/onboarding")
+    // The same address the API's sign-in callback uses, so a new account lands
+    // in one place however it arrives.
+    if (session?.needs_workspace_setup && !pathname.startsWith("/onboarding")) {
+      router.replace("/onboarding/workspace")
     }
   }, [error, pathname, router, session?.needs_workspace_setup])
 

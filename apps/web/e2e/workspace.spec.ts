@@ -56,7 +56,7 @@ onboarding(
     // The bug this prevents: sending them to /login, where they sign in again,
     // land here again, and never learn that a workspace is what they are
     // missing.
-    await expect(page).toHaveURL(/\/onboarding$/)
+    await expect(page).toHaveURL(/\/onboarding\/workspace$/)
     await expect(
       page.getByRole("heading", { name: /create your workspace/i }),
     ).toBeVisible()
@@ -66,7 +66,7 @@ onboarding(
 onboarding(
   "creating the first workspace enters the app, empty and ready",
   async ({ page }) => {
-    await page.goto("/onboarding")
+    await page.goto("/onboarding") // the short address redirects
     await page.getByLabel(/workspace name/i).fill("Fresh Start")
     await page.getByLabel(/description/i).fill("Our first workspace.")
     await page.getByRole("button", { name: "Create workspace" }).click()
