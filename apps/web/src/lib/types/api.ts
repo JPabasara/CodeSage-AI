@@ -362,7 +362,7 @@ export interface paths {
          *
          *     Requires `repository:disconnect`, which is granted only to org-admin and
          *     manager roles. Removal is refused while any scan for the repository is
-         *     running; clients switch on `REPOSITORY_SCAN_RUNNING` to explain why.
+         *     queued or running; clients switch on `REPOSITORY_SCAN_RUNNING` to explain why.
          */
         delete: operations["remove_project"];
         options?: never;
@@ -1849,7 +1849,7 @@ export interface operations {
             401: components["responses"]["NotAuthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description The repository has a scan in progress and cannot be removed. */
+            /** @description The repository has a queued or running scan and cannot be removed. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1857,7 +1857,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "detail": "Stop the running scan before removing this repository.",
+                     *       "detail": "Stop or wait for the queued or running scan before removing this repository.",
                      *       "code": "REPOSITORY_SCAN_RUNNING"
                      *     }
                      */
