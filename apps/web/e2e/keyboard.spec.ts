@@ -139,11 +139,11 @@ test("the file tree is reachable and shows where the focus is", async ({
 test("every route has its own title, so tabs and history are tellable apart", async ({
   page,
 }) => {
-  const routes: [string, RegExp][] = [
-    ["/projects", /^Projects · Code Sage AI$/],
-    ["/profiles", /^Scoring profiles · Code Sage AI$/],
-    [`/dashboard/${DEMO_REPO_ID}`, /^Dashboard · Code Sage AI$/],
-    [`/dashboard/${DEMO_REPO_ID}/history`, /^Scan history · Code Sage AI$/],
+  const routes: [string, string][] = [
+    ["/projects", "Projects | CodeSage AI"],
+    ["/profiles", "Scoring profiles | CodeSage AI"],
+    [`/dashboard/${DEMO_REPO_ID}`, "Dashboard | CodeSage AI"],
+    [`/dashboard/${DEMO_REPO_ID}/history`, "Scan history | CodeSage AI"],
   ]
 
   for (const [path, title] of routes) {
@@ -161,19 +161,18 @@ test("every route has its own title, so tabs and history are tellable apart", as
 const KEYBOARD_AND_ARIA = ["wcag2a", "wcag21a", "wcag2aa", "best-practice"]
 
 /**
- * Three rules are switched off, each because it belongs to an issue that is open
- * and assigned to somebody else. Leaving them on would make this test fail for
- * work nobody has started, and a suite that is red for a known reason stops
- * being read at all.
+ * Three rules are switched off. `color-contrast` is #114 and somebody else's
+ * open issue; the other two fail on structure this issue does not touch.
+ * Leaving them on would make this test fail for work nobody has started, and
+ * a suite that is red for a known reason stops being read at all.
  *
  * Everything that IS keyboard or ARIA stays on: tab order, nested interactives,
  * button and link names, aria-* validity, required children and owned roles.
  */
 const OWNED_BY_OTHER_ISSUES = [
   "color-contrast", // #114 — contrast and colour-only meaning
-  "region", // #140 — landmarks
-  "landmark-one-main", // #140 — landmarks
-  "page-has-heading-one", // #140 — document structure
+  "region", // the rail header and footer still sit outside any landmark
+  "page-has-heading-one", // document structure
 ]
 
 async function violations(page: import("@playwright/test").Page) {
@@ -201,6 +200,9 @@ test("axe finds no keyboard or ARIA violations on the other routes", async ({
     `/dashboard/${DEMO_REPO_ID}/history`,
   ]) {
     await page.goto(path)
+    // The skip-link rule resolves #main-content, so wait for the target to
+    // exist before analysing - otherwise the rule races the first paint.
+    await expect(page.locator("#main-content")).toBeVisible()
     expect(await violations(page), path).toEqual([])
   }
 })

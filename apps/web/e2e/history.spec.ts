@@ -8,7 +8,9 @@ test("clicking Scan History in the rail shows real snapshots", async ({
   page,
 }) => {
   await page.goto("/projects")
-  await page.getByRole("link", { name: "Scan History" }).click()
+  // The project cards each expose an "Open scan history for <repo>" link, so
+  // the rail entry only reads unambiguously as an exact name.
+  await page.getByRole("link", { name: "Scan History", exact: true }).click()
 
   await expect(
     page.getByRole("heading", { name: "Scan History" }),
@@ -26,7 +28,9 @@ test("clicking Scan History in the rail shows real snapshots", async ({
 
 test("clicking a history row opens the exact snapshot", async ({ page }) => {
   await page.goto("/projects")
-  await page.getByRole("link", { name: "Scan History" }).click()
+  // The project cards each expose an "Open scan history for <repo>" link, so
+  // the rail entry only reads unambiguously as an exact name.
+  await page.getByRole("link", { name: "Scan History", exact: true }).click()
 
   const rows = page.getByRole("row")
   await expect(rows).toHaveCount(6)
@@ -40,7 +44,9 @@ test("clicking a history row opens the exact snapshot", async ({ page }) => {
 
 test("scan history exposes a latest-scan return link", async ({ page }) => {
   await page.goto("/projects")
-  await page.getByRole("link", { name: "Scan History" }).click()
+  // The project cards each expose an "Open scan history for <repo>" link, so
+  // the rail entry only reads unambiguously as an exact name.
+  await page.getByRole("link", { name: "Scan History", exact: true }).click()
 
   await page.getByRole("link", { name: /open latest scan/i }).click()
   await expect(page).toHaveURL(/\/dashboard\/[^?]+\?branch=main$/)
