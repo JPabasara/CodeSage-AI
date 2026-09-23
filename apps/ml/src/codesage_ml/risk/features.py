@@ -60,6 +60,10 @@ FEATURE_ORDER: tuple[str, ...] = (
     PRODUCT_FEATURES + PROCESS_FEATURES
 )
 
+TARGET_NAME = "defective"
+NEGATIVE_CLASS = 0
+POSITIVE_CLASS = 1
+
 
 def build_vector(
     metrics: dict[str, float],
