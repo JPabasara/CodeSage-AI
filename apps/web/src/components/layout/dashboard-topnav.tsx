@@ -71,10 +71,7 @@ export function DashboardTopNav({
     : undefined
 
   return (
-    <header
-      aria-label="Dashboard header"
-      className="z-10 shrink-0 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85"
-    >
+    <div className="z-10 shrink-0 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/85">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -112,22 +109,18 @@ export function DashboardTopNav({
           </div>
         </div>
 
-        <nav aria-label="Dashboard controls" className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
             <GitBranch
               className="size-4 text-muted-foreground"
               aria-hidden="true"
             />
-            <label htmlFor="branch-select-trigger" className="sr-only">
-              Select branch
-            </label>
             <Select
               value={branchesReady && activeBranch ? activeBranch : undefined}
               onValueChange={onBranchChange}
               disabled={!branchesReady}
             >
               <SelectTrigger
-                id="branch-select-trigger"
                 className="h-7 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0"
                 aria-label="Branch"
               >
@@ -201,8 +194,8 @@ export function DashboardTopNav({
               ) : null}
             </div>
           ) : null}
-        </nav>
+        </div>
       </div>
-    </header>
+    </div>
   )
 }

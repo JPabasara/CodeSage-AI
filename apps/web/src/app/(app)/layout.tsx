@@ -27,7 +27,7 @@ export default function AppLayout({
             Hidden from `md` up, where the rail is already open and this bar
             would only cost a row of vertical space above the dashboard.
           */}
-          <header aria-label="Mobile navigation header" className="flex h-12 shrink-0 items-center gap-2 border-b px-3 md:hidden">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3 md:hidden">
             <SidebarTrigger />
             <Image
               src="/codesage-refactor-branch-mark.svg"
@@ -38,7 +38,11 @@ export default function AppLayout({
             />
             <span className="text-sm font-semibold">CodeSage AI</span>
           </header>
-          <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="min-h-0 flex-1 overflow-y-auto outline-none"
+          >
             {children}
           </main>
         </SidebarInset>

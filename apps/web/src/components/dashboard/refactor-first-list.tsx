@@ -133,27 +133,22 @@ export function RefactorFirstList({
   )
 
   const filter = findings.length ? (
-    <div>
-      <label htmlFor="debt-type-filter" className="sr-only">
-        Filter by debt type
-      </label>
-      <Select
-        value={category}
-        onValueChange={(value) => setCategory(value as Category | "all")}
-      >
-        <SelectTrigger id="debt-type-filter" className="w-40" aria-label="Filter by debt type">
-          <SelectValue placeholder="All types" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All types</SelectItem>
-          {categories.map((item) => (
-            <SelectItem key={item} value={item}>
-              {item}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <Select
+      value={category}
+      onValueChange={(value) => setCategory(value as Category | "all")}
+    >
+      <SelectTrigger className="w-40" aria-label="Filter by debt type">
+        <SelectValue placeholder="All types" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All types</SelectItem>
+        {categories.map((item) => (
+          <SelectItem key={item} value={item}>
+            {item}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   ) : null
 
   if (findings.length === 0) {

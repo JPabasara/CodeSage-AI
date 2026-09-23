@@ -51,11 +51,7 @@ export function ConnectRepo({ onConnect, busy }: Readonly<ConnectRepoProps>) {
             className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
-          <label htmlFor="repo-url-input" className="sr-only">
-            Repository URL
-          </label>
           <Input
-            id="repo-url-input"
             className="pl-8"
             placeholder="https://github.com/owner/repo"
             value={url}

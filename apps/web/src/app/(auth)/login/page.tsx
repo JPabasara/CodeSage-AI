@@ -8,7 +8,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export default function LoginPage() {
   return (
-    <main id="main-content" tabIndex={-1} className="min-h-screen bg-background text-foreground outline-none">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      className="min-h-screen bg-background text-foreground outline-none"
+    >
       <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_30rem]">
         <section className="relative hidden overflow-hidden bg-zinc-950 p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div className="relative z-10">

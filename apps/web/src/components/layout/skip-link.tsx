@@ -1,11 +1,11 @@
-"use client"
-
 export type SkipLinkProps = {
   /** The target element id to jump to. Defaults to 'main-content'. */
   targetId?: string
 }
 
-export function SkipLink({ targetId = "main-content" }: Readonly<SkipLinkProps>) {
+export function SkipLink({
+  targetId = "main-content",
+}: Readonly<SkipLinkProps>) {
   return (
     <a
       href={`#${targetId}`}
