@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  FolderGit2,
   GitBranch,
   GitCommit,
 } from "lucide-react"
@@ -21,7 +22,7 @@ import {
   type ScanControlProps,
 } from "@/components/layout/scan-control"
 import { Button } from "@/components/ui/button"
-import type { Branch } from "@/lib/types"
+import type { Branch, Repo } from "@/lib/types"
 import { shortSha } from "@/lib/utils"
 
 export type SnapshotNavigation = {
@@ -38,6 +39,14 @@ export type SnapshotNavigation = {
 
 export type DashboardTopNavProps = {
   repoName: string
+  /**
+   * The projects of the ACTIVE workspace, and only those. The list comes from
+   * `GET /api/projects`, which is scoped server-side, so a project from another
+   * workspace is not something this control can offer.
+   */
+  projects: Repo[]
+  activeRepoId: string
+  onProjectChange: (repoId: string) => void
   branches: Branch[]
   activeBranch: string
   onBranchChange: (branch: string) => void
@@ -55,6 +64,9 @@ export type DashboardTopNavProps = {
 
 export function DashboardTopNav({
   repoName,
+  projects,
+  activeRepoId,
+  onProjectChange,
   branches,
   activeBranch,
   onBranchChange,
@@ -63,9 +75,15 @@ export function DashboardTopNav({
   scan,
   snapshotNavigation,
 }: Readonly<DashboardTopNavProps>) {
-  // Branches load on their own clock. Before they land `activeBranch` is "",
-  // which Radix renders as a blank trigger, so the placeholder must be explicit.
-  const branchesReady = branches.length > 0
+  // Both lists load on their own clock, and neither Select is rendered until its
+  // own has landed.
+  //
+  // Not merely disabled: a Radix Select that starts with no value and acquires
+  // one has switched from uncontrolled to controlled, which React warns about
+  // and which drops a selection made in between. A placeholder that becomes the
+  // real control is honest about the same thing and cannot lose anything.
+  const branchesReady = branches.length > 0 && Boolean(activeBranch)
+  const projectsReady = projects.some((repo) => repo.id === activeRepoId)
   const formattedScanTime = scannedAt
     ? new Date(scannedAt).toLocaleString()
     : undefined
@@ -111,33 +129,59 @@ export function DashboardTopNav({
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
+            <FolderGit2
+              className="size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+            {projectsReady ? (
+              <Select value={activeRepoId} onValueChange={onProjectChange}>
+                <SelectTrigger
+                  className="h-7 w-44 border-0 bg-transparent px-0 shadow-none focus:ring-0"
+                  aria-label="Project"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end" className="z-50">
+                  {projects.map((repo) => (
+                    <SelectItem key={repo.id} value={repo.id}>
+                      {repo.owner}/{repo.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="w-44 text-xs text-muted-foreground">
+                Loading projects…
+              </span>
+            )}
+          </div>
+
+          <div className="flex h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
             <GitBranch
               className="size-4 text-muted-foreground"
               aria-hidden="true"
             />
-            <Select
-              value={branchesReady && activeBranch ? activeBranch : undefined}
-              onValueChange={onBranchChange}
-              disabled={!branchesReady}
-            >
-              <SelectTrigger
-                className="h-7 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0"
-                aria-label="Branch"
-              >
-                <SelectValue
-                  placeholder={
-                    branchesReady ? "Select branch" : "Loading branches..."
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent align="end" className="z-50">
-                {branches.map((b) => (
-                  <SelectItem key={b.name} value={b.name}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {branchesReady ? (
+              <Select value={activeBranch} onValueChange={onBranchChange}>
+                <SelectTrigger
+                  className="h-7 w-40 border-0 bg-transparent px-0 shadow-none focus:ring-0"
+                  aria-label="Branch"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end" className="z-50">
+                  {branches.map((b) => (
+                    <SelectItem key={b.name} value={b.name}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="w-40 text-xs text-muted-foreground">
+                Loading branches…
+              </span>
+            )}
           </div>
 
           <div className="flex min-h-9 items-center gap-2 rounded-md border border-border/70 bg-card px-2">
