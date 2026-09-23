@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
@@ -73,7 +71,6 @@ class ClassRisk(BaseModel):
 class RiskResponse(BaseModel):
     scores: list[ClassRisk]
     model_version: str
-    model_kind: Literal["trained", "heuristic"]
 
 
 # ---------------------------------------------------------------------------

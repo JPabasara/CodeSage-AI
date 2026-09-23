@@ -17,7 +17,7 @@ questions; it never learns.
 from fastapi import FastAPI
 
 from codesage_ml.registry import load_risk_model, load_satd_model
-from codesage_ml.risk.features import build_vector
+from codesage_ml.risk.features import POSITIVE_CLASS, build_vector
 from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 from codesage_ml.schemas import (
     ClassifyRequest,
@@ -91,20 +91,29 @@ def risk(body: RiskRequest) -> RiskResponse:
 
     if not body.classes:
         return RiskResponse(
-            scores=[], model_version=risk_info.version, model_kind=risk_info.kind
+            scores=[],
+            model_version=risk_info.version,
         )
 
-    # Build 21-element feature vectors in strict canonical order.
-    vectors = [build_vector(class_.metrics) for class_ in body.classes]
+    vectors = [
+        build_vector(class_.metrics)
+        for class_ in body.classes
+    ]
 
-    # Predict continuous bug-proneness probability [0.0, 1.0]
-    if hasattr(risk_info.artifact, "predict_proba"):
-        probs = risk_info.artifact.predict_proba(vectors)
-        # Class 1 is defective/bug-prone probability
-        risk_scores = [float(p[1]) if len(p) > 1 else float(p[0]) for p in probs]
-    else:
-        preds = risk_info.artifact.predict(vectors)
-        risk_scores = [float(p) for p in preds]
+    # Predict continuous bug-proneness probability [0.0, 1.0].
+    #
+    # The registry guarantees a fitted binary classifier with classes {0, 1}.
+    # Locate the defective class explicitly instead of assuming probability
+    # column 1 always corresponds to class 1.
+    class_labels = list(risk_info.artifact.classes_)
+    positive_index = class_labels.index(POSITIVE_CLASS)
+
+    probabilities = risk_info.artifact.predict_proba(vectors)
+
+    risk_scores = [
+        float(row[positive_index])
+        for row in probabilities
+    ]
 
     scores = [
         ClassRisk(
@@ -118,7 +127,6 @@ def risk(body: RiskRequest) -> RiskResponse:
     return RiskResponse(
         scores=scores,
         model_version=risk_info.version,
-        model_kind=risk_info.kind,
     )
 
 
