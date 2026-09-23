@@ -296,7 +296,10 @@ export const handlers = [
   http.delete("*/api/projects/:repoId", ({ params }) => {
     const index = connected.findIndex((repo) => repo.id === params.repoId)
     if (index < 0) return fail(404, "NOT_FOUND", "Not found.")
-    connected.splice(index, 1)
+    connected = persist(
+      PROJECTS_KEY,
+      connected.filter((repo) => repo.id !== params.repoId),
+    )
     return new HttpResponse(null, { status: 204 })
   }),
 
