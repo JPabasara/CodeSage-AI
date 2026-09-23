@@ -34,8 +34,11 @@ EXPECTED_PRODUCT_PATHS = {
     "/api/repos/{repo_id}/scan": {"post"},
     "/api/repos/{repo_id}/scan/{scan_id}": {"get"},
     "/api/repos/{repo_id}/scan/{scan_id}/stop": {"post"},
-    "/api/profiles": {"get"},
+    "/api/profiles": {"get", "post"},
     "/api/profiles/active": {"get", "put"},
+    "/api/profiles/default": {"get", "put"},
+    "/api/profiles/{profile_id}": {"get", "patch", "delete"},
+    "/api/projects/{repo_id}/profile": {"get", "put", "delete"},
 }
 
 
@@ -206,3 +209,25 @@ def test_every_error_code_exists_in_the_contract() -> None:
         if isinstance(value, type) and issubclass(value, errors.CodeSageError)
     }
     assert used <= allowed, f"not in the contract's ErrorCode list: {used - allowed}"
+
+
+def test_the_app_and_the_contract_agree_on_the_profile_surface() -> None:
+    """A path in one and not the other is a 404 nobody sees until runtime."""
+    from pathlib import Path
+
+    import yaml
+
+    repo_root = Path(__file__).resolve().parents[5]
+    contract = yaml.safe_load((repo_root / "docs/api/openapi.yaml").read_text(encoding="utf-8"))
+    served = create_app().openapi()["paths"]
+
+    def profile_surface(paths: dict[str, dict]) -> set[tuple[str, str]]:
+        return {
+            (path, method)
+            for path, methods in paths.items()
+            if "profile" in path
+            for method in methods
+            if method in {"get", "post", "put", "patch", "delete"}
+        }
+
+    assert profile_surface(served) == profile_surface(contract["paths"])

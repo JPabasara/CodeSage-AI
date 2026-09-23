@@ -268,8 +268,29 @@ export interface ScoreProfile {
    * Security is fixed at 1.0, so no position of this slider de-weights it.
    */
   trust_s: number
-  is_preset: boolean // presets are read-only templates that seed the sliders
-  is_active: boolean // at most one active profile per workspace (DB-enforced)
+  is_preset: boolean // built-ins are read-only templates that seed the sliders
+  /**
+   * Whether this is the **workspace default** — what every project without an
+   * explicit override is scored with. One row per workspace holds that pointer,
+   * keyed by workspace id, so "exactly one default" is the shape of the table.
+   */
+  is_active: boolean
+  /**
+   * Projects that name this profile explicitly. The default is additionally in
+   * force for every project *without* an override, which `is_active` already
+   * says, so those are not counted here.
+   */
+  usage_count: number
+  editable: boolean // false for the three built-ins, which the database refuses to change
+}
+
+/** Which profile one project is scored with, and where that came from. */
+export interface ProjectProfile {
+  repo_id: string
+  inherited: boolean // true when this project has no override of its own
+  effective: ScoreProfile // the override, else the workspace default
+  workspace_default: ScoreProfile
+  override: ScoreProfile | null // null exactly when `inherited` is true
 }
 
 // ── HealthReport: the full dashboard payload for one branch snapshot ─────────

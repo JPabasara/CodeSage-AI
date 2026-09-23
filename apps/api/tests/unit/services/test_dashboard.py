@@ -169,7 +169,9 @@ def _ready_cache(snapshot: Snapshot, profile: Profile) -> SimpleNamespace:
     )
 
 
-@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_report_reads_cached_result_without_running_scoring(
     list_snapshots: Mock,
@@ -209,7 +211,9 @@ def test_health_report_reads_cached_result_without_running_scoring(
     assert report.tree[0].children is not None
 
 
-@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_can_select_a_past_snapshot(
     list_snapshots: Mock,
@@ -237,7 +241,9 @@ def test_health_can_select_a_past_snapshot(
 
 
 @patch("codesage_api.services.dashboard.celery_app.send_task")
-@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_cache_miss_enqueues_worker_and_never_scores_in_api(
     list_snapshots: Mock,
@@ -269,7 +275,9 @@ def test_health_cache_miss_enqueues_worker_and_never_scores_in_api(
     send_task.assert_called_once()
 
 
-@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_no_completed_snapshot_is_not_found(
     list_snapshots: Mock, _active_profile: Mock
@@ -282,7 +290,9 @@ def test_no_completed_snapshot_is_not_found(
         )
 
 
-@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_scan_history_is_newest_first_and_uses_current_profile(
     list_snapshots: Mock,
@@ -309,7 +319,9 @@ def test_scan_history_is_newest_first_and_uses_current_profile(
     assert history[1].delta == 0.0
 
 
-@patch("codesage_api.services.dashboard.profiles.get_active", return_value=_profile())
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_repository_scan_history_keeps_deltas_independent_per_branch(
     list_snapshots: Mock,

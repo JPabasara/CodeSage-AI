@@ -599,6 +599,8 @@ const PROFILE_KEYS = [
   "trust_s",
   "is_preset",
   "is_active",
+  "usage_count",
+  "editable",
 ]
 const WEIGHT_KEYS = [
   "security",
@@ -624,7 +626,7 @@ test("GET /profiles and /profiles/active are contract-shaped", async () => {
     "Security-first",
     "Delivery-speed",
   ])
-  // At most one active profile per workspace, enforced by a partial index.
+  // Exactly one workspace default: one settings row per workspace holds it.
   expect(presets.filter((p) => p.is_active)).toHaveLength(1)
 
   const active = await get<ScoreProfile>("/profiles/active")

@@ -117,7 +117,14 @@ def test_list_projects_uses_cached_latest_health(monkeypatch) -> None:
     repository = _repository(workspace_id)
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = [repository]
-    monkeypatch.setattr(repositories.profiles, "get_active", lambda *_args: object())
+    monkeypatch.setattr(
+        repositories.profiles,
+        "load_pool",
+        lambda *_args: SimpleNamespace(for_repository=lambda _id: object()),
+    )
+    monkeypatch.setattr(
+        repositories.profiles, "to_scoring_profile", lambda *_args: object()
+    )
     monkeypatch.setattr(
         repositories.dashboard,
         "build_latest_health_hint",
@@ -141,7 +148,14 @@ def test_project_without_default_branch_does_not_hide_valid_projects(monkeypatch
     valid = _repository(workspace_id)
     session = MagicMock(spec=Session)
     session.scalars.return_value.all.return_value = [broken, valid]
-    monkeypatch.setattr(repositories.profiles, "get_active", lambda *_args: object())
+    monkeypatch.setattr(
+        repositories.profiles,
+        "load_pool",
+        lambda *_args: SimpleNamespace(for_repository=lambda _id: object()),
+    )
+    monkeypatch.setattr(
+        repositories.profiles, "to_scoring_profile", lambda *_args: object()
+    )
     monkeypatch.setattr(
         repositories.dashboard,
         "build_latest_health_hint",
