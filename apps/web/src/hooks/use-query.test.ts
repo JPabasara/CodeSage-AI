@@ -101,3 +101,18 @@ test("reload leaves a stale error up until the new answer lands", async () => {
   await waitFor(() => expect(result.current.data).toBe("ok"))
   expect(result.current.error).toBeUndefined()
 })
+
+test("a local update cannot be overwritten by an older request", async () => {
+  const inFlight = deferred<string[]>()
+  const { result } = renderHook(() => useQuery("k", () => inFlight.promise))
+
+  act(() => result.current.update(() => ["after-write"]))
+  expect(result.current.data).toEqual(["after-write"])
+
+  inFlight.resolve(["stale-before-write"])
+  await act(async () => {
+    await inFlight.promise
+  })
+
+  expect(result.current.data).toEqual(["after-write"])
+})
