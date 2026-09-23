@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from codesage_api.authorization.context import AuthorizationContext
-from codesage_api.db.models import AnalysisAttempt, Repository, Snapshot
+from codesage_api.db.models import AnalysisAttempt, Repository, ScoringProfile, Snapshot
 from codesage_api.db.repositories import attempts
 from codesage_api.deps import get_authorization_context, get_db
 from codesage_api.errors import Forbidden, NotFound
@@ -31,6 +31,34 @@ def repository_context(
 def require_repository_permission(permission: str) -> Callable[..., AuthorizationContext]:
     def check(
         context: Annotated[AuthorizationContext, Depends(repository_context)],
+    ) -> AuthorizationContext:
+        context.require_permission(permission)
+        return context
+
+    return check
+
+
+def profile_context(
+    profile_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[AuthorizationContext, Depends(get_authorization_context)],
+) -> AuthorizationContext:
+    profile = db.get(ScoringProfile, profile_id)
+    context.require_resource(
+        profile, resource_workspace_id=profile.workspace_id if profile else None
+    )
+    return context
+
+
+def require_profile_permission(permission: str) -> Callable[..., AuthorizationContext]:
+    """Visibility first, then permission.
+
+    A viewer asking to delete another workspace's profile must get the 404 that
+    any unknown id gets, not a 403 that would confirm the id exists somewhere.
+    """
+
+    def check(
+        context: Annotated[AuthorizationContext, Depends(profile_context)],
     ) -> AuthorizationContext:
         context.require_permission(permission)
         return context
