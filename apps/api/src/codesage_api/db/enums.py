@@ -83,3 +83,16 @@ class ScoringPresetType(ValueEnum):
     BALANCED = "balanced"
     SECURITY_FIRST = "security_first"
     DELIVERY_SPEED = "delivery_speed"
+
+
+class ScoringProfileKind(ValueEnum):
+    """Which half of the workspace profile pool a row belongs to.
+
+    A built-in is one of the three seeded presets: it carries a preset key, it is
+    refused every UPDATE and every direct DELETE, and it does not count toward the
+    five-custom-profile limit. A custom profile is team-authored and carries no
+    preset key.
+    """
+
+    BUILT_IN = "built_in"
+    CUSTOM = "custom"
