@@ -66,6 +66,29 @@ def test_required_one_to_one_constraints_exist() -> None:
         assert (column_name,) in unique_columns
 
 
+def test_process_metric_uses_the_aeeem_process_feature_contract() -> None:
+    table = Base.metadata.tables["process_metric"]
+    expected = {
+        "id",
+        "source_file_id",
+        "number_of_versions_until",
+        "number_of_authors_until",
+        "lines_added_until",
+        "max_lines_added_until",
+        "avg_lines_added_until",
+        "lines_removed_until",
+        "max_lines_removed_until",
+        "avg_lines_removed_until",
+        "code_churn_until",
+        "max_code_churn_until",
+        "avg_code_churn_until",
+        "age_with_respect_to",
+        "weighted_age_with_respect_to",
+    }
+
+    assert set(table.columns.keys()) == expected
+
+
 def test_probability_and_range_checks_exist() -> None:
     expected = {
         "analysis_attempt": {"ck_analysis_attempt_retry_count_nonnegative"},
