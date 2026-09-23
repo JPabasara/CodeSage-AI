@@ -382,6 +382,24 @@ export type Role = components["schemas"]["Role"]
  */
 export type Workspace = components["schemas"]["WorkspaceSummary"]
 
+/**
+ * The body of `POST /api/auth/workspaces`. Only the name is required — a
+ * workspace is identified by what the team calls it, and the rest is decoration
+ * the Workspace screen can fill in later.
+ */
+export type CreateWorkspaceRequest =
+  components["schemas"]["CreateWorkspaceRequest"]
+
+/**
+ * The body of `PATCH /api/auth/workspaces/{id}` — only what changed.
+ *
+ * Omitting `description` leaves it alone; sending `null` clears it. Those are
+ * different intentions and the contract keeps them different, so the form has to
+ * as well.
+ */
+export type UpdateWorkspaceRequest =
+  components["schemas"]["UpdateWorkspaceRequest"]
+
 /** An existing member. `status` distinguishes active from deactivated. */
 export type Member = components["schemas"]["Member"]
 

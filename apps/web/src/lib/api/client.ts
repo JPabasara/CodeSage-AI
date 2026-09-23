@@ -8,6 +8,7 @@ import type {
   Branch,
   ConnectRepoRequest,
   CreateProfileRequest,
+  CreateWorkspaceRequest,
   ErrorCode,
   HealthReport,
   ProjectProfile,
@@ -18,6 +19,8 @@ import type {
   SelectProfileRequest,
   Session,
   UpdateProfileRequest,
+  UpdateWorkspaceRequest,
+  Workspace,
 } from "@/lib/types"
 
 // Empty in dev, so the request is same-origin and MSW's service worker sees it.
@@ -87,6 +90,76 @@ export function getSession(): Promise<Session> {
   return fetch(`${API_BASE}/api/auth/session`, {
     credentials: "include",
   }).then(json<Session>)
+}
+
+// ── workspaces ───────────────────────────────────────────────────────────────
+//
+// The session binds ONE workspace at a time, server-side. Every other endpoint
+// in this client reads whichever one that is, which is why switching is a write
+// rather than a query parameter: there is no way to ask for a workspace you are
+// not currently in, and no way to accidentally mix two.
+
+/**
+ * The workspaces this user can switch to — active memberships only.
+ *
+ * Reachable without a workspace, where it answers `[]`. That is not an error:
+ * it is the state onboarding exists for.
+ */
+export function getWorkspaces(): Promise<Workspace[]> {
+  return fetch(`${API_BASE}/api/auth/workspaces`, {
+    credentials: "include",
+  }).then(json<Workspace[]>)
+}
+
+/**
+ * Create a workspace, with the caller as its org-admin, and select it for this
+ * session. The three built-in profiles are seeded with Balanced as the default.
+ *
+ * No repository is created: a new workspace is genuinely empty, and the Projects
+ * page says so.
+ */
+export function createWorkspace(
+  body: CreateWorkspaceRequest,
+): Promise<Workspace> {
+  return fetch(`${API_BASE}/api/auth/workspaces`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(json<Workspace>)
+}
+
+/**
+ * Update the ACTIVE workspace. Partial: omitted fields are left alone, and a
+ * `null` description or website clears it.
+ *
+ * Another workspace you belong to answers 404 — the session binds one workspace,
+ * and reading or writing outside it would defeat the isolation the API depends
+ * on. Switch to it first.
+ */
+export function updateWorkspace(
+  workspaceId: string,
+  body: UpdateWorkspaceRequest,
+): Promise<Workspace> {
+  return fetch(`${API_BASE}/api/auth/workspaces/${workspaceId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(json<Workspace>)
+}
+
+/**
+ * Point this session at another workspace. A membership that is missing,
+ * inactive, invited or someone else's all answer the same 404.
+ */
+export function switchWorkspace(workspaceId: string): Promise<Workspace> {
+  return fetch(`${API_BASE}/api/auth/workspaces/active`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace_id: workspaceId }),
+  }).then(json<Workspace>)
 }
 
 /**

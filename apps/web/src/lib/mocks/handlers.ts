@@ -19,12 +19,16 @@ import type {
   CategoryWeights,
   ConnectRepoRequest,
   CreateProfileRequest,
+  CreateWorkspaceRequest,
   ProjectProfile,
   Repo,
+  Role,
   ScanStatus,
   ScoreProfile,
   Session,
   UpdateProfileRequest,
+  UpdateWorkspaceRequest,
+  Workspace,
 } from "@/lib/types"
 import {
   MAX_CUSTOM_PROFILES,
@@ -41,8 +45,12 @@ import {
   mockRepos,
   mockSession,
   mockSessionViewer,
+  mockWorkspaces,
+  nimbusRepos,
+  PERMISSIONS_BY_ROLE,
   reportFor,
   UNSCANNED_REPO_ID,
+  WORKSPACE_ID,
 } from "./fixtures"
 import { scanHistoryFor } from "./scoring"
 
@@ -84,13 +92,78 @@ function restore<T>(key: string, fallback: T): T {
   }
 }
 
-const PROJECTS_KEY = "codesage.mock.projects"
-const POOL_KEY = "codesage.mock.profile-pool"
-const DEFAULT_PROFILE_KEY = "codesage.mock.default-profile"
-const ASSIGNMENTS_KEY = "codesage.mock.profile-assignments"
+const WORKSPACES_KEY = "codesage.mock.workspaces"
+const ACTIVE_WORKSPACE_KEY = "codesage.mock.active-workspace"
 
-/** Connecting adds to the workspace, so the list is state, not a fixture array. */
-let connected: Repo[] = restore(PROJECTS_KEY, [...mockRepos])
+/**
+ * Everything one workspace owns.
+ *
+ * Kept as a record per workspace rather than a set of global variables because
+ * the whole point of the second workspace is that switching to it must not show
+ * the first one's projects, profiles or assignments — a bug that is only
+ * catchable if the mock really holds two separate sets.
+ */
+interface WorkspaceRecord {
+  name: string
+  description: string | null
+  website_url: string | null
+  role: Role
+  created_at: string | null
+  updated_at: string | null
+  member_count: number
+  repos: Repo[]
+  pool: StoredProfile[]
+  defaultProfileId: string
+  assignments: Record<string, string>
+}
+
+function seedWorkspaces(): Record<string, WorkspaceRecord> {
+  const seeded: Record<string, WorkspaceRecord> = {}
+  for (const workspace of mockWorkspaces) {
+    const isPrimary = workspace.workspace_id === WORKSPACE_ID
+    seeded[workspace.workspace_id] = {
+      name: workspace.name,
+      description: workspace.description ?? null,
+      website_url: workspace.website_url ?? null,
+      role: workspace.role,
+      created_at: workspace.created_at ?? null,
+      updated_at: workspace.updated_at ?? null,
+      member_count: workspace.member_count ?? 1,
+      repos: isPrimary ? [...mockRepos] : [...nimbusRepos],
+      pool: seedPool(),
+      defaultProfileId: balancedProfile.id,
+      assignments: {},
+    }
+  }
+  return seeded
+}
+
+/**
+ * E2E only: start signed in with no workspace at all, which is the state
+ * onboarding exists for and the one state a seeded mock can never reach on its
+ * own. Read once, at module load, and only until a workspace is actually
+ * created — after that the persisted value is the answer.
+ */
+function startsWithoutWorkspace(): boolean {
+  if (typeof document === "undefined") return false
+  return document.cookie.includes("codesage_e2e_workspace=none")
+}
+
+let workspaceRecords: Record<string, WorkspaceRecord> = restore(
+  WORKSPACES_KEY,
+  seedWorkspaces(),
+)
+
+let activeWorkspaceId: string | null = restore(
+  ACTIVE_WORKSPACE_KEY,
+  startsWithoutWorkspace() ? null : WORKSPACE_ID,
+)
+
+// The active workspace's state, unpacked so every handler below reads it the
+// way it always has. `loadWorkspace` is the only place that swaps them, which
+// is what makes a switch atomic rather than four separate assignments a handler
+// could half-miss.
+let connected: Repo[] = []
 
 /**
  * The half of a profile the workspace actually stores.
@@ -105,23 +178,66 @@ type StoredProfile = Pick<
   "id" | "name" | "weights" | "trust_s" | "is_preset"
 >
 
-const seedPool = (): StoredProfile[] =>
-  mockProfiles.map(({ id, name, weights, trust_s, is_preset }) => ({
+// A declaration, not a const: `seedWorkspaces` above calls it while the module
+// is still initialising, and an arrow assigned to a const is not yet there.
+function seedPool(): StoredProfile[] {
+  return mockProfiles.map(({ id, name, weights, trust_s, is_preset }) => ({
     id,
     name,
     weights,
     trust_s,
     is_preset,
   }))
+}
 
 /** Three built-ins, then whatever this workspace has authored — at most five. */
-let pool: StoredProfile[] = restore(POOL_KEY, seedPool())
+let pool: StoredProfile[] = []
 
 /** One pointer per workspace, which is why "exactly one default" needs no rule. */
-let defaultProfileId: string = restore(DEFAULT_PROFILE_KEY, balancedProfile.id)
+let defaultProfileId: string = balancedProfile.id
 
 /** repo id → the profile it names explicitly. Absent means it inherits. */
-let assignments: Record<string, string> = restore(ASSIGNMENTS_KEY, {})
+let assignments: Record<string, string> = {}
+
+/** Fold the unpacked state back into the record it came from. */
+function packWorkspace() {
+  const record = activeWorkspaceId
+    ? workspaceRecords[activeWorkspaceId]
+    : undefined
+  if (!record) return
+  record.repos = connected
+  record.pool = pool
+  record.defaultProfileId = defaultProfileId
+  record.assignments = assignments
+}
+
+/** Read the active workspace's record into the variables the handlers use. */
+function unpackWorkspace() {
+  const record = activeWorkspaceId
+    ? workspaceRecords[activeWorkspaceId]
+    : undefined
+  connected = record?.repos ?? []
+  pool = record?.pool ?? []
+  defaultProfileId = record?.defaultProfileId ?? balancedProfile.id
+  assignments = record?.assignments ?? {}
+}
+
+/** Make `workspaceId` the one every other handler reads. */
+function loadWorkspace(workspaceId: string | null) {
+  packWorkspace()
+  activeWorkspaceId = workspaceId
+  unpackWorkspace()
+}
+
+function persistState() {
+  packWorkspace()
+  persist(WORKSPACES_KEY, workspaceRecords)
+  persist(ACTIVE_WORKSPACE_KEY, activeWorkspaceId)
+}
+
+// Unpack rather than load: at module start there is nothing to fold back yet,
+// and packing first would write these empty defaults over the seeded workspace.
+unpackWorkspace()
 
 const defaultBranch = mockBranches.find((b) => b.is_default) ?? mockBranches[0]
 
@@ -237,14 +353,14 @@ export function resetMockBackend() {
   cancelRequested.clear()
   lastSuccessfulSha.clear()
   pendingScores.clear()
-  pool = seedPool()
-  defaultProfileId = balancedProfile.id
-  assignments = {}
-  connected = [...mockRepos]
-  storage()?.removeItem(PROJECTS_KEY)
-  storage()?.removeItem(POOL_KEY)
-  storage()?.removeItem(DEFAULT_PROFILE_KEY)
-  storage()?.removeItem(ASSIGNMENTS_KEY)
+  // Cleared first: `loadWorkspace` folds the current state back into its record
+  // on the way out, which would copy the finished test's projects and profiles
+  // straight into the freshly seeded ones.
+  activeWorkspaceId = null
+  workspaceRecords = seedWorkspaces()
+  loadWorkspace(WORKSPACE_ID)
+  storage()?.removeItem(WORKSPACES_KEY)
+  storage()?.removeItem(ACTIVE_WORKSPACE_KEY)
 }
 
 // ── the workspace profile pool ──────────────────────────────────────────────
@@ -293,12 +409,6 @@ function poolOut(): ScoreProfile[] {
     a.name.localeCompare(b.name),
   )
   return [...builtIns, ...custom].map(out)
-}
-
-function persistPool() {
-  persist(POOL_KEY, pool)
-  persist(DEFAULT_PROFILE_KEY, defaultProfileId)
-  persist(ASSIGNMENTS_KEY, assignments)
 }
 
 const findProfile = (profileId: string | undefined) =>
@@ -514,7 +624,7 @@ function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
   }
 
   defaultProfileId = target.id
-  persistPool()
+  persistState()
   return out(target)
 }
 
@@ -524,7 +634,196 @@ function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
 // navigations, not fetches, so a service worker never sees them. Only
 // /api/auth/session is mockable, and only for E2E — see `authHandlers`.
 
+/** One workspace as the wire shows it, with the session-dependent bits derived. */
+function workspaceOut(workspaceId: string): Workspace {
+  const record = workspaceRecords[workspaceId]
+  const isActive = workspaceId === activeWorkspaceId
+  return {
+    workspace_id: workspaceId,
+    name: record.name,
+    description: record.description,
+    website_url: record.website_url,
+    role: record.role,
+    is_active: isActive,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+    // Derived on read, never stored: both change whenever a project or a member
+    // does, and a stored copy would be wrong more often than right.
+    project_count: isActive ? connected.length : record.repos.length,
+    member_count: record.member_count,
+  }
+}
+
+const workspaceIds = () => Object.keys(workspaceRecords)
+
+/** A website that is not an http(s) URL is a 422, not a silently stored string. */
+function websiteErrors(value: unknown): { field: string; detail: string }[] {
+  if (value === undefined || value === null) return []
+  if (typeof value !== "string") {
+    return [{ field: "website_url", detail: "Input should be a valid URL." }]
+  }
+  if (value.trim() === "") return []
+  try {
+    const url = new URL(value)
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return [{ field: "website_url", detail: "Input should be a valid URL." }]
+    }
+  } catch {
+    return [{ field: "website_url", detail: "Input should be a valid URL." }]
+  }
+  return []
+}
+
+/** Whitespace-only text is stored as absent rather than as content. */
+const trimmedOrNull = (value: string | null | undefined) => {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+/**
+ * Endpoints that answer without a workspace. Everything else is scoped to one,
+ * and answers 409 until there is one to be scoped to — which is what sends a
+ * brand-new user to onboarding rather than to an empty-looking app.
+ */
+const WORKSPACE_FREE = [
+  "/api/auth/session",
+  "/api/auth/workspaces",
+  "/api/healthz",
+]
+
 export const handlers = [
+  // Registered first on purpose: MSW takes the first handler that matches, and
+  // returning nothing falls through to the real one below.
+  http.all("*/api/*", ({ request }) => {
+    if (activeWorkspaceId) return
+    const path = new URL(request.url).pathname
+    if (WORKSPACE_FREE.some((prefix) => path.startsWith(prefix))) return
+    return fail(
+      409,
+      "WORKSPACE_REQUIRED",
+      "Create or join a workspace before using this.",
+    )
+  }),
+
+  // ── workspaces ────────────────────────────────────────────────────────────
+  http.get("*/api/auth/workspaces", () =>
+    // Reachable without a workspace, where it is an empty array — the state
+    // onboarding exists for, not an error.
+    HttpResponse.json(workspaceIds().map(workspaceOut)),
+  ),
+
+  http.post("*/api/auth/workspaces", async ({ request }) => {
+    const body = (await request
+      .json()
+      .catch(() => null)) as Partial<CreateWorkspaceRequest> | null
+    const errors = websiteErrors(body?.website_url)
+    if (typeof body?.name !== "string" || body.name.trim() === "") {
+      errors.push({ field: "name", detail: "Input should be a valid string." })
+    }
+    if (errors.length > 0 || !body?.name) return invalid(errors)
+
+    const now = new Date().toISOString()
+    const workspaceId = uuid()
+    workspaceRecords = {
+      ...workspaceRecords,
+      [workspaceId]: {
+        name: body.name.trim(),
+        description: trimmedOrNull(body.description),
+        website_url: trimmedOrNull(body.website_url),
+        // The creator is its org-admin, in one transaction with the workspace.
+        role: "org-admin",
+        created_at: now,
+        updated_at: now,
+        member_count: 1,
+        // Genuinely empty: no repository is created, and the Projects page
+        // says so rather than inventing a demo one.
+        repos: [],
+        pool: seedPool(),
+        defaultProfileId: balancedProfile.id,
+        assignments: {},
+      },
+    }
+    loadWorkspace(workspaceId)
+    persistState()
+    return HttpResponse.json(workspaceOut(workspaceId), { status: 201 })
+  }),
+
+  http.put("*/api/auth/workspaces/active", async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      workspace_id?: unknown
+    } | null
+    if (typeof body?.workspace_id !== "string") {
+      return invalid([
+        { field: "workspace_id", detail: "Input should be a valid UUID." },
+      ])
+    }
+    // A membership that is missing, inactive, invited or someone else's all
+    // answer the same 404: which of those it is, is not ours to reveal.
+    if (!workspaceRecords[body.workspace_id]) return NOT_FOUND()
+
+    loadWorkspace(body.workspace_id)
+    persistState()
+    return HttpResponse.json(workspaceOut(body.workspace_id))
+  }),
+
+  http.get("*/api/auth/workspaces/:workspaceId", ({ params }) => {
+    const workspaceId = params.workspaceId as string
+    // Only the ACTIVE workspace is readable. Another one you belong to is a 404:
+    // the session binds one workspace, and reading past it would defeat the
+    // isolation every other endpoint depends on.
+    if (workspaceId !== activeWorkspaceId) return NOT_FOUND()
+    return HttpResponse.json(workspaceOut(workspaceId))
+  }),
+
+  http.patch(
+    "*/api/auth/workspaces/:workspaceId",
+    async ({ params, request }) => {
+      const workspaceId = params.workspaceId as string
+      if (workspaceId !== activeWorkspaceId) return NOT_FOUND()
+      const record = workspaceRecords[workspaceId]
+      if (record.role !== "org-admin") {
+        return fail(
+          403,
+          "FORBIDDEN",
+          "Only an org-admin can change workspace settings.",
+        )
+      }
+
+      const body = (await request
+        .json()
+        .catch(() => null)) as Partial<UpdateWorkspaceRequest> | null
+      if (body === null) {
+        return invalid([
+          { field: "body", detail: "Input should be a valid object." },
+        ])
+      }
+      const errors = websiteErrors(body.website_url)
+      if (
+        "name" in body &&
+        (typeof body.name !== "string" || body.name.trim() === "")
+      ) {
+        errors.push({
+          field: "name",
+          detail: "Input should be a valid string.",
+        })
+      }
+      if (errors.length > 0) return invalid(errors)
+
+      // Partial: an omitted field is left alone, and an explicit null clears it.
+      // Collapsing those two would make "remove the description" unexpressible.
+      if (body.name !== undefined) record.name = body.name.trim()
+      if ("description" in body) {
+        record.description = trimmedOrNull(body.description)
+      }
+      if ("website_url" in body) {
+        record.website_url = trimmedOrNull(body.website_url)
+      }
+      record.updated_at = new Date().toISOString()
+      persistState()
+      return HttpResponse.json(workspaceOut(workspaceId))
+    },
+  ),
+
   // ── projects ──────────────────────────────────────────────────────────────
   http.get("*/api/projects", () => HttpResponse.json(connected)),
 
@@ -532,10 +831,7 @@ export const handlers = [
     const repoId = params.repoId as string
     const index = connected.findIndex((repo) => repo.id === repoId)
     if (index < 0) return fail(404, "NOT_FOUND", "Not found.")
-    connected = persist(
-      PROJECTS_KEY,
-      connected.filter((repo) => repo.id !== repoId),
-    )
+    connected = connected.filter((repo) => repo.id !== repoId)
     // The assignment row is keyed by repository and cascades with it, so a
     // profile does not stay undeletable because a removed project still names
     // it.
@@ -543,8 +839,8 @@ export const handlers = [
       assignments = Object.fromEntries(
         Object.entries(assignments).filter(([id]) => id !== repoId),
       )
-      persistPool()
     }
+    persistState()
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -631,7 +927,8 @@ export const handlers = [
       connected_at: new Date().toISOString(),
       // No latest_health: freshly connected, never scanned.
     }
-    connected = persist(PROJECTS_KEY, [...connected, repo])
+    connected = [...connected, repo]
+    persistState()
     return HttpResponse.json(repo, { status: 201 })
   }),
 
@@ -736,7 +1033,7 @@ export const handlers = [
       is_preset: false,
     }
     pool = [...pool, stored]
-    persistPool()
+    persistState()
     // 201, and NOT the default: authoring a profile and choosing the one in
     // force are separate, deliberate acts.
     return HttpResponse.json(out(stored), { status: 201 })
@@ -774,7 +1071,7 @@ export const handlers = [
     if (!target) return NOT_FOUND()
 
     defaultProfileId = target.id
-    persistPool()
+    persistState()
     // Idempotent: the second PUT of the same id changes nothing, and neither
     // writes a snapshot or starts a scan.
     return HttpResponse.json(out(target))
@@ -809,7 +1106,7 @@ export const handlers = [
       TRUST_MIN,
       TRUST_MAX,
     )
-    persistPool()
+    persistState()
     // Every project using it is now scored differently — deliberately, and with
     // no scan: that is what a shared pool is for.
     return HttpResponse.json(out(stored))
@@ -830,7 +1127,7 @@ export const handlers = [
       )
     }
     pool = pool.filter((profile) => profile.id !== stored.id)
-    persistPool()
+    persistState()
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -860,7 +1157,7 @@ export const handlers = [
     // One override per project — the repository is the key — so this replaces
     // any previous choice rather than adding to it.
     assignments = { ...assignments, [repoId]: body.profile_id }
-    persistPool()
+    persistState()
     return HttpResponse.json(projectProfileOut(repoId))
   }),
 
@@ -873,7 +1170,7 @@ export const handlers = [
     assignments = Object.fromEntries(
       Object.entries(assignments).filter(([id]) => id !== repoId),
     )
-    persistPool()
+    persistState()
     return HttpResponse.json(projectProfileOut(repoId))
   }),
 
@@ -992,14 +1289,37 @@ export const authHandlers = [
     if (!cookies[name]) {
       return fail(401, "NOT_AUTHENTICATED", "Sign in to continue.")
     }
-    // A second cookie chooses the role. Sign-in is bypassed in E2E anyway, and
+    // A second cookie forces the role. Sign-in is bypassed in E2E anyway, and
     // "a viewer is offered no write controls" cannot be journey-tested at all
     // without a session that really lacks the grant. It is inert in the dev app,
     // where nothing sets this cookie.
-    const session =
-      cookies["codesage_e2e_role"] === "viewer"
-        ? mockSessionViewer
-        : mockSession
-    return HttpResponse.json(session satisfies Session)
+    const forcedViewer = cookies["codesage_e2e_role"] === "viewer"
+    const identity = forcedViewer ? mockSessionViewer : mockSession
+
+    if (!activeWorkspaceId) {
+      // Authenticated, with nowhere to work yet. A real state, not a failure —
+      // and a different one from 401, which is why the web must not treat them
+      // alike.
+      return HttpResponse.json({
+        ...identity,
+        workspace_id: null,
+        needs_workspace_setup: true,
+        role: null,
+        permissions: [],
+      } satisfies Session)
+    }
+
+    // Role and permissions come from the ACTIVE workspace's membership, so
+    // switching workspaces really does change what this session may do.
+    const role: Role = forcedViewer
+      ? "viewer"
+      : workspaceRecords[activeWorkspaceId].role
+    return HttpResponse.json({
+      ...identity,
+      workspace_id: activeWorkspaceId,
+      needs_workspace_setup: false,
+      role,
+      permissions: PERMISSIONS_BY_ROLE[role],
+    } satisfies Session)
   }),
 ]
