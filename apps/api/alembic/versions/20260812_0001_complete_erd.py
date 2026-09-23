@@ -73,7 +73,13 @@ LATER_TABLES = {
 
 # Columns introduced after 0001.
 LATER_COLUMNS = {
-    "workspace": ("name",),  # 0014
+    "workspace": (  # name 0014; the rest 0016
+        "name",
+        "description",
+        "website_url",
+        "created_at",
+        "updated_at",
+    ),
     "membership": ("role_id",),  # 0010
     "app_user": ("email_verified",),  # 0013
     "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),  # 0011
@@ -148,6 +154,8 @@ def _baseline_metadata() -> MetaData:
             if index.name in names:
                 table.indexes.discard(index)
     _restore_scoring_profile_active_flag(metadata.tables["scoring_profile"])
+    # A session always had a workspace until 0016 made onboarding possible.
+    metadata.tables["session"].c.workspace_id.nullable = False
     return metadata
 
 
