@@ -15,7 +15,6 @@ cannot silently diverge.
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Class-level CK product metrics
 # ---------------------------------------------------------------------------
@@ -68,10 +67,21 @@ def build_vector(
     """
     Assemble one class observation in canonical training order.
 
-    Missing features default to 0.0 so newly created files or unavailable
-    history produce a complete numeric vector.
+    The API supplies an explicit value for every feature, including zeroes for
+    unavailable history. Reject contract drift instead of silently changing the
+    observation seen by the model.
     """
+    expected = set(FEATURE_ORDER)
+    actual = set(metrics)
+    missing = expected - actual
+    unexpected = actual - expected
+
+    if missing:
+        raise ValueError(f"Missing ML-2 features: {sorted(missing)}")
+    if unexpected:
+        raise ValueError(f"Unexpected ML-2 features: {sorted(unexpected)}")
+
     return [
-        float(metrics.get(name, 0.0))
+        float(metrics[name])
         for name in FEATURE_ORDER
     ]

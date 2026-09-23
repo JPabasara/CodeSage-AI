@@ -50,24 +50,14 @@ def load_dataset(dataset_path: Path) -> tuple[pd.DataFrame, str]:
 
 
 def build_feature_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    feature_rows = []
-    for _, row in df.iterrows():
-        metrics = {
-            "wmc": float(row.get("wmc", 0.0)),
-            "cbo": float(row.get("cbo", 0.0)),
-            "dit": float(row.get("dit", 0.0)),
-            "lcom": float(row.get("lcom", 0.0)),
-            "rfc": float(row.get("rfc", 0.0)),
-            "noc": float(row.get("noc", 0.0)),
-            "loc": float(row.get("loc", 0.0)),
-            "max_nested_blocks": float(row.get("max_nested_blocks", row.get("max_cc", 0.0))),
-            "comment_ratio": float(row.get("comment_ratio", 0.0)),
-            "commits_90d": float(row.get("commits_90d", 0.0)),
-            "author_count": float(row.get("author_count", 0.0)),
-            "file_age_days": float(row.get("file_age_days", row.get("file_age", 0.0))),
-            "recency_days": float(row.get("recency_days", row.get("recency", 0.0))),
-        }
-        feature_rows.append(build_vector(metrics))
+    missing = set(FEATURE_ORDER) - set(df.columns)
+    if missing:
+        raise ValueError(f"Training dataset is missing ML-2 features: {sorted(missing)}")
+
+    feature_rows = [
+        build_vector({name: float(row[name]) for name in FEATURE_ORDER})
+        for _, row in df.iterrows()
+    ]
 
     X = np.array(feature_rows)
 

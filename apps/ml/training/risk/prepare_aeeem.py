@@ -10,16 +10,23 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import sys
 from pathlib import Path
 
 import pandas as pd
 
+current_dir = Path(__file__).resolve().parent
+ml_src = current_dir.parent.parent / "src"
+if str(ml_src) not in sys.path:
+    sys.path.insert(0, str(ml_src))
+
+from codesage_ml.risk.features import FEATURE_ORDER
+
 EXPECTED_PROJECTS = {"equinox", "jdt", "lucene", "mylyn", "pde"}
 REQUIRED_COLUMNS = {
     "classname",
-    "numberOfAuthorsUntil",
-    "ageWithRespectTo",
     "bugs",
+    *FEATURE_ORDER,
 }
 
 
@@ -39,23 +46,18 @@ def prepare(source_dir: Path, output_path: Path) -> str:
         if missing:
             raise ValueError(f"{path.name} is missing columns: {sorted(missing)}")
 
-        frames.append(
-            pd.DataFrame(
-                {
-                    "class_name": source["classname"].str.strip(),
-                    "project_name": path.stem,
-                    "author_count": pd.to_numeric(
-                        source["numberOfAuthorsUntil"], errors="raise"
-                    ),
-                    # AEEEM defines ageWithRespectTo in weeks backward from the
-                    # release. Preserve that unit explicitly in the prepared data.
-                    "file_age_weeks": pd.to_numeric(
-                        source["ageWithRespectTo"], errors="raise"
-                    ),
-                    "bugs": pd.to_numeric(source["bugs"], errors="raise"),
-                }
-            )
+        prepared_columns: dict[str, object] = {
+            "class_name": source["classname"].str.strip(),
+            "project_name": path.stem,
+            "bugs": pd.to_numeric(source["bugs"], errors="raise"),
+        }
+        prepared_columns.update(
+            {
+                name: pd.to_numeric(source[name], errors="raise")
+                for name in FEATURE_ORDER
+            }
         )
+        frames.append(pd.DataFrame(prepared_columns))
 
     prepared = pd.concat(frames, ignore_index=True)
     if len(prepared) != 5_371:

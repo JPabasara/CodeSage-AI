@@ -22,8 +22,8 @@ from codesage_ml.satd.labels import DATASET_TO_CATEGORY
 from codesage_ml.schemas import (
     ClassifyRequest,
     ClassifyResponse,
+    ClassRisk,
     CommentPrediction,
-    FileRisk,
     RiskRequest,
     RiskResponse,
     VersionResponse,
@@ -79,7 +79,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
 
 @app.post("/risk", response_model=RiskResponse)
 def risk(body: RiskRequest) -> RiskResponse:
-    """ML-2: per-file bug-proneness, 0–1 (SRS FR-10).
+    """ML-2: per-class bug-proneness, 0–1 (SRS FR-10).
 
     Produces a score, never a finding, and assigns neither category nor severity.
 
@@ -89,13 +89,13 @@ def risk(body: RiskRequest) -> RiskResponse:
     """
     risk_info = load_risk_model()
 
-    if not body.files:
+    if not body.classes:
         return RiskResponse(
             scores=[], model_version=risk_info.version, model_kind=risk_info.kind
         )
 
-    # Build 13-element feature vectors in strict canonical order
-    vectors = [build_vector(file.metrics) for file in body.files]
+    # Build 21-element feature vectors in strict canonical order.
+    vectors = [build_vector(class_.metrics) for class_ in body.classes]
 
     # Predict continuous bug-proneness probability [0.0, 1.0]
     if hasattr(risk_info.artifact, "predict_proba"):
@@ -107,8 +107,12 @@ def risk(body: RiskRequest) -> RiskResponse:
         risk_scores = [float(p) for p in preds]
 
     scores = [
-        FileRisk(path=file.path, risk_score=score)
-        for file, score in zip(body.files, risk_scores)
+        ClassRisk(
+            path=class_.path,
+            class_name=class_.class_name,
+            risk_score=score,
+        )
+        for class_, score in zip(body.classes, risk_scores)
     ]
 
     return RiskResponse(
