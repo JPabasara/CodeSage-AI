@@ -30,7 +30,6 @@ from codesage_api.db.models import (
     Branch,
     Membership,
     Repository,
-    ScoringProfile,
     User,
     UserSession,
     Workspace,
@@ -42,8 +41,7 @@ from codesage_api.errors import (
     UpstreamUnavailable,
 )
 from codesage_api.integrations.github import fetch_repository, parse_github_url
-from codesage_api.scoring.config_loader import get_presets
-from codesage_api.scoring.enums import Category
+from codesage_api.services import profiles
 from codesage_api.services.memberships import get_active_membership
 
 logger = logging.getLogger(__name__)
@@ -254,14 +252,15 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
 
 
 def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """First sign-in: create the user, their workspace, and a starting profile.
+    """First sign-in: create the user, their workspace, and its profile pool.
 
-    Doing it here, once, means every later read can assume a workspace and an
-    active profile exist.
+    Doing it here, once, means every later read can assume a workspace and a
+    workspace default profile exist.
 
-    Note the order. WORKSPACE, MEMBERSHIP and SCORING_PROFILE all carry a policy
-    saying "this row must belong to the current workspace", and PostgreSQL checks
-    that on INSERT as well as on SELECT. So the workspace id is generated here,
+    Note the order. WORKSPACE, MEMBERSHIP, SCORING_PROFILE and
+    WORKSPACE_PROFILE_SETTINGS all carry a policy saying "this row must belong to
+    the current workspace", and PostgreSQL checks that on INSERT as well as on
+    SELECT. So the workspace id is generated here,
     bound as the current workspace, and only then written — otherwise the very
     first INSERT is refused by the policy that is meant to protect it.
     """
@@ -296,20 +295,7 @@ def _create_workspace_records(db: DbSession, user_id: uuid.UUID, *, name: str) -
         )
     )
 
-    balanced = get_presets()["balanced"]
-    db.add(
-        ScoringProfile(
-            workspace_id=workspace_id,
-            name=balanced.name,
-            security_weight=balanced.weights[Category.SECURITY],
-            code_design_weight=balanced.weights[Category.CODE_DESIGN],
-            requirement_weight=balanced.weights[Category.REQUIREMENT],
-            documentation_weight=balanced.weights[Category.DOCUMENTATION],
-            test_weight=balanced.weights[Category.TEST],
-            trust_slider=balanced.s,
-            is_active=True,
-        )
-    )
+    profiles.seed_workspace_profiles(db, workspace_id, actor_user_id=user_id)
     _seed_demo_repository(db, workspace_id)
     db.flush()
     return workspace_id

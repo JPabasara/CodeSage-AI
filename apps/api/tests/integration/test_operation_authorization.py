@@ -272,8 +272,21 @@ def test_foreign_resources_are_404_before_work(account, resources, client, monke
     side_effect.assert_not_called()
 
 
+def _profile_pool(db):
+    """Every profile in the workspace plus the pointer saying which is in force."""
+    from codesage_api.db.models import ScoringProfile, WorkspaceProfileSettings
+
+    return (
+        sorted(
+            db.execute(
+                select(ScoringProfile.id, ScoringProfile.name, ScoringProfile.security_weight)
+            ).tuples()
+        ),
+        db.scalars(select(WorkspaceProfileSettings.default_scoring_profile_id)).all(),
+    )
+
+
 def test_denied_writes_leave_database_and_queues_unchanged(account, resources, client, monkeypatch):
-    from codesage_api.db.models import ScoringProfile
     from codesage_api.routers.profiles import celery_app
     from codesage_api.tasks.scan_pipeline import run_scan
 
@@ -286,7 +299,7 @@ def test_denied_writes_leave_database_and_queues_unchanged(account, resources, c
     with Session(account[0]) as db:
         count = db.scalar(select(func.count()).select_from(AnalysisAttempt))
         repo_count = db.scalar(select(func.count()).select_from(Repository))
-        weight = db.scalar(select(ScoringProfile.security_weight))
+        profile_pool = _profile_pool(db)
     assert (
         client.post(f"/api/repos/{resources['repo']}/scan", json={"branch": "main"}).status_code
         == 403
@@ -298,7 +311,7 @@ def test_denied_writes_leave_database_and_queues_unchanged(account, resources, c
     with Session(account[0]) as db:
         assert db.scalar(select(func.count()).select_from(AnalysisAttempt)) == count
         assert db.scalar(select(func.count()).select_from(Repository)) == repo_count
-        assert db.scalar(select(ScoringProfile.security_weight)) == weight
+        assert _profile_pool(db) == profile_pool
     for mock in (queue, scoring_queue, github):
         mock.assert_not_called()
 

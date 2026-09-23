@@ -12,7 +12,8 @@ Grouped to match the four domains of SAD §9 Data View:
     ml.py          — SATDPrediction, BugRiskPrediction, MLModelVersion
     provenance.py  — AnalysisEngineVersion, AnalysisEngineModelVersion
     rules.py       — RuleDefinition, SATDMarkerPattern
-    profile.py     — ScoringProfile, ScoringPreset
+    profile.py     — ScoringProfile, ScoringPreset, WorkspaceProfileSettings,
+                     RepositoryProfileAssignment
 
 SnapshotScore is the sole exception to fact storage: it is a deletable derived
 cache stamped with the complete profile fingerprint and scoring-engine version.
@@ -29,7 +30,12 @@ from codesage_api.db.models.authorization import Permission, Role, RolePermissio
 from codesage_api.db.models.analysis import AnalysisAttempt, Snapshot
 from codesage_api.db.models.finding import DebtCategory, Finding
 from codesage_api.db.models.ml import BugRiskPrediction, MLModelVersion, SATDPrediction
-from codesage_api.db.models.profile import ScoringPreset, ScoringProfile
+from codesage_api.db.models.profile import (
+    RepositoryProfileAssignment,
+    ScoringPreset,
+    ScoringProfile,
+    WorkspaceProfileSettings,
+)
 from codesage_api.db.models.provenance import AnalysisEngineModelVersion, AnalysisEngineVersion
 from codesage_api.db.models.repository import Branch, Repository
 from codesage_api.db.models.rules import RuleDefinition, SATDMarkerPattern
@@ -68,6 +74,7 @@ __all__ = [
     "RolePermission",
     "ProcessMetric",
     "Repository",
+    "RepositoryProfileAssignment",
     "RuleDefinition",
     "SATDMarkerPattern",
     "SATDPrediction",
@@ -83,4 +90,5 @@ __all__ = [
     "UserSession",
     "Workspace",
     "WorkspaceInvitation",
+    "WorkspaceProfileSettings",
 ]
