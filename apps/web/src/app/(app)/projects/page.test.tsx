@@ -6,7 +6,16 @@ import { http, HttpResponse } from "msw"
 
 import { server } from "@/lib/mocks/server"
 import { mockRepos } from "@/lib/mocks/fixtures"
-import { SELECTED_PROJECT_KEY } from "@/hooks/use-selected-project"
+import {
+  readSelectedProjectId,
+  writeSelectedProjectId,
+} from "@/hooks/use-selected-project"
+import {
+  mockSession,
+  mockSessionViewer,
+  WORKSPACE_ID,
+} from "@/lib/mocks/fixtures"
+import type { Session } from "@/lib/types"
 import { AppRail } from "@/components/layout/app-rail"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -23,8 +32,11 @@ vi.mock("next/image", () => ({
   default: () => <span data-testid="mock-next-image" />,
 }))
 
+// The role decides which controls this page offers, so it is a knob: a
+// read-only session has to be renderable in the same file as the org-admin one.
+const session = vi.hoisted(() => ({ current: null as Session | null }))
 vi.mock("@/hooks/use-session", () => ({
-  useSession: () => ({ data: null }),
+  useSession: () => ({ data: session.current, loading: false }),
 }))
 
 // <Toaster> lives in the root layout, not in this page, so rendering the page
@@ -39,6 +51,7 @@ vi.mock("sonner", () => ({
 }))
 
 beforeEach(() => {
+  session.current = mockSession
   localStorage.clear()
   pushMock.mockClear()
   toastError.mockClear()
@@ -106,7 +119,7 @@ test("selecting a project stores it before opening the dashboard", async () => {
 
   expect(dashboardLink).toHaveAttribute("href", `/dashboard/${mockRepos[1].id}`)
 
-  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+  expect(readSelectedProjectId(WORKSPACE_ID)).toBe(mockRepos[1].id)
 })
 
 test("removing the active project confirms its name and selects a safe remaining project", async () => {
@@ -118,7 +131,7 @@ test("removing the active project confirms its name and selects a safe remaining
       return new HttpResponse(null, { status: 204 })
     }),
   )
-  localStorage.setItem(SELECTED_PROJECT_KEY, mockRepos[0].id)
+  writeSelectedProjectId(mockRepos[0].id, WORKSPACE_ID)
   render(<ProjectsPage />)
   await ready()
 
@@ -135,7 +148,7 @@ test("removing the active project confirms its name and selects a safe remaining
   await waitFor(() =>
     expect(screen.queryByText("acme-payments")).not.toBeInTheDocument(),
   )
-  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+  expect(readSelectedProjectId(WORKSPACE_ID)).toBe(mockRepos[1].id)
   expect(toastSuccess).toHaveBeenCalledWith("Removed acme/acme-payments")
 })
 
@@ -148,7 +161,7 @@ test("the page and AppRail cannot restore a deleted active project", async () =>
       return new HttpResponse(null, { status: 204 })
     }),
   )
-  localStorage.setItem(SELECTED_PROJECT_KEY, mockRepos[0].id)
+  writeSelectedProjectId(mockRepos[0].id, WORKSPACE_ID)
   renderWithAppRail()
   await ready()
   await waitFor(() =>
@@ -169,7 +182,7 @@ test("the page and AppRail cannot restore a deleted active project", async () =>
 
   await waitFor(() => {
     expect(screen.queryByText("acme-payments")).not.toBeInTheDocument()
-    expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
+    expect(readSelectedProjectId(WORKSPACE_ID)).toBe(mockRepos[1].id)
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
       "href",
       `/dashboard/${mockRepos[1].id}`,
@@ -190,7 +203,7 @@ test("removing the last project clears storage and sends rail links to Projects"
       return new HttpResponse(null, { status: 204 })
     }),
   )
-  localStorage.setItem(SELECTED_PROJECT_KEY, mockRepos[0].id)
+  writeSelectedProjectId(mockRepos[0].id, WORKSPACE_ID)
   renderWithAppRail()
   await ready()
 
@@ -207,7 +220,7 @@ test("removing the last project clears storage and sends rail links to Projects"
     await screen.findByText(/no repositories connected/i),
   ).toBeInTheDocument()
   await waitFor(() => {
-    expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBeNull()
+    expect(readSelectedProjectId(WORKSPACE_ID)).toBeUndefined()
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
       "href",
       "/projects",
@@ -446,4 +459,44 @@ test("connecting a repository refreshes the list without blanking it", async () 
   expect(screen.queryByTestId("projects-loading")).not.toBeInTheDocument()
 
   release()
+})
+
+// ── workspace context (#Phase 11) ───────────────────────────────────────────
+
+test("the active workspace is named on the page, not just implied", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  // The same three repositories mean something different depending on which
+  // workspace you are standing in, so the workspace has to be on screen.
+  expect(screen.getByText("Acme Engineering")).toBeVisible()
+})
+
+test("a role without connect or disconnect is offered neither control", async () => {
+  session.current = mockSessionViewer
+
+  render(<ProjectsPage />)
+  await ready()
+
+  expect(screen.queryByLabelText(/repository url/i)).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /remove acme\/acme-payments/i }),
+  ).not.toBeInTheDocument()
+  expect(screen.getByText(/needs the manager or org-admin role/i)).toBeVisible()
+})
+
+test("an empty workspace says so, and says what to do about it", async () => {
+  server.use(http.get("*/api/projects", () => HttpResponse.json([])))
+
+  render(<ProjectsPage />)
+
+  // A new workspace is genuinely empty — no demo repository is invented for it.
+  expect(
+    await screen.findByText(/no repositories connected/i),
+  ).toBeInTheDocument()
+  expect(
+    screen.getByText(
+      /Acme Engineering is empty\. Connect a public repository/i,
+    ),
+  ).toBeVisible()
 })

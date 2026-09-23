@@ -16,6 +16,11 @@ const PORT = Number(process.env.E2E_PORT ?? 3101)
 
 export default defineConfig({
   testDir: "./e2e",
+  // The deployment smoke test belongs to playwright.deployment.config.ts: it
+  // drives the DEPLOYED site, needs DEPLOY_WEB_URL and DEPLOY_API_URL, and
+  // throws at import time without them — which failed the whole local suite
+  // before a single journey ran. Run it with `pnpm test:smoke:deployment`.
+  testIgnore: "deployment-smoke.spec.ts",
   // A failing journey should be a real failure, not a flaky one, so retry once
   // locally and twice on CI before believing it.
   retries: process.env.CI ? 2 : 1,

@@ -19,8 +19,16 @@ const rail = (page: import("@playwright/test").Page) =>
 const railLink = (page: import("@playwright/test").Page, name: string) =>
   rail(page).getByRole("link", { name, exact: true })
 
-test("the rail carries exactly the four v1 destinations", async ({ page }) => {
-  for (const label of ["Projects", "Dashboard", "Scan History", "Profiles"]) {
+test("the rail carries every destination this release has", async ({
+  page,
+}) => {
+  for (const label of [
+    "Projects",
+    "Dashboard",
+    "Scan History",
+    "Profiles",
+    "Workspace",
+  ]) {
     await expect(railLink(page, label)).toBeVisible()
   }
   await expect(rail(page)).toBeVisible()

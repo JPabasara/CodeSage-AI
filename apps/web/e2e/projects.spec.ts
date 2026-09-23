@@ -2,7 +2,29 @@ import { readFileSync } from "node:fs"
 
 import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 
-const SELECTED_PROJECT_KEY = "codesage.selectedProjectId"
+const SELECTED_PROJECT_KEY = "codesage.selectedProjectId.v2"
+const WORKSPACE_ID = "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7"
+
+/**
+ * The project this workspace is on, out of storage.
+ *
+ * The value is a map of workspace id to repository id: one selection per
+ * workspace, so switching cannot carry the previous workspace's project — and
+ * cannot open it, which before tenant isolation was a cross-workspace read.
+ */
+const storedProject = (page: import("@playwright/test").Page) =>
+  page.evaluate(
+    ([key, workspaceId]) => {
+      const raw = localStorage.getItem(key)
+      if (!raw) return null
+      try {
+        return (JSON.parse(raw) as Record<string, string>)[workspaceId] ?? null
+      } catch {
+        return null
+      }
+    },
+    [SELECTED_PROJECT_KEY, WORKSPACE_ID] as const,
+  )
 
 // Connect a repository, and the four ways it can fail.
 //
@@ -144,22 +166,14 @@ test("the rail's fallback demo id matches the fixture", () => {
 test("deleting the active project selects a remaining project everywhere", async ({
   page,
 }) => {
-  await expect
-    .poll(() =>
-      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
-    )
-    .toBe(DEMO_REPO_ID)
+  await expect.poll(() => storedProject(page)).toBe(DEMO_REPO_ID)
 
   await removeRepository(page, "acme-payments")
 
   await expect(repoRows(page).filter({ hasText: "acme-payments" })).toHaveCount(
     0,
   )
-  await expect
-    .poll(() =>
-      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
-    )
-    .toBe(SECOND_REPO_ID)
+  await expect.poll(() => storedProject(page)).toBe(SECOND_REPO_ID)
   await expect(
     page.getByRole("link", { name: "Dashboard", exact: true }),
   ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}`)
@@ -171,20 +185,12 @@ test("deleting the active project selects a remaining project everywhere", async
 test("deleting a non-active project preserves the active rail links", async ({
   page,
 }) => {
-  await expect
-    .poll(() =>
-      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
-    )
-    .toBe(DEMO_REPO_ID)
+  await expect.poll(() => storedProject(page)).toBe(DEMO_REPO_ID)
 
   await removeRepository(page, "web-store")
 
   await expect(repoRows(page).filter({ hasText: "web-store" })).toHaveCount(0)
-  await expect
-    .poll(() =>
-      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
-    )
-    .toBe(DEMO_REPO_ID)
+  await expect.poll(() => storedProject(page)).toBe(DEMO_REPO_ID)
   await expect(
     page.getByRole("link", { name: "Dashboard", exact: true }),
   ).toHaveAttribute("href", `/dashboard/${DEMO_REPO_ID}`)
