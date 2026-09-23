@@ -6,6 +6,7 @@ import {
 import Image from "next/image"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppRail } from "@/components/layout/app-rail"
+import { SessionGuard } from "@/components/layout/session-guard"
 
 export default function AppLayout({
   children,
@@ -13,6 +14,10 @@ export default function AppLayout({
   return (
     <TooltipProvider>
       <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+        {/* Renders nothing. It decides whether this visitor belongs in the app
+            shell at all: signed out goes to /login, and signed in with no
+            workspace goes to /onboarding rather than back to sign-in. */}
+        <SessionGuard />
         <AppRail />
         <SidebarInset className="h-svh min-h-0 overflow-hidden">
           {/*
