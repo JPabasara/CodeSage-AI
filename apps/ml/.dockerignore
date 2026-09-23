@@ -15,9 +15,10 @@ data
 dataset
 experiments
 
-# Trained artifacts. Mounted at /models at run time, deliberately NOT baked in,
-# so swapping a model is a restart rather than a rebuild (MAINT-05).
-models
+# Only the production ML-2 artifact is baked into the image. Local Compose may
+# still mount the complete models directory over /models for development.
+models/*
+!models/risk_v2.joblib
 
 # Training code. The `training` extra is not installed in the image on purpose.
 training
