@@ -36,6 +36,7 @@ PROFILE = {
 INVENTORY = {
     ("GET", "/api/projects"): "project:read",
     ("POST", "/api/projects"): "repository:connect",
+    ("DELETE", "/api/projects/{repo_id}"): "repository:disconnect",
     ("GET", "/api/repos/{repo_id}/branches"): "repository:read",
     ("POST", "/api/repos/{repo_id}/scan"): "scan:start",
     ("GET", "/api/repos/{repo_id}/scan/{scan_id}"): "result:read",
@@ -186,7 +187,7 @@ def test_every_operation_checks_role_before_business_service(
         raise HTTPException(418, "Reached authorized business service")
 
     for module, names in [
-        (repositories, ["list_projects", "connect", "list_branches"]),
+        (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
         (analysis, ["start", "get_status", "cancel", "get_history"]),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
@@ -245,6 +246,8 @@ def test_foreign_resources_are_404_before_work(account, resources, client, monke
     monkeypatch.setattr(dashboard, "build_health_report", side_effect)
     for method, template in INVENTORY:
         if "{repo_id}" not in template:
+            continue
+        if method == "DELETE" and template.startswith("/api/projects"):
             continue
         path = template.format(repo_id=resources["foreign_repo"], scan_id=resources["foreign"])
         response = client.request(method, path, **request_args(method, path))
@@ -347,7 +350,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
         raise AssertionError("Operation without a grant reached business logic")
 
     for module, names in [
-        (repositories, ["list_projects", "connect", "list_branches"]),
+        (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
         (analysis, ["start", "get_status", "cancel", "get_history"]),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),

@@ -77,6 +77,25 @@ test("invalid stored ids fall back to the first available repo", () => {
   ).toBe(FIRST_REPO_ID)
 })
 
+test("can preserve an intentionally empty selection", () => {
+  expect(
+    resolveSelectedProjectId({
+      availableRepoIds: [FIRST_REPO_ID, SECOND_REPO_ID],
+      fallbackToFirstAvailable: false,
+    }),
+  ).toBeUndefined()
+})
+
+test("an explicit selection still works when first-repository fallback is disabled", () => {
+  expect(
+    resolveSelectedProjectId({
+      storedRepoId: SECOND_REPO_ID,
+      availableRepoIds: [FIRST_REPO_ID, SECOND_REPO_ID],
+      fallbackToFirstAvailable: false,
+    }),
+  ).toBe(SECOND_REPO_ID)
+})
+
 test("an empty loaded project list clears the selection instead of keeping stale storage", () => {
   expect(
     resolveSelectedProjectId({

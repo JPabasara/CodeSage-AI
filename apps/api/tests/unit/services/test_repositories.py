@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy.orm import Session
 
 from codesage_api.db.enums import (
@@ -13,6 +14,7 @@ from codesage_api.db.enums import (
     RepositoryVisibility,
 )
 from codesage_api.db.models import Branch, Repository
+from codesage_api.errors import NotFound, RepositoryScanRunning
 from codesage_api.integrations.github import GitHubBranch, GitHubRepository
 from codesage_api.services import repositories
 
@@ -32,6 +34,44 @@ def _repository(workspace_id: uuid.UUID) -> Repository:
     )
     repository.branches = [Branch(name="main", head_commit_sha="a" * 40, is_default=True)]
     return repository
+
+
+def test_disconnect_deletes_repository_and_records_audit(monkeypatch) -> None:
+    workspace_id = uuid.uuid4()
+    actor_id = uuid.uuid4()
+    repository = _repository(workspace_id)
+    session = MagicMock(spec=Session)
+    session.scalar.side_effect = [repository, None]
+    record = MagicMock()
+    monkeypatch.setattr(repositories.audit, "record", record)
+
+    repositories.disconnect(session, workspace_id, repository.id, actor_id)
+
+    session.delete.assert_called_once_with(repository)
+    session.flush.assert_called_once()
+    record.assert_called_once()
+
+
+def test_disconnect_refuses_active_scan() -> None:
+    workspace_id = uuid.uuid4()
+    repository = _repository(workspace_id)
+    session = MagicMock(spec=Session)
+    session.scalar.side_effect = [repository, uuid.uuid4()]
+
+    with pytest.raises(RepositoryScanRunning):
+        repositories.disconnect(session, workspace_id, repository.id, uuid.uuid4())
+
+    session.delete.assert_not_called()
+
+
+def test_disconnect_hides_missing_or_foreign_repository() -> None:
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = None
+
+    with pytest.raises(NotFound):
+        repositories.disconnect(session, uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
+
+    session.delete.assert_not_called()
 
 
 def test_connect_persists_default_branch_and_audit(monkeypatch) -> None:

@@ -68,6 +68,10 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function empty(res: Response): Promise<void> {
+  if (!res.ok) await json<never>(res)
+}
+
 // Sign-in and sign-out are deliberately NOT here — both are navigations, not
 // fetches (see the login page's <a> and the app rail's sign-out <form>).
 // `getSession` is the one auth endpoint the client calls with fetch, and it is
@@ -96,6 +100,13 @@ export function connectRepo(url: string): Promise<Repo> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then(json<Repo>)
+}
+
+export function removeProject(repoId: string): Promise<void> {
+  return fetch(`${API_BASE}/api/projects/${repoId}`, {
+    method: "DELETE",
+    credentials: "include",
+  }).then(empty)
 }
 
 export function getProjects(): Promise<Repo[]> {

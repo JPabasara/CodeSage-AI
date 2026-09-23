@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LockKeyhole,
   UnlockKeyhole,
+  Trash2,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +24,8 @@ export type ProjectListProps = {
   repos: Repo[]
   onSelect?: (repo: Repo) => void
   onHistory?: (repo: Repo) => void
+  onRemove?: (repo: Repo) => void
+  removingRepoId?: string
   activeRepoId?: string
 }
 
@@ -30,6 +33,8 @@ export function ProjectList({
   repos,
   onSelect,
   onHistory,
+  onRemove,
+  removingRepoId,
   activeRepoId,
 }: Readonly<ProjectListProps>) {
   if (repos.length === 0) {
@@ -174,6 +179,16 @@ export function ProjectList({
                       >
                         <ExternalLink className="size-4" />
                       </a>
+                    </Button>
+                    <Button
+                      size="icon-lg"
+                      variant="destructive"
+                      aria-label={`Remove ${repoLabel} repository`}
+                      title={`Remove ${repoLabel} repository`}
+                      disabled={removingRepoId === repo.id}
+                      onClick={() => onRemove?.(repo)}
+                    >
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 </div>

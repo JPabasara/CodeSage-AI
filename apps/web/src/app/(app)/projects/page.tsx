@@ -4,12 +4,22 @@ import { useState } from "react"
 import { Activity, CheckCircle2, FolderGit2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { ApiRequestError, connectRepo } from "@/lib/api/client"
-import type { ErrorCode } from "@/lib/types"
+import { ApiRequestError, connectRepo, removeProject } from "@/lib/api/client"
+import type { ErrorCode, Repo } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
 import { ErrorState } from "@/components/error-state"
 import { ProjectList } from "@/components/projects/project-list"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
 
@@ -31,8 +41,14 @@ export default function ProjectsPage() {
   // skeletons so the press is visibly doing something.
   const { data: repos, loading, error, reload, refetch } = useProjects()
   const [connecting, setConnecting] = useState(false)
-  const { selectedProjectId, selectProject } = useSelectedProject({
+  const [pendingRemoval, setPendingRemoval] = useState<Repo>()
+  const [removingRepoId, setRemovingRepoId] = useState<string>()
+  const { selectedProjectId, selectProject, clearProject } = useSelectedProject({
     availableRepoIds: repos?.map((repo) => repo.id),
+    // This screen has an intentional "None" state after the active repository
+    // is removed. Re-selecting the first stale list item would write the deleted
+    // repository straight back to localStorage before reload() finishes.
+    fallbackToFirstAvailable: false,
   })
   const projectCount = repos?.length ?? 0
   const scannedCount = repos?.filter((repo) => repo.latest_health).length ?? 0
@@ -55,6 +71,28 @@ export default function ProjectsPage() {
       )
     } finally {
       setConnecting(false)
+    }
+  }
+
+  async function onRemove() {
+    if (!pendingRemoval) return
+    setRemovingRepoId(pendingRemoval.id)
+    try {
+      await removeProject(pendingRemoval.id)
+      if (selectedProjectId === pendingRemoval.id) clearProject()
+      toast.success(`Removed ${pendingRemoval.owner}/${pendingRemoval.name}`)
+      setPendingRemoval(undefined)
+      reload()
+    } catch (err) {
+      const message =
+        err instanceof ApiRequestError && err.code === "REPOSITORY_SCAN_RUNNING"
+          ? "Stop the running scan before removing this repository."
+          : err instanceof Error
+            ? err.message
+            : "Couldn't remove that repository."
+      toast.error(message)
+    } finally {
+      setRemovingRepoId(undefined)
     }
   }
 
@@ -137,9 +175,39 @@ export default function ProjectsPage() {
             onHistory={(repo) => {
               selectProject(repo.id)
             }}
+            onRemove={setPendingRemoval}
+            removingRepoId={removingRepoId}
           />
         )}
       </section>
+
+      <Dialog
+        open={Boolean(pendingRemoval)}
+        onOpenChange={(open) => !open && setPendingRemoval(undefined)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove connected repository?</DialogTitle>
+            <DialogDescription>
+              This permanently removes {pendingRemoval?.owner}/
+              {pendingRemoval?.name} and all of its scans, findings, and scores
+              from this workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              disabled={Boolean(removingRepoId)}
+              onClick={onRemove}
+            >
+              {removingRepoId ? "Removing…" : "Remove repository"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

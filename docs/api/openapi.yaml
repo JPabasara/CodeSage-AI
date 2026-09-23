@@ -517,6 +517,36 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/UpstreamUnavailable' }
 
+  /api/projects/{repo_id}:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    delete:
+      tags: [projects]
+      operationId: remove_project
+      summary: Remove a connected repository
+      description: |
+        Permanently removes the repository and all workspace-owned descendants,
+        including branches, analysis attempts, snapshots, cached scores, source
+        records, predictions, and findings.
+
+        Requires `repository:disconnect`, which is granted only to org-admin and
+        manager roles. Removal is refused while any scan for the repository is
+        running; clients switch on `REPOSITORY_SCAN_RUNNING` to explain why.
+      responses:
+        '204':
+          description: Repository and all descendants removed successfully.
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The repository has a scan in progress and cannot be removed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                detail: Stop the running scan before removing this repository.
+                code: REPOSITORY_SCAN_RUNNING
+
   # ══════════════════════════════════════════════════════════════════════════
   # BRANCHES  (SRS FR-5)
   # ══════════════════════════════════════════════════════════════════════════
@@ -1084,6 +1114,7 @@ components:
         - REPOSITORY_NOT_PUBLIC   # 400
         - REPOSITORY_UNREACHABLE  # 400
         - ALREADY_CONNECTED       # 409
+        - REPOSITORY_SCAN_RUNNING # 409
         - SCAN_ALREADY_RUNNING    # 409
         - SCAN_NOT_CANCELLABLE    # 409
         - VALIDATION_FAILED       # 422

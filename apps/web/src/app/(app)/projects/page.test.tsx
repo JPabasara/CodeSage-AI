@@ -87,16 +87,68 @@ test("selecting a project stores it before opening the dashboard", async () => {
   expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
 })
 
-test("selecting a project can be done without opening the dashboard", async () => {
+test("removing the active project confirms its name and clears the selection", async () => {
+  let projects = [...mockRepos]
+  server.use(
+    http.get("*/api/projects", () => HttpResponse.json(projects)),
+    http.delete("*/api/projects/:repoId", ({ params }) => {
+      projects = projects.filter((repo) => repo.id !== params.repoId)
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  localStorage.setItem(SELECTED_PROJECT_KEY, mockRepos[0].id)
   render(<ProjectsPage />)
   await ready()
 
   await userEvent.click(
-    screen.getByRole("button", { name: /select acme\/web-store/i }),
+    screen.getByRole("button", {
+      name: /remove acme\/acme-payments repository/i,
+    }),
+  )
+  expect(screen.getByRole("dialog")).toHaveTextContent("acme/acme-payments")
+  await userEvent.click(
+    screen.getByRole("button", { name: /^remove repository$/i }),
   )
 
-  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBe(mockRepos[1].id)
-  expect(pushMock).not.toHaveBeenCalled()
+  await waitFor(() =>
+    expect(screen.queryByText("acme-payments")).not.toBeInTheDocument(),
+  )
+  expect(localStorage.getItem(SELECTED_PROJECT_KEY)).toBeNull()
+  expect(toastSuccess).toHaveBeenCalledWith("Removed acme/acme-payments")
+})
+
+test("a running scan prevents repository removal", async () => {
+  server.use(
+    http.delete("*/api/projects/:repoId", () =>
+      HttpResponse.json(
+        {
+          detail: "Stop the running scan before removing this repository.",
+          code: "REPOSITORY_SCAN_RUNNING",
+        },
+        { status: 409 },
+      ),
+    ),
+  )
+  render(<ProjectsPage />)
+  await ready()
+
+  await userEvent.click(
+    screen.getByRole("button", {
+      name: /remove acme\/acme-payments repository/i,
+    }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /^remove repository$/i }),
+  )
+
+  expect(await failureMessage()).toMatch(/stop the running scan/i)
+  expect(screen.getByRole("dialog")).toBeInTheDocument()
+  // Radix marks background content aria-hidden while the modal is open, so
+  // accessible queries correctly cannot see the list at this point. Inspect
+  // the already-rendered list node to prove the failed delete kept its row.
+  expect(
+    document.querySelector('[aria-label="Connected repositories"]'),
+  ).toHaveTextContent("acme-payments")
 })
 
 test("a private repository explains itself instead of failing generically", async () => {
