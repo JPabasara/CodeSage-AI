@@ -157,7 +157,9 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         file_facts[source_file.relative_path] = FileFacts(
             file=source_file.relative_path,
             risk_score=risk_score,
-            commits_90d=int(process.commits_90d) if process is not None else 0,
+            # The process extractor now measures cumulative versions, not a
+            # rolling 90-day commit count. Do not substitute one for the other.
+            commits_90d=0,
             loc=int(_metric_value(source_file, "loc")),
         )
         for location in source_file.source_locations:
