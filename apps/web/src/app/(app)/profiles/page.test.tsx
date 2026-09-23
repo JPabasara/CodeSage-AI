@@ -94,6 +94,8 @@ test("adopts the clamped values the server returns, not what it sent", async () 
     trust_s: 1,
     is_preset: false,
     is_active: true,
+    usage_count: 0,
+    editable: true,
   })
 
   render(<ProfilesPage />)
