@@ -180,16 +180,21 @@ export function ProjectList({
                         <ExternalLink className="size-4" />
                       </a>
                     </Button>
-                    <Button
-                      size="icon-lg"
-                      variant="destructive"
-                      aria-label={`Remove ${repoLabel} repository`}
-                      title={`Remove ${repoLabel} repository`}
-                      disabled={removingRepoId === repo.id}
-                      onClick={() => onRemove?.(repo)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                    {/* Omitted, not disabled, for a role without
+                        repository:disconnect: a control that exists only to be
+                        refused teaches nothing. The API re-checks regardless. */}
+                    {onRemove ? (
+                      <Button
+                        size="icon-lg"
+                        variant="destructive"
+                        aria-label={`Remove ${repoLabel} repository`}
+                        title={`Remove ${repoLabel} repository`}
+                        disabled={removingRepoId === repo.id}
+                        onClick={() => onRemove(repo)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </CardContent>

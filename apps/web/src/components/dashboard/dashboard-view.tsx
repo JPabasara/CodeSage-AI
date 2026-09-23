@@ -322,6 +322,17 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[oklch(0.985_0.002_255)] dark:bg-[oklch(0.12_0.006_255)]">
       <DashboardTopNav
         repoName={repoName}
+        projects={repos ?? []}
+        activeRepoId={repoId}
+        onProjectChange={(nextRepoId) => {
+          setTreeSelectionNotice(null)
+          setPickedBranch(undefined)
+          // A bare dashboard URL: branch, snapshot and the open finding all
+          // belonged to the project being left. A snapshot id in particular is
+          // another project's row, and carrying it over would ask this project
+          // for a snapshot it has never had.
+          router.push(`/dashboard/${nextRepoId}`)
+        }}
         branches={branches ?? []}
         activeBranch={activeBranch}
         onBranchChange={(branch) => {
