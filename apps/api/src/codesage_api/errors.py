@@ -65,6 +65,20 @@ class RepositoryScanRunning(CodeSageError):
     message = "Stop or wait for the queued or running scan before removing this repository."
 
 
+class WorkspaceRequired(CodeSageError):
+    """The caller is signed in, but has not finished onboarding.
+
+    Deliberately NOT 401. The session is valid and the identity is known; what is
+    missing is a workspace to act in. Answering 401 would send the web back to
+    sign-in, which would succeed and land in exactly the same state — a loop the
+    user cannot escape.
+    """
+
+    status_code = status.HTTP_409_CONFLICT
+    code = "WORKSPACE_REQUIRED"
+    message = "Create a workspace before using this part of the application."
+
+
 class ProfileLimitReached(CodeSageError):
     status_code = status.HTTP_409_CONFLICT
     code = "PROFILE_LIMIT_REACHED"

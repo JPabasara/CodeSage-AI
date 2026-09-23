@@ -181,7 +181,12 @@ paths:
         Returns the signed-in user, or `401` if there is no valid session.
 
         This is the only auth endpoint the client calls with `fetch`, and it is how
-        the app decides whether to render the dashboard or bounce to sign-in.
+        the app decides what to render: sign-in when this fails, **workspace
+        onboarding** when `needs_workspace_setup` is true, and the dashboard
+        otherwise.
+
+        Reachable without a workspace — it is the endpoint that reports not having
+        one.
       responses:
         '200':
           description: The signed-in user.
@@ -198,7 +203,10 @@ paths:
       description: |
         Returns only active memberships belonging to the authenticated user.
         Invited and inactive memberships, and every other user's memberships,
-        are excluded. Exactly one item matches the session's active workspace.
+        are excluded. At most one item is `is_active`.
+
+        Reachable without a workspace, where it returns an empty array — that is
+        the state onboarding exists for.
       responses:
         '200':
           description: Active workspaces available to this session.
@@ -211,12 +219,22 @@ paths:
     post:
       tags: [auth]
       operationId: create_workspace
-      summary: Create and select another workspace
+      summary: Create and select a workspace
       description: |
-        Requires the signed-in user to be an org-admin of the active workspace.
-        Creates a named workspace with that user as its active org-admin,
-        provisions the default scoring profile and demo repository, and selects
-        it for only the current server-side session.
+        Creates a workspace with the caller as its active org-admin, seeds the
+        three built-in scoring profiles with **Balanced** as the default, and
+        selects it for the current server-side session only. All of it in one
+        transaction, so a half-created workspace cannot be reached.
+
+        **No repository is created.** A new workspace is genuinely empty and the
+        Projects page says so.
+
+        Two callers, one endpoint. During onboarding the session has no workspace
+        and being authenticated is the whole check — there is no workspace in which
+        to hold a permission, and refusing here would leave the user permanently
+        unable to start. Afterwards it is an ordinary org-admin operation in the
+        workspace the caller is currently in, so a developer cannot create
+        workspaces at will.
       requestBody:
         required: true
         content:
@@ -232,13 +250,37 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/auth/workspaces/{workspace_id}:
+    get:
+      tags: [auth]
+      operationId: get_workspace
+      summary: The active workspace's settings
+      description: |
+        Name, description, website and the derived project and member counts.
+
+        Only the **active** workspace is readable. Another workspace the caller
+        belongs to returns `404`: the session binds one workspace, and reading
+        another would mean reading outside the tenant this transaction is isolated
+        to. Switch to it first.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: The active workspace.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceSummary' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
     patch:
       tags: [auth]
-      operationId: rename_workspace
-      summary: Rename the active workspace
+      operationId: update_workspace
+      summary: Update the active workspace
       description: |
-        Requires org-admin access. The path must identify the session's active
-        workspace; another workspace returns 404 even if the user belongs to it.
+        Requires org-admin access. A **partial** update: omitted fields are left
+        alone. The path must identify the session's active workspace; another
+        workspace returns `404` even if the caller belongs to it.
       parameters:
         - $ref: '#/components/parameters/WorkspaceId'
       requestBody:
@@ -248,7 +290,7 @@ paths:
             schema: { $ref: '#/components/schemas/UpdateWorkspaceRequest' }
       responses:
         '200':
-          description: The renamed active workspace.
+          description: The updated active workspace.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkspaceSummary' }
@@ -1392,6 +1434,11 @@ components:
         The stable, machine-readable reason. New members may be added; existing
         members never change meaning.
 
+        `WORKSPACE_REQUIRED` is deliberately **not** `401`. The session is valid
+        and the identity is known; what is missing is a workspace to act in.
+        Answering `401` would send the browser back to sign-in, which would
+        succeed and land in exactly the same state — a loop with no exit.
+
         There is deliberately **no** `PROFILE_WORKSPACE_MISMATCH`. A profile or
         repository belonging to another workspace answers `NOT_FOUND`, exactly as
         an id that exists nowhere does, so no caller can tell another tenant's ids
@@ -1412,6 +1459,7 @@ components:
         - PROFILE_BUILT_IN        # 409
         - PROFILE_IN_USE          # 409
         - PROFILE_NAME_CONFLICT   # 409
+        - WORKSPACE_REQUIRED      # 409
         - VALIDATION_FAILED       # 422
         - RATE_LIMITED            # 429
         - UPSTREAM_UNAVAILABLE    # 503
@@ -1491,16 +1539,20 @@ components:
         The signed-in user. Carries no token and no provider credential — those stay
         server-side (SEC-09).
 
-        **Only the two identifiers are guaranteed.** `user_id` and `workspace_id`
-        are ours and always exist. Everything else is display detail supplied by
-        the identity provider, and a provider may simply not have it: a GitHub
-        account can keep its email private and need never set a display name.
+        **Only `user_id` is guaranteed.** `workspace_id` is null for someone who
+        has signed in but has no workspace yet — a real authenticated state, not a
+        failure, and what `needs_workspace_setup` exists to name so the client
+        never has to infer onboarding from a missing field.
+
+        Everything below the identifiers is display detail supplied by the
+        identity provider, and a provider may simply not have it: a GitHub account
+        can keep its email private and need never set a display name.
 
         Since the application's identity is the Asgardeo subject and nothing else,
         a missing display name must not be able to fail a sign-in that otherwise
         succeeded. Clients render a fallback — the email, or initials, or a generic
         avatar — rather than assuming these are present.
-      required: [user_id, workspace_id]
+      required: [user_id]
       additionalProperties: false
       properties:
         user_id: { type: string, format: uuid }
@@ -1513,9 +1565,36 @@ components:
           type: [string, 'null']
           format: uri
         workspace_id:
-          type: string
+          type: [string, 'null']
           format: uuid
-          description: The tenant every request is scoped to.
+          description: |
+            The tenant every request is scoped to, or null during onboarding.
+            While it is null, every workspace-bound endpoint answers `409`
+            `WORKSPACE_REQUIRED`; only this endpoint, the workspace list, workspace
+            creation, invitation acceptance, sign-out and the public health probes
+            are reachable.
+        needs_workspace_setup:
+          type: boolean
+          default: false
+          description: |
+            True when the user must create or join a workspace before the
+            application is usable. Exactly the inverse of `workspace_id` being
+            present, stated plainly so the client branches on an intention rather
+            than on a null.
+        role:
+          type: [string, 'null']
+          enum: [org-admin, manager, developer, viewer, null]
+          description: The caller's role in the active workspace; null during onboarding.
+        permissions:
+          type: array
+          default: []
+          items: { type: string }
+          description: |
+            What this caller may do in the active workspace, so the client can hide
+            controls it would be refused anyway. **A convenience, never the
+            boundary** — the API re-checks every permission on every request, and a
+            client that ignored this list would gain nothing.
+          examples: [[project:read, scan:start]]
         identity_provider:
           type: [string, 'null']
           description: |
@@ -1526,17 +1605,46 @@ components:
 
     WorkspaceSummary:
       type: object
+      description: |
+        One workspace as the switcher and the Workspace settings screen need it.
+
+        `project_count` and `member_count` are derived on read rather than stored:
+        both change whenever a project or a member does, and a stored copy would
+        be wrong more often than right.
       required: [workspace_id, name, role, is_active]
       additionalProperties: false
       properties:
         workspace_id: { type: string, format: uuid }
         name: { type: string, minLength: 1, maxLength: 255 }
+        description:
+          type: [string, 'null']
+          maxLength: 1000
+        website_url:
+          type: [string, 'null']
+          format: uri
+          maxLength: 1000
         role:
           type: string
           enum: [org-admin, manager, developer, viewer]
         is_active:
           type: boolean
           description: Whether this workspace is selected by the current session.
+        created_at:
+          type: [string, 'null']
+          format: date-time
+        updated_at:
+          type: [string, 'null']
+          format: date-time
+        project_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Repositories connected to this workspace.
+        member_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Active members. Pending invitations are not counted.
 
     SwitchWorkspaceRequest:
       type: object
@@ -1547,17 +1655,43 @@ components:
 
     CreateWorkspaceRequest:
       type: object
+      description: |
+        Only the name is required. A workspace is identified by what the team
+        calls it; the rest is decoration the Workspace screen can fill in later.
+        Names are trimmed, and a description or website of only whitespace is
+        stored as absent rather than as content.
       required: [name]
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
+        description:
+          type: [string, 'null']
+          maxLength: 1000
+        website_url:
+          type: [string, 'null']
+          format: uri
+          maxLength: 1000
+          description: Must be a valid http(s) URL. Rejected with `422` otherwise.
 
     UpdateWorkspaceRequest:
       type: object
-      required: [name]
+      description: |
+        A **partial** update: send only what changed, so the Workspace form can
+        submit the fields the user touched.
+
+        Omitting `description` leaves it alone; sending `null` clears it. Those are
+        different intentions and the contract keeps them different — collapsing
+        them would make "clear this" unexpressible.
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
+        description:
+          type: [string, 'null']
+          maxLength: 1000
+        website_url:
+          type: [string, 'null']
+          format: uri
+          maxLength: 1000
 
     Role:
       type: string

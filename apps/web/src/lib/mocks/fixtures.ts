@@ -62,6 +62,9 @@ export const FEATURE_BRANCH_DEBT_SCALE = 1.2
 export const mockSession: Session = {
   user_id: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
   workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
+  needs_workspace_setup: false,
+  role: "org-admin",
+  permissions: ["project:read", "profile:read", "result:read"],
   email: "janidu@example.com",
   name: "Janidu Pabasara",
   avatar_url: "https://avatars.githubusercontent.com/u/1024?v=4",
@@ -71,6 +74,16 @@ export const mockSession: Session = {
 export const mockSessionMinimal: Session = {
   user_id: "2c4a6e80-1b3d-4f57-9a80-c1d2e3f4a5b6",
   workspace_id: "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
+}
+
+/** Signed in, but with nowhere to work yet — the onboarding state. */
+export const mockSessionOnboarding: Session = {
+  user_id: "7f8e9d0c-1b2a-4c3d-8e5f-6a7b8c9d0e1f",
+  workspace_id: null,
+  needs_workspace_setup: true,
+  role: null,
+  permissions: [],
+  email: "new@example.com",
 }
 
 // ── branches ────────────────────────────────────────────────────────────────

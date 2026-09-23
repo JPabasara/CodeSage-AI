@@ -31,10 +31,6 @@ class Settings(BaseSettings):
 
     # Optional for public repositories, but raises the GitHub REST rate limit.
     github_token: str = ""
-    # Seeded into every new workspace on first sign-in so users have a Java
-    # project to explore before connecting their own repository.
-    demo_repository_url: str = "https://github.com/spring-projects/spring-petclinic"
-    demo_repository_default_branch: str = "main"
 
     # ── ML inference (SAD §7) — called by workers only, never by the API ────
     ml_service_url: str = "http://localhost:8001"

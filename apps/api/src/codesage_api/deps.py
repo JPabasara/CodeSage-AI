@@ -19,7 +19,7 @@ from codesage_api.authorization.context import AuthorizationContext
 from codesage_api.config import get_settings
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import SessionLocal
-from codesage_api.errors import NotAuthenticated
+from codesage_api.errors import NotAuthenticated, WorkspaceRequired
 from codesage_api.services import auth as auth_service
 from codesage_api.services.memberships import get_active_membership, resolve_authorization_context
 
@@ -49,11 +49,24 @@ def get_current_user_id(request: Request) -> uuid.UUID:
         session.close()
 
 
-def get_workspace_id(
+def get_optional_workspace_id(
     request: Request, user_id: Annotated[uuid.UUID, Depends(get_current_user_id)]
-) -> uuid.UUID:
+) -> uuid.UUID | None:
+    """The active workspace, or None while the user is still onboarding.
 
+    Only the handful of endpoints that must work before a workspace exists —
+    session, workspace list/create, invitation acceptance, logout — depend on
+    this. Everything else takes `get_workspace_id` and is refused.
+    """
     return request.state.workspace_id
+
+
+def get_workspace_id(
+    workspace_id: Annotated[uuid.UUID | None, Depends(get_optional_workspace_id)],
+) -> uuid.UUID:
+    if workspace_id is None:
+        raise WorkspaceRequired
+    return workspace_id
 
 
 def get_current_session_id(
@@ -67,7 +80,12 @@ def get_db(
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
     user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
 ) -> Iterator[Session]:
+    """A data transaction bound to the caller's workspace.
 
+    Depending on `get_workspace_id` rather than the optional form is what makes
+    WORKSPACE_REQUIRED automatic: a router that asks for a database session has,
+    by that fact alone, declared that it needs a workspace.
+    """
     session = SessionLocal()
     try:
         set_workspace_context(session, workspace_id)

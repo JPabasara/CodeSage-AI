@@ -11,8 +11,13 @@ from sqlalchemy.orm import Session
 from codesage_api.db.enums import MembershipStatus
 from codesage_api.db.models import Membership, User, UserSession, Workspace
 from codesage_api.db.rls import set_workspace_context
-from codesage_api.errors import NotAuthenticated, NotFound
-from codesage_api.services.auth import IdentityClaims, establish_session, load_valid_session
+from codesage_api.errors import NotFound
+from codesage_api.services.auth import (
+    IdentityClaims,
+    create_workspace,
+    establish_session,
+    load_valid_session,
+)
 from codesage_api.services.memberships import (
     accept_workspace_invitation,
     get_workspace_permissions,
@@ -24,13 +29,24 @@ from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414 -
 
 @pytest.fixture
 def account(database):
+    """A signed-in user who has completed onboarding.
+
+    Two steps now, because sign-in no longer invents a workspace: establish the
+    session, then create one the way the onboarding screen does. Everything
+    downstream of this fixture assumes a user who is already working.
+    """
     config, _, engine = database
     command.upgrade(config, "head")
     claims = IdentityClaims(str(uuid.uuid4()), "user@example.test", "User", None, "github")
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
         record = establish_session(db, claims)
-        ids = (record.user_id, record.workspace_id, record.id)
+        assert record.workspace_id is None, "a first sign-in must not create a workspace"
+        created = create_workspace(
+            db, session_id=record.id, user_id=record.user_id, name="Acme"
+        )
+        assert created is not None
+        ids = (record.user_id, created.workspace_id, record.id)
         db.commit()
     return engine, claims, *ids
 
@@ -75,8 +91,14 @@ def test_nonactive_membership_revokes_existing_session_and_blocks_signin(account
         assert db.get(UserSession, session_id) is None
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
-        with pytest.raises(NotAuthenticated):
-            establish_session(db, claims)
+        # Signing in again succeeds, but lands nowhere. Losing your last
+        # membership is not the same as not being a user: identity is the
+        # Asgardeo subject, and it is still valid. What they lose is every
+        # workspace, so the new session has none and every workspace-bound
+        # endpoint answers WORKSPACE_REQUIRED until someone invites them back.
+        revoked = establish_session(db, claims)
+        assert revoked.user_id == user_id
+        assert revoked.workspace_id is None
         db.rollback()
 
 

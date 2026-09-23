@@ -1190,8 +1190,8 @@ Remaining execution:
 - [ ] Phase 6B: Delete and selected-project follow-up.
 - [ ] Phase 7A: Workspace profile data model and migration.
 - [ ] Phase 7B: Profile OpenAPI, service, and endpoints.
-- [ ] Phase 8: Workspace onboarding and metadata API.
-- [ ] Phase 9: API integration and hardening.
+- [x] Phase 8: Workspace onboarding and metadata API.
+- [x] Phase 9: API integration and hardening.
 - [ ] Phase 10: Premium Profiles web experience.
 - [ ] Phase 11: Workspace and Project web experience.
 - [ ] Phase 12: Team tab and invitation acceptance.

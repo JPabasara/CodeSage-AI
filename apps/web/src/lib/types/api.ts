@@ -76,7 +76,12 @@ export interface paths {
          * @description Returns the signed-in user, or `401` if there is no valid session.
          *
          *     This is the only auth endpoint the client calls with `fetch`, and it is how
-         *     the app decides whether to render the dashboard or bounce to sign-in.
+         *     the app decides what to render: sign-in when this fails, **workspace
+         *     onboarding** when `needs_workspace_setup` is true, and the dashboard
+         *     otherwise.
+         *
+         *     Reachable without a workspace — it is the endpoint that reports not having
+         *     one.
          */
         get: operations["get_session"];
         put?: never;
@@ -98,16 +103,29 @@ export interface paths {
          * List the signed-in user's active workspaces
          * @description Returns only active memberships belonging to the authenticated user.
          *     Invited and inactive memberships, and every other user's memberships,
-         *     are excluded. Exactly one item matches the session's active workspace.
+         *     are excluded. At most one item is `is_active`.
+         *
+         *     Reachable without a workspace, where it returns an empty array — that is
+         *     the state onboarding exists for.
          */
         get: operations["list_active_workspaces"];
         put?: never;
         /**
-         * Create and select another workspace
-         * @description Requires the signed-in user to be an org-admin of the active workspace.
-         *     Creates a named workspace with that user as its active org-admin,
-         *     provisions the default scoring profile and demo repository, and selects
-         *     it for only the current server-side session.
+         * Create and select a workspace
+         * @description Creates a workspace with the caller as its active org-admin, seeds the
+         *     three built-in scoring profiles with **Balanced** as the default, and
+         *     selects it for the current server-side session only. All of it in one
+         *     transaction, so a half-created workspace cannot be reached.
+         *
+         *     **No repository is created.** A new workspace is genuinely empty and the
+         *     Projects page says so.
+         *
+         *     Two callers, one endpoint. During onboarding the session has no workspace
+         *     and being authenticated is the whole check — there is no workspace in which
+         *     to hold a permission, and refusing here would leave the user permanently
+         *     unable to start. Afterwards it is an ordinary org-admin operation in the
+         *     workspace the caller is currently in, so a developer cannot create
+         *     workspaces at will.
          */
         post: operations["create_workspace"];
         delete?: never;
@@ -123,18 +141,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * The active workspace's settings
+         * @description Name, description, website and the derived project and member counts.
+         *
+         *     Only the **active** workspace is readable. Another workspace the caller
+         *     belongs to returns `404`: the session binds one workspace, and reading
+         *     another would mean reading outside the tenant this transaction is isolated
+         *     to. Switch to it first.
+         */
+        get: operations["get_workspace"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /**
-         * Rename the active workspace
-         * @description Requires org-admin access. The path must identify the session's active
-         *     workspace; another workspace returns 404 even if the user belongs to it.
+         * Update the active workspace
+         * @description Requires org-admin access. A **partial** update: omitted fields are left
+         *     alone. The path must identify the session's active workspace; another
+         *     workspace returns `404` even if the caller belongs to it.
          */
-        patch: operations["rename_workspace"];
+        patch: operations["update_workspace"];
         trace?: never;
     };
     "/api/auth/workspaces/active": {
@@ -862,13 +890,18 @@ export interface components {
          * @description The stable, machine-readable reason. New members may be added; existing
          *     members never change meaning.
          *
+         *     `WORKSPACE_REQUIRED` is deliberately **not** `401`. The session is valid
+         *     and the identity is known; what is missing is a workspace to act in.
+         *     Answering `401` would send the browser back to sign-in, which would
+         *     succeed and land in exactly the same state — a loop with no exit.
+         *
          *     There is deliberately **no** `PROFILE_WORKSPACE_MISMATCH`. A profile or
          *     repository belonging to another workspace answers `NOT_FOUND`, exactly as
          *     an id that exists nowhere does, so no caller can tell another tenant's ids
          *     apart from nonsense ones.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -933,10 +966,14 @@ export interface components {
          * @description The signed-in user. Carries no token and no provider credential — those stay
          *     server-side (SEC-09).
          *
-         *     **Only the two identifiers are guaranteed.** `user_id` and `workspace_id`
-         *     are ours and always exist. Everything else is display detail supplied by
-         *     the identity provider, and a provider may simply not have it: a GitHub
-         *     account can keep its email private and need never set a display name.
+         *     **Only `user_id` is guaranteed.** `workspace_id` is null for someone who
+         *     has signed in but has no workspace yet — a real authenticated state, not a
+         *     failure, and what `needs_workspace_setup` exists to name so the client
+         *     never has to infer onboarding from a missing field.
+         *
+         *     Everything below the identifiers is display detail supplied by the
+         *     identity provider, and a provider may simply not have it: a GitHub account
+         *     can keep its email private and need never set a display name.
          *
          *     Since the application's identity is the Asgardeo subject and nothing else,
          *     a missing display name must not be able to fail a sign-in that otherwise
@@ -953,9 +990,38 @@ export interface components {
             avatar_url?: string | null;
             /**
              * Format: uuid
-             * @description The tenant every request is scoped to.
+             * @description The tenant every request is scoped to, or null during onboarding.
+             *     While it is null, every workspace-bound endpoint answers `409`
+             *     `WORKSPACE_REQUIRED`; only this endpoint, the workspace list, workspace
+             *     creation, invitation acceptance, sign-out and the public health probes
+             *     are reachable.
              */
-            workspace_id: string;
+            workspace_id?: string | null;
+            /**
+             * @description True when the user must create or join a workspace before the
+             *     application is usable. Exactly the inverse of `workspace_id` being
+             *     present, stated plainly so the client branches on an intention rather
+             *     than on a null.
+             * @default false
+             */
+            needs_workspace_setup: boolean;
+            /**
+             * @description The caller's role in the active workspace; null during onboarding.
+             * @enum {string|null}
+             */
+            role?: "org-admin" | "manager" | "developer" | "viewer" | null;
+            /**
+             * @description What this caller may do in the active workspace, so the client can hide
+             *     controls it would be refused anyway. **A convenience, never the
+             *     boundary** — the API re-checks every permission on every request, and a
+             *     client that ignored this list would gain nothing.
+             * @default []
+             * @example [
+             *       "project:read",
+             *       "scan:start"
+             *     ]
+             */
+            permissions: string[];
             /**
              * @description Which provider the user authenticated with inside Asgardeo — `github`,
              *     `google` or `local`. Display only; the application's identity is the
@@ -964,24 +1030,71 @@ export interface components {
              */
             identity_provider?: string | null;
         };
+        /**
+         * @description One workspace as the switcher and the Workspace settings screen need it.
+         *
+         *     `project_count` and `member_count` are derived on read rather than stored:
+         *     both change whenever a project or a member does, and a stored copy would
+         *     be wrong more often than right.
+         */
         WorkspaceSummary: {
             /** Format: uuid */
             workspace_id: string;
             name: string;
+            description?: string | null;
+            /** Format: uri */
+            website_url?: string | null;
             /** @enum {string} */
             role: "org-admin" | "manager" | "developer" | "viewer";
             /** @description Whether this workspace is selected by the current session. */
             is_active: boolean;
+            /** Format: date-time */
+            created_at?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            /**
+             * @description Repositories connected to this workspace.
+             * @default 0
+             */
+            project_count: number;
+            /**
+             * @description Active members. Pending invitations are not counted.
+             * @default 0
+             */
+            member_count: number;
         };
         SwitchWorkspaceRequest: {
             /** Format: uuid */
             workspace_id: string;
         };
+        /**
+         * @description Only the name is required. A workspace is identified by what the team
+         *     calls it; the rest is decoration the Workspace screen can fill in later.
+         *     Names are trimmed, and a description or website of only whitespace is
+         *     stored as absent rather than as content.
+         */
         CreateWorkspaceRequest: {
             name: string;
+            description?: string | null;
+            /**
+             * Format: uri
+             * @description Must be a valid http(s) URL. Rejected with `422` otherwise.
+             */
+            website_url?: string | null;
         };
+        /**
+         * @description A **partial** update: send only what changed, so the Workspace form can
+         *     submit the fields the user touched.
+         *
+         *     Omitting `description` leaves it alone; sending `null` clears it. Those are
+         *     different intentions and the contract keeps them different — collapsing
+         *     them would make "clear this" unexpressible.
+         */
         UpdateWorkspaceRequest: {
-            name: string;
+            name?: string;
+            description?: string | null;
+            /** Format: uri */
+            website_url?: string | null;
         };
         /** @enum {string} */
         Role: "org-admin" | "manager" | "developer" | "viewer";
@@ -1749,7 +1862,32 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    rename_workspace: {
+    get_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSummary"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    update_workspace: {
         parameters: {
             query?: never;
             header?: never;
@@ -1764,7 +1902,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The renamed active workspace. */
+            /** @description The updated active workspace. */
             200: {
                 headers: {
                     [name: string]: unknown;
