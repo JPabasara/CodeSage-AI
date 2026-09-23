@@ -31,6 +31,27 @@ class WorkerScanInput:
     commit_sha: str
 
 
+def lock_repository_for_scan(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+) -> Repository | None:
+    """Serialize scan creation with repository removal.
+
+    Both operations lock the same repository row. Whichever transaction wins
+    determines the outcome: deletion makes a waiting scan return 404, while a
+    queued scan makes a waiting deletion return REPOSITORY_SCAN_RUNNING.
+    """
+    return session.scalar(
+        select(Repository)
+        .where(
+            Repository.id == repository_id,
+            Repository.workspace_id == workspace_id,
+        )
+        .with_for_update()
+    )
+
+
 def get_branch(
     session: Session,
     workspace_id: uuid.UUID,
@@ -49,29 +70,23 @@ def get_branch(
     )
 
 
-def find_active_for_branch(
-    session: Session, branch_id: uuid.UUID
-) -> AnalysisAttempt | None:
+def find_active_for_branch(session: Session, branch_id: uuid.UUID) -> AnalysisAttempt | None:
     """
     check the database to see if there is a queued or running task fo the requested repo.
-    
+
     """
     return session.scalar(
         select(AnalysisAttempt)
         .where(
             AnalysisAttempt.branch_id == branch_id,
-            AnalysisAttempt.status.in_(
-                (AnalysisStatus.QUEUED, AnalysisStatus.RUNNING)
-            ),
+            AnalysisAttempt.status.in_((AnalysisStatus.QUEUED, AnalysisStatus.RUNNING)),
         )
         .order_by(AnalysisAttempt.id.desc())
         .limit(1)
     )
 
 
-def find_latest_completed(
-    session: Session, branch_id: uuid.UUID
-) -> AnalysisAttempt | None:
+def find_latest_completed(session: Session, branch_id: uuid.UUID) -> AnalysisAttempt | None:
     return session.scalar(
         select(AnalysisAttempt)
         .join(Snapshot, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
@@ -105,8 +120,12 @@ def get_or_create_engine_version(session: Session) -> AnalysisEngineVersion:
 
 
 def create_queued(
-    session: Session, branch_id: uuid.UUID, commit_sha: str,
-    *, actor_user_id: uuid.UUID, workspace_id: uuid.UUID,
+    session: Session,
+    branch_id: uuid.UUID,
+    commit_sha: str,
+    *,
+    actor_user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
 ) -> AnalysisAttempt:
     version = get_or_create_engine_version(session)
     attempt = AnalysisAttempt(
@@ -142,9 +161,7 @@ def get_for_repository(
     )
 
 
-def mark_error(
-    session: Session, attempt: AnalysisAttempt, message: str
-) -> None:
+def mark_error(session: Session, attempt: AnalysisAttempt, message: str) -> None:
     attempt.status = AnalysisStatus.ERROR
     attempt.failure_information = message
     session.flush()

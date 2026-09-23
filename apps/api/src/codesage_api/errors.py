@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 from fastapi import FastAPI, Request, status
@@ -7,8 +5,6 @@ from fastapi.responses import JSONResponse
 
 
 class CodeSageError(Exception):
-    
-
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
     message: str = "Something went wrong."
@@ -39,8 +35,6 @@ class Conflict(CodeSageError):
 
 
 class RepositoryNotPublic(CodeSageError):
-    
-
     status_code = status.HTTP_400_BAD_REQUEST
     code = "REPOSITORY_NOT_PUBLIC"
     message = (
@@ -68,7 +62,7 @@ class RepositoryMissingDefaultBranch(CodeSageError):
 class RepositoryScanRunning(CodeSageError):
     status_code = status.HTTP_409_CONFLICT
     code = "REPOSITORY_SCAN_RUNNING"
-    message = "Stop the running scan before removing this repository."
+    message = "Stop or wait for the queued or running scan before removing this repository."
 
 
 class RateLimited(CodeSageError):
@@ -90,31 +84,24 @@ class ScorePending(CodeSageError):
 
 
 class MLServiceUnavailable(CodeSageError):
-  
-
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "UPSTREAM_UNAVAILABLE"
     message = "Analysis models are temporarily unavailable."
 
 
 class UpstreamUnavailable(CodeSageError):
-    
-
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "UPSTREAM_UNAVAILABLE"
     message = "A service we depend on is temporarily unavailable. Please try again."
 
 
 class SignInFailed(CodeSageError):
-    
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "NOT_AUTHENTICATED"
     message = "Sign-in could not be completed. Please sign in again."
 
 
 class MisconfiguredSignIn(CodeSageError):
-    
-
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     code = "INTERNAL_ERROR"
     message = (
@@ -134,10 +121,8 @@ def install_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(NotImplementedError)
-    async def _not_built_yet(
-        request: Request, exc: NotImplementedError
-    ) -> JSONResponse:
-        
+    async def _not_built_yet(request: Request, exc: NotImplementedError) -> JSONResponse:
+
         return JSONResponse(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             content={

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs"
 
-import { DEMO_REPO_ID, test, expect } from "./session"
+import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
+
+const SELECTED_PROJECT_KEY = "codesage.selectedProjectId"
 
 // Connect a repository, and the four ways it can fail.
 //
@@ -11,7 +13,11 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/projects")
-  await expect(page.getByText("acme-payments")).toBeVisible()
+  await expect(
+    page
+      .getByRole("list", { name: /connected repositories/i })
+      .getByText("acme-payments"),
+  ).toBeVisible()
 })
 
 /**
@@ -32,6 +38,15 @@ const repoRows = (page: import("@playwright/test").Page) =>
 async function connect(page: import("@playwright/test").Page, url: string) {
   await page.getByLabel(/repository url/i).fill(url)
   await page.getByRole("button", { name: /^connect$/i }).click()
+}
+
+async function removeRepository(
+  page: import("@playwright/test").Page,
+  repositoryName: string,
+) {
+  const row = repoRows(page).filter({ hasText: repositoryName })
+  await row.getByRole("button", { name: /remove .* repository/i }).click()
+  await page.getByRole("button", { name: /^remove repository$/i }).click()
 }
 
 test("the list shows each repository with its visibility and health hint", async ({
@@ -62,9 +77,7 @@ test("connecting a public repository adds it to the list", async ({ page }) => {
   await connect(page, "https://github.com/octocat/Hello-World")
 
   await expect(page.getByText(/connected octocat\/Hello-World/i)).toBeVisible()
-  await expect(
-    repoRows(page).filter({ hasText: "Hello-World" }),
-  ).toBeVisible()
+  await expect(repoRows(page).filter({ hasText: "Hello-World" })).toBeVisible()
   // Freshly connected: no scan has run, so no health hint.
   await expect(
     repoRows(page)
@@ -98,7 +111,7 @@ test("each connect failure explains itself in its own words", async ({
 test("selecting a project opens its dashboard", async ({ page }) => {
   await repoRows(page)
     .filter({ hasText: "acme-payments" })
-    .getByRole("link", { name: /open dashboard/i })
+    .getByRole("link", { name: /go to dashboard/i })
     .click()
 
   await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}$`))
@@ -110,7 +123,7 @@ test("the repo id in the URL is the contract's uuid, not a slug", async ({
 }) => {
   await repoRows(page)
     .filter({ hasText: "acme-payments" })
-    .getByRole("link", { name: /open dashboard/i })
+    .getByRole("link", { name: /go to dashboard/i })
     .click()
 
   // `Repo.id` is `format: uuid`. Slug ids used to hide a class of bug here —
@@ -126,4 +139,53 @@ test("the rail's fallback demo id matches the fixture", () => {
   // This guard is cheap and it fails the moment they diverge.
   const demo = readFileSync("src/lib/demo.ts", "utf8")
   expect(demo).toContain(DEMO_REPO_ID)
+})
+
+test("deleting the active project selects a remaining project everywhere", async ({
+  page,
+}) => {
+  await expect
+    .poll(() =>
+      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
+    )
+    .toBe(DEMO_REPO_ID)
+
+  await removeRepository(page, "acme-payments")
+
+  await expect(repoRows(page).filter({ hasText: "acme-payments" })).toHaveCount(
+    0,
+  )
+  await expect
+    .poll(() =>
+      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
+    )
+    .toBe(SECOND_REPO_ID)
+  await expect(
+    page.getByRole("link", { name: "Dashboard", exact: true }),
+  ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}`)
+  await expect(
+    page.getByRole("link", { name: "Scan History", exact: true }),
+  ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}/history`)
+})
+
+test("deleting a non-active project preserves the active rail links", async ({
+  page,
+}) => {
+  await expect
+    .poll(() =>
+      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
+    )
+    .toBe(DEMO_REPO_ID)
+
+  await removeRepository(page, "web-store")
+
+  await expect(repoRows(page).filter({ hasText: "web-store" })).toHaveCount(0)
+  await expect
+    .poll(() =>
+      page.evaluate((key) => localStorage.getItem(key), SELECTED_PROJECT_KEY),
+    )
+    .toBe(DEMO_REPO_ID)
+  await expect(
+    page.getByRole("link", { name: "Dashboard", exact: true }),
+  ).toHaveAttribute("href", `/dashboard/${DEMO_REPO_ID}`)
 })

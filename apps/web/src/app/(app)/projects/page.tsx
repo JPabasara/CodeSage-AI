@@ -20,7 +20,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { useProjects } from "@/hooks/use-projects"
+import {
+  publishProjectConnected,
+  publishProjectRemoved,
+  useProjects,
+} from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
 
 // Each code is a different thing for the user to do about it, which is why they
@@ -36,20 +40,21 @@ const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
 }
 
 export default function ProjectsPage() {
-  // Both halves of the contract, on one screen: `reload` after a successful
-  // connect keeps the list on screen, `refetch` behind Retry blanks it to
-  // skeletons so the press is visibly doing something.
-  const { data: repos, loading, error, reload, refetch } = useProjects()
+  // Project writes update every mounted consumer through useProjects; `refetch`
+  // remains the loud Retry path that returns this screen to its skeletons.
+  const { data: repos, loading, error, refetch } = useProjects()
   const [connecting, setConnecting] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<Repo>()
   const [removingRepoId, setRemovingRepoId] = useState<string>()
-  const { selectedProjectId, selectProject, clearProject } = useSelectedProject({
-    availableRepoIds: repos?.map((repo) => repo.id),
-    // This screen has an intentional "None" state after the active repository
-    // is removed. Re-selecting the first stale list item would write the deleted
-    // repository straight back to localStorage before reload() finishes.
-    fallbackToFirstAvailable: false,
-  })
+  const { selectedProjectId, selectProject, clearProject } = useSelectedProject(
+    {
+      availableRepoIds: repos?.map((repo) => repo.id),
+      // This screen has an intentional "None" state after the active repository
+      // is removed. Re-selecting the first stale list item would write the deleted
+      // repository straight back to localStorage before reload() finishes.
+      fallbackToFirstAvailable: false,
+    },
+  )
   const projectCount = repos?.length ?? 0
   const scannedCount = repos?.filter((repo) => repo.latest_health).length ?? 0
   const activeProject = repos?.find((repo) => repo.id === selectedProjectId)
@@ -58,8 +63,8 @@ export default function ProjectsPage() {
     setConnecting(true)
     try {
       const repo = await connectRepo(url)
+      publishProjectConnected(repo)
       selectProject(repo.id)
-      reload() // the list is a separate read; it does not know about the write
       toast.success(`Connected ${repo.owner}/${repo.name}`)
     } catch (err) {
       const code = err instanceof ApiRequestError ? err.code : undefined
@@ -79,14 +84,21 @@ export default function ProjectsPage() {
     setRemovingRepoId(pendingRemoval.id)
     try {
       await removeProject(pendingRemoval.id)
-      if (selectedProjectId === pendingRemoval.id) clearProject()
+      const remainingRepos = (repos ?? []).filter(
+        (repo) => repo.id !== pendingRemoval.id,
+      )
+      publishProjectRemoved(pendingRemoval.id, remainingRepos)
+      if (selectedProjectId === pendingRemoval.id) {
+        const nextProject = remainingRepos[0]
+        if (nextProject) selectProject(nextProject.id)
+        else clearProject()
+      }
       toast.success(`Removed ${pendingRemoval.owner}/${pendingRemoval.name}`)
       setPendingRemoval(undefined)
-      reload()
     } catch (err) {
       const message =
         err instanceof ApiRequestError && err.code === "REPOSITORY_SCAN_RUNNING"
-          ? "Stop the running scan before removing this repository."
+          ? "Stop or wait for the queued or running scan before removing this repository."
           : err instanceof Error
             ? err.message
             : "Couldn't remove that repository."
