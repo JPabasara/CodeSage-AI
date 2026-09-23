@@ -4,7 +4,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from codesage_api.extractors.ck_metrics import FileMetrics, MethodMetrics, extract_ck_analysis
+
+from codesage_api.extractors.ck_metrics import (
+    ClassMetrics,
+    FileMetrics,
+    MethodMetrics,
+    extract_ck_analysis,
+)
+
 from codesage_api.extractors.comments import (
     ExtractedComment,
     extract_comments_from_file,
@@ -15,6 +22,7 @@ from codesage_api.extractors.process_metrics import FileProcessMetrics, extract_
 @dataclass(frozen=True, slots=True)
 class ExtractionResult:
     static_metrics: list[FileMetrics]
+    class_metrics: list[ClassMetrics]
     process_metrics: list[FileProcessMetrics]
     comments: list[ExtractedComment]
     method_metrics: list[MethodMetrics] = field(default_factory=list)
@@ -40,4 +48,11 @@ def extract(
     ck_metrics = extract_ck_analysis(repository_path)
     process = extract_process_metrics(repository_path, commit_sha, committer_date)
     comments = _extract_repository_comments(repository_path)
-    return ExtractionResult(ck_metrics.files, process, comments, ck_metrics.methods)
+
+    return ExtractionResult(
+        static_metrics=ck_metrics.files,
+        class_metrics=ck_metrics.classes,
+        process_metrics=process,
+        comments=comments,
+        method_metrics=ck_metrics.methods,
+    )
