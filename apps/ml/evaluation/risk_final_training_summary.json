@@ -1,0 +1,421 @@
+{
+  "artifact_version": "risk-2.0.0",
+  "artifact_path": "/home/chamodh/probe/sem 5 project/CodeSage-AI/apps/ml/models/risk_v2.joblib",
+  "artifact_sha256": "f43de7684dbdd3e7bb0f1bc358deff645aeddd3ff53b28384b85d2406a52cb73",
+  "dataset_sha256": "3462b5599ccc823a5749572609559f685b69d992fc72e4e5e8c61582d1a2caa7",
+  "selected_hyperparameters": {
+    "class_weight": "balanced_subsample",
+    "max_depth": 10,
+    "max_features": "sqrt",
+    "min_samples_leaf": 5,
+    "n_estimators": 200
+  },
+  "parameter_selection_results": [
+    {
+      "class_weight": "balanced",
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.41484117308460133,
+      "mean_roc_auc": 0.7193644590323268,
+      "mean_brier": 0.14286863407145073
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4354574465815018,
+      "mean_roc_auc": 0.7199851840887732,
+      "mean_brier": 0.1485883142524322
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4416473289678574,
+      "mean_roc_auc": 0.7310775760333359,
+      "mean_brier": 0.15614913557888338
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": null,
+      "max_features": 0.5,
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.39995385196594874,
+      "mean_roc_auc": 0.6978635159927791,
+      "mean_brier": 0.14554312818020723
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": null,
+      "max_features": 0.5,
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4307940869850448,
+      "mean_roc_auc": 0.7180765925102428,
+      "mean_brier": 0.1485074257540821
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": null,
+      "max_features": 0.5,
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.435010103246568,
+      "mean_roc_auc": 0.7260189341494508,
+      "mean_brier": 0.15472551111884578
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4299596807868301,
+      "mean_roc_auc": 0.7204672711546452,
+      "mean_brier": 0.15201562659498122
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.441232153137569,
+      "mean_roc_auc": 0.7322864182846046,
+      "mean_brier": 0.15676690688517086
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4483255251254191,
+      "mean_roc_auc": 0.7378135896606246,
+      "mean_brier": 0.16249869770948083
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": 0.5,
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4169130406936299,
+      "mean_roc_auc": 0.7162873950608517,
+      "mean_brier": 0.15384032180055798
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": 0.5,
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4276087820981453,
+      "mean_roc_auc": 0.7183350460177597,
+      "mean_brier": 0.15706792576978335
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": 0.5,
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.43919073591091645,
+      "mean_roc_auc": 0.7285521381596707,
+      "mean_brier": 0.16062702583863808
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.41912177289895763,
+      "mean_roc_auc": 0.7214390272387694,
+      "mean_brier": 0.1418981196088377
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "max_features": "sqrt",
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4373963638110262,
+      "mean_roc_auc": 0.7209764585839201,
+      "mean_brier": 0.14820480056203758
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.44367434663168126,
+      "mean_roc_auc": 0.7303808282050086,
+      "mean_brier": 0.1562528950738349
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "max_features": 0.5,
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4010570792455632,
+      "mean_roc_auc": 0.7027926093356929,
+      "mean_brier": 0.14537235638968984
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "max_features": 0.5,
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4296570363342457,
+      "mean_roc_auc": 0.7181580275727676,
+      "mean_brier": 0.14851488259269296
+    },
+    {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "max_features": 0.5,
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4332602645082041,
+      "mean_roc_auc": 0.7255881116247521,
+      "mean_brier": 0.15500110050248833
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.40514855766256125,
+      "mean_roc_auc": 0.714337817076877,
+      "mean_brier": 0.14384162872152811
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4377603240499205,
+      "mean_roc_auc": 0.7217211758661229,
+      "mean_brier": 0.1482708229559709
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4467151437868287,
+      "mean_roc_auc": 0.7340073711278967,
+      "mean_brier": 0.15529943395368068
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": null,
+      "max_features": 0.5,
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.39954271743186326,
+      "mean_roc_auc": 0.7055765911813883,
+      "mean_brier": 0.14526694474129487
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": null,
+      "max_features": 0.5,
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4218124363234506,
+      "mean_roc_auc": 0.7129922521781473,
+      "mean_brier": 0.1494254254106856
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": null,
+      "max_features": 0.5,
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.431106512422237,
+      "mean_roc_auc": 0.7186289742739245,
+      "mean_brier": 0.15636782958100723
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.42947955634181334,
+      "mean_roc_auc": 0.7238944932422668,
+      "mean_brier": 0.15232613024320554
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4420772404168852,
+      "mean_roc_auc": 0.7290160997423095,
+      "mean_brier": 0.15779052970979093
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.44846036400649875,
+      "mean_roc_auc": 0.7358072484067563,
+      "mean_brier": 0.1622386263531657
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": 0.5,
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4146061317345479,
+      "mean_roc_auc": 0.7160752687800034,
+      "mean_brier": 0.15360099464123733
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": 0.5,
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.42777446818560094,
+      "mean_roc_auc": 0.7212251498687177,
+      "mean_brier": 0.15707735345065207
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": 0.5,
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.43105527554006107,
+      "mean_roc_auc": 0.7274312379859825,
+      "mean_brier": 0.1613374738101656
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 20,
+      "max_features": "sqrt",
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.41864523352016,
+      "mean_roc_auc": 0.719754851547969,
+      "mean_brier": 0.14287598862862877
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 20,
+      "max_features": "sqrt",
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4380511978908004,
+      "mean_roc_auc": 0.7232767523541808,
+      "mean_brier": 0.1478766308067604
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 20,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.44541274976588835,
+      "mean_roc_auc": 0.7338632579138339,
+      "mean_brier": 0.15531628289846303
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 20,
+      "max_features": 0.5,
+      "min_samples_leaf": 1,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4062295017144312,
+      "mean_roc_auc": 0.7051404730811145,
+      "mean_brier": 0.14516785984869865
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 20,
+      "max_features": 0.5,
+      "min_samples_leaf": 3,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4250643668391703,
+      "mean_roc_auc": 0.7134275294580539,
+      "mean_brier": 0.14915242137595502
+    },
+    {
+      "class_weight": "balanced_subsample",
+      "max_depth": 20,
+      "max_features": 0.5,
+      "min_samples_leaf": 5,
+      "n_estimators": 200,
+      "mean_pr_auc": 0.4301154906921377,
+      "mean_roc_auc": 0.7187008362707156,
+      "mean_brier": 0.15623566724972643
+    }
+  ],
+  "metadata": {
+    "unit": "java_class",
+    "target": "defective",
+    "target_definition": "defective = 1 when bugs > 0",
+    "negative_class": 0,
+    "positive_class": 1,
+    "dataset": "D'Ambros/AEEEM",
+    "projects": [
+      "eclipse",
+      "equinox",
+      "lucene",
+      "mylyn",
+      "pde"
+    ],
+    "training_instances": 5371,
+    "dataset_sha256": "3462b5599ccc823a5749572609559f685b69d992fc72e4e5e8c61582d1a2caa7",
+    "trained_at": "2026-09-23T11:39:25.726736+00:00",
+    "sklearn_version": "1.4.2",
+    "estimator": "RandomForestClassifier",
+    "selected_hyperparameters": {
+      "class_weight": "balanced_subsample",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 5,
+      "n_estimators": 200
+    },
+    "final_parameter_selection": "project-aware LOPO across all five training projects; macro PR-AUC",
+    "calibration": "sigmoid fitted on out-of-project RF probabilities",
+    "calibration_slope": 4.078297734496136,
+    "calibration_intercept": -3.1892335117843005,
+    "production_oop_raw_brier": 0.15200261735401127,
+    "production_oop_calibrated_brier": 0.1182912534093475,
+    "evaluation_protocol": "nested_leave_one_project_out",
+    "evaluation_metrics": {
+      "roc_auc": {
+        "mean": 0.7376248530254282,
+        "std": 0.018206573615856148
+      },
+      "pr_auc": {
+        "mean": 0.4487803768179406,
+        "std": 0.1621741285435222
+      },
+      "raw_brier": 0.15916009843209494,
+      "calibrated_brier": 0.13873021075734668
+    }
+  }
+}
