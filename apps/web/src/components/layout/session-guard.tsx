@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 
 import { ApiRequestError } from "@/lib/api/client"
+import { readPendingInvitation } from "@/lib/pending-invitation"
 import { useSession } from "@/hooks/use-session"
 
 /**
@@ -19,6 +20,10 @@ import { useSession } from "@/hooks/use-session"
  *    missing is a workspace;
  *  • signed in with a workspace → stay.
  *
+ * And one detour before any of those: an invitation opened while signed out is
+ * kept for this tab, and sign-in lands here with no way to return to it — so a
+ * kept token sends the visitor back to finish accepting.
+ *
  * The API is the security boundary either way. This only stops a visitor from
  * staring at a shell that answers 409 to everything it tries to fill itself with.
  */
@@ -32,12 +37,16 @@ export function SessionGuard() {
       router.replace("/login")
       return
     }
+    if (session && readPendingInvitation()) {
+      router.replace("/invitations/accept")
+      return
+    }
     // The same address the API's sign-in callback uses, so a new account lands
     // in one place however it arrives.
     if (session?.needs_workspace_setup && !pathname.startsWith("/onboarding")) {
       router.replace("/onboarding/workspace")
     }
-  }, [error, pathname, router, session?.needs_workspace_setup])
+  }, [error, pathname, router, session])
 
   return null
 }
