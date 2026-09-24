@@ -581,3 +581,32 @@ test("choosing a branch remembers it for this project", async () => {
     expect(readSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID)).toBe("develop"),
   )
 })
+
+// ── scans follow you across pages (Phase 13E) ───────────────────────────────
+
+test("leave the dashboard mid-scan, come back: still running, with Stop", async () => {
+  const user = userEvent.setup()
+  const first = render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+  expect(await screen.findByTestId("scan-status-strip")).toBeInTheDocument()
+  first.unmount() // navigated away
+
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
+    /acme-payments on main/,
+  )
+  expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument()
+})
+
+test("a scan started elsewhere is found when the dashboard opens", async () => {
+  const { startScan: apiStartScan } = await import("@/lib/api/client")
+  await apiStartScan(DEMO_REPO_ID, "main")
+
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(await screen.findByTestId("scan-status-strip")).toBeInTheDocument()
+})
