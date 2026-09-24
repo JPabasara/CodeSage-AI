@@ -131,7 +131,7 @@ export function DashboardTopNav({
             <GitCommit className="size-3.5" aria-hidden="true" />
             {lastCommitSha ? `#${shortSha(lastCommitSha)}` : "No commit yet"}
           </span>
-          <span className="hidden truncate xl:inline">
+          <span className="hidden truncate 2xl:inline">
             {formattedScanTime
               ? `Last analyzed ${formattedScanTime}`
               : "Never scanned"}
