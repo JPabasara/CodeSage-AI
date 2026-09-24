@@ -11,7 +11,7 @@ const PAGES = [
   ["/projects", false],
   [`/dashboard/${DEMO_REPO_ID}`, true],
   [`/dashboard/${DEMO_REPO_ID}/history`, true],
-  ["/profiles", true],
+  ["/profiles", false],
 ] as const
 
 for (const [path, aboutOneProject] of PAGES) {

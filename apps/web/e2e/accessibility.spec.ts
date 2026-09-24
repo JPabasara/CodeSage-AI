@@ -22,6 +22,9 @@ const findingCards = (page: Page) =>
     .getByRole("button")
 
 async function checkAxe(page: Page, contextName: string) {
+  // Next streams the route's <title> in after the body. Checking before it
+  // lands reports a missing title that no user ever sees.
+  await expect(page).toHaveTitle(/\S/)
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .disableRules(OWNED_BY_OTHER_ISSUES)

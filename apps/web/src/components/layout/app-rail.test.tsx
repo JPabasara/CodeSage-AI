@@ -95,10 +95,11 @@ test("Workspace comes first; the rest follow in working order", () => {
   ).toEqual(["Workspace", "Projects", "Dashboard", "Scan History", "Profiles"])
 })
 
-test("switcher, account and sign-out live in the top bar, not the rail", () => {
+test("the workspace switcher lives in the top bar; theme and sign out sit at the rail's foot", () => {
   renderRail()
   expect(screen.queryByRole("combobox", { name: /workspace/i })).toBeNull()
-  expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull()
+  expect(screen.getByRole("button", { name: "Theme" })).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument()
 })
 
 test("with no workspace every link stays, marked as locked", async () => {

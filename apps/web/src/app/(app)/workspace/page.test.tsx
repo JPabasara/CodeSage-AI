@@ -49,7 +49,12 @@ test("shows the workspace, the caller's role, and its derived counts", async () 
   render(<WorkspacePage />)
   await ready()
 
-  expect(screen.getByText("Org admin")).toBeVisible()
+  // The role sits beside the title. The member list names roles too, so look
+  // for it in the page heading's row only.
+  const heading = screen.getByRole("heading", { name: "Acme Engineering" })
+  expect(
+    within(heading.closest("header") as HTMLElement).getByText("Org admin"),
+  ).toBeVisible()
   // Derived on read by the API, never stored: three seeded repositories.
   expect(screen.getByTestId("workspace-project-count")).toHaveTextContent("3")
 })
@@ -110,14 +115,16 @@ test("a role without workspace:update reads the settings and cannot change them"
   await ready()
 
   expect(screen.getByLabelText(/workspace name/i)).toBeDisabled()
+  // Save is a main action: shown, locked, and the reason is on the wrapper
+  // that hover and keyboard focus reach.
+  expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled()
   expect(
-    screen.queryByRole("button", { name: "Save changes" }),
-  ).not.toBeInTheDocument()
+    screen.getByLabelText("Only org-admins can change workspace settings"),
+  ).toBeInTheDocument()
   // Creating another workspace is an org-admin action too.
   expect(
     screen.queryByRole("button", { name: /new workspace/i }),
   ).not.toBeInTheDocument()
-  expect(screen.getByText(/only an org-admin can change these/i)).toBeVisible()
 })
 
 test("creating another workspace switches to it, and it starts empty", async () => {
@@ -148,37 +155,32 @@ test("creating another workspace switches to it, and it starts empty", async () 
   expect(await getProjects()).toEqual([])
 })
 
-test("Settings and Team are tabs of one page, and Team is linkable", async () => {
+test("settings and team share one page, with no tabs", async () => {
   render(<WorkspacePage />)
   await ready()
 
-  expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  )
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+  expect(
+    screen.getByRole("heading", { name: "Workspace settings" }),
+  ).toBeInTheDocument()
+  expect(
+    await screen.findByRole("heading", { name: "Members" }),
+  ).toBeInTheDocument()
   // The header counts pending invitations once the member list lands.
   await waitFor(() =>
     expect(screen.getByTestId("workspace-invitation-count")).toHaveTextContent(
       "1",
     ),
   )
-
-  await userEvent.click(screen.getByRole("tab", { name: "Team" }))
-  expect(nav.replace).toHaveBeenCalledWith("/workspace?tab=team", {
-    scroll: false,
-  })
 })
 
-test("?tab=team opens the Team tab directly", async () => {
+test("an old ?tab=team link still lands on the team", async () => {
   nav.search = "tab=team"
   render(<WorkspacePage />)
   await ready()
 
-  expect(screen.getByRole("tab", { name: "Team" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  )
   expect(
     await screen.findByRole("heading", { name: "Members" }),
   ).toBeInTheDocument()
+  expect(nav.replace).not.toHaveBeenCalled()
 })

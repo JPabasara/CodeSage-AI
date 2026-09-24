@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { AccountMenu, initialsOf } from "./account-menu"
+import { AppRail } from "./app-rail"
+import { SidebarProvider } from "@/components/ui/sidebar"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { mockSession } from "@/lib/mocks/fixtures"
 import type { Session } from "@/lib/types"
 
@@ -13,8 +16,37 @@ vi.mock("@/hooks/use-session", () => ({
 
 const theme = vi.hoisted(() => ({ value: "system", set: vi.fn() }))
 vi.mock("next-themes", () => ({
-  useTheme: () => ({ theme: theme.value, setTheme: theme.set }),
+  useTheme: () => ({
+    theme: theme.value,
+    resolvedTheme: "light",
+    setTheme: theme.set,
+  }),
 }))
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/projects",
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
+vi.mock("@/hooks/use-projects", () => ({
+  useProjects: () => ({ data: [] }),
+}))
+
+/** Theme and Sign out sit at the foot of the rail, not behind the avatar. */
+function renderRail() {
+  return render(
+    <TooltipProvider>
+      <SidebarProvider>
+        <AppRail />
+      </SidebarProvider>
+    </TooltipProvider>,
+  )
+}
+
+const openSignOut = async () => {
+  renderRail()
+  await userEvent.click(screen.getByRole("button", { name: /sign out/i }))
+}
 
 beforeEach(() => {
   session.current = mockSession
@@ -55,11 +87,28 @@ test("the menu shows who is signed in and how", async () => {
   expect(screen.getByText("Signed in with Github")).toBeVisible()
 })
 
-test("theme is chosen here: Light, Dark or System", async () => {
+test("the avatar menu is only who is signed in: no theme, no sign out", async () => {
   render(<AccountMenu />)
   await openMenu()
+  await screen.findByText("Janidu Pabasara")
+  expect(screen.queryByRole("menuitemradio")).not.toBeInTheDocument()
   expect(
-    await screen.findByRole("menuitemradio", { name: "System" }),
+    screen.queryByRole("menuitem", { name: /sign out/i }),
+  ).not.toBeInTheDocument()
+})
+
+test("the rail's Theme item offers Light, Dark and System default", async () => {
+  renderRail()
+  await userEvent.click(screen.getByRole("button", { name: "Theme" }))
+
+  const options = await screen.findAllByRole("menuitemradio")
+  expect(options.map((option) => option.textContent)).toEqual([
+    "Light",
+    "Dark",
+    "System default",
+  ])
+  expect(
+    screen.getByRole("menuitemradio", { name: "System default" }),
   ).toBeChecked()
   await userEvent.click(screen.getByRole("menuitemradio", { name: "Dark" }))
   expect(theme.set).toHaveBeenCalledWith("dark")
@@ -67,11 +116,7 @@ test("theme is chosen here: Light, Dark or System", async () => {
 
 test("sign out asks first, and Cancel keeps you signed in", async () => {
   const forms = recordSubmits()
-  render(<AccountMenu />)
-  await openMenu()
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: /sign out/i }),
-  )
+  await openSignOut()
 
   const dialog = await screen.findByRole("alertdialog", {
     name: "Sign out of CodeSage?",
@@ -86,11 +131,7 @@ test("sign out asks first, and Cancel keeps you signed in", async () => {
 
 test("Esc closes the confirmation without signing out", async () => {
   const forms = recordSubmits()
-  render(<AccountMenu />)
-  await openMenu()
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: /sign out/i }),
-  )
+  await openSignOut()
   await screen.findByRole("alertdialog")
   await userEvent.keyboard("{Escape}")
 
@@ -101,11 +142,7 @@ test("Esc closes the confirmation without signing out", async () => {
 
 test("Sign out has the focus, so Enter confirms and posts the form", async () => {
   const forms = recordSubmits()
-  render(<AccountMenu />)
-  await openMenu()
-  await userEvent.click(
-    await screen.findByRole("menuitem", { name: /sign out/i }),
-  )
+  await openSignOut()
   await screen.findByRole("alertdialog")
 
   await waitFor(() =>

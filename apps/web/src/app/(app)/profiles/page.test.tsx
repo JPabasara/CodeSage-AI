@@ -15,9 +15,13 @@ import { server } from "@/lib/mocks/server"
 import type { ProfileValues } from "@/components/profiles/profile-values"
 import type { Session } from "@/lib/types"
 
+// The scope being configured lives in `?project=`, so the search string is a
+// knob, and `replace` records what the page wrote back.
+const nav = vi.hoisted(() => ({ replace: vi.fn(), search: "" }))
 vi.mock("next/navigation", () => ({
   usePathname: () => "/profiles",
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: nav.replace }),
+  useSearchParams: () => new URLSearchParams(nav.search),
 }))
 
 // <Toaster> lives in the root layout, so a page rendered alone puts no toast in
@@ -40,6 +44,8 @@ vi.mock("@/hooks/use-session", () => ({
 
 beforeEach(() => {
   localStorage.clear()
+  nav.replace.mockClear()
+  nav.search = ""
   session.current = mockSession
   toastError.mockClear()
   toastSuccess.mockClear()
@@ -49,6 +55,8 @@ beforeEach(() => {
 async function ready() {
   expect(await screen.findByText("Category weights")).toBeInTheDocument()
 }
+
+const applyTo = () => screen.getByRole("region", { name: "Apply to" })
 
 const poolList = () =>
   screen.getByRole("list", { name: /workspace profile pool/i })
@@ -85,7 +93,7 @@ test("renders the three built-ins, and says which is the workspace default", asy
   for (const name of ["Balanced", "Security-first", "Delivery-speed"]) {
     expect(card(name)).toBeInTheDocument()
   }
-  expect(within(card("Balanced")).getByText("Workspace default")).toBeVisible()
+  expect(within(card("Balanced")).getByText("Default")).toBeVisible()
   expect(screen.getByTestId("workspace-default-name")).toHaveTextContent(
     "Balanced",
   )
@@ -103,7 +111,7 @@ test("a custom profile joins the pool and is marked as one", async () => {
   const row = card("Release gate")
   expect(within(row).getByText("Custom")).toBeVisible()
   // Created, but NOT made the default: authoring and choosing are separate.
-  expect(within(row).queryByText("Workspace default")).not.toBeInTheDocument()
+  expect(within(row).queryByText("Default")).not.toBeInTheDocument()
   expect(screen.getByTestId("custom-count")).toHaveTextContent("1 of 5")
 })
 
@@ -310,6 +318,9 @@ test("the sixth custom profile is refused, with the count on screen", async () =
   // already promised.
   expect(screen.getByRole("button", { name: /new profile/i })).toBeDisabled()
   expect(
+    screen.getByLabelText("This workspace already has 5 custom profiles"),
+  ).toBeInTheDocument()
+  expect(
     screen.getByText(/delete one before creating another/i),
   ).toBeInTheDocument()
 })
@@ -406,18 +417,23 @@ test("the workspace default moves to the selected profile", async () => {
   )
   // Exactly one default: the badge moved rather than being added.
   expect(
-    within(card("Balanced")).queryByText("Workspace default"),
+    within(card("Balanced")).queryByText("Default"),
   ).not.toBeInTheDocument()
-  expect(
-    within(card("Security-first")).getByText("Workspace default"),
-  ).toBeVisible()
+  expect(within(card("Security-first")).getByText("Default")).toBeVisible()
 })
 
 test("a project overrides the default, and clearing it inherits again", async () => {
   render(<ProfilesPage />)
   await ready()
 
-  await userEvent.click(screen.getByRole("tab", { name: /project profile/i }))
+  // The rail on the right picks what is being configured; there are no tabs.
+  await userEvent.click(
+    within(applyTo()).getByRole("button", { name: /acme-payments/ }),
+  )
+  expect(nav.replace).toHaveBeenCalledWith(
+    `/profiles?project=${DEMO_REPO_ID}`,
+    { scroll: false },
+  )
   expect(await screen.findByTestId("effective-summary")).toHaveTextContent(
     /is scored with Balanced, inherited from the workspace default/i,
   )
@@ -451,7 +467,7 @@ test("a project overrides the default, and clearing it inherits again", async ()
 
 // ── roles ───────────────────────────────────────────────────────────────────
 
-test("a viewer reads the pool and is offered nothing to change", async () => {
+test("a viewer reads the pool and can change nothing", async () => {
   session.current = mockSessionViewer
   await client.createProfile({ name: "Release gate", ...values })
 
@@ -459,14 +475,22 @@ test("a viewer reads the pool and is offered nothing to change", async () => {
   await ready()
 
   expect(card("Release gate")).toBeInTheDocument()
+  // Main actions stay visible but locked, with the reason on the wrapper that
+  // hover and keyboard focus reach.
+  expect(screen.getByRole("button", { name: /new profile/i })).toBeDisabled()
   expect(
-    screen.queryByRole("button", { name: /new profile/i }),
-  ).not.toBeInTheDocument()
+    screen.getByRole("button", { name: /set as workspace default/i }),
+  ).toBeDisabled()
+  expect(
+    screen.getAllByLabelText("Only org-admins and managers can change profiles")
+      .length,
+  ).toBeGreaterThan(0)
+  // Destructive and editing controls are not offered at all.
   expect(
     screen.queryByRole("button", { name: /delete release gate/i }),
   ).not.toBeInTheDocument()
   expect(
-    screen.queryByRole("button", { name: /set as workspace default/i }),
+    screen.queryByRole("button", { name: /edit release gate/i }),
   ).not.toBeInTheDocument()
   expect(
     screen.getByText(/needs the manager or org-admin role/i),
@@ -506,4 +530,73 @@ test("a 403 from the API explains the permission rather than failing vaguely", a
   expect(toastError).toHaveBeenCalledWith(
     expect.stringContaining("org-admin or a manager"),
   )
+})
+
+// ── the scope rail (13F) ────────────────────────────────────────────────────
+
+test("the rail lists the workspace default and every project with its profile", async () => {
+  render(<ProfilesPage />)
+  await ready()
+
+  const rail = applyTo()
+  expect(
+    within(rail).getByRole("button", { name: /workspace default/i }),
+  ).toHaveAttribute("aria-pressed", "true")
+  for (const name of ["acme-payments", "web-store", "octo-cli"]) {
+    const project = within(rail).getByRole("button", {
+      name: new RegExp(name),
+    })
+    expect(project).toHaveAttribute("aria-pressed", "false")
+    // Each project says what it is scored with, once its profile has loaded.
+    await waitFor(() => expect(project).toHaveTextContent("Balanced"))
+  }
+})
+
+test("?project= opens on that project, and choosing the default goes back", async () => {
+  nav.search = `project=${DEMO_REPO_ID}`
+  render(<ProfilesPage />)
+  await ready()
+
+  expect(
+    within(applyTo()).getByRole("button", { name: /acme-payments/ }),
+  ).toHaveAttribute("aria-pressed", "true")
+  expect(await screen.findByTestId("effective-summary")).toHaveTextContent(
+    /acme-payments is scored with Balanced/i,
+  )
+
+  await userEvent.click(
+    within(applyTo()).getByRole("button", { name: /workspace default/i }),
+  )
+  expect(nav.replace).toHaveBeenCalledWith("/profiles", { scroll: false })
+  expect(screen.queryByTestId("effective-summary")).not.toBeInTheDocument()
+})
+
+test("an unknown ?project= falls back to the workspace default", async () => {
+  nav.search = "project=11111111-2222-3333-4444-555555555555"
+  render(<ProfilesPage />)
+  await ready()
+
+  expect(
+    within(applyTo()).getByRole("button", { name: /workspace default/i }),
+  ).toHaveAttribute("aria-pressed", "true")
+})
+
+test("switching scope with unsaved edits asks first", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    within(card("Release gate")).getByRole("button", { name: /^Release gate/ }),
+  )
+  const slider = await screen.findByRole("slider", { name: /security weight/i })
+  slider.focus()
+  await userEvent.keyboard("{ArrowRight}")
+
+  await userEvent.click(
+    within(applyTo()).getByRole("button", { name: /acme-payments/ }),
+  )
+  expect(
+    await screen.findByText(/discard unsaved changes\?/i),
+  ).toBeInTheDocument()
 })

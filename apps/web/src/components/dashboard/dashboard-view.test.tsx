@@ -348,9 +348,9 @@ test("a score still being calculated is a wait, not an error", async () => {
       { status: 503 },
     )
 
-  // Branch-aware, because the first render asks with an empty branch — the
-  // branch list has not landed yet — so "the first ask" is not the first ask
-  // for `main`. Counting raw requests would answer ready one poll too early.
+  // Branch-aware, so a stray ask for any other branch could never count as
+  // the first ask for `main`. (The report now waits for the branch list, so
+  // there is no empty-branch ask — the test below pins that.)
   let asksForMain = 0
   server.use(
     http.get("*/api/repos/:repoId/health", ({ request }) => {
@@ -609,4 +609,45 @@ test("a scan started elsewhere is found when the dashboard opens", async () => {
   await ready()
 
   expect(await screen.findByTestId("scan-status-strip")).toBeInTheDocument()
+})
+
+test("the report waits for the branch: no empty-branch ask, and no 'No scans yet' flash", async () => {
+  const healthAsked: (string | null)[] = []
+  const scansAsked: (string | null)[] = []
+  let releaseBranches!: () => void
+  const branchesHeld = new Promise<void>((resolve) => {
+    releaseBranches = resolve
+  })
+  // Each handler records or waits, then falls through to the mock API.
+  server.use(
+    http.get("*/api/repos/:repoId/branches", async () => {
+      await branchesHeld
+      return undefined
+    }),
+    http.get("*/api/repos/:repoId/health", ({ request }) => {
+      healthAsked.push(new URL(request.url).searchParams.get("branch"))
+      return undefined
+    }),
+    http.get("*/api/repos/:repoId/scans", ({ request }) => {
+      scansAsked.push(new URL(request.url).searchParams.get("branch"))
+      return undefined
+    }),
+  )
+
+  const { container } = render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  // The branch is unknown, so nothing is asked and the page says it is
+  // loading — never that this project has no scans.
+  expect(healthAsked).toEqual([])
+  expect(scansAsked).toEqual([])
+  expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
+  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+
+  releaseBranches()
+  await ready()
+  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+  // One ask each, for the real default branch.
+  expect(healthAsked).toEqual(["main"])
+  expect(scansAsked).toEqual(["main"])
 })

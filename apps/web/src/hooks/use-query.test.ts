@@ -162,3 +162,32 @@ test("WORKSPACE_REQUIRED from the API locks the app instead of erroring it", asy
   )
   await waitFor(() => expect(readActiveWorkspaceId()).toBeNull())
 })
+
+test("enabled: false sends nothing and waits; turning it on asks once", async () => {
+  const { noteActiveWorkspace } = await import("./use-workspace-scope")
+  noteActiveWorkspace("ws-1")
+  let calls = 0
+  const { result, rerender } = renderHook(
+    ({ enabled }: { enabled: boolean }) =>
+      useQuery(
+        "held",
+        () => {
+          calls += 1
+          return Promise.resolve("data")
+        },
+        { enabled },
+      ),
+    { initialProps: { enabled: false } },
+  )
+
+  // The dashboard's case: the branch is not known yet, so there is nothing
+  // worth asking — and an empty branch must not be asked about either.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(calls).toBe(0)
+  expect(result.current.loading).toBe(true)
+  expect(result.current.error).toBeUndefined()
+
+  rerender({ enabled: true })
+  await waitFor(() => expect(result.current.data).toBe("data"))
+  expect(calls).toBe(1)
+})
