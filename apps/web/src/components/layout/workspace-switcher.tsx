@@ -15,14 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { getProjects } from "@/lib/api/client"
 import { readSelectedProjectId } from "@/hooks/use-selected-project"
 import { useActiveWorkspace, useWorkspaceSwitch } from "@/hooks/use-workspace"
+import { ROLE_LABEL } from "@/lib/roles"
 import type { Workspace } from "@/lib/types"
-
-const ROLE_LABEL: Record<string, string> = {
-  "org-admin": "Org admin",
-  manager: "Manager",
-  developer: "Developer",
-  viewer: "Viewer",
-}
 
 /**
  * Which workspace the app is looking at, and the way to change it.
