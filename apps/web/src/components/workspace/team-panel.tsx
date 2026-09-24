@@ -1,7 +1,7 @@
 "use client"
 
 import { useId, useState } from "react"
-import { Mail, Send, UserMinus, X } from "lucide-react"
+import { Send, UserMinus, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -33,7 +33,8 @@ import {
 } from "@/lib/api/client"
 import { publishWorkspacesChanged } from "@/hooks/use-workspace"
 import { ROLE_LABEL, ROLES } from "@/lib/roles"
-import type { Member, MemberList, Role } from "@/lib/types"
+import { cn } from "@/lib/utils"
+import type { Invitation, Member, MemberList, Role } from "@/lib/types"
 import type { MutableQueryState } from "@/hooks/use-query"
 
 /**
@@ -62,6 +63,23 @@ const STATUS_LABEL: Record<Member["status"], string> = {
   inactive: "Deactivated",
   invited: "Invited",
 }
+
+/**
+ * The member and invitation lists share one set of columns — who, role, and
+ * (for an org-admin) an action — so the two read as one table. The columns
+ * follow the width of the panel, not the window: at a narrow width the row
+ * stacks, and the role and action move under the name.
+ */
+const COLUMNS = {
+  manage:
+    "grid-cols-[minmax(0,1fr)_auto] @md:grid-cols-[minmax(0,1fr)_9rem_6.5rem]",
+  read: "grid-cols-[minmax(0,1fr)_auto] @md:grid-cols-[minmax(0,1fr)_9rem]",
+} as const
+
+const HEADER_COLUMNS = {
+  manage: "@md:grid-cols-[minmax(0,1fr)_9rem_6.5rem]",
+  read: "@md:grid-cols-[minmax(0,1fr)_9rem]",
+} as const
 
 /** A failed member write, in words — 403 and 409 each say what to do next. */
 function memberError(caught: unknown, target: string): string {
@@ -190,13 +208,7 @@ export function TeamPanel({
   }
 
   if (loading || !data) {
-    return (
-      <div className="space-y-3" aria-busy="true">
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-      </div>
-    )
+    return <TeamPanelSkeleton canManage={canManage} />
   }
 
   const members = [...data.members].sort(
@@ -205,66 +217,74 @@ export function TeamPanel({
         Number(a.user_id === currentUserId) ||
       Number(a.status !== "active") - Number(b.status !== "active"),
   )
+  const mode = canManage ? "manage" : "read"
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="@container flex flex-col gap-8">
       {canManage ? <InviteForm onInvited={afterWrite} /> : null}
 
-      <section
-        aria-labelledby="team-members-heading"
-        className="space-y-3 rounded-lg border bg-card p-5 shadow-sm"
-      >
-        <div>
-          <h2 id="team-members-heading" className="text-base font-semibold">
+      <section aria-labelledby="team-members-heading" className="space-y-3">
+        <div className="space-y-0.5">
+          <h2 id="team-members-heading" className="text-[15px] font-semibold">
             Members
           </h2>
           <p className="text-sm text-muted-foreground">
             {canManage
-              ? "Change a role or deactivate someone. Your own row is managed by another org-admin."
-              : "Only an org-admin can change members. You can see who is here."}
+              ? "Change a role or deactivate someone. Another org-admin manages your own row."
+              : "Only org-admins can change members."}
           </p>
         </div>
 
-        <ul className="divide-y" data-testid="member-list">
-          {members.map((member) => {
-            const label = displayName(member)
-            const isSelf = member.user_id === currentUserId
-            const editable = canManage && !isSelf && member.status === "active"
-            return (
-              <li
-                key={member.membership_id}
-                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center"
-                data-testid="member-row"
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <ColumnHeader mode={mode} first="Member" />
+          <ul className="divide-y" data-testid="member-list">
+            {members.map((member) => {
+              const label = displayName(member)
+              const isSelf = member.user_id === currentUserId
+              const editable =
+                canManage && !isSelf && member.status === "active"
+              return (
+                <li
+                  key={member.membership_id}
+                  className={cn(
+                    "grid items-center gap-x-4 gap-y-2 px-4 py-3",
+                    COLUMNS[mode],
+                  )}
+                  data-testid="member-row"
+                >
+                  <div
+                    className={cn(
+                      "flex min-w-0 items-center gap-3",
+                      editable && "col-span-2 @md:col-span-1",
+                    )}
                   >
-                    {initials(label)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                      <span className="truncate" title={label}>
-                        {label}
-                      </span>
-                      {isSelf ? <Badge variant="outline">You</Badge> : null}
-                      {member.status !== "active" ? (
-                        <Badge variant="secondary">
-                          {STATUS_LABEL[member.status]}
-                        </Badge>
-                      ) : null}
-                    </p>
-                    <p
-                      className="truncate text-xs text-muted-foreground"
-                      title={member.email ?? undefined}
+                    <span
+                      aria-hidden="true"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
                     >
-                      {member.email ?? "No email shared"}
-                    </p>
+                      {initials(label)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                        <span className="truncate" title={label}>
+                          {label}
+                        </span>
+                        {isSelf ? <Badge variant="outline">You</Badge> : null}
+                        {member.status !== "active" ? (
+                          <Badge variant="secondary">
+                            {STATUS_LABEL[member.status]}
+                          </Badge>
+                        ) : null}
+                      </p>
+                      <p
+                        className="truncate text-xs text-muted-foreground"
+                        title={member.email ?? undefined}
+                      >
+                        {member.email ?? "No email shared"}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex shrink-0 items-center gap-2 sm:justify-end">
                   {editable ? (
                     <>
                       <Select
@@ -288,83 +308,67 @@ export function TeamPanel({
                           ))}
                         </SelectContent>
                       </Select>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setConfirming(member)}
-                        disabled={busyId === member.membership_id}
-                        aria-label={`Deactivate ${label}`}
-                      >
-                        <UserMinus aria-hidden="true" />
-                        <span className="hidden sm:inline">Deactivate</span>
-                      </Button>
+                      <div className="flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirming(member)}
+                          disabled={busyId === member.membership_id}
+                          aria-label={`Deactivate ${label}`}
+                        >
+                          <UserMinus aria-hidden="true" />
+                          Deactivate
+                        </Button>
+                      </div>
                     </>
                   ) : (
-                    <Badge variant="secondary">
-                      {ROLE_LABEL[member.role] ?? member.role}
-                    </Badge>
+                    <>
+                      <span className="justify-self-end text-sm text-muted-foreground @md:justify-self-auto">
+                        {ROLE_LABEL[member.role] ?? member.role}
+                      </span>
+                      {canManage ? (
+                        <span aria-hidden="true" className="hidden @md:block" />
+                      ) : null}
+                    </>
                   )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       </section>
 
-      <section
-        aria-labelledby="team-invitations-heading"
-        className="space-y-3 rounded-lg border bg-card p-5 shadow-sm"
-      >
-        <h2 id="team-invitations-heading" className="text-base font-semibold">
+      <section aria-labelledby="team-invitations-heading" className="space-y-3">
+        <h2 id="team-invitations-heading" className="text-[15px] font-semibold">
           Pending invitations
         </h2>
-        {data.pending_invitations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No one is waiting to join.
-          </p>
-        ) : (
-          <ul className="divide-y" data-testid="invitation-list">
-            {data.pending_invitations.map((invitation) => (
-              <li
-                key={invitation.invitation_id}
-                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center"
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <Mail
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0">
-                    <p
-                      className="truncate text-sm font-medium"
-                      title={invitation.email}
-                    >
-                      {invitation.email}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {ROLE_LABEL[invitation.role] ?? invitation.role} · expires{" "}
-                      {new Date(invitation.expires_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-                {canManage ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      onRevoke(invitation.invitation_id, invitation.email)
+        <div className="overflow-hidden rounded-lg border bg-card">
+          {data.pending_invitations.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-muted-foreground">
+              No one is waiting to join.
+            </p>
+          ) : (
+            <>
+              <ColumnHeader mode={mode} first="Email" />
+              <ul className="divide-y" data-testid="invitation-list">
+                {data.pending_invitations.map((invitation) => (
+                  <InvitationRow
+                    key={invitation.invitation_id}
+                    invitation={invitation}
+                    mode={mode}
+                    busy={busyId === invitation.invitation_id}
+                    onRevoke={
+                      canManage
+                        ? () =>
+                            onRevoke(invitation.invitation_id, invitation.email)
+                        : undefined
                     }
-                    disabled={busyId === invitation.invitation_id}
-                    aria-label={`Revoke invitation to ${invitation.email}`}
-                  >
-                    <X aria-hidden="true" />
-                    Revoke
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
+                  />
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       </section>
 
       <Dialog
@@ -402,6 +406,136 @@ export function TeamPanel({
           ) : null}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/**
+ * The column labels over a list. Only drawn once the panel is wide enough for
+ * columns; each row already says what its cells are to a screen reader, so the
+ * labels are visual only.
+ */
+function ColumnHeader({
+  mode,
+  first,
+}: Readonly<{ mode: keyof typeof COLUMNS; first: string }>) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "hidden gap-x-4 border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground @md:grid",
+        HEADER_COLUMNS[mode],
+      )}
+    >
+      <span>{first}</span>
+      <span>Role</span>
+      {mode === "manage" ? <span /> : null}
+    </div>
+  )
+}
+
+function InvitationRow({
+  invitation,
+  mode,
+  busy,
+  onRevoke,
+}: Readonly<{
+  invitation: Invitation
+  mode: keyof typeof COLUMNS
+  busy: boolean
+  /** Absent for a role that may not revoke. */
+  onRevoke?: () => void
+}>) {
+  const role = ROLE_LABEL[invitation.role] ?? invitation.role
+  const expires = new Date(invitation.expires_at)
+  return (
+    <li
+      className={cn(
+        "grid items-center gap-x-4 gap-y-1 px-4 py-3",
+        COLUMNS[mode],
+      )}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium" title={invitation.email}>
+          {invitation.email}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {/* Narrow: the role has no column of its own, so it rides here. */}
+          <span className="@md:hidden">{role} · </span>
+          Expires{" "}
+          <time
+            dateTime={invitation.expires_at}
+            title={expires.toLocaleString(undefined, {
+              dateStyle: "long",
+              timeStyle: "short",
+            })}
+            className="tabular-nums"
+          >
+            {expires.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })}
+          </time>
+        </p>
+      </div>
+      <span className="hidden text-sm text-muted-foreground @md:block">
+        {role}
+      </span>
+      {onRevoke ? (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRevoke}
+            disabled={busy}
+            aria-label={`Revoke invitation to ${invitation.email}`}
+          >
+            <X aria-hidden="true" />
+            Revoke
+          </Button>
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+/** The panel's shape while the member list loads, so nothing jumps. */
+export function TeamPanelSkeleton({
+  canManage,
+}: Readonly<{ canManage: boolean }>) {
+  return (
+    <div className="flex flex-col gap-8" aria-busy="true">
+      {canManage ? (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-4 w-72 max-w-full" />
+          </div>
+          <Skeleton className="h-18 w-full rounded-lg" />
+        </div>
+      ) : null}
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-4 w-64 max-w-full" />
+        </div>
+        <div className="divide-y rounded-lg border bg-card">
+          {[0, 1, 2].map((row) => (
+            <div key={row} className="flex items-center gap-3 px-4 py-3">
+              <Skeleton className="size-8 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-40 max-w-full" />
+                <Skeleton className="h-3 w-56 max-w-full" />
+              </div>
+              <Skeleton className="hidden h-7 w-24 sm:block" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+      </div>
     </div>
   )
 }
@@ -450,25 +584,22 @@ function InviteForm({ onInvited }: Readonly<{ onInvited: () => void }>) {
   }
 
   return (
-    <section
-      aria-labelledby="team-invite-heading"
-      className="space-y-3 rounded-lg border bg-card p-5 shadow-sm"
-    >
-      <div>
-        <h2 id="team-invite-heading" className="text-base font-semibold">
+    <section aria-labelledby="team-invite-heading" className="space-y-3">
+      <div className="space-y-0.5">
+        <h2 id="team-invite-heading" className="text-[15px] font-semibold">
           Invite a teammate
         </h2>
         <p className="text-sm text-muted-foreground">
           They get an email with a one-time link. To make someone an org-admin,
-          invite them first, then change their role once they join.
+          invite them, then change their role once they join.
         </p>
       </div>
       <form
         noValidate
         onSubmit={onSubmit}
-        className="flex flex-col gap-2 sm:flex-row sm:items-end"
+        className="flex flex-col gap-3 rounded-lg border bg-card p-4 @md:flex-row @md:items-end @md:gap-2"
       >
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1.5">
           <label htmlFor={emailId} className="text-sm font-medium">
             Email
           </label>
@@ -487,7 +618,10 @@ function InviteForm({ onInvited }: Readonly<{ onInvited: () => void }>) {
           />
         </div>
         <Select value={role} onValueChange={(next) => setRole(next as Role)}>
-          <SelectTrigger className="w-full sm:w-36" aria-label="Invite as role">
+          <SelectTrigger
+            className="w-full @md:w-36"
+            aria-label="Invite as role"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

@@ -4,6 +4,7 @@ import { useId, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { LockedAction } from "@/components/locked-action"
 
 export interface WorkspaceFields {
   name: string
@@ -29,6 +30,7 @@ export function WorkspaceForm({
   submitLabel,
   busyLabel,
   disabled = false,
+  lockedReason,
   children,
 }: Readonly<{
   values: WorkspaceFields
@@ -40,6 +42,12 @@ export function WorkspaceForm({
   busyLabel: string
   /** Read-only for a role that may look but not change. */
   disabled?: boolean
+  /**
+   * With `disabled`: keep the submit button on screen, disabled, with this as
+   * its caption — the role-locked action rule. Without it a read-only form
+   * simply has no buttons.
+   */
+  lockedReason?: string
   /** Extra controls beside the submit button. */
   children?: React.ReactNode
 }>) {
@@ -137,7 +145,17 @@ export function WorkspaceForm({
         </p>
       ) : null}
 
-      {disabled ? null : (
+      {disabled ? (
+        lockedReason ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <LockedAction reason={lockedReason}>
+              <Button type="submit" disabled>
+                {submitLabel}
+              </Button>
+            </LockedAction>
+          </div>
+        ) : null
+      ) : (
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" disabled={busy}>
             {busy ? busyLabel : submitLabel}
