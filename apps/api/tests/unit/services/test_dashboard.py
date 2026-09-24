@@ -19,6 +19,8 @@ from codesage_api.db.enums import (
 from codesage_api.db.models import (
     AnalysisAttempt,
     Branch,
+    BugRiskPrediction,
+    ClassRiskPrediction,
     Finding,
     ProcessMetric,
     Snapshot,
@@ -124,6 +126,7 @@ def _snapshot(
         weighted_age_with_respect_to=4,
     )
     source_file.bug_risk_predictions = []
+    source_file.class_risk_predictions = []
     source_file.source_locations = []
     if with_finding:
         location = SourceLocation(
@@ -156,6 +159,91 @@ def _snapshot(
         source_file.source_locations = [location]
     snapshot.source_files = [source_file]
     return snapshot
+
+
+def test_snapshot_scoring_resolves_class_risk_with_file_fallback() -> None:
+    snapshot = _snapshot(
+        scanned_at=datetime(2026, 9, 24, tzinfo=UTC),
+        commit_sha="a" * 40,
+        with_finding=True,
+    )
+    source_file = snapshot.source_files[0]
+    model_version_id = uuid.uuid4()
+    source_file.bug_risk_predictions = [
+        BugRiskPrediction(
+            source_file_id=source_file.id,
+            model_version_id=model_version_id,
+            risk_score=0.85,
+            confidence=None,
+        )
+    ]
+    source_file.class_risk_predictions = [
+        ClassRiskPrediction(
+            source_file_id=source_file.id,
+            model_version_id=model_version_id,
+            class_name="Foo",
+            risk_score=0.80,
+            confidence=None,
+        ),
+        ClassRiskPrediction(
+            source_file_id=source_file.id,
+            model_version_id=model_version_id,
+            class_name="Helper",
+            risk_score=0.25,
+            confidence=None,
+        ),
+    ]
+
+    contexts = (
+        ("foo-finding", "Foo", 0.80),
+        ("helper-finding", "Helper", 0.25),
+        ("file-finding", None, 0.85),
+        ("missing-finding", "MissingClass", 0.85),
+    )
+    source_file.source_locations = []
+    for line, (fingerprint, class_name, _expected) in enumerate(contexts, start=1):
+        location = SourceLocation(
+            id=uuid.uuid4(),
+            source_file_id=source_file.id,
+            code_symbol_id=None,
+            start_line=line,
+            end_line=line,
+            start_column=0,
+            end_column=0,
+        )
+        finding = Finding(
+            id=uuid.uuid4(),
+            source_location_id=location.id,
+            category_id="code-design",
+            rule_id="long-method",
+            satd_prediction_id=None,
+            source=FindingSource.RULE,
+            severity=DbSeverity.MEDIUM,
+            description="Finding",
+            evidence=None,
+            measured_value=None,
+            threshold=None,
+            confidence=None,
+            fingerprint=fingerprint,
+            class_name=class_name,
+            method_name=None,
+        )
+        finding.source_location = location
+        location.findings = [finding]
+        location.code_symbol = None
+        source_file.source_locations.append(location)
+
+    scored = dashboard._score_snapshot(snapshot, _profile())
+    risks = {
+        item.finding.fingerprint: item.finding.risk_score
+        for item in scored.result.findings
+    }
+
+    assert risks == {
+        fingerprint: pytest.approx(expected)
+        for fingerprint, _class_name, expected in contexts
+    }
+    assert scored.file_facts["src/A.java"].risk_score == pytest.approx(0.85)
 
 
 def _ready_cache(snapshot: Snapshot, profile: Profile) -> SimpleNamespace:

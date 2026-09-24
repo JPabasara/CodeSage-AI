@@ -59,6 +59,11 @@ def test_metric_and_security_rules_produce_traceable_findings(tmp_path: Path) ->
     }]
     assert all(item.line == 8 for item in method_findings)
     assert all(item.symbol == "Example.work" for item in method_findings)
+    assert all(item.class_name == "Example" for item in method_findings)
+    assert all(item.method_name == "work" for item in method_findings)
+    unresolved = [item for item in findings if item not in method_findings]
+    assert all(item.class_name is None for item in unresolved)
+    assert all(item.method_name is None for item in unresolved)
 
 
 def test_rules_do_not_emit_findings_below_thresholds(tmp_path: Path) -> None:

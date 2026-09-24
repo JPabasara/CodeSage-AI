@@ -1,5 +1,6 @@
 import pytest
-from codesage_api.scoring.engine import score,aggregate_subtree
+
+from codesage_api.scoring.engine import aggregate_subtree, score
 from codesage_api.scoring.enums import Category, Severity, Source
 from codesage_api.scoring.formula import (
     finding_priority,
@@ -33,6 +34,7 @@ def make_finding(
     category: Category,
     severity: Severity,
     source: Source = Source.RULE,
+    risk_score: float = 0.0,
 ) -> ScoringFinding:
     return ScoringFinding(
         fingerprint=fingerprint,
@@ -40,6 +42,7 @@ def make_finding(
         category=category,
         severity=severity,
         file=file,
+        risk_score=risk_score,
     )
 
 

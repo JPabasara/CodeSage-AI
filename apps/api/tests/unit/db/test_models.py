@@ -11,6 +11,7 @@ EXPECTED_TABLES = {
     "app_user",
     "branch",
     "bug_risk_prediction",
+    "class_risk_prediction",
     "code_symbol",
     "debt_category",
     "file_tree_node",
@@ -98,6 +99,10 @@ def test_probability_and_range_checks_exist() -> None:
         "snapshot": {"ck_snapshot_finding_count_nonnegative"},
         "satd_prediction": {"ck_satd_prediction_confidence_probability"},
         "bug_risk_prediction": {"ck_bug_risk_prediction_risk_score_probability"},
+        "class_risk_prediction": {
+            "ck_class_risk_prediction_class_risk_score_probability",
+            "ck_class_risk_prediction_class_risk_confidence_probability",
+        },
     }
     for table_name, names in expected.items():
         actual = {
@@ -127,6 +132,24 @@ def test_bug_risk_confidence_can_be_unknown() -> None:
     assert table.columns["confidence"].nullable is True
 
 
+def test_class_risk_and_finding_context_schema() -> None:
+    class_risk = Base.metadata.tables["class_risk_prediction"]
+    assert class_risk.columns["confidence"].nullable is True
+    assert class_risk.columns["class_name"].nullable is False
+    assert {
+        foreign_key.target_fullname
+        for foreign_key in class_risk.columns["source_file_id"].foreign_keys
+    } == {"source_file.id"}
+    assert {
+        foreign_key.target_fullname
+        for foreign_key in class_risk.columns["model_version_id"].foreign_keys
+    } == {"ml_model_version.id"}
+
+    finding = Base.metadata.tables["finding"]
+    assert finding.columns["class_name"].nullable is True
+    assert finding.columns["method_name"].nullable is True
+
+
 def test_business_keys_are_enforced_by_unique_constraints() -> None:
     expected = {
         "membership": {("user_id", "workspace_id")},
@@ -135,6 +158,9 @@ def test_business_keys_are_enforced_by_unique_constraints() -> None:
         "source_file": {("snapshot_id", "relative_path")},
         "ml_model_version": {("model_type", "version_identifier")},
         "bug_risk_prediction": {("source_file_id", "model_version_id")},
+        "class_risk_prediction": {
+            ("source_file_id", "model_version_id", "class_name")
+        },
     }
 
     for table_name, required_keys in expected.items():

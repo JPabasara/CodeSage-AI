@@ -1,10 +1,10 @@
-"""ML-2 client: class-level metrics in, per-file bug-risk score out.
+"""ML-2 client: class-level metrics in, class and file risk scores out.
 
 The ML model predicts bug-proneness for individual Java classes using
 class-specific CK metrics and file-level process metrics.
 
-Class probabilities are aggregated into one file-level probability before
-being returned to the scan pipeline.
+Class probabilities are preserved and also aggregated into one file-level
+probability.
 """
 
 from __future__ import annotations
@@ -23,8 +23,12 @@ from codesage_api.extractors.process_metrics import FileProcessMetrics
 
 @dataclass(frozen=True, slots=True)
 class RiskClientResult:
-    # Final file-level probabilities consumed by the scan/scoring pipeline.
-    scores: dict[str, float]
+    # Canonical ML-2 predictions:
+    # (source file path, class name) -> class bug-proneness probability
+    class_scores: dict[tuple[str, str], float]
+
+    # Derived aggregate retained for file-level scoring/dashboard use.
+    file_scores: dict[str, float]
 
     model_version: str
 
@@ -177,14 +181,15 @@ def predict(
     process: dict[str, FileProcessMetrics],
 ) -> RiskClientResult:
     """
-    Batch-predict class-level bug-proneness and return per-file risk.
+    Batch-predict class-level bug-proneness and return class and file risk.
 
     Each ML observation represents one Java class.
 
     File-level process metrics are joined to each class using the class's
-    source-file path. The returned class probabilities are then aggregated
-    into one probability per file.
+    source-file path. Class probabilities are preserved as the canonical
+    ML predictions and also aggregated into one probability per file.
     """
+
     eligible_classes = [
         metrics
         for metrics in classes
@@ -193,10 +198,10 @@ def predict(
 
     if not eligible_classes:
         return RiskClientResult(
-            scores={},
+            class_scores={},
+            file_scores={},
             model_version="",
         )
-
     settings = get_settings()
     url = f"{settings.ml_service_url.rstrip('/')}/risk"
 
@@ -269,10 +274,8 @@ def predict(
 
         received_classes: set[tuple[str, str]] = set()
 
-        class_scores_by_file: dict[
-            str,
-            list[float],
-        ] = defaultdict(list)
+        class_scores: dict[tuple[str, str], float] = {}
+        class_scores_by_file: dict[str, list[float]] = defaultdict(list)
 
         for item in raw_scores:
             path = str(item["path"])
@@ -305,6 +308,8 @@ def predict(
 
             received_classes.add(identity)
 
+            class_scores[identity] = score
+
             class_scores_by_file[path].append(
                 score
             )
@@ -330,7 +335,8 @@ def predict(
         )
 
         return RiskClientResult(
-            scores=file_scores,
+            class_scores=class_scores,
+            file_scores=file_scores,
             model_version=model_version.strip(),
         )
 

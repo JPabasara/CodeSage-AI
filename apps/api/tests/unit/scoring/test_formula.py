@@ -38,9 +38,9 @@ def test_churn_factor_is_bounded_1_to_2() -> None:
 
 
 def test_risk_factor_is_bounded_1_to_2_5(balanced: Profile) -> None:
-    assert formula.risk_factor(FileFacts("a.java", 0.0, 0, 1000), balanced) == 1.0
+    assert formula.risk_factor(0.0, balanced) == 1.0
     trusting_model = Profile(weights=balanced.weights, s=0.0)  # ml_trust = 1.5
-    assert formula.risk_factor(FileFacts("a.java", 1.0, 0, 1000), trusting_model) == 2.5
+    assert formula.risk_factor(1.0, trusting_model) == 2.5
 
 
 def test_trust_slider_default_position_is_neutral(balanced: Profile) -> None:
@@ -63,7 +63,9 @@ def test_security_bypasses_the_trust_slider() -> None:
     Without this, the "trust the model" end would quietly halve every security
     finding, since all security detection is deterministic.
     """
-    finding = ScoringFinding("fp", Source.RULE, Category.SECURITY, Severity.CRITICAL, "a.java")
+    finding = ScoringFinding(
+        "fp", Source.RULE, Category.SECURITY, Severity.CRITICAL, "a.java", 0.0
+    )
     for s in (0.0, 0.5, 1.0):
         p = Profile(weights={c: 1.0 for c in Category}, s=s)
         assert formula.source_trust(finding, p) == 1.0
@@ -80,10 +82,53 @@ def test_ml_boost_cannot_invert_the_severity_ranking() -> None:
     hot = FileFacts("hot.java", risk_score=1.0, commits_90d=100, loc=1000)
     cold = FileFacts("cold.java", risk_score=0.0, commits_90d=0, loc=1000)
 
-    low = ScoringFinding("a", Source.RULE, Category.CODE_DESIGN, Severity.LOW, "hot.java")
-    critical = ScoringFinding("b", Source.RULE, Category.CODE_DESIGN, Severity.CRITICAL, "cold.java")
+    low = ScoringFinding(
+        "a", Source.RULE, Category.CODE_DESIGN, Severity.LOW, "hot.java", 1.0
+    )
+    critical = ScoringFinding(
+        "b", Source.RULE, Category.CODE_DESIGN, Severity.CRITICAL, "cold.java", 0.0
+    )
 
     assert formula.finding_priority(low, hot, p) < formula.finding_priority(critical, cold, p)
+
+
+def test_finding_priority_uses_contextual_not_file_risk(
+    balanced: Profile,
+) -> None:
+    facts = FileFacts("same.java", risk_score=0.9, commits_90d=0, loc=1000)
+    low_risk = ScoringFinding(
+        "low", Source.RULE, Category.CODE_DESIGN, Severity.MEDIUM, "same.java", 0.1
+    )
+    high_risk = ScoringFinding(
+        "high", Source.RULE, Category.CODE_DESIGN, Severity.MEDIUM, "same.java", 0.8
+    )
+
+    assert formula.finding_priority(high_risk, facts, balanced) > formula.finding_priority(
+        low_risk, facts, balanced
+    )
+
+
+def test_file_risk_does_not_control_finding_priority(
+    balanced: Profile,
+) -> None:
+    finding = ScoringFinding(
+        "same",
+        Source.RULE,
+        Category.CODE_DESIGN,
+        Severity.MEDIUM,
+        "same.java",
+        0.5,
+    )
+    safe_file = FileFacts(
+        "same.java", risk_score=0.0, commits_90d=0, loc=1000
+    )
+    risky_file = FileFacts(
+        "same.java", risk_score=1.0, commits_90d=0, loc=1000
+    )
+
+    assert formula.finding_priority(
+        finding, safe_file, balanced
+    ) == formula.finding_priority(finding, risky_file, balanced)
 
 
 def test_weights_and_s_are_clamped() -> None:
