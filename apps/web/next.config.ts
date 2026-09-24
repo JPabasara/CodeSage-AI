@@ -14,6 +14,10 @@ const nextConfig: NextConfig = {
   // build directory, so the E2E one gets its own via NEXT_DIST_DIR. Unset in
   // every other context, which leaves the default `.next` exactly as it was.
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
+
+  // Development only. Its default bottom-left corner is where the rail's
+  // collapse button sits, and a badge over a control is a click that misses.
+  devIndicators: { position: "bottom-right" },
 }
 
 export default nextConfig
