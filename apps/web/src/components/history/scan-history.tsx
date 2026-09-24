@@ -1,11 +1,20 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { GitBranch } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ErrorState } from "@/components/error-state"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -14,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { useBranches } from "@/hooks/use-branches"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { ScanSummary } from "@/lib/types"
 import { gradeColor, shortSha } from "@/lib/utils"
@@ -82,7 +92,15 @@ function ScanRow({
           {new Date(scan.scanned_at).toLocaleString()}
         </time>
       </TableCell>
-      <TableCell>{scan.branch}</TableCell>
+      <TableCell>
+        <span className="inline-flex max-w-40 items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-xs">
+          <GitBranch
+            className="size-3 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span className="truncate">{scan.branch}</span>
+        </span>
+      </TableCell>
       <TableCell className="font-mono">{shortSha(scan.commit_sha)}</TableCell>
       <TableCell className="text-right tabular-nums">
         {Math.round(scan.health_score)}
@@ -105,8 +123,20 @@ function ScanRow({
   )
 }
 
+const ALL = "all"
+
 export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
-  const { data: scans, loading, error, refetch } = useScanHistory(repoId)
+  // The project comes from the app bar; the branch is a filter on this page.
+  // "All branches" asks the API with no branch, which the contract defines as
+  // every branch.
+  const [branch, setBranch] = useState(ALL)
+  const { data: branches } = useBranches(repoId)
+  const {
+    data: scans,
+    loading,
+    error,
+    refetch,
+  } = useScanHistory(repoId, branch === ALL ? undefined : branch)
 
   return (
     <div className="space-y-6 p-6">
@@ -119,13 +149,32 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
             different profile redraws this list.
           </p>
         </div>
-        {scans && scans.length > 0 ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href={dashboardLatestHref(repoId, scans[0]?.branch)}>
-              Open latest scan
-            </Link>
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Select value={branch} onValueChange={setBranch}>
+            <SelectTrigger className="w-44" aria-label="Filter by branch">
+              <GitBranch
+                className="size-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value={ALL}>All branches</SelectItem>
+              {(branches ?? []).map((b) => (
+                <SelectItem key={b.name} value={b.name}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {scans && scans.length > 0 ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={dashboardLatestHref(repoId, scans[0]?.branch)}>
+                Open latest scan
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {error ? (
@@ -164,10 +213,20 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
         // state, not a failure — so it gets the way forward, not an apology.
         <div className="rounded-md border p-6 text-center">
           <p className="text-muted-foreground text-sm">
-            No scans yet — run one from the dashboard.
+            {branch === ALL
+              ? "No scans yet — run one from the dashboard."
+              : `No scans on ${branch} yet — run one from the dashboard.`}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3">
-            <Link href={`/dashboard/${repoId}`}>Go to dashboard</Link>
+            <Link
+              href={
+                branch === ALL
+                  ? `/dashboard/${repoId}`
+                  : `/dashboard/${repoId}?${new URLSearchParams({ branch })}`
+              }
+            >
+              Go to dashboard
+            </Link>
           </Button>
         </div>
       )}
