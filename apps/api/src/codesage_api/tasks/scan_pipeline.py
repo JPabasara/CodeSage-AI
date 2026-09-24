@@ -44,7 +44,10 @@ from codesage_api.db.models import (
 from codesage_api.db.repositories import attempts, rules
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
-from codesage_api.detection.fingerprint import satd_fingerprint
+from codesage_api.detection.fingerprint import (
+    satd_fingerprint,
+    unique_in_file_order,
+)
 from codesage_api.detection.reasons import render_satd_reason
 from codesage_api.detection.risk import client as risk_client
 from codesage_api.detection.risk.client import RiskClientResult
@@ -421,7 +424,21 @@ def _finalize(
             )
 
         model_versions: dict[str, MLModelVersion] = {}
-        for result in results.satd_predictions:
+        # One id per finding: the same comment on several lines is several
+        # findings, and the dashboard keys every row by its fingerprint.
+        satd_fingerprints = unique_in_file_order(
+            [
+                (
+                    satd_fingerprint(result.comment.file_path, result.comment.text),
+                    result.comment.file_path,
+                    result.comment.line,
+                )
+                for result in results.satd_predictions
+            ]
+        )
+        for result, fingerprint in zip(
+            results.satd_predictions, satd_fingerprints, strict=True
+        ):
             if result.category is None:
                 raise RuntimeError("A debt prediction is missing its category.")
             finding_file = files_by_path.get(result.comment.file_path)
@@ -508,7 +525,7 @@ def _finalize(
                     measured_value=None,
                     threshold=None,
                     confidence=result.confidence,
-                    fingerprint=satd_fingerprint(result.comment.file_path, result.comment.text),
+                    fingerprint=fingerprint,
                     class_name=None,
                     method_name=None,
                 )

@@ -7,7 +7,9 @@ import json
 
 from codesage_api.scoring.models import Profile
 
-SCORING_ENGINE_VERSION = "1.0.0"
+# 1.0.1: fingerprints are unique within a snapshot, so older cached
+# payloads (which could repeat one) are recomputed on the next read.
+SCORING_ENGINE_VERSION = "1.0.1"
 
 
 def profile_fingerprint(profile: Profile) -> str:
