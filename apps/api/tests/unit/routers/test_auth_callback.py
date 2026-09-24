@@ -15,7 +15,9 @@ authorization code is single use and a reload replays a spent one.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -225,3 +227,34 @@ def test_the_refusal_is_logged_without_leaking_the_body(
     assert "401" in logged
     assert "token" in logged, "which of the two calls failed"
     assert "secret-456" not in logged, "the body must never be logged"
+
+
+@pytest.mark.parametrize("workspace_id", [None, "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7"])
+def test_every_sign_in_lands_in_the_app(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, workspace_id: str | None
+) -> None:
+    """With or without a workspace, the browser lands on /projects.
+
+    A new user is signed in and simply has no workspace yet; the web shows each
+    page's "create a workspace" state. A separate onboarding screen before the
+    product was an extra step, not a safety measure.
+    """
+    class _Db:
+        def commit(self) -> None: ...
+        def rollback(self) -> None: ...
+        def close(self) -> None: ...
+
+    monkeypatch.setattr(auth_router, "SessionLocal", _Db)
+    monkeypatch.setattr(
+        auth_router.auth_service, "exchange_code_for_identity", lambda code, verifier: {}
+    )
+    monkeypatch.setattr(
+        auth_router.auth_service,
+        "establish_session",
+        lambda db, claims: SimpleNamespace(id=uuid.uuid4(), workspace_id=workspace_id),
+    )
+
+    response = _callback(client)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == f"{FRONTEND}/projects"
