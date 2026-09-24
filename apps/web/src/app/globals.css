@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -34,6 +34,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-solid: var(--destructive-solid);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -56,41 +57,47 @@
 }
 
 :root {
-  --background: oklch(0.992 0.002 255);
-  --foreground: oklch(0.16 0.01 255);
+  /* Phase 13F: a neutral grey base with one accent, mint. Text is a deep
+     slate rather than black, and borders are hairlines — the contrast comes
+     from hierarchy, not from ink. */
+  --background: oklch(0.99 0.002 255);
+  --foreground: oklch(0.27 0.012 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.16 0.01 255);
+  --card-foreground: oklch(0.27 0.012 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.16 0.01 255);
+  --popover-foreground: oklch(0.27 0.012 255);
   --primary: oklch(0.44 0.13 160);
   --primary-foreground: oklch(0.99 0.006 160);
-  --secondary: oklch(0.958 0.006 255);
-  --secondary-foreground: oklch(0.19 0.012 255);
-  --muted: oklch(0.965 0.005 255);
-  --muted-foreground: oklch(0.45 0.012 255);
-  --accent: oklch(0.945 0.02 160);
-  --accent-foreground: oklch(0.2 0.026 160);
-  --destructive: oklch(0.58 0.22 25);
-  --border: oklch(0.89 0.008 255);
-  --input: oklch(0.89 0.008 255);
+  --secondary: oklch(0.963 0.004 255);
+  --secondary-foreground: oklch(0.3 0.012 255);
+  --muted: oklch(0.966 0.004 255);
+  --muted-foreground: oklch(0.5 0.012 255);
+  --accent: oklch(0.956 0.02 160);
+  --accent-foreground: oklch(0.32 0.05 160);
+  --destructive: oklch(0.56 0.2 25);
+  /* Solid fill for destructive buttons: white text on it clears 4.5:1 in both
+     themes, which the lighter dark-mode --destructive would not. */
+  --destructive-solid: oklch(0.55 0.2 26);
+  --border: oklch(0.92 0.004 255);
+  --input: oklch(0.9 0.005 255);
   --ring: oklch(0.64 0.13 160);
-  --chart-1: oklch(0.66 0.15 160);
-  --chart-2: oklch(0.72 0.16 55);
-  --chart-3: oklch(0.62 0.15 230);
-  --chart-4: oklch(0.66 0.17 20);
-  --chart-5: oklch(0.62 0.13 315);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.982 0.002 255);
+  --chart-1: oklch(0.6 0.13 160);
+  --chart-2: oklch(0.7 0.15 55);
+  --chart-3: oklch(0.6 0.13 230);
+  --chart-4: oklch(0.64 0.16 20);
+  --chart-5: oklch(0.6 0.1 200);
+  --radius: 0.375rem;
+  --sidebar: oklch(0.984 0.002 255);
   /* The app bar: deep mint, white text, in both themes (Phase 13C). Darker
      than any health colour, so it never reads as a score. */
-  --topbar: oklch(0.34 0.07 165);
+  --topbar: oklch(46.57% 0.08805 166.97);
   --topbar-foreground: oklch(0.99 0.004 165);
-  --sidebar-foreground: oklch(0.18 0.01 255);
+  --sidebar-foreground: oklch(0.32 0.012 255);
   --sidebar-primary: oklch(0.44 0.13 160);
   --sidebar-primary-foreground: oklch(0.99 0.006 160);
-  --sidebar-accent: oklch(0.952 0.018 160);
-  --sidebar-accent-foreground: oklch(0.19 0.018 160);
-  --sidebar-border: oklch(0.88 0.008 255);
+  --sidebar-accent: oklch(0.953 0.02 160);
+  --sidebar-accent-foreground: oklch(0.3 0.05 160);
+  --sidebar-border: oklch(0.92 0.004 255);
   --sidebar-ring: oklch(0.64 0.13 160);
 
   /* category palette — validated colourblind-safe against light/dark */
@@ -112,39 +119,42 @@
 }
 
 .dark {
-  --background: oklch(0.12 0.006 255);
-  --foreground: oklch(0.97 0.005 160);
-  --card: oklch(0.18 0.008 255);
-  --card-foreground: oklch(0.97 0.005 160);
-  --popover: oklch(0.18 0.008 255);
-  --popover-foreground: oklch(0.97 0.005 160);
-  --primary: oklch(0.76 0.16 158);
-  --primary-foreground: oklch(0.12 0.012 255);
-  --secondary: oklch(0.22 0.01 255);
-  --secondary-foreground: oklch(0.96 0.008 160);
-  --muted: oklch(0.22 0.008 255);
-  --muted-foreground: oklch(0.72 0.012 255);
-  --accent: oklch(0.24 0.035 160);
-  --accent-foreground: oklch(0.94 0.024 160);
-  --destructive: oklch(0.7 0.19 22);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.76 0.16 158);
-  --chart-1: oklch(0.76 0.16 158);
-  --chart-2: oklch(0.81 0.15 75);
-  --chart-3: oklch(0.73 0.13 230);
-  --chart-4: oklch(0.72 0.17 25);
-  --chart-5: oklch(0.75 0.14 320);
-  --sidebar: oklch(0.105 0.006 255);
+  /* A soft dark ground, not black; cards one step lighter; text an off-white
+     so a page of it does not glare. */
+  --background: oklch(0.17 0.006 255);
+  --foreground: oklch(0.9 0.006 255);
+  --card: oklch(0.205 0.006 255);
+  --card-foreground: oklch(0.9 0.006 255);
+  --popover: oklch(0.215 0.006 255);
+  --popover-foreground: oklch(0.9 0.006 255);
+  --primary: oklch(0.74 0.14 165);
+  --primary-foreground: oklch(0.18 0.02 165);
+  --secondary: oklch(0.245 0.006 255);
+  --secondary-foreground: oklch(0.88 0.006 255);
+  --muted: oklch(0.24 0.006 255);
+  --muted-foreground: oklch(0.69 0.01 255);
+  --accent: oklch(0.26 0.03 165);
+  --accent-foreground: oklch(0.88 0.03 165);
+  --destructive: oklch(0.7 0.17 22);
+  --destructive-solid: oklch(0.55 0.19 25);
+  --border: oklch(0.28 0.006 255);
+  --input: oklch(0.31 0.006 255);
+  --ring: oklch(0.74 0.14 165);
+  --chart-1: oklch(0.74 0.14 165);
+  --chart-2: oklch(0.79 0.14 75);
+  --chart-3: oklch(0.72 0.12 230);
+  --chart-4: oklch(0.71 0.16 25);
+  --chart-5: oklch(0.73 0.1 200);
+  --sidebar: oklch(0.16 0.006 255);
   --topbar: oklch(0.25 0.05 165);
   --topbar-foreground: oklch(0.97 0.006 165);
-  --sidebar-foreground: oklch(0.95 0.008 160);
-  --sidebar-primary: oklch(0.76 0.16 158);
-  --sidebar-primary-foreground: oklch(0.12 0.012 255);
-  --sidebar-accent: oklch(0.18 0.025 160);
-  --sidebar-accent-foreground: oklch(0.96 0.008 160);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.76 0.16 158);
+  --sidebar-foreground: oklch(0.86 0.006 255);
+  --sidebar-primary: oklch(0.74 0.14 165);
+  --sidebar-primary-foreground: oklch(0.18 0.02 165);
+  --sidebar-accent: oklch(0.25 0.03 165);
+  --sidebar-accent-foreground: oklch(0.92 0.02 165);
+  --sidebar-border: oklch(0.26 0.006 255);
+  --sidebar-ring: oklch(0.74 0.14 165);
 
   /* category palette */
   --category-code-design: #60a5fa;
@@ -179,6 +189,9 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Scores, counts and times line up in every column and never shift as they
+       change (13F). Geist's tabular figures read fine in running text too. */
+    font-variant-numeric: tabular-nums;
   }
   html {
     @apply font-sans;
