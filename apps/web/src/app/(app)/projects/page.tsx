@@ -1,14 +1,18 @@
 "use client"
 
 import { useState } from "react"
-import { Activity, CheckCircle2, FolderGit2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { ApiRequestError, connectRepo, removeProject } from "@/lib/api/client"
 import type { ErrorCode, Repo } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
 import { ErrorState } from "@/components/error-state"
-import { ProjectList } from "@/components/projects/project-list"
+import { PageHeader } from "@/components/layout/page-header"
+import { CONNECT_LOCKED_REASON } from "@/components/projects/no-project-state"
+import {
+  ProjectList,
+  ProjectListSkeleton,
+} from "@/components/projects/project-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
@@ -119,78 +123,76 @@ export default function ProjectsPage() {
     }
   }
 
+  const workspaceName = activeWorkspace?.name ?? "This workspace"
+
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-4 rounded-lg border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0 space-y-1">
-          {/* The workspace name, not the word "Workspace": the same three
-              repositories mean something different depending on which one you
-              are standing in. */}
-          <p className="truncate text-xs font-medium uppercase tracking-wide text-primary">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-4 sm:p-6">
+      <PageHeader
+        title="Projects"
+        // The workspace name, not the word "Workspace": the same three
+        // repositories mean something different depending on which one you
+        // are standing in.
+        context={
+          <span className="truncate">
             {activeWorkspace?.name ?? "Workspace"}
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Connect repositories, open their refactor dashboard, and review scan
-            history without losing your selected project context.
-          </p>
-        </div>
+          </span>
+        }
+        description="Connect repositories and open their dashboard or scan history."
+        aside={
+          repos ? (
+            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+              <span>
+                <span className="font-medium text-foreground tabular-nums">
+                  {projectCount}
+                </span>{" "}
+                connected
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                <span className="font-medium text-foreground tabular-nums">
+                  {scannedCount}
+                </span>{" "}
+                scanned
+              </span>
+              <span aria-hidden="true">·</span>
+              {activeProject ? (
+                <span className="inline-flex min-w-0 items-center gap-1">
+                  Active
+                  <span className="max-w-48 truncate font-medium text-foreground">
+                    {activeProject.name}
+                  </span>
+                </span>
+              ) : (
+                <span>No project selected</span>
+              )}
+            </p>
+          ) : loading ? (
+            <Skeleton className="h-5 w-64" />
+          ) : null
+        }
+      />
 
-        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 lg:min-w-[24rem]">
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <FolderGit2 className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong className="block text-sm text-foreground">
-                {projectCount}
-              </strong>
-              Connected
-            </span>
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <Activity className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong className="block text-sm text-foreground">
-                {scannedCount}
-              </strong>
-              Scanned
-            </span>
-          </span>
-          <span className="inline-flex min-w-0 items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <CheckCircle2 className="size-4 text-primary" aria-hidden="true" />
-            <span className="min-w-0">
-              <strong className="block truncate text-sm text-foreground">
-                {activeProject ? activeProject.name : "None"}
-              </strong>
-              Active
-            </span>
-          </span>
-        </div>
-      </header>
-
-      {canConnect ? (
-        <ConnectRepo onConnect={onConnect} busy={connecting} />
-      ) : (
-        <p
-          role="status"
-          className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
-        >
-          You can open every project in this workspace. Connecting and removing
-          repositories needs the manager or org-admin role.
-        </p>
-      )}
+      {/* One form for every role, so the page reads the same for all of them;
+          a role without repository:connect gets it disabled, with the reason
+          on the button. The API re-checks every request either way. */}
+      <ConnectRepo
+        className="mx-auto w-full max-w-2xl"
+        onConnect={onConnect}
+        busy={connecting}
+        lockedReason={canConnect ? undefined : CONNECT_LOCKED_REASON}
+      />
 
       <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold">Connected repositories</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="text-[15px] font-semibold">Connected repositories</h2>
+          {/* Hidden only once the list is known to be empty — the empty state
+              says what to do instead — so loading does not shift the header. */}
+          {repos?.length !== 0 ? (
             <p className="text-sm text-muted-foreground">
-              {repos && repos.length === 0
-                ? canConnect
-                  ? `${activeWorkspace?.name ?? "This workspace"} is empty. Connect a public repository above and it becomes this workspace's first project.`
-                  : `${activeWorkspace?.name ?? "This workspace"} has no repositories yet.`
-                : "Open the dashboard or scan history for the repository you want to review."}
+              Open the dashboard or scan history for the repository you want to
+              review.
             </p>
-          </div>
+          ) : null}
         </div>
 
         {error ? (
@@ -200,14 +202,16 @@ export default function ProjectsPage() {
             onRetry={refetch}
           />
         ) : loading ? (
-          <div className="space-y-3" data-testid="projects-loading">
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
-          </div>
+          <ProjectListSkeleton data-testid="projects-loading" />
         ) : (
           <ProjectList
             repos={repos ?? []}
             activeRepoId={selectedProjectId}
+            emptyDescription={
+              canConnect
+                ? `${workspaceName} is empty. Connect a public repository above and it becomes this workspace's first project.`
+                : `${workspaceName} has no repositories yet.`
+            }
             onSelect={(repo) => {
               selectProject(repo.id)
             }}

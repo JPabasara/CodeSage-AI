@@ -67,13 +67,18 @@ export function NoProjectState({
         data-testid="no-project-state"
         className={cn(
           "w-full rounded-lg border bg-card p-6",
-          compact ? "max-w-none" : "max-w-lg shadow-sm",
+          compact ? "max-w-none" : "max-w-lg",
         )}
       >
-        <span className="mb-4 flex size-10 items-center justify-center rounded-md border bg-muted/50 text-primary">
+        <span className="mb-4 flex size-10 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground">
           <Icon className="size-5" aria-hidden="true" />
         </span>
-        <Heading className="text-lg font-semibold tracking-tight">
+        <Heading
+          className={cn(
+            "font-semibold tracking-tight",
+            compact ? "text-[15px]" : "text-xl",
+          )}
+        >
           {heading}
         </Heading>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{body}</p>
