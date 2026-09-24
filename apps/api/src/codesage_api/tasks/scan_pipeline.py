@@ -31,6 +31,7 @@ from codesage_api.db.enums import (
 from codesage_api.db.models import (
     AnalysisEngineModelVersion,
     BugRiskPrediction,
+    ClassRiskPrediction,
     Finding,
     MLModelVersion,
     ProcessMetric,
@@ -228,7 +229,14 @@ def _finalize(
         # same conflict-safe pattern as ML-1: concurrent scans may observe a new
         # model version at the same time.
         model_version_record: MLModelVersion | None = None
-        if results.risk_result and results.risk_result.scores and results.risk_result.model_version:
+        if (
+            results.risk_result
+            and (
+                results.risk_result.class_scores
+                or results.risk_result.file_scores
+            )
+            and results.risk_result.model_version
+        ):
             v_name = results.risk_result.model_version
             session.execute(
                 insert(MLModelVersion)
@@ -328,9 +336,10 @@ def _finalize(
             if (
                 results.risk_result
                 and model_version_record
-                and metrics.path in results.risk_result.scores
+                and metrics.path in results.risk_result.file_scores
             ):
-                score = results.risk_result.scores[metrics.path]
+                score = results.risk_result.file_scores[metrics.path]
+
                 session.add(
                     BugRiskPrediction(
                         source_file=source_file,
@@ -338,6 +347,26 @@ def _finalize(
                         risk_score=score,
                         # A defect probability is the prediction, not a measure
                         # of uncertainty about that prediction.
+                        confidence=None,
+                    )
+                )
+
+        if results.risk_result and model_version_record:
+            for (file_path, class_name), score in sorted(
+                results.risk_result.class_scores.items()
+            ):
+                predicted_source_file = files_by_path.get(file_path)
+                if predicted_source_file is None:
+                    raise RuntimeError(
+                        "A class risk prediction references "
+                        f"an unknown source file: {file_path}"
+                    )
+                session.add(
+                    ClassRiskPrediction(
+                        source_file=predicted_source_file,
+                        model_version=model_version_record,
+                        class_name=class_name,
+                        risk_score=score,
                         confidence=None,
                     )
                 )
@@ -386,6 +415,8 @@ def _finalize(
                     threshold=detected.threshold,
                     confidence=None,
                     fingerprint=detected.fingerprint,
+                    class_name=detected.class_name,
+                    method_name=detected.method_name,
                 )
             )
 
@@ -478,6 +509,8 @@ def _finalize(
                     threshold=None,
                     confidence=result.confidence,
                     fingerprint=satd_fingerprint(result.comment.file_path, result.comment.text),
+                    class_name=None,
+                    method_name=None,
                 )
             )
 

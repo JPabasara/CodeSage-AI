@@ -14,14 +14,19 @@ from codesage_api.db.enums import (
 )
 from codesage_api.db.models import (
     AnalysisAttempt,
+    BugRiskPrediction,
+    ClassRiskPrediction,
+    Finding,
     MLModelVersion,
     SATDPrediction,
     SourceFile,
 )
 from codesage_api.db.repositories.attempts import WorkerScanInput
 from codesage_api.detection.risk.client import RiskClientResult
+from codesage_api.detection.rules.engine import DetectedFinding
 from codesage_api.detection.satd.client import SATDResult
 from codesage_api.errors import MLServiceUnavailable
+from codesage_api.extractors.ck_metrics import FileMetrics
 from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.extractors.pipeline import ExtractionResult
 from codesage_api.scoring.enums import Category
@@ -72,7 +77,8 @@ def test_finalize_records_trained_risk_provenance(
             ),
             [],
             RiskClientResult(
-                scores={"src/Main.java": 0.7},
+                class_scores={},
+                file_scores={"src/Main.java": 0.7},
                 model_version="risk-2.0.0",
             ),
         ),
@@ -89,6 +95,104 @@ def test_finalize_records_trained_risk_provenance(
         getattr(added, "model_version_id", None) == model_version.id
         for added in (call.args[0] for call in session.add.call_args_list)
     )
+
+
+@patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
+@patch("codesage_api.tasks.scan_pipeline.attempts.get_worker_attempt")
+@patch("codesage_api.tasks.scan_pipeline.session_scope")
+def test_finalize_persists_file_and_class_risk_and_finding_context(
+    session_scope: Mock,
+    get_attempt: Mock,
+    _set_workspace: Mock,
+) -> None:
+    attempt = AnalysisAttempt(
+        id=uuid.uuid4(),
+        branch_id=uuid.uuid4(),
+        analysis_engine_version_id=uuid.uuid4(),
+        commit_sha="a" * 40,
+        trigger_type=AnalysisTriggerType.MANUAL,
+        status=AnalysisStatus.RUNNING,
+        retry_count=0,
+    )
+    get_attempt.return_value = attempt
+    model_version = MLModelVersion(
+        id=uuid.uuid4(),
+        model_type=MLModelType.BUG_RISK,
+        version_identifier="risk-2.0.0",
+        training_date=SimpleNamespace(),
+        deployment_status=ModelDeploymentStatus.DEPLOYED,
+        evaluation_dataset_reference="D'Ambros/AEEEM",
+        evaluation_metrics={},
+    )
+    session = session_scope.return_value.__enter__.return_value
+    session.scalar.return_value = model_version
+    session.get.return_value = None
+    metrics = FileMetrics(
+        path="src/Foo.java",
+        loc=100,
+        cyclomatic_complexity=5,
+        max_nesting_depth=2,
+        method_count=3,
+        longest_method_lines=20,
+        cbo=1.0,
+        dit=1.0,
+        lcom=0.0,
+        rfc=4.0,
+        noc=0.0,
+    )
+    finding = DetectedFinding(
+        file_path="src/Foo.java",
+        line=12,
+        symbol="Foo.work",
+        rule_id="long-method",
+        category=Category.CODE_DESIGN,
+        severity=Severity.MEDIUM,
+        description="Long method",
+        evidence="long-method=90",
+        measured_value=90.0,
+        threshold=80.0,
+        fingerprint="fingerprint",
+        class_name="Foo",
+        method_name="work",
+    )
+
+    _finalize(
+        attempt.id,
+        uuid.uuid4(),
+        PipelineResults(
+            ExtractionResult(
+                static_metrics=[metrics],
+                class_metrics=[],
+                process_metrics=[],
+                comments=[],
+            ),
+            [finding],
+            RiskClientResult(
+                class_scores={
+                    ("src/Foo.java", "Foo"): 0.8,
+                    ("src/Foo.java", "Helper"): 0.25,
+                },
+                file_scores={"src/Foo.java": 0.85},
+                model_version="risk-2.0.0",
+            ),
+        ),
+    )
+
+    added = [call.args[0] for call in session.add.call_args_list]
+    file_prediction = next(
+        item for item in added if isinstance(item, BugRiskPrediction)
+    )
+    class_predictions = [
+        item for item in added if isinstance(item, ClassRiskPrediction)
+    ]
+    stored_finding = next(item for item in added if isinstance(item, Finding))
+
+    assert file_prediction.risk_score == 0.85
+    assert {
+        item.class_name: item.risk_score for item in class_predictions
+    } == {"Foo": 0.8, "Helper": 0.25}
+    assert stored_finding.class_name == "Foo"
+    assert stored_finding.method_name == "work"
 
 
 @patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
@@ -210,7 +314,8 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     extract.return_value = extracted
     detect.return_value = []
     risk_res = RiskClientResult(
-        scores={"Main.java": 0.85},
+        class_scores={("Main.java", "Main"): 0.85},
+        file_scores={"Main.java": 0.85},
         model_version="risk-2.0.0",
     )
     predict.return_value = risk_res

@@ -29,6 +29,10 @@ class DetectedFinding:
     threshold: float | None
     fingerprint: str
 
+    # Structural context used by downstream risk resolution.
+    class_name: str | None = None
+    method_name: str | None = None
+
 
 _FILE_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {
     "large-file": lambda item: float(item.loc),
@@ -116,7 +120,13 @@ def _method_metric_findings(
                     evidence=f"{rule.rule_id}={value:g}",
                     measured_value=value,
                     threshold=threshold,
-                    fingerprint=rule_fingerprint(rule.rule_id, item.path, symbol),
+                    fingerprint=rule_fingerprint(
+                        rule.rule_id,
+                        item.path,
+                        symbol,
+                    ),
+                    class_name=item.class_name,
+                    method_name=item.method_name,
                 )
             )
     return findings
