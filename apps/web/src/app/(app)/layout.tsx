@@ -4,6 +4,7 @@ import { AppRail } from "@/components/layout/app-rail"
 import { AppTopBar } from "@/components/layout/app-top-bar"
 import { TopBarSlotProvider } from "@/components/layout/top-bar-slot"
 import { SessionGuard } from "@/components/layout/session-guard"
+import { ScanCenter } from "@/components/layout/scan-center"
 import { WorkspaceGate } from "@/components/workspace/no-workspace-state"
 
 export default function AppLayout({
@@ -21,6 +22,8 @@ export default function AppLayout({
               workspace stays — WorkspaceGate below shows each page's locked
               card instead of its content. */}
           <SessionGuard />
+          {/* Follows every scan across pages; says when one ends. */}
+          <ScanCenter />
           <AppTopBar />
           <div className="flex min-h-0 flex-1">
             <AppRail />
