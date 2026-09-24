@@ -69,7 +69,7 @@ test("dashboard links follow the project in the current dashboard URL", () => {
   )
 })
 
-test("dashboard links go to Projects when no repository can be selected", () => {
+test("with no project, Dashboard and Scan History open their no-project pages", () => {
   data.repos = []
 
   renderRail()
@@ -77,11 +77,11 @@ test("dashboard links go to Projects when no repository can be selected", () => 
   expect(screen.getAllByRole("link", { name: "Dashboard" })).toHaveLength(1)
   expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
     "href",
-    "/projects",
+    "/dashboard",
   )
   expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
     "href",
-    "/projects",
+    "/dashboard/history",
   )
 })
 

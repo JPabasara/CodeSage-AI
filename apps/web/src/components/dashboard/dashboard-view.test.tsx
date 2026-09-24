@@ -12,11 +12,16 @@ import {
 import {
   DEMO_REPO_ID,
   UNSCANNED_REPO_ID,
+  WORKSPACE_ID,
   mockFindings,
   mockHealthReport,
   mockScanHistory,
 } from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
+import {
+  readSelectedBranch,
+  writeSelectedBranch,
+} from "@/hooks/use-selected-branch"
 
 // The selection lives in the URL, so a container test needs a router that
 // actually re-renders on navigate. This is a miniature one: a query string in a
@@ -521,4 +526,58 @@ test("inside the shell, Branch and Scan render up in the app bar", async () => {
   expect(within(bar).getByRole("button", { name: /^scan$/i })).toBeVisible()
   // The project picker is the app bar's own now, not the dashboard's.
   expect(screen.queryByRole("combobox", { name: "Project" })).toBeNull()
+})
+
+// ── remembered branch (Phase 13D) ───────────────────────────────────────────
+
+test("opened without ?branch=, the dashboard returns to the branch last used", async () => {
+  writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "develop")
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+      "develop",
+    ),
+  )
+})
+
+test("the URL still wins over the remembered branch", async () => {
+  writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "develop")
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?branch=main`)
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+    "main",
+  )
+})
+
+test("a remembered branch that no longer exists falls back to the default", async () => {
+  writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "deleted-branch")
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
+      "main",
+    ),
+  )
+  // And the page settles the memory on a real branch again.
+  await waitFor(() =>
+    expect(readSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID)).toBe("main"),
+  )
+})
+
+test("choosing a branch remembers it for this project", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  await user.click(await screen.findByRole("combobox", { name: "Branch" }))
+  await user.click(await screen.findByRole("option", { name: "develop" }))
+
+  await waitFor(() =>
+    expect(readSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID)).toBe("develop"),
+  )
 })

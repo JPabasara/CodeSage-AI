@@ -158,3 +158,36 @@ const ONE_ROW = [
     delta: 3,
   },
 ]
+
+// ── branch filter (Phase 13D) ───────────────────────────────────────────────
+
+test("All branches by default; each row shows its branch", async () => {
+  render(<ScanHistory repoId={DEMO_REPO_ID} />)
+  expect(
+    screen.getByRole("combobox", { name: "Filter by branch" }),
+  ).toHaveTextContent("All branches")
+  const rows = await screen.findAllByRole("row")
+  expect(within(rows[1]).getByText("main")).toBeInTheDocument()
+})
+
+test("filtering asks the API for one branch", async () => {
+  const asked: (string | null)[] = []
+  server.use(
+    http.get("*/api/repos/:repoId/scans", ({ request }) => {
+      asked.push(new URL(request.url).searchParams.get("branch"))
+      return HttpResponse.json([])
+    }),
+  )
+  render(<ScanHistory repoId={DEMO_REPO_ID} />)
+  await waitFor(() => expect(asked).toEqual([null])) // all branches
+
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Filter by branch" }),
+  )
+  await userEvent.click(await screen.findByRole("option", { name: "develop" }))
+
+  await waitFor(() => expect(asked).toContain("develop"))
+  expect(
+    await screen.findByText(/no scans on develop yet/i),
+  ).toBeInTheDocument()
+})
