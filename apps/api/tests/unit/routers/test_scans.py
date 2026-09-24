@@ -11,6 +11,8 @@ from codesage_api.authorization.routes import repository_context
 from codesage_api.authorization.context import AuthorizationContext
 from codesage_api.deps import get_authorization_context, get_current_user_id, get_db, get_workspace_id
 from codesage_api.main import create_app
+from codesage_api.schemas import ScanStatusOut
+from codesage_api.scoring.enums import ScanPhase
 from codesage_api.services import analysis
 
 
@@ -28,7 +30,8 @@ def _client() -> tuple[TestClient, MagicMock, uuid.UUID]:
     app.dependency_overrides[get_authorization_context] = lambda: AuthorizationContext(
         user_id=uuid.uuid4(), workspace_id=workspace_id, membership_id=uuid.uuid4(),
         role_id="org-admin", permissions=frozenset({
-            "project:read", "repository:connect", "profile:read", "profile:update", "history:read"
+            "project:read", "repository:connect", "profile:read", "profile:update", "history:read",
+            "result:read",
         }),
     )
     app.dependency_overrides[repository_context] = app.dependency_overrides[get_authorization_context]
@@ -61,3 +64,75 @@ def test_scan_history_allows_omitting_branch(monkeypatch) -> None:
     assert all_branches.status_code == 200
     assert main_only.status_code == 200
     assert calls == [None, "main"]
+
+
+def test_active_scan_is_returned_and_is_not_taken_for_a_scan_id(monkeypatch) -> None:
+    """`/scan/active` must reach its own route. Registered after `/scan/{scan_id}`
+    it would be parsed as an id and answer 422."""
+    client, db, workspace_id = _client()
+    repository_id = uuid.uuid4()
+    calls: list[str | None] = []
+
+    def get_active(session, workspace, repository, branch):
+        assert (session, workspace, repository) == (db, workspace_id, repository_id)
+        calls.append(branch)
+        return ScanStatusOut(
+            scan_id=str(uuid.uuid4()), phase=ScanPhase.RUNNING, progress=40, branch="main"
+        )
+
+    monkeypatch.setattr(analysis, "get_active", get_active)
+
+    with client:
+        any_branch = client.get(f"/api/repos/{repository_id}/scan/active")
+        main = client.get(f"/api/repos/{repository_id}/scan/active", params={"branch": "main"})
+
+    assert any_branch.status_code == 200
+    assert any_branch.json()["phase"] == "running"
+    assert main.status_code == 200
+    assert calls == [None, "main"]
+
+
+def test_no_active_scan_is_204(monkeypatch) -> None:
+    client, _db, _workspace_id = _client()
+    monkeypatch.setattr(analysis, "get_active", lambda *args: None)
+
+    with client:
+        response = client.get(f"/api/repos/{uuid.uuid4()}/scan/active")
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_service_finds_the_active_scan_per_branch_or_across_the_repository(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from codesage_api.db.repositories import attempts
+    from codesage_api.errors import NotFound
+
+    running = SimpleNamespace(branch=SimpleNamespace(name="develop"))
+    monkeypatch.setattr(analysis, "_status_out", lambda attempt, name: name)
+    monkeypatch.setattr(attempts, "find_active_for_repository", lambda *a: running)
+    monkeypatch.setattr(
+        attempts,
+        "get_branch",
+        lambda s, w, r, name: SimpleNamespace(id=name) if name != "gone" else None,
+    )
+    monkeypatch.setattr(
+        attempts,
+        "find_active_for_branch",
+        lambda s, branch_id: running if branch_id == "develop" else None,
+    )
+
+    db = MagicMock(spec=Session)
+    workspace_id, repository_id = uuid.uuid4(), uuid.uuid4()
+    assert analysis.get_active(db, workspace_id, repository_id, None) == "develop"
+    assert analysis.get_active(db, workspace_id, repository_id, "develop") == "develop"
+    assert analysis.get_active(db, workspace_id, repository_id, "main") is None
+    try:
+        analysis.get_active(db, workspace_id, repository_id, "gone")
+    except NotFound:
+        pass
+    else:
+        raise AssertionError("an unknown branch must be a 404")

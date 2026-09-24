@@ -32,6 +32,7 @@ EXPECTED_PRODUCT_PATHS = {
     "/api/repos/{repo_id}/health": {"get"},
     "/api/repos/{repo_id}/scans": {"get"},
     "/api/repos/{repo_id}/scan": {"post"},
+    "/api/repos/{repo_id}/scan/active": {"get"},
     "/api/repos/{repo_id}/scan/{scan_id}": {"get"},
     "/api/repos/{repo_id}/scan/{scan_id}/stop": {"post"},
     "/api/profiles": {"get", "post"},
