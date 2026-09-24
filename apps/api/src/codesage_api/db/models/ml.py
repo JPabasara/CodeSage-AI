@@ -42,6 +42,9 @@ class MLModelVersion(UUIDPrimaryKey, Base):
     evaluation_metrics: Mapped[dict[str, object]] = mapped_column(MutableDict.as_mutable(JSONB))
     satd_predictions: Mapped[list[SATDPrediction]] = relationship(back_populates="model_version")
     bug_risk_predictions: Mapped[list[BugRiskPrediction]] = relationship(back_populates="model_version")
+    class_risk_predictions: Mapped[list[ClassRiskPrediction]] = relationship(
+        back_populates="model_version"
+    )
     engine_version_links: Mapped[list[AnalysisEngineModelVersion]] = relationship(back_populates="model_version")
     __table_args__ = (UniqueConstraint("model_type", "version_identifier"),)
 
@@ -76,4 +79,34 @@ class BugRiskPrediction(UUIDPrimaryKey, Base):
         UniqueConstraint("source_file_id", "model_version_id"),
         CheckConstraint("risk_score >= 0 AND risk_score <= 1", name="risk_score_probability"),
         CheckConstraint("confidence >= 0 AND confidence <= 1", name="confidence_probability"),
+    )
+
+
+class ClassRiskPrediction(UUIDPrimaryKey, Base):
+    __tablename__ = "class_risk_prediction"
+    source_file_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_file.id", ondelete="CASCADE"), index=True
+    )
+    model_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ml_model_version.id", ondelete="RESTRICT"), index=True
+    )
+    class_name: Mapped[str] = mapped_column(String(500), index=True)
+    risk_score: Mapped[float] = mapped_column(Double)
+    confidence: Mapped[float | None] = mapped_column(Double, nullable=True)
+    source_file: Mapped[SourceFile] = relationship(
+        back_populates="class_risk_predictions"
+    )
+    model_version: Mapped[MLModelVersion] = relationship(
+        back_populates="class_risk_predictions"
+    )
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "model_version_id", "class_name"),
+        CheckConstraint(
+            "risk_score >= 0 AND risk_score <= 1",
+            name="class_risk_score_probability",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="class_risk_confidence_probability",
+        ),
     )
