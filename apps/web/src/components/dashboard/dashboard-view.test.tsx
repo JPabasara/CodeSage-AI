@@ -6,8 +6,11 @@ import { beforeEach, expect, test, vi } from "vitest"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
 import {
+  TopBarSlot,
+  TopBarSlotProvider,
+} from "@/components/layout/top-bar-slot"
+import {
   DEMO_REPO_ID,
-  SECOND_REPO_ID,
   UNSCANNED_REPO_ID,
   mockFindings,
   mockHealthReport,
@@ -497,31 +500,25 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
   ).toBeInTheDocument()
 })
 
-// ── the project selector (#Phase 11) ────────────────────────────────────────
+// ── the app bar (Phase 13C) ─────────────────────────────────────────────────
 
-test("the project selector lists this workspace's projects and navigates", async () => {
-  const user = userEvent.setup()
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
+test("inside the shell, Branch and Scan render up in the app bar", async () => {
+  render(
+    <TopBarSlotProvider>
+      <header data-testid="bar">
+        <TopBarSlot name="context" />
+        <TopBarSlot name="actions" />
+      </header>
+      <DashboardView repoId={DEMO_REPO_ID} />
+    </TopBarSlotProvider>,
+  )
   await ready()
 
-  const selector = screen.getByRole("combobox", { name: "Project" })
-  await user.click(selector)
-
-  // The list comes from GET /api/projects, which the API scopes to the active
-  // workspace — so a project from another workspace is not offerable here.
+  const bar = screen.getByTestId("bar")
   expect(
-    await screen.findByRole("option", { name: "acme/web-store" }),
+    await within(bar).findByRole("combobox", { name: "Branch" }),
   ).toBeInTheDocument()
-  expect(
-    screen.queryByRole("option", { name: /nimbus/i }),
-  ).not.toBeInTheDocument()
-
-  await user.click(screen.getByRole("option", { name: "acme/web-store" }))
-
-  // A bare dashboard URL: the branch, the snapshot and the open finding all
-  // belonged to the project being left. A snapshot id in particular is another
-  // project's row.
-  await waitFor(() =>
-    expect(nav.visited).toEqual([`/dashboard/${SECOND_REPO_ID}`]),
-  )
+  expect(within(bar).getByRole("button", { name: /^scan$/i })).toBeVisible()
+  // The project picker is the app bar's own now, not the dashboard's.
+  expect(screen.queryByRole("combobox", { name: "Project" })).toBeNull()
 })

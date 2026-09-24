@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import type { ImgHTMLAttributes } from "react"
 import { beforeEach, expect, test, vi } from "vitest"
 
@@ -85,18 +85,20 @@ test("dashboard links go to Projects when no repository can be selected", () => 
   )
 })
 
-test("signing out leaves a note so the sign-in page can say so", () => {
-  sessionStorage.removeItem("codesage.signedOut")
+test("Workspace comes first; the rest follow in working order", () => {
   renderRail()
-  const form = screen
-    .getByRole("button", { name: /sign out/i })
-    .closest("form") as HTMLFormElement
-  // jsdom does not implement form navigation; stop it after the handler ran.
-  form.addEventListener("submit", (event) => event.preventDefault())
+  const nav = screen.getByRole("navigation", { name: "Main navigation" })
+  expect(
+    within(nav)
+      .getAllByRole("link")
+      .map((link) => link.textContent?.trim()),
+  ).toEqual(["Workspace", "Projects", "Dashboard", "Scan History", "Profiles"])
+})
 
-  fireEvent.submit(form)
-
-  expect(sessionStorage.getItem("codesage.signedOut")).toBe("1")
+test("switcher, account and sign-out live in the top bar, not the rail", () => {
+  renderRail()
+  expect(screen.queryByRole("combobox", { name: /workspace/i })).toBeNull()
+  expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull()
 })
 
 test("with no workspace every link stays, marked as locked", async () => {

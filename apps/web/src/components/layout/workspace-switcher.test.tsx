@@ -28,9 +28,11 @@ async function renderSwitcher() {
   return workspaces
 }
 
-/** Open the Radix listbox and pick a workspace by name. */
+const trigger = () => screen.getByRole("combobox", { name: /^Workspace:/ })
+
+/** Open the menu and pick a workspace by name. */
 async function choose(name: string) {
-  await userEvent.click(screen.getByRole("combobox", { name: "Workspace" }))
+  await userEvent.click(trigger())
   await userEvent.click(
     await screen.findByRole("option", { name: new RegExp(name) }),
   )
@@ -124,4 +126,54 @@ test("with no workspace it says so and offers to create one", async () => {
   expect(
     await screen.findByRole("dialog", { name: "Create a workspace" }),
   ).toBeVisible()
+})
+
+test("the trigger names the active workspace for screen readers", async () => {
+  await renderSwitcher()
+  expect(trigger()).toHaveAccessibleName("Workspace: Acme Engineering")
+})
+
+test("each row carries its role, and the active one is marked", async () => {
+  await renderSwitcher()
+  await userEvent.click(trigger())
+
+  const nimbus = await screen.findByRole("option", { name: /Nimbus Labs/ })
+  expect(nimbus).toHaveTextContent("Viewer")
+  expect(
+    screen.getByRole("option", { name: /Acme Engineering/ }),
+  ).toHaveTextContent("Org admin")
+})
+
+test("Workspace settings goes to the Workspace tab, not a panel here", async () => {
+  await renderSwitcher()
+  await userEvent.click(trigger())
+  await userEvent.click(
+    await screen.findByRole("option", { name: /workspace settings/i }),
+  )
+  expect(nav.push).toHaveBeenCalledWith("/workspace")
+})
+
+test("Create workspace opens the shared dialog", async () => {
+  await renderSwitcher()
+  await userEvent.click(trigger())
+  await userEvent.click(
+    await screen.findByRole("option", { name: /create workspace/i }),
+  )
+  expect(
+    await screen.findByRole("dialog", { name: "Create a workspace" }),
+  ).toBeVisible()
+})
+
+test("keyboard only: open, arrow down, Enter switches", async () => {
+  await renderSwitcher()
+  trigger().focus()
+  await userEvent.keyboard("{Enter}")
+  await screen.findByRole("option", { name: /Nimbus Labs/ })
+  // The first row (Acme) is highlighted on open; one step down is Nimbus.
+  await userEvent.keyboard("{ArrowDown}{Enter}")
+
+  await waitFor(() => expect(nav.push).toHaveBeenCalled())
+  expect((await getWorkspaces()).find((w) => w.is_active)?.name).toBe(
+    "Nimbus Labs",
+  )
 })
