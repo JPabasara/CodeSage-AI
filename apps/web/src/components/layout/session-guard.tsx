@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 
 import { ApiRequestError } from "@/lib/api/client"
 import { readPendingInvitation } from "@/lib/pending-invitation"
+import { SESSION_ENDED_URL } from "@/lib/sign-in"
 import { useSession } from "@/hooks/use-session"
 
 /**
@@ -13,7 +14,7 @@ import { useSession } from "@/hooks/use-session"
  * Three states, and the middleware can only tell two of them apart — the session
  * cookie is httpOnly, so at the edge "signed in" is all it can see:
  *
- *  • no session at all → /login;
+ *  • no session at all → /login, saying the session ended;
  *  • signed in with no workspace → /onboarding, NOT /login. Sending someone who
  *    just signed in back to the sign-in page is the classic version of this bug:
  *    they sign in again, land here again, and never learn that what they are
@@ -34,7 +35,7 @@ export function SessionGuard() {
 
   useEffect(() => {
     if (error instanceof ApiRequestError && error.status === 401) {
-      router.replace("/login")
+      router.replace(SESSION_ENDED_URL)
       return
     }
     if (session && readPendingInvitation()) {
