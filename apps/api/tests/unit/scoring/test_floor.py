@@ -16,6 +16,7 @@ def make_scored_finding(
         category=category,
         severity=severity,
         file=f"src/{fingerprint}.py",
+        risk_score=0.0,
     )
 
     return ScoredFinding(

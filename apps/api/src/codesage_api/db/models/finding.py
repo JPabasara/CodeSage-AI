@@ -42,6 +42,8 @@ class Finding(UUIDPrimaryKey, Base):
     threshold: Mapped[float | None] = mapped_column(Double)
     confidence: Mapped[float | None] = mapped_column(Double)
     fingerprint: Mapped[str] = mapped_column(String(128), index=True)
+    class_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    method_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_location: Mapped[SourceLocation] = relationship(back_populates="findings")
     category: Mapped[DebtCategory] = relationship(back_populates="findings")
     rule_definition: Mapped[RuleDefinition | None] = relationship(back_populates="findings")

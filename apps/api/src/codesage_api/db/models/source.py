@@ -20,7 +20,11 @@ from codesage_api.db.enums import CodeSymbolType, FileTreeNodeType
 if TYPE_CHECKING:
     from codesage_api.db.models.analysis import Snapshot
     from codesage_api.db.models.finding import Finding
-    from codesage_api.db.models.ml import BugRiskPrediction, SATDPrediction
+    from codesage_api.db.models.ml import (
+        BugRiskPrediction,
+        ClassRiskPrediction,
+        SATDPrediction,
+    )
 
 
 def values(enum: type[CodeSymbolType | FileTreeNodeType]) -> list[str]:
@@ -38,6 +42,9 @@ class SourceFile(UUIDPrimaryKey, Base):
     static_metrics: Mapped[list[StaticMetric]] = relationship(back_populates="source_file", passive_deletes=True)
     process_metric: Mapped[ProcessMetric | None] = relationship(back_populates="source_file", uselist=False, passive_deletes=True)
     bug_risk_predictions: Mapped[list[BugRiskPrediction]] = relationship(back_populates="source_file", passive_deletes=True)
+    class_risk_predictions: Mapped[list[ClassRiskPrediction]] = relationship(
+        back_populates="source_file", passive_deletes=True
+    )
     file_tree_nodes: Mapped[list[FileTreeNode]] = relationship(back_populates="source_file")
     __table_args__ = (UniqueConstraint("snapshot_id", "relative_path"),)
 
