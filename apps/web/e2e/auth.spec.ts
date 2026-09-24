@@ -30,19 +30,48 @@ for (const path of PROTECTED) {
 }
 
 signedOut(
-  "the public landing page renders product name and sign-in CTA",
+  "codesage.dev lands on sign-in in one hop, one click from Asgardeo",
   async ({ page }) => {
     await page.goto("/")
 
+    await expect(page).toHaveURL(/\/login$/)
     await expect(
-      page.getByRole("heading", { name: "CodeSage AI" }),
-    ).toBeVisible()
-
-    const signIn = page.getByRole("link", { name: /sign in/i }).first()
-    await expect(signIn).toBeVisible()
-    await expect(signIn).toHaveAttribute("href", /\/login$/)
+      page.getByRole("link", { name: /sign in with asgardeo/i }),
+    ).toHaveAttribute("href", /\/api\/auth\/login$/)
   },
 )
+
+signedIn("signed in, / and /login both go into the app", async ({ page }) => {
+  await page.goto("/")
+  await expect(page).toHaveURL(/\/projects$/)
+
+  // /login is sent on by the page after the API confirms the session — the
+  // middleware cannot tell a live cookie from a stale one.
+  await page.goto("/login")
+  await expect(page).toHaveURL(/\/projects$/)
+})
+
+for (const [code, message] of [
+  ["expired", /took too long/i],
+  ["invalid", /wasn't valid/i],
+  ["failed", /couldn't confirm/i],
+  ["session", /session ended/i],
+] as const) {
+  signedOut(`/login?error=${code} explains itself`, async ({ page }) => {
+    await page.goto(`/login?error=${code}`)
+    await expect(page.locator("#main-content").getByRole("alert")).toHaveText(
+      message,
+    )
+  })
+}
+
+signedOut("an unknown error code is never echoed", async ({ page }) => {
+  await page.goto("/login?error=%3Cb%3Ehacked%3C%2Fb%3E")
+  await expect(page.locator("#main-content").getByRole("alert")).toHaveText(
+    /something went wrong/i,
+  )
+  await expect(page.getByText("hacked")).toHaveCount(0)
+})
 
 signedOut(
   "/login itself is reachable signed out — protecting it would loop",
