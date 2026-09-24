@@ -68,3 +68,17 @@ test("the onboarding page itself is not redirected to onboarding", async () => {
   // notices.
   expect(nav.replace).not.toHaveBeenCalled()
 })
+
+test("an invitation kept through sign-in sends the user back to accept it", async () => {
+  sessionStorage.setItem("codesage.pendingInvitation", "kept-token")
+  session.data = mockSessionOnboarding
+
+  render(<SessionGuard />)
+
+  await waitFor(() =>
+    expect(nav.replace).toHaveBeenCalledWith("/invitations/accept"),
+  )
+  // Before onboarding: joining is the way in, not creating a workspace.
+  expect(nav.replace).not.toHaveBeenCalledWith("/onboarding/workspace")
+  sessionStorage.removeItem("codesage.pendingInvitation")
+})
