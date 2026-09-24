@@ -12,6 +12,7 @@ from codesage_api.db.models import (
     AnalysisAttempt,
     Branch,
     BugRiskPrediction,
+    ClassRiskPrediction,
     Finding,
     Repository,
     SATDPrediction,
@@ -29,6 +30,9 @@ def _scoring_options():
         selectinload(Snapshot.source_files)
         .selectinload(SourceFile.bug_risk_predictions)
         .joinedload(BugRiskPrediction.model_version),
+        selectinload(Snapshot.source_files)
+        .selectinload(SourceFile.class_risk_predictions)
+        .joinedload(ClassRiskPrediction.model_version),
         selectinload(Snapshot.source_files)
         .selectinload(SourceFile.source_locations)
         .joinedload(SourceLocation.code_symbol),

@@ -17,9 +17,9 @@ def churn_factor(facts: FileFacts) -> float:
     return 1.0 + min(facts.commits_90d, cap) / cap
 
 
-def risk_factor(facts: FileFacts, profile: Profile) -> float:
+def risk_factor(risk_score: float, profile: Profile) -> float:
   
-    return 1.0 + ml_trust(profile) * facts.risk_score
+    return 1.0 + ml_trust(profile) * risk_score
 
 
 def rule_trust(profile: Profile) -> float:
@@ -46,7 +46,7 @@ def finding_priority(finding: ScoringFinding, facts: FileFacts, profile: Profile
         * profile.weights[finding.category]
         * source_trust(finding, profile)
         * churn_factor(facts)
-        * risk_factor(facts, profile)
+        * risk_factor(finding.risk_score, profile)
     )
 
 

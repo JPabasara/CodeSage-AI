@@ -148,15 +148,18 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
     findings_by_fingerprint: dict[str, Finding] = {}
 
     for source_file in snapshot.source_files:
-        risk_score = (
+        file_risk = (
             source_file.bug_risk_predictions[0].risk_score
             if source_file.bug_risk_predictions
             else 0.0
         )
-        process = source_file.process_metric
+        class_risks = {
+            prediction.class_name: prediction.risk_score
+            for prediction in source_file.class_risk_predictions
+        }
         file_facts[source_file.relative_path] = FileFacts(
             file=source_file.relative_path,
-            risk_score=risk_score,
+            risk_score=file_risk,
             # The process extractor now measures cumulative versions, not a
             # rolling 90-day commit count. Do not substitute one for the other.
             commits_90d=0,
@@ -164,6 +167,11 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         )
         for location in source_file.source_locations:
             for stored in location.findings:
+                finding_risk = (
+                    class_risks.get(stored.class_name)
+                    if stored.class_name is not None
+                    else None
+                )
                 scoring_findings.append(
                     ScoringFinding(
                         fingerprint=stored.fingerprint,
@@ -171,6 +179,11 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
                         category=Category(stored.category_id),
                         severity=Severity(stored.severity.value),
                         file=source_file.relative_path,
+                        risk_score=(
+                            finding_risk
+                            if finding_risk is not None
+                            else file_risk
+                        ),
                     )
                 )
                 findings_by_fingerprint.setdefault(stored.fingerprint, stored)
