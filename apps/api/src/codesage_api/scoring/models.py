@@ -9,13 +9,12 @@ from codesage_api.scoring.enums import Category, Severity, Source
 
 @dataclass(frozen=True, slots=True)
 class ScoringFinding:
-
-
     fingerprint: str
     source: Source
     category: Category
     severity: Severity
     file: str
+    risk_score: float
 
 
 @dataclass(frozen=True, slots=True)
