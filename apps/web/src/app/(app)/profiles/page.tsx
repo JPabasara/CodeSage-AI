@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Info, Layers, Plus, Sparkles } from "lucide-react"
+import { Suspense, useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Building2, FolderGit2, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -17,8 +18,9 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ErrorState } from "@/components/error-state"
+import { LockedAction } from "@/components/locked-action"
+import { PageHeader } from "@/components/layout/page-header"
 import { CreateProfileDialog } from "@/components/profiles/create-profile-dialog"
 import { ProfileCard } from "@/components/profiles/profile-card"
 import {
@@ -28,6 +30,7 @@ import {
   WEIGHT_ROWS,
   type ProfileValues,
 } from "@/components/profiles/profile-values"
+import { ScopeRail } from "@/components/profiles/scope-rail"
 import {
   ApiRequestError,
   clearProjectProfile,
@@ -39,8 +42,6 @@ import {
 } from "@/lib/api/client"
 import { useProfilePool, useProjectProfile } from "@/hooks/use-profiles"
 import { useProjects } from "@/hooks/use-projects"
-import { useSelectedProject } from "@/hooks/use-selected-project"
-import { NoProjectState } from "@/components/projects/no-project-state"
 import { useSession } from "@/hooks/use-session"
 import {
   MAX_CUSTOM_PROFILES,
@@ -50,14 +51,17 @@ import {
 } from "@/lib/types"
 
 /**
- * The permission the API checks for every write on this screen. Hiding a control
- * the caller lacks it for is a courtesy — the API re-checks on every request, and
- * a 403 is still handled below.
+ * The permission the API checks for every write on this screen. Disabling a
+ * control the caller lacks it for is a courtesy — the API re-checks on every
+ * request, and a 403 is still handled below.
  */
 const PROFILE_UPDATE = "profile:update"
 
 const PERMISSION_DETAIL =
   "Your role can read profiles but not change them. An org-admin or a manager can make this change."
+
+/** The caption on every main action this role cannot take. */
+const ROLE_LOCKED_REASON = "Only org-admins and managers can change profiles"
 
 /**
  * A refusal, as a sentence. Each code is a different thing for the user to do
@@ -113,9 +117,77 @@ interface Draft {
   values: ProfileValues
 }
 
-type Mode = "workspace" | "project"
+/** A selection change that would drop unsent edits, held until confirmed. */
+type PendingSwitch =
+  | { kind: "profile"; profileId: string }
+  | { kind: "scope"; projectId: string | undefined }
+
+/**
+ * Two columns on a desktop, each scrolling on its own only if it must: the
+ * heading and the pool with its editor on the left, the scopes in a rail on the
+ * right. Below `lg` it is one column in reading order — heading, scopes, pool —
+ * and the page scrolls normally.
+ */
+const LAYOUT =
+  "grid min-w-0 grid-cols-[minmax(0,1fr)] lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[auto_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_20rem]"
+const HEADER_AREA =
+  "min-w-0 space-y-3 px-4 pt-5 sm:px-6 lg:col-start-1 lg:row-start-1"
+const RAIL_AREA =
+  "min-w-0 px-4 py-4 sm:px-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:px-4 lg:py-5"
+const MAIN_AREA =
+  "flex min-w-0 flex-col gap-5 px-4 pb-6 sm:px-6 lg:col-start-1 lg:row-start-2 lg:min-h-0 lg:overflow-y-auto lg:py-5"
+const POOL_GRID = "grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4"
 
 export default function ProfilesPage() {
+  // useSearchParams() needs a Suspense boundary, or the build bails out of
+  // prerendering the whole route.
+  return (
+    <Suspense fallback={<ProfilesSkeleton />}>
+      <ProfilesView />
+    </Suspense>
+  )
+}
+
+/** The same two columns as the page, so nothing moves when it arrives. */
+function ProfilesSkeleton() {
+  return (
+    <div className={LAYOUT} aria-busy="true">
+      <div className={HEADER_AREA}>
+        <div className="space-y-1">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="h-5 w-full max-w-md" />
+        </div>
+        <Skeleton className="h-7 w-72 max-w-full" />
+      </div>
+      <div className={RAIL_AREA}>
+        <Skeleton className="mb-3 h-9 w-40" />
+        <div className="flex gap-2 overflow-hidden lg:flex-col">
+          {[0, 1, 2].map((i) => (
+            <Skeleton
+              key={i}
+              className="h-17.5 w-60 shrink-0 rounded-lg lg:w-full"
+            />
+          ))}
+        </div>
+      </div>
+      <div className={MAIN_AREA}>
+        <div className="space-y-3">
+          <Skeleton className="h-7 w-48" />
+          <div className={POOL_GRID}>
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-20 rounded-lg" />
+            ))}
+          </div>
+        </div>
+        <Skeleton className="h-64 w-full rounded-lg" />
+      </div>
+    </div>
+  )
+}
+
+function ProfilesView() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { data: session } = useSession()
   const {
     data: pool,
@@ -125,13 +197,33 @@ export default function ProfilesPage() {
     reload: reloadPool,
     update: updatePool,
   } = useProfilePool()
-  const { data: repos } = useProjects()
+  const {
+    data: repos,
+    error: reposError,
+    refetch: refetchRepos,
+  } = useProjects()
 
-  // One source of truth for "which project": the app bar's project picker. The
-  // override tab follows it, so this page and the dashboard never disagree.
-  const { selectedProjectId: projectId } = useSelectedProject({
-    availableRepoIds: repos?.map((repo) => repo.id),
-  })
+  // Which scope is being configured: the workspace default, or one project's
+  // own profile. It belongs to this page alone — the app bar's project is the
+  // dashboard's, and here any project can be configured independently. The URL
+  // carries it (`?project=<id>`) so a scope can be linked to and survives a
+  // reload; a change made elsewhere to the URL, such as the rail's Profiles
+  // link, is followed.
+  const urlProjectId = searchParams.get("project") ?? undefined
+  const [scopeId, setScopeId] = useState(urlProjectId)
+  const [seenUrlProjectId, setSeenUrlProjectId] = useState(urlProjectId)
+  if (seenUrlProjectId !== urlProjectId) {
+    setSeenUrlProjectId(urlProjectId)
+    setScopeId(urlProjectId)
+  }
+  // Only a connected project is a scope. Anything else — a stale link, a
+  // project since removed — is the workspace default.
+  const projectId =
+    scopeId && repos?.some((repo) => repo.id === scopeId) ? scopeId : undefined
+  // Until the project list is in, a linked project cannot be told apart from a
+  // stale one, so the page waits rather than opening on the wrong scope.
+  const resolvingScope = Boolean(scopeId) && !repos && !reposError
+
   const {
     data: projectProfile,
     loading: loadingProjectProfile,
@@ -139,22 +231,26 @@ export default function ProfilesPage() {
     update: updateProjectProfile,
   } = useProjectProfile(projectId)
 
-  const [mode, setMode] = useState<Mode>("workspace")
   // Which card is selected, once the user has touched one. Until then it is
-  // derived from the context below, so the page opens on the profile actually in
-  // force rather than on a client-side guess that could disagree with it.
+  // derived from the scope, so the page opens on the profile actually in force
+  // rather than on a client-side guess that could disagree with it.
   const [touchedId, setTouchedId] = useState<string>()
 
   const [draft, setDraft] = useState<Draft>()
 
-  // A different project picked in the app bar starts the override tab fresh:
-  // a half-made choice for one project must not carry over to the next.
+  // A different scope starts fresh: a half-made choice for one project must not
+  // carry over to the next, or to the workspace default.
   const [shownProjectId, setShownProjectId] = useState(projectId)
   if (shownProjectId !== projectId) {
     setShownProjectId(projectId)
     setTouchedId(undefined)
     setDraft(undefined)
   }
+
+  // Moves after every write that can change what a project is scored with, so
+  // each project card in the rail re-reads its own.
+  const [railVersion, setRailVersion] = useState(0)
+  const refreshRail = () => setRailVersion((version) => version + 1)
 
   const [saving, setSaving] = useState(false)
   const [choosing, setChoosing] = useState(false)
@@ -169,7 +265,7 @@ export default function ProfilesPage() {
   const [createError, setCreateError] = useState<string>()
   const [pendingDelete, setPendingDelete] = useState<ScoreProfile>()
   const [deleteError, setDeleteError] = useState<string>()
-  const [discardTo, setDiscardTo] = useState<string>()
+  const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch>()
   const [permissionNotice, setPermissionNotice] = useState<string>()
 
   const canManage = session?.permissions?.includes(PROFILE_UPDATE) ?? false
@@ -178,9 +274,7 @@ export default function ProfilesPage() {
   const atLimit = customProfiles.length >= MAX_CUSTOM_PROFILES
   const workspaceDefault = profiles.find((profile) => profile.is_active)
   const effective =
-    mode === "project" && projectProfile
-      ? projectProfile.effective
-      : workspaceDefault
+    projectId && projectProfile ? projectProfile.effective : workspaceDefault
   const selected =
     profiles.find((profile) => profile.id === touchedId) ?? effective
   const editable = Boolean(selected && !selected.is_preset && canManage)
@@ -226,11 +320,41 @@ export default function ProfilesPage() {
   function selectProfile(profileId: string) {
     if (profileId === selected?.id) return
     if (dirty) {
-      setDiscardTo(profileId)
+      setPendingSwitch({ kind: "profile", profileId })
       return
     }
     setTouchedId(profileId)
     setDraft(undefined)
+  }
+
+  /** Select a custom profile and put the cursor where an edit starts. */
+  function editProfile(profileId: string) {
+    const asking = dirty && profileId !== selected?.id
+    selectProfile(profileId)
+    // With the discard dialog up, focus belongs to the dialog.
+    if (asking) return
+    requestAnimationFrame(() =>
+      document.getElementById("profile-name")?.focus(),
+    )
+  }
+
+  /** Configure another scope. The selection and draft reset with it (above). */
+  function applyScope(next: string | undefined) {
+    setScopeId(next)
+    router.replace(
+      next ? `/profiles?project=${encodeURIComponent(next)}` : "/profiles",
+      { scroll: false },
+    )
+  }
+
+  /** Change scope from the rail, asking first when it would drop unsent edits. */
+  function selectScope(next: string | undefined) {
+    if (next === projectId) return
+    if (dirty) {
+      setPendingSwitch({ kind: "scope", projectId: next })
+      return
+    }
+    applyScope(next)
   }
 
   /** One profile has changed on the server: show it, then reconcile the rest. */
@@ -266,6 +390,7 @@ export default function ProfilesPage() {
       setPermissionNotice(undefined)
       toast.success(`Saved ${saved.name}`)
       if (projectId) reloadProjectProfile()
+      refreshRail()
     } catch (error) {
       refuse(error, "Couldn't save that profile.")
     } finally {
@@ -282,6 +407,7 @@ export default function ProfilesPage() {
       setPermissionNotice(undefined)
       toast.success(`${saved.name} is now the workspace default`)
       if (projectId) reloadProjectProfile()
+      refreshRail()
     } catch (error) {
       refuse(error, "Couldn't change the workspace default.")
     } finally {
@@ -298,6 +424,7 @@ export default function ProfilesPage() {
       reloadPool()
       setPermissionNotice(undefined)
       toast.success(`This project now uses ${saved.effective.name}`)
+      refreshRail()
     } catch (error) {
       refuse(error, "Couldn't set this project's profile.")
     } finally {
@@ -316,6 +443,7 @@ export default function ProfilesPage() {
       reloadPool()
       setPermissionNotice(undefined)
       toast.success(`Back to the workspace default, ${saved.effective.name}`)
+      refreshRail()
     } catch (error) {
       refuse(error, "Couldn't clear this project's override.")
     } finally {
@@ -396,150 +524,95 @@ export default function ProfilesPage() {
     )
   }
 
-  if (loadingPool || !selected || !values) {
-    return (
-      <div className="mx-auto max-w-5xl space-y-4 p-6">
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
+  if (loadingPool || resolvingScope || !selected || !values) {
+    return <ProfilesSkeleton />
   }
 
   const selectedProject = repos?.find((repo) => repo.id === projectId)
+  const projectLabel = selectedProject
+    ? `${selectedProject.owner}/${selectedProject.name}`
+    : "This project"
   const overridden = Boolean(projectProfile && !projectProfile.inherited)
   const isDefault = selected.is_active
   const isProjectChoice = projectProfile?.override?.id === selected.id
+  // The profile in force for this project. For the workspace scope that is the
+  // default, which its own badge already says.
+  const inUseId = projectId ? projectProfile?.effective.id : undefined
+
+  const status = !canManage
+    ? "Read-only. Changing profiles needs the manager or org-admin role."
+    : selected.is_preset
+      ? "Built-in profiles can't be edited. Duplicate one to change it."
+      : dirty
+        ? `Saving re-scores every project that uses ${selected.name}.`
+        : null
+
+  const newProfileButton = (
+    <Button
+      variant="outline"
+      onClick={() => openCreate()}
+      disabled={!canManage || atLimit}
+    >
+      <Plus aria-hidden="true" />
+      New profile
+    </Button>
+  )
+
+  const scopeAction = projectId ? (
+    <Button
+      variant={dirty ? "outline" : "default"}
+      onClick={onAssign}
+      disabled={!canManage || isProjectChoice || choosing}
+    >
+      {choosing ? "Applying…" : "Use for this project"}
+    </Button>
+  ) : (
+    <Button
+      variant={dirty ? "outline" : "default"}
+      onClick={onSetDefault}
+      disabled={!canManage || isDefault || choosing}
+    >
+      {choosing ? "Applying…" : "Set as workspace default"}
+    </Button>
+  )
+
+  // Where a held scope change would go, for the discard dialog to name it.
+  const switchRepo =
+    pendingSwitch?.kind === "scope" && pendingSwitch.projectId
+      ? repos?.find((repo) => repo.id === pendingSwitch.projectId)
+      : undefined
+  const switchTarget =
+    pendingSwitch?.kind !== "scope"
+      ? undefined
+      : !pendingSwitch.projectId
+        ? "the workspace default"
+        : switchRepo
+          ? `${switchRepo.owner}/${switchRepo.name}`
+          : "another project"
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6 pb-28">
-      <header className="flex flex-col gap-4 rounded-lg border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0 space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-primary">
-            Workspace
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">Profiles</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            A profile is six numbers: how much each kind of debt counts, and how
-            far to trust the rules over the model. Every project is scored with
-            the workspace default unless you give it one of its own. Nothing
-            here starts a scan — scores are re-derived from snapshots you
-            already have.
-          </p>
-        </div>
+    <div className={LAYOUT}>
+      <div className={HEADER_AREA}>
+        <PageHeader
+          title="Profiles"
+          description="Decide how much each kind of debt counts toward the health score."
+        />
 
-        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 lg:min-w-[24rem]">
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <Layers className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong className="block text-sm text-foreground">
-                {profiles.length}
-              </strong>
-              In the pool
-            </span>
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <Sparkles className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong
-                className="block text-sm text-foreground"
-                data-testid="custom-count"
-              >
-                {customProfiles.length} of {MAX_CUSTOM_PROFILES}
-              </strong>
-              Custom
-            </span>
-          </span>
-          <span className="inline-flex min-w-0 items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <Info className="size-4 text-primary" aria-hidden="true" />
-            <span className="min-w-0">
-              <strong
-                className="block truncate text-sm text-foreground"
-                data-testid="workspace-default-name"
-              >
-                {workspaceDefault?.name ?? "—"}
-              </strong>
-              Default
-            </span>
-          </span>
-        </div>
-      </header>
-
-      {!canManage ? (
-        <p
-          role="status"
-          className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
-        >
-          You can read every profile in this workspace. Changing them needs the
-          manager or org-admin role.
-        </p>
-      ) : null}
-
-      <Tabs
-        value={mode}
-        onValueChange={(next) => {
-          setMode(next as Mode)
-          // The selection is context-dependent: carrying it across would leave
-          // the editor showing a profile neither context is actually using.
-          setTouchedId(undefined)
-          setDraft(undefined)
-        }}
-      >
-        <TabsList aria-label="What this change applies to">
-          <TabsTrigger value="workspace">Workspace default</TabsTrigger>
-          <TabsTrigger value="project">Project profile</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="workspace" className="pt-4">
-          <p className="text-sm text-muted-foreground">
-            The workspace default is in force for every project that has no
-            profile of its own. It is currently{" "}
-            <strong className="text-foreground">
-              {workspaceDefault?.name ?? "—"}
-            </strong>
-            .
-          </p>
-        </TabsContent>
-
-        <TabsContent value="project" className="space-y-3 pt-4">
-          {/* The selector waits for the project list rather than rendering
-              empty and filling in: a <Select> that starts with no value and
-              acquires one has switched from uncontrolled to controlled, which
-              React warns about and which loses a keyboard selection made in
-              between. */}
-          {!repos ? (
-            <Skeleton className="h-5 w-64" />
-          ) : repos.length === 0 ? (
-            <NoProjectState page="override" compact />
-          ) : (
+        {/* What is being configured, in one line. */}
+        <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+          {projectId ? (
             <>
-              <p className="text-sm text-muted-foreground">
-                For{" "}
-                <strong className="font-medium text-foreground">
-                  {selectedProject
-                    ? `${selectedProject.owner}/${selectedProject.name}`
-                    : "—"}
-                </strong>
-                . Choose another project from the picker at the top.
-              </p>
-
-              {/* The effective-profile summary: what this project is scored
-                  with, and whether that is inherited or its own choice. */}
-              <p
-                className="text-sm text-muted-foreground"
-                data-testid="effective-summary"
-              >
+              <FolderGit2 className="size-4 shrink-0" aria-hidden="true" />
+              <p data-testid="effective-summary" className="min-w-0">
                 {loadingProjectProfile || !projectProfile ? (
                   "Reading this project’s profile…"
                 ) : (
                   <>
-                    <strong className="text-foreground">
-                      {selectedProject
-                        ? `${selectedProject.owner}/${selectedProject.name}`
-                        : "This project"}
+                    <strong className="font-semibold text-foreground">
+                      {projectLabel}
                     </strong>{" "}
                     is scored with{" "}
-                    <strong className="text-foreground">
+                    <strong className="font-semibold text-foreground">
                       {projectProfile.effective.name}
                     </strong>
                     {projectProfile.inherited
@@ -548,7 +621,6 @@ export default function ProfilesPage() {
                   </>
                 )}
               </p>
-
               {overridden && canManage ? (
                 <Button
                   variant="outline"
@@ -560,185 +632,181 @@ export default function ProfilesPage() {
                 </Button>
               ) : null}
             </>
+          ) : (
+            <>
+              <Building2 className="size-4 shrink-0" aria-hidden="true" />
+              <p className="min-w-0">
+                The workspace default is{" "}
+                <strong className="font-semibold text-foreground">
+                  {workspaceDefault?.name ?? "—"}
+                </strong>
+                .
+              </p>
+            </>
           )}
-        </TabsContent>
-      </Tabs>
-
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold">Workspace profile pool</h2>
-            <p className="text-sm text-muted-foreground">
-              Three built-ins, plus up to {MAX_CUSTOM_PROFILES} profiles of your
-              own. Built-ins do not count toward that limit.
-            </p>
-          </div>
-          {canManage ? (
-            <Button
-              size="sm"
-              onClick={() => openCreate()}
-              disabled={atLimit}
-              title={
-                atLimit
-                  ? `This workspace already holds ${MAX_CUSTOM_PROFILES} custom profiles.`
-                  : undefined
-              }
-            >
-              <Plus aria-hidden="true" />
-              New profile
-            </Button>
-          ) : null}
         </div>
+      </div>
 
-        {atLimit && canManage ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            {customProfiles.length} of {MAX_CUSTOM_PROFILES} custom profiles
-            used. Delete one before creating another.
-          </p>
-        ) : null}
+      <ScopeRail
+        className={RAIL_AREA}
+        repos={repos}
+        reposError={reposError}
+        onRetryRepos={refetchRepos}
+        workspaceDefault={workspaceDefault}
+        selectedProjectId={projectId}
+        current={projectProfile}
+        version={railVersion}
+        onSelect={selectScope}
+      />
 
-        <ul
-          aria-label="Workspace profile pool"
-          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      <div className={MAIN_AREA}>
+        <section aria-labelledby="pool-heading" className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+              <h2 id="pool-heading" className="text-[15px] font-semibold">
+                Profile pool
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                <span data-testid="custom-count" className="tabular-nums">
+                  {customProfiles.length} of {MAX_CUSTOM_PROFILES}
+                </span>{" "}
+                custom
+                {atLimit && canManage
+                  ? ". Delete one before creating another."
+                  : null}
+              </p>
+            </div>
+            {!canManage ? (
+              <LockedAction reason={ROLE_LOCKED_REASON}>
+                {newProfileButton}
+              </LockedAction>
+            ) : atLimit ? (
+              <LockedAction
+                reason={`This workspace already has ${MAX_CUSTOM_PROFILES} custom profiles`}
+              >
+                {newProfileButton}
+              </LockedAction>
+            ) : (
+              newProfileButton
+            )}
+          </div>
+
+          <ul aria-label="Workspace profile pool" className={POOL_GRID}>
+            {profiles.map((profile) => (
+              <ProfileCard
+                key={profile.id}
+                profile={profile}
+                selected={profile.id === selected.id}
+                inUse={profile.id === inUseId}
+                onSelect={() => selectProfile(profile.id)}
+                onDuplicate={
+                  canManage && !atLimit ? () => openCreate(profile) : undefined
+                }
+                onEdit={
+                  canManage && !profile.is_preset
+                    ? () => editProfile(profile.id)
+                    : undefined
+                }
+                onDelete={
+                  canManage && !profile.is_preset
+                    ? () => {
+                        setDeleteError(undefined)
+                        setPendingDelete(profile)
+                      }
+                    : undefined
+                }
+                busy={deletingId === profile.id}
+              />
+            ))}
+          </ul>
+        </section>
+
+        <section
+          aria-labelledby="editor-heading"
+          className="rounded-lg border bg-card"
         >
-          {profiles.map((profile) => (
-            <ProfileCard
-              key={profile.id}
-              profile={profile}
-              selected={profile.id === selected.id}
-              onSelect={() => selectProfile(profile.id)}
-              onDuplicate={
-                canManage && !atLimit ? () => openCreate(profile) : undefined
-              }
-              onEdit={
-                canManage && !profile.is_preset
-                  ? () => selectProfile(profile.id)
-                  : undefined
-              }
-              onDelete={
-                canManage && !profile.is_preset
-                  ? () => {
-                      setDeleteError(undefined)
-                      setPendingDelete(profile)
+          <div className="space-y-5 p-4">
+            <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-2">
+              {editable ? (
+                <>
+                  <h2 id="editor-heading" className="sr-only">
+                    {selected.name}
+                  </h2>
+                  <label htmlFor="profile-name" className="sr-only">
+                    Profile name
+                  </label>
+                  <Input
+                    id="profile-name"
+                    value={name}
+                    maxLength={200}
+                    autoComplete="off"
+                    onChange={(event) =>
+                      editDraft({ name: event.target.value })
                     }
-                  : undefined
-              }
-              busy={deletingId === profile.id}
-            />
-          ))}
-        </ul>
-
-        {customProfiles.length === 0 ? (
-          <p className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
-            No custom profiles yet.{" "}
-            {canManage
-              ? "Duplicate a built-in, move its sliders, and give it a name — it joins the pool without becoming the default."
-              : "A manager or org-admin can add up to five for this workspace."}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="space-y-4 rounded-lg border bg-card p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold">
-              {selected.name}
-              {isDefault ? (
-                <Badge className="ml-2 align-middle">Workspace default</Badge>
+                    className="h-8 max-w-xs text-[15px] font-semibold md:text-[15px]"
+                  />
+                </>
+              ) : (
+                <h2
+                  id="editor-heading"
+                  className="min-w-0 truncate text-[15px] font-semibold"
+                >
+                  {selected.name}
+                </h2>
+              )}
+              {dirty ? (
+                <Badge variant="destructive" data-testid="unsaved-badge">
+                  Unsaved changes
+                </Badge>
               ) : null}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {selected.is_preset
-                ? "Built-in profiles are read-only. Duplicate this one to change its numbers."
-                : editable
-                  ? "Editing these numbers re-scores every project that uses this profile."
-                  : "Read-only for your role."}
-            </p>
-          </div>
-          {dirty ? (
-            <Badge variant="destructive" data-testid="unsaved-badge">
-              Unsaved changes
-            </Badge>
-          ) : null}
-        </div>
+            </div>
 
-        {editable ? (
-          <div className="max-w-sm space-y-2">
-            <label htmlFor="profile-name" className="text-sm font-medium">
-              Name
-            </label>
-            <Input
-              id="profile-name"
-              value={name}
-              maxLength={200}
-              autoComplete="off"
-              onChange={(event) => editDraft({ name: event.target.value })}
+            <ProfileValueEditor
+              compact
+              values={values}
+              disabled={!editable}
+              onChange={(next) => editDraft({ values: next })}
             />
           </div>
-        ) : null}
 
-        <ProfileValueEditor
-          values={values}
-          disabled={!editable}
-          onChange={(next) => editDraft({ values: next })}
-        />
-      </section>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3">
+            {permissionNotice ? (
+              <p
+                role="alert"
+                className="mr-auto min-w-0 text-xs text-destructive"
+              >
+                {permissionNotice}
+              </p>
+            ) : status ? (
+              <p className="mr-auto min-w-0 text-xs text-muted-foreground">
+                {status}
+              </p>
+            ) : null}
 
-      {permissionNotice ? (
-        <p role="alert" className="text-sm text-destructive">
-          {permissionNotice}
-        </p>
-      ) : null}
+            {editable ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setDraft(undefined)}
+                  disabled={!dirty || saving}
+                >
+                  Discard
+                </Button>
+                <Button onClick={onSaveEdits} disabled={!dirty || saving}>
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </>
+            ) : null}
 
-      {/* The action area stays reachable: this page is taller than a screen once
-          six sliders and a pool of cards are on it. */}
-      <div className="sticky bottom-0 -mx-6 flex flex-wrap items-center gap-2 border-t bg-background/95 px-6 py-3 backdrop-blur">
-        <span className="mr-auto min-w-0 text-xs text-muted-foreground">
-          {dirty
-            ? "Unsaved changes to this profile."
-            : mode === "workspace"
-              ? isDefault
-                ? `${selected.name} is the workspace default.`
-                : `${selected.name} is selected.`
-              : isProjectChoice
-                ? `${selected.name} is this project’s profile.`
-                : `${selected.name} is selected.`}
-        </span>
-
-        {editable ? (
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setDraft(undefined)}
-              disabled={!dirty || saving}
-            >
-              Discard
-            </Button>
-            <Button onClick={onSaveEdits} disabled={!dirty || saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </>
-        ) : null}
-
-        {canManage && mode === "workspace" ? (
-          <Button
-            variant={dirty ? "outline" : "default"}
-            onClick={onSetDefault}
-            disabled={isDefault || choosing}
-          >
-            {choosing ? "Applying…" : "Set as workspace default"}
-          </Button>
-        ) : null}
-
-        {canManage && mode === "project" && projectId ? (
-          <Button
-            variant={dirty ? "outline" : "default"}
-            onClick={onAssign}
-            disabled={isProjectChoice || choosing}
-          >
-            {choosing ? "Applying…" : "Use for this project"}
-          </Button>
-        ) : null}
+            {canManage ? (
+              scopeAction
+            ) : (
+              <LockedAction reason={ROLE_LOCKED_REASON}>
+                {scopeAction}
+              </LockedAction>
+            )}
+          </div>
+        </section>
       </div>
 
       {createSeed ? (
@@ -800,15 +868,17 @@ export default function ProfilesPage() {
       </Dialog>
 
       <Dialog
-        open={Boolean(discardTo)}
-        onOpenChange={(open) => !open && setDiscardTo(undefined)}
+        open={Boolean(pendingSwitch)}
+        onOpenChange={(open) => !open && setPendingSwitch(undefined)}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Discard unsaved changes?</DialogTitle>
             <DialogDescription>
-              Your edits to {selected.name} have not been saved. Selecting
-              another profile loses them.
+              Your edits to {selected.name} have not been saved.{" "}
+              {switchTarget
+                ? `Switching to ${switchTarget} loses them.`
+                : "Selecting another profile loses them."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -818,9 +888,11 @@ export default function ProfilesPage() {
             <Button
               variant="destructive"
               onClick={() => {
+                const next = pendingSwitch
+                setPendingSwitch(undefined)
                 setDraft(undefined)
-                setTouchedId(discardTo)
-                setDiscardTo(undefined)
+                if (next?.kind === "profile") setTouchedId(next.profileId)
+                else if (next?.kind === "scope") applyScope(next.projectId)
               }}
             >
               Discard changes

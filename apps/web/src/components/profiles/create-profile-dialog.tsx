@@ -56,10 +56,9 @@ export function CreateProfileDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New scoring profile</DialogTitle>
+          <DialogTitle>New profile</DialogTitle>
           <DialogDescription>
-            It joins this workspace&apos;s pool. It does not become the default
-            — choosing the profile in force is a separate step.
+            It joins the pool. Choosing where it applies is a separate step.
           </DialogDescription>
         </DialogHeader>
 
@@ -72,7 +71,7 @@ export function CreateProfileDialog({
           }}
         >
           <div className="space-y-2">
-            <label htmlFor={nameId} className="text-sm font-medium">
+            <label htmlFor={nameId} className="text-sm font-semibold">
               Name
             </label>
             <Input
@@ -85,8 +84,10 @@ export function CreateProfileDialog({
               placeholder="Release gate"
             />
             <p className="text-xs text-muted-foreground">
-              {customCount} of {MAX_CUSTOM_PROFILES} custom profiles used. Names
-              are unique inside a workspace.
+              <span className="tabular-nums">
+                {customCount} of {MAX_CUSTOM_PROFILES}
+              </span>{" "}
+              custom profiles used
             </p>
           </div>
 
