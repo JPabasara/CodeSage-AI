@@ -104,9 +104,10 @@ signedIn(
   },
 )
 
-signedIn("the rail shows who is signed in (J3.2)", async ({ page }) => {
+signedIn("the account menu shows who is signed in (J3.2)", async ({ page }) => {
   await page.goto("/projects")
   // The mock session's display name. A 401 would have redirected us instead.
+  await page.getByRole("button", { name: "Account menu" }).click()
   await expect(page.getByText("Janidu Pabasara")).toBeVisible()
 })
 
@@ -114,10 +115,23 @@ signedIn(
   "sign-out is a form POST, not a link — a GET must not end a session",
   async ({ page }) => {
     await page.goto("/projects")
+    await page.getByRole("button", { name: "Account menu" }).click()
+    await page.getByRole("menuitem", { name: /sign out/i }).click()
 
+    // Asked once, in a centred dialog; the form only posts from there.
+    const dialog = page.getByRole("alertdialog", {
+      name: "Sign out of CodeSage?",
+    })
+    await expect(dialog).toBeVisible()
     const form = page.locator(`form[action$="/api/auth/logout"]`)
     await expect(form).toHaveAttribute("method", /post/i)
-    await expect(form.getByRole("button", { name: /sign out/i })).toBeVisible()
+    await expect(
+      dialog.getByRole("button", { name: "Sign out", exact: true }),
+    ).toBeFocused()
+
+    await page.keyboard.press("Escape")
+    await expect(dialog).toBeHidden()
+    await expect(page).toHaveURL(/\/projects$/)
   },
 )
 
