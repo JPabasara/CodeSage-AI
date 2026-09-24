@@ -38,7 +38,7 @@ export function publishWorkspacesChanged() {
  * one read rather than asking per workspace.
  */
 export function useWorkspaces(): MutableQueryState<Workspace[]> {
-  const query = useQuery("workspaces", getWorkspaces)
+  const query = useQuery("workspaces", getWorkspaces, { scope: "account" })
   const { reload } = query
 
   useEffect(() => {
