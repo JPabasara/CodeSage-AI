@@ -27,7 +27,7 @@ const trigger = () => screen.findByRole("combobox", { name: /^Project:/ })
 test.each([
   ["/dashboard/x", true],
   ["/dashboard/x/history", true],
-  ["/profiles", true],
+  ["/profiles", false],
   ["/projects", false],
   ["/workspace", false],
 ])("%s is a project page: %s", (path, expected) => {
@@ -67,8 +67,8 @@ test("on Scan History, it stays on Scan History", async () => {
   expect(nav.push).toHaveBeenCalledWith(`/dashboard/${SECOND_REPO_ID}/history`)
 })
 
-test("on Profiles, the choice is remembered without navigating", async () => {
-  nav.pathname = "/profiles"
+test("off a dashboard page, the choice is remembered without navigating", async () => {
+  nav.pathname = "/projects"
   render(<ProjectSwitcher />)
   await userEvent.click(await trigger())
   await userEvent.click(

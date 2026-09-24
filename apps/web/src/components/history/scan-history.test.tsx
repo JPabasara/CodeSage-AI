@@ -191,3 +191,14 @@ test("filtering asks the API for one branch", async () => {
     await screen.findByText(/no scans on develop yet/i),
   ).toBeInTheDocument()
 })
+
+test("the heading names the project the history belongs to", async () => {
+  render(<ScanHistory repoId={DEMO_REPO_ID} />)
+
+  const heading = screen.getByRole("heading", { level: 1, name: /history/i })
+  const header = heading.closest("header") as HTMLElement
+  // The top bar says it too, but the page should not depend on the bar.
+  expect(
+    await within(header).findByText("acme/acme-payments"),
+  ).toBeInTheDocument()
+})

@@ -134,7 +134,7 @@ export function ScanPill() {
       href={dashboardHrefFor(first.repoId, first.branch)}
       data-testid="scan-pill"
       className={cn(
-        "inline-flex h-8 max-w-48 items-center gap-2 rounded-full border border-white/25 px-3 text-xs font-medium text-topbar-foreground outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70",
+        "inline-flex h-8 max-w-48 items-center gap-2 rounded-md border border-white/25 px-3 text-xs font-medium text-topbar-foreground outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70",
       )}
     >
       <span

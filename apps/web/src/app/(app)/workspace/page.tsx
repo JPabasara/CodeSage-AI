@@ -1,21 +1,20 @@
 "use client"
 
-import { Suspense, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { Building2, FolderGit2, Mail, Plus, Users } from "lucide-react"
+import { useState } from "react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ErrorState } from "@/components/error-state"
+import { PageHeader } from "@/components/layout/page-header"
 import {
   WorkspaceForm,
   workspaceBody,
   type WorkspaceFields,
 } from "@/components/workspace/workspace-form"
-import { TeamPanel } from "@/components/workspace/team-panel"
+import { TeamPanel, TeamPanelSkeleton } from "@/components/workspace/team-panel"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
 import { ApiRequestError, updateWorkspace } from "@/lib/api/client"
 import {
@@ -51,23 +50,23 @@ function patchFor(
   return patch
 }
 
-type WorkspaceTab = "settings" | "team"
+/** The page's two columns: the team in the middle, settings on the right. */
+const LAYOUT = {
+  page: "mx-auto flex max-w-6xl flex-col gap-8 p-6",
+  columns: "flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-8",
+  team: "min-w-0 flex-1 scroll-mt-6",
+  settings: "flex w-full shrink-0 flex-col gap-8 lg:w-80 xl:w-96",
+} as const
 
+/**
+ * One page for "this workspace": who is in it, and what it is called.
+ *
+ * Membership and settings are different permissions (`member:manage` and
+ * `workspace:update`), so each column shows only the controls its own
+ * permission grants. The old `?tab=team` address still lands here — the team is
+ * the first column, so there is nothing left to switch to.
+ */
 export default function WorkspacePage() {
-  // useSearchParams() needs a Suspense boundary, or the build bails out of
-  // prerendering the whole route.
-  return (
-    <Suspense fallback={<Skeleton className="m-6 h-64" />}>
-      <WorkspaceView />
-    </Suspense>
-  )
-}
-
-function WorkspaceView() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const tab: WorkspaceTab =
-    searchParams.get("tab") === "team" ? "team" : "settings"
   const members = useMembers()
   const { data: session } = useSession()
   const { data: workspaces, loading, error, refetch, reload } = useWorkspaces()
@@ -79,18 +78,10 @@ function WorkspaceView() {
 
   const [creatingNew, setCreatingNew] = useState(false)
 
-  // Settings and Team share one page but not one panel: membership is a
-  // different permission from workspace settings, so each tab shows only the
-  // controls that tab's permission grants. `?tab=team` makes Team linkable.
   const canEdit = session?.permissions?.includes("workspace:update") ?? false
   const canManageMembers =
     session?.permissions?.includes("member:manage") ?? false
 
-  function onTabChange(next: string) {
-    router.replace(next === "team" ? "/workspace?tab=team" : "/workspace", {
-      scroll: false,
-    })
-  }
   const values = draft ?? (active ? fieldsOf(active) : undefined)
 
   async function onSave() {
@@ -103,7 +94,7 @@ function WorkspaceView() {
         await updateWorkspace(active.workspace_id, patch)
       }
       reload()
-      // And every other consumer — the rail's switcher names this workspace too.
+      // And every other consumer — the top bar's switcher names it too.
       publishWorkspacesChanged()
       setDraft(undefined)
       toast.success("Workspace updated")
@@ -135,129 +126,100 @@ function WorkspaceView() {
   }
 
   if (loading || !active || !values) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4 p-6">
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-72 w-full" />
-      </div>
-    )
+    return <WorkspaceSkeleton canManage={canManageMembers} />
   }
 
+  const invited = members.data?.pending_invitations.length
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-4 rounded-lg border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0 space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-primary">
-            Workspace
-          </p>
-          <h1 className="truncate text-2xl font-semibold tracking-tight">
-            {active.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            You are{" "}
-            <Badge variant="secondary" className="align-middle">
-              {ROLE_LABEL[active.role] ?? active.role}
-            </Badge>{" "}
-            here. Projects, profiles and teammates all belong to this workspace.
-          </p>
-        </div>
+    <div className={LAYOUT.page}>
+      <PageHeader
+        title={<span className="wrap-anywhere">{active.name}</span>}
+        context={
+          <Badge variant="secondary">
+            {ROLE_LABEL[active.role] ?? active.role}
+          </Badge>
+        }
+        description="Projects, profiles and teammates in this workspace."
+        aside={
+          <WorkspaceFigures
+            projects={active.project_count ?? 0}
+            members={active.member_count ?? 0}
+            invited={invited}
+          />
+        }
+      />
 
-        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 lg:min-w-[22rem]">
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <FolderGit2 className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong
-                className="block text-sm text-foreground"
-                data-testid="workspace-project-count"
-              >
-                {active.project_count ?? 0}
-              </strong>
-              Projects
-            </span>
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <Users className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong className="block text-sm text-foreground">
-                {active.member_count ?? 0}
-              </strong>
-              Members
-            </span>
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
-            <Mail className="size-4 text-primary" aria-hidden="true" />
-            <span>
-              <strong
-                className="block text-sm text-foreground"
-                data-testid="workspace-invitation-count"
-              >
-                {members.data?.pending_invitations.length ?? "–"}
-              </strong>
-              Invited
-            </span>
-          </span>
-        </div>
-      </header>
-
-      <Tabs value={tab} onValueChange={onTabChange} className="gap-6">
-        <TabsList>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="team">
+      <div className={LAYOUT.columns}>
+        <div id="team" className={LAYOUT.team}>
           <TeamPanel
             query={members}
             canManage={canManageMembers}
             currentUserId={session?.user_id}
           />
-        </TabsContent>
+        </div>
 
-        <TabsContent value="settings" className="flex flex-col gap-6">
-          <section className="space-y-4 rounded-lg border bg-card p-5 shadow-sm">
-            <div>
-              <h2 className="text-base font-semibold">Settings</h2>
+        <div className={LAYOUT.settings}>
+          <section
+            aria-labelledby="workspace-settings-heading"
+            className="space-y-3"
+          >
+            <div className="space-y-0.5">
+              <h2
+                id="workspace-settings-heading"
+                className="text-[15px] font-semibold"
+              >
+                Workspace settings
+              </h2>
               <p className="text-sm text-muted-foreground">
-                {canEdit
-                  ? "Everyone in this workspace sees this name."
-                  : "Only an org-admin can change these. You can read them."}
+                Everyone in this workspace sees these.
               </p>
             </div>
-
-            <WorkspaceForm
-              values={values}
-              onChange={setDraft}
-              onSubmit={onSave}
-              busy={saving}
-              error={saveError}
-              disabled={!canEdit}
-              submitLabel="Save changes"
-              busyLabel="Saving…"
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setDraft(undefined)
-                  setSaveError(undefined)
-                }}
-                disabled={!draft || saving}
+            <div className="rounded-lg border bg-card p-4">
+              <WorkspaceForm
+                values={values}
+                onChange={setDraft}
+                onSubmit={onSave}
+                busy={saving}
+                error={saveError}
+                disabled={!canEdit}
+                lockedReason="Only org-admins can change workspace settings"
+                submitLabel="Save changes"
+                busyLabel="Saving…"
               >
-                Discard
-              </Button>
-            </WorkspaceForm>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setDraft(undefined)
+                    setSaveError(undefined)
+                  }}
+                  disabled={!draft || saving}
+                >
+                  Discard
+                </Button>
+              </WorkspaceForm>
+            </div>
           </section>
 
           {canEdit ? (
-            <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-5">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold">Another workspace</h2>
+            <section
+              aria-labelledby="new-workspace-heading"
+              className="space-y-3"
+            >
+              <div className="space-y-0.5">
+                <h2
+                  id="new-workspace-heading"
+                  className="text-[15px] font-semibold"
+                >
+                  Another workspace
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  A separate set of projects, profiles and members. You become
-                  its org-admin, and it starts empty.
+                  Its own projects, profiles and members. It starts empty, and
+                  you become its org-admin.
                 </p>
               </div>
-              <Button onClick={() => setCreatingNew(true)}>
+              <Button variant="outline" onClick={() => setCreatingNew(true)}>
                 <Plus aria-hidden="true" />
                 New workspace
               </Button>
@@ -269,14 +231,73 @@ function WorkspaceView() {
             onOpenChange={setCreatingNew}
             description={`Creating it also switches you to it. Nothing from ${active.name} comes with you.`}
           />
+        </div>
+      </div>
+    </div>
+  )
+}
 
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Building2 className="size-3.5" aria-hidden="true" />
-            Switch workspace from the selector at the top of the navigation
-            rail.
-          </p>
-        </TabsContent>
-      </Tabs>
+/** The three counts beside the heading: quiet text, not tiles. */
+function WorkspaceFigures({
+  projects,
+  members,
+  invited,
+}: Readonly<{ projects: number; members: number; invited?: number }>) {
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-muted-foreground">
+      <span>
+        <span
+          className="font-semibold text-foreground tabular-nums"
+          data-testid="workspace-project-count"
+        >
+          {projects}
+        </span>{" "}
+        {projects === 1 ? "project" : "projects"}
+      </span>
+      <span>
+        <span className="font-semibold text-foreground tabular-nums">
+          {members}
+        </span>{" "}
+        {members === 1 ? "member" : "members"}
+      </span>
+      <span>
+        <span
+          className="font-semibold text-foreground tabular-nums"
+          data-testid="workspace-invitation-count"
+        >
+          {invited ?? "–"}
+        </span>{" "}
+        invited
+      </span>
+    </p>
+  )
+}
+
+/** Same shape as the page, so nothing moves when the workspace arrives. */
+function WorkspaceSkeleton({ canManage }: Readonly<{ canManage: boolean }>) {
+  return (
+    <div className={LAYOUT.page} aria-busy="true">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-56 max-w-full" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-5 w-64 max-w-full" />
+      </div>
+      <div className={LAYOUT.columns}>
+        <div className={LAYOUT.team}>
+          <TeamPanelSkeleton canManage={canManage} />
+        </div>
+        <div className={LAYOUT.settings}>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-4 w-56 max-w-full" />
+            </div>
+            <Skeleton className="h-80 w-full rounded-lg" />
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

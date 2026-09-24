@@ -137,7 +137,7 @@ test("removing the active project confirms its name and selects a safe remaining
 
   await userEvent.click(
     screen.getByRole("button", {
-      name: /remove acme\/acme-payments repository/i,
+      name: /delete acme\/acme-payments repository/i,
     }),
   )
   expect(screen.getByRole("dialog")).toHaveTextContent("acme/acme-payments")
@@ -173,7 +173,7 @@ test("the page and AppRail cannot restore a deleted active project", async () =>
 
   await userEvent.click(
     screen.getByRole("button", {
-      name: /remove acme\/acme-payments repository/i,
+      name: /delete acme\/acme-payments repository/i,
     }),
   )
   await userEvent.click(
@@ -209,7 +209,7 @@ test("removing the last project clears storage and sends rail links to Projects"
 
   await userEvent.click(
     screen.getByRole("button", {
-      name: /remove acme\/acme-payments repository/i,
+      name: /delete acme\/acme-payments repository/i,
     }),
   )
   await userEvent.click(
@@ -250,7 +250,7 @@ test("a running scan prevents repository removal", async () => {
 
   await userEvent.click(
     screen.getByRole("button", {
-      name: /remove acme\/acme-payments repository/i,
+      name: /delete acme\/acme-payments repository/i,
     }),
   )
   await userEvent.click(
@@ -347,7 +347,9 @@ test("the form is locked while a connect is in flight", async () => {
   expect(input).toBeEnabled()
 
   await userEvent.type(input, "https://github.com/octocat/another")
-  expect(screen.getByRole("button", { name: /^connect$/i })).toBeEnabled()
+  expect(
+    screen.getByRole("button", { name: /^connect repository$/i }),
+  ).toBeEnabled()
 })
 
 test("the message is chosen by CODE, not copied from the server's detail", async () => {
@@ -472,15 +474,25 @@ test("the active workspace is named on the page, not just implied", async () => 
   expect(screen.getByText("Acme Engineering")).toBeVisible()
 })
 
-test("a role without connect or disconnect is offered neither control", async () => {
+test("a role without connect sees the form locked, and no delete control", async () => {
   session.current = mockSessionViewer
 
   render(<ProjectsPage />)
   await ready()
 
-  expect(screen.queryByLabelText(/repository url/i)).not.toBeInTheDocument()
+  // Connect is a main action, so it stays visible but locked, with the reason
+  // on hover and focus. Delete is destructive, so it is not offered at all.
+  expect(screen.getByLabelText(/repository url/i)).toBeDisabled()
   expect(
-    screen.queryByRole("button", { name: /remove acme\/acme-payments/i }),
+    screen.getByRole("button", { name: /^connect repository$/i }),
+  ).toBeDisabled()
+  expect(
+    screen.getByLabelText(
+      "Only org-admins and managers can connect repositories",
+    ),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /delete acme\/acme-payments/i }),
   ).not.toBeInTheDocument()
   expect(screen.getByText(/needs the manager or org-admin role/i)).toBeVisible()
 })

@@ -138,7 +138,7 @@ onboarding(
 
 // ── the workspace screen ────────────────────────────────────────────────────
 
-test("the Workspace tab shows the workspace, the role and the counts", async ({
+test("the Workspace page shows the workspace, the role and the counts", async ({
   page,
 }) => {
   await page.goto("/workspace")
@@ -146,7 +146,10 @@ test("the Workspace tab shows the workspace, the role and the counts", async ({
   await expect(
     page.getByRole("heading", { name: "Acme Engineering" }),
   ).toBeVisible()
-  await expect(main(page).getByText("Org admin")).toBeVisible()
+  // The role sits beside the title; the member list names roles too.
+  await expect(
+    main(page).locator("header").getByText("Org admin"),
+  ).toBeVisible()
   await expect(page.getByTestId("workspace-project-count")).toHaveText("3")
 })
 
@@ -200,17 +203,20 @@ test("the role travels with the workspace, and so do the controls", async ({
 
   await switchTo(page, "Nimbus Labs")
 
-  // viewer in Nimbus: it is not, and the page says why rather than failing on
-  // the attempt.
-  await expect(page.getByLabel(/repository url/i)).toHaveCount(0)
+  // viewer in Nimbus: the form is still there but locked, and the page says
+  // why rather than failing on the attempt.
+  await expect(page.getByLabel(/repository url/i)).toBeDisabled()
+  await expect(
+    page.getByRole("button", { name: /^connect repository$/i }),
+  ).toBeDisabled()
   await expect(
     page.getByText(/needs the manager or org-admin role/i),
   ).toBeVisible()
 
   await page.goto("/profiles")
-  await expect(page.getByRole("button", { name: /new profile/i })).toHaveCount(
-    0,
-  )
+  await expect(
+    page.getByRole("button", { name: /new profile/i }),
+  ).toBeDisabled()
   await expect(
     page.getByText(/needs the manager or org-admin role/i),
   ).toBeVisible()

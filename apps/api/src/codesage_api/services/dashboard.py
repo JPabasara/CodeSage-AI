@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from codesage_api.db.models import Finding, Snapshot, SnapshotScore, SourceFile
 from codesage_api.db.repositories import dashboard as dashboard_repository
+from codesage_api.detection.fingerprint import unique_in_file_order
 from codesage_api.errors import NotFound, ScorePending
 from codesage_api.schemas import (
     CategoryBreakdownItemOut,
@@ -146,6 +147,7 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
     file_facts: dict[str, FileFacts] = {}
     scoring_findings: list[ScoringFinding] = []
     findings_by_fingerprint: dict[str, Finding] = {}
+    collected: list[tuple[Finding, ScoringFinding]] = []
 
     for source_file in snapshot.source_files:
         file_risk = (
@@ -172,21 +174,36 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
                     if stored.class_name is not None
                     else None
                 )
-                scoring_findings.append(
-                    ScoringFinding(
-                        fingerprint=stored.fingerprint,
-                        source=Source(stored.source.value),
-                        category=Category(stored.category_id),
-                        severity=Severity(stored.severity.value),
-                        file=source_file.relative_path,
-                        risk_score=(
-                            finding_risk
-                            if finding_risk is not None
-                            else file_risk
+                collected.append(
+                    (
+                        stored,
+                        ScoringFinding(
+                            fingerprint=stored.fingerprint,
+                            source=Source(stored.source.value),
+                            category=Category(stored.category_id),
+                            severity=Severity(stored.severity.value),
+                            file=source_file.relative_path,
+                            risk_score=(
+                                finding_risk
+                                if finding_risk is not None
+                                else file_risk
+                            ),
                         ),
                     )
                 )
-                findings_by_fingerprint.setdefault(stored.fingerprint, stored)
+
+    # Snapshots stored before fingerprints were made unique can repeat one (the
+    # same SATD comment on several lines). The same rule the scan now applies
+    # gives each its own id here, so every row keeps its own line and link.
+    unique = unique_in_file_order(
+        [
+            (stored.fingerprint, finding.file, stored.source_location.start_line)
+            for stored, finding in collected
+        ]
+    )
+    for (stored, finding), fingerprint in zip(collected, unique, strict=True):
+        scoring_findings.append(replace(finding, fingerprint=fingerprint))
+        findings_by_fingerprint[fingerprint] = stored
 
     result = score(
         scoring_findings,
@@ -205,7 +222,7 @@ def _finding_outputs(scored: _ScoredSnapshot) -> list[FindingOut]:
         is_satd = item.finding.source is Source.SATD
         output.append(
             FindingOut(
-                fingerprint=stored.fingerprint,
+                fingerprint=item.finding.fingerprint,
                 source=item.finding.source,
                 category=item.finding.category,
                 severity=item.finding.severity,

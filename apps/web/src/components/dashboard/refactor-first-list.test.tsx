@@ -241,3 +241,117 @@ test("the selected card says so to a screen reader, not only in colour", () => {
     screen.getByRole("button", { name: /medium one/i }),
   ).not.toHaveAttribute("aria-current")
 })
+
+// ── source and severity filters (13F) ──────────────────────────────────────
+
+const mixed: Finding[] = [
+  ...findings,
+  {
+    fingerprint: "d",
+    source: "satd",
+    category: "documentation",
+    severity: "high",
+    file: "d.ts",
+    line: 4,
+    symbol: null,
+    reason: "satd high one",
+    status: "open",
+    priority: 20,
+    pinned_by_floor: false,
+    comment_text: "TODO: document this",
+    confidence: 0.9,
+  },
+  {
+    fingerprint: "e",
+    source: "satd",
+    category: "code-design",
+    severity: "low",
+    file: "e.ts",
+    line: 5,
+    symbol: null,
+    reason: "satd low one",
+    status: "open",
+    priority: 1,
+    pinned_by_floor: false,
+  },
+]
+
+const sourceButton = (name: string) =>
+  within(screen.getByRole("group", { name: /filter by source/i })).getByRole(
+    "button",
+    { name },
+  )
+const severityButton = (name: string) =>
+  within(screen.getByRole("group", { name: /filter by severity/i })).getByRole(
+    "button",
+    { name },
+  )
+const countBadge = () =>
+  screen.getByRole("heading", { name: /refactor first/i }).parentElement!
+
+test("the source filter shows only SATD or only rule-based findings", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={mixed} />)
+
+  expect(sourceButton("All")).toHaveAttribute("aria-pressed", "true")
+
+  await user.click(sourceButton("SATD"))
+  expect(sourceButton("SATD")).toHaveAttribute("aria-pressed", "true")
+  expect(sourceButton("All")).toHaveAttribute("aria-pressed", "false")
+  expect(screen.getByText("satd high one")).toBeInTheDocument()
+  expect(screen.getByText("satd low one")).toBeInTheDocument()
+  expect(screen.queryByText("critical one")).not.toBeInTheDocument()
+  expect(within(countBadge()).getByText("2 of 5")).toBeInTheDocument()
+
+  await user.click(sourceButton("Rule-based"))
+  expect(screen.getByText("critical one")).toBeInTheDocument()
+  expect(screen.queryByText("satd high one")).not.toBeInTheDocument()
+  expect(within(countBadge()).getByText("3 of 5")).toBeInTheDocument()
+})
+
+test("every severity starts on, and turning one off hides its findings", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={mixed} />)
+
+  for (const name of ["Critical", "High", "Medium", "Low"]) {
+    expect(severityButton(name)).toHaveAttribute("aria-pressed", "true")
+  }
+
+  await user.click(severityButton("Low"))
+  expect(severityButton("Low")).toHaveAttribute("aria-pressed", "false")
+  expect(screen.queryByText("low one")).not.toBeInTheDocument()
+  expect(screen.queryByText("satd low one")).not.toBeInTheDocument()
+  expect(screen.getByText("critical one")).toBeInTheDocument()
+  expect(within(countBadge()).getByText("3 of 5")).toBeInTheDocument()
+})
+
+test("source, severity and type filters combine", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={mixed} />)
+
+  await user.click(sourceButton("SATD"))
+  await user.click(severityButton("High"))
+
+  // SATD and not high leaves only the low SATD finding.
+  expect(screen.getByText("satd low one")).toBeInTheDocument()
+  expect(screen.queryByText("satd high one")).not.toBeInTheDocument()
+  expect(within(countBadge()).getByText("1 of 5")).toBeInTheDocument()
+})
+
+test("Clear filter resets source, severity and type together", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={mixed} />)
+
+  await user.click(sourceButton("SATD"))
+  await user.click(severityButton("High"))
+  await user.click(severityButton("Low"))
+
+  expect(screen.getByText("No findings match this filter")).toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: /clear filter/i }))
+
+  expect(sourceButton("All")).toHaveAttribute("aria-pressed", "true")
+  for (const name of ["Critical", "High", "Medium", "Low"]) {
+    expect(severityButton(name)).toHaveAttribute("aria-pressed", "true")
+  }
+  expect(within(countBadge()).getByText("5")).toBeInTheDocument()
+})

@@ -33,7 +33,7 @@ export function AppTopBar() {
   return (
     <header
       data-testid="app-top-bar"
-      className="z-20 shrink-0 bg-topbar text-topbar-foreground shadow-sm"
+      className="z-20 shrink-0 bg-topbar text-topbar-foreground"
     >
       <div className="flex min-h-14 flex-wrap items-center gap-x-2 gap-y-2 px-3 py-2.5 md:h-14 md:flex-nowrap md:py-0">
         <div className="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">

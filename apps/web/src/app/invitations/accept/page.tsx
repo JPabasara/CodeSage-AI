@@ -216,7 +216,7 @@ function Shell({
       tabIndex={-1}
       className="flex min-h-svh items-center justify-center bg-background px-5 py-10 text-foreground outline-none"
     >
-      <section className="w-full max-w-md space-y-5 rounded-lg border bg-card p-6 shadow-sm">
+      <section className="w-full max-w-md space-y-5 rounded-lg border bg-card p-6">
         <Image
           src="/codesage-refactor-branch-mark.svg"
           alt=""

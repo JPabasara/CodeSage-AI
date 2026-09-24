@@ -26,6 +26,13 @@ const findingCards = (page: import("@playwright/test").Page) =>
     .getByRole("list", { name: /ranked refactor findings/i })
     .getByRole("button")
 
+/** The rail on the right: what the pool and editor are applied to. */
+const applyTo = (page: import("@playwright/test").Page) =>
+  page.getByRole("region", { name: "Apply to" })
+
+const scope = (page: import("@playwright/test").Page, name: RegExp) =>
+  applyTo(page).getByRole("button", { name })
+
 const pool = (page: import("@playwright/test").Page) =>
   page.getByRole("list", { name: /workspace profile pool/i })
 
@@ -61,7 +68,7 @@ test("the pool opens on the three built-ins, with Balanced the default", async (
 }) => {
   await expect(pool(page).getByRole("listitem")).toHaveCount(3)
   await expect(
-    card(page, "Balanced").getByText("Workspace default"),
+    card(page, "Balanced").getByText("Default", { exact: true }),
   ).toBeVisible()
   await expect(page.getByTestId("workspace-default-name")).toHaveText(
     "Balanced",
@@ -136,7 +143,7 @@ test("a custom profile is created, edited, and made the workspace default", asyn
   )
   // Exactly one default: the badge moved rather than being added.
   await expect(
-    card(page, "Balanced").getByText("Workspace default"),
+    card(page, "Balanced").getByText("Default", { exact: true }),
   ).toHaveCount(0)
   // None of it read a line of code.
   expect(requests.scans()).toHaveLength(0)
@@ -181,7 +188,7 @@ test("an unused custom profile is deleted; one in use is not", async ({
   await createProfile(page, "Release gate")
 
   // Give it to a project first: an in-use profile cannot be deleted.
-  await page.getByRole("tab", { name: /project profile/i }).click()
+  await scope(page, /acme-payments/).click()
   await selectProfile(page, "Release gate")
   await page.getByRole("button", { name: /use for this project/i }).click()
   await expect(page.getByTestId("effective-summary")).toContainText(
@@ -210,7 +217,8 @@ test("one project's override leaves every other project inheriting", async ({
 }) => {
   const requests = watchRequests(page)
 
-  await page.getByRole("tab", { name: /project profile/i }).click()
+  await scope(page, /acme-payments/).click()
+  await expect(page).toHaveURL(new RegExp(`project=${DEMO_REPO_ID}`))
   await expect(page.getByTestId("effective-summary")).toContainText(
     "acme/acme-payments",
   )
@@ -224,13 +232,12 @@ test("one project's override leaves every other project inheriting", async ({
     "Security-first, an override for this project alone",
   )
 
+  // The rail says so at a glance: its own profile here, inherited next door.
+  await expect(scope(page, /acme-payments/)).toContainText("Security-first")
+  await expect(scope(page, /web-store/)).toContainText("Inherited")
+
   // The second project is untouched by the first one's choice.
-  // Picked from the app bar: the override tab follows it.
-  await page
-    .getByTestId("app-top-bar")
-    .getByRole("combobox", { name: /^Project:/ })
-    .click()
-  await page.getByRole("option", { name: /web-store/ }).click()
+  await scope(page, /web-store/).click()
   await expect(page.getByTestId("effective-summary")).toContainText(
     "Balanced, inherited from the workspace default",
   )
@@ -249,7 +256,7 @@ test("one project's override leaves every other project inheriting", async ({
 test("clearing an override puts the project back on the default", async ({
   page,
 }) => {
-  await page.getByRole("tab", { name: /project profile/i }).click()
+  await scope(page, /acme-payments/).click()
   await selectProfile(page, "Delivery-speed")
   await page.getByRole("button", { name: /use for this project/i }).click()
   await expect(page.getByTestId("effective-summary")).toContainText(
@@ -376,12 +383,15 @@ test("a read-only role sees the pool and no way to change it", async ({
   await expect(
     page.getByText(/needs the manager or org-admin role/i),
   ).toBeVisible()
-  await expect(page.getByRole("button", { name: /new profile/i })).toHaveCount(
-    0,
-  )
+  // Main actions are shown locked, with the reason on hover and focus.
+  await expect(
+    page.getByRole("button", { name: /new profile/i }),
+  ).toBeDisabled()
   await expect(
     page.getByRole("button", { name: /set as workspace default/i }),
-  ).toHaveCount(0)
+  ).toBeDisabled()
+  // Destructive and editing actions are not offered at all.
+  await expect(page.getByRole("button", { name: /^Duplicate/ })).toHaveCount(0)
   // Readable, not operable: the numbers are still on screen.
   await expect(
     page.getByRole("slider", { name: "Security weight" }),

@@ -14,18 +14,22 @@ import {
   useSelectedProject,
 } from "@/hooks/use-selected-project"
 
-/** The pages that are about one project. Elsewhere this control is hidden. */
+/**
+ * The pages that are about one project. Elsewhere this control is hidden —
+ * Profiles included: it configures every project from its own rail, so the
+ * dashboard's project has no say there.
+ */
 export function isProjectPage(pathname: string) {
-  return pathname.startsWith("/dashboard/") || pathname.startsWith("/profiles")
+  return pathname.startsWith("/dashboard/")
 }
 
 /**
  * Which project of the active workspace a page is about.
  *
  * Switching keeps the kind of page: the Dashboard of one project becomes the
- * Dashboard of another, History stays History, and on Profiles the choice is
- * simply remembered. A bare URL is used on purpose — the branch, a snapshot id
- * and an open finding all belonged to the project being left.
+ * Dashboard of another, and History stays History. A bare URL is used on
+ * purpose — the branch, a snapshot id and an open finding all belonged to the
+ * project being left.
  */
 export function ProjectSwitcher() {
   const router = useRouter()
@@ -69,7 +73,7 @@ export function ProjectSwitcher() {
       activeLabel={active ? active.name : "No project"}
       activeCaption={active?.owner}
       onSelect={onSelect}
-      emptyMessage="No projects yet. Connect a repository to get started."
+      emptyMessage="No projects yet. Connect a repository to see it here."
       footer={(close) => (
         <TopBarPickerAction
           icon={<FolderPlus className="size-4" />}

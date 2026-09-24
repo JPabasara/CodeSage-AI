@@ -455,3 +455,53 @@ def test_repository_scan_history_keeps_deltas_independent_per_branch(
     assert [item.delta for item in history] == [32.0, -32.0, 0.0, 0.0]
     list_snapshots.assert_called_once()
     assert list_snapshots.call_args.args[-1] is None
+
+
+def test_a_comment_repeated_in_one_file_scores_as_separate_findings() -> None:
+    """Snapshots stored before the fix repeat a SATD fingerprint per line."""
+    snapshot = _snapshot(
+        scanned_at=datetime(2026, 9, 24, tzinfo=UTC),
+        commit_sha="a" * 40,
+        with_finding=True,
+    )
+    source_file = snapshot.source_files[0]
+    source_file.source_locations = []
+    for line in (107, 112, 117):
+        location = SourceLocation(
+            id=uuid.uuid4(),
+            source_file_id=source_file.id,
+            code_symbol_id=None,
+            start_line=line,
+            end_line=line,
+            start_column=0,
+            end_column=0,
+        )
+        finding = Finding(
+            id=uuid.uuid4(),
+            source_location_id=location.id,
+            category_id="code-design",
+            rule_id=None,
+            satd_prediction_id=None,
+            source=FindingSource.SATD,
+            severity=DbSeverity.LOW,
+            description="Self-admitted debt",
+            evidence="// Unused type parameter for test",
+            measured_value=None,
+            threshold=None,
+            confidence=0.9,
+            fingerprint="same-comment",
+            class_name=None,
+            method_name=None,
+        )
+        finding.source_location = location
+        location.findings = [finding]
+        location.code_symbol = None
+        source_file.source_locations.append(location)
+
+    scored = dashboard._score_snapshot(snapshot, _profile())
+    rows = dashboard._finding_outputs(scored)
+
+    # One row per comment, each with its own id and its own line.
+    assert len({row.fingerprint for row in rows}) == 3
+    assert sorted(row.line for row in rows) == [107, 112, 117]
+    assert "same-comment" in {row.fingerprint for row in rows}

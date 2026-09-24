@@ -79,14 +79,14 @@ export function NoWorkspaceState({ page }: Readonly<{ page: LockedPage }>) {
       <section
         aria-labelledby="no-workspace-heading"
         data-testid="no-workspace-state"
-        className="w-full max-w-lg rounded-lg border bg-card p-6 shadow-sm"
+        className="w-full max-w-lg rounded-lg border bg-card p-6"
       >
         <span className="mb-4 flex size-10 items-center justify-center rounded-md border bg-muted/50 text-primary">
           <Icon className="size-5" aria-hidden="true" />
         </span>
         <h1
           id="no-workspace-heading"
-          className="text-lg font-semibold tracking-tight"
+          className="text-xl font-semibold tracking-tight"
         >
           {heading}
         </h1>

@@ -115,8 +115,8 @@ signedIn(
   "sign-out is a form POST, not a link — a GET must not end a session",
   async ({ page }) => {
     await page.goto("/projects")
-    await page.getByRole("button", { name: "Account menu" }).click()
-    await page.getByRole("menuitem", { name: /sign out/i }).click()
+    // Sign out sits at the foot of the rail.
+    await page.getByRole("button", { name: /sign out/i }).click()
 
     // Asked once, in a centred dialog; the form only posts from there.
     const dialog = page.getByRole("alertdialog", {

@@ -44,6 +44,18 @@ export interface HealthReportState extends QueryState<HealthReport> {
   pending: boolean
 }
 
+export interface HealthReportOptions {
+  /**
+   * `false` holds the read: nothing is sent and the state reads as loading.
+   *
+   * The dashboard sets this until its branch is resolved. Asking with a guessed
+   * or empty branch first meant two requests for one page, and a first answer
+   * (a 404 for the guess) that flashed "No scans yet" at a project that has
+   * results. Defaults to `true`.
+   */
+  enabled?: boolean
+}
+
 const isScorePending = (error: unknown) =>
   error instanceof ApiRequestError && error.code === "SCORE_PENDING"
 
@@ -66,7 +78,9 @@ export function useHealthReport(
   repoId: string,
   branch: string,
   snapshotId?: string,
+  options?: HealthReportOptions,
 ): HealthReportState {
+  const enabled = options?.enabled ?? true
   const key = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
 
   const [result, setResult] = useState<{
@@ -90,7 +104,7 @@ export function useHealthReport(
   const blocked = !useActiveWorkspaceId()
 
   useEffect(() => {
-    if (blocked) return
+    if (blocked || !enabled) return
     // Everything the retry loop owns lives in the effect's own closure, so the
     // cleanup below is the single place polling can stop — one timer, one flag,
     // and no way for a stale branch to keep asking after the key changed.
@@ -142,11 +156,12 @@ export function useHealthReport(
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [blocked, key, nonce, repoId, branch, snapshotId])
+  }, [blocked, enabled, key, nonce, repoId, branch, snapshotId])
 
   // `key` guards against a stale answer: a response for the previous branch is
-  // dropped rather than rendered under the new one.
-  const settled = result?.key === key
+  // dropped rather than rendered under the new one. A held read is never
+  // settled, so it reads as loading rather than as an empty answer.
+  const settled = enabled && result?.key === key
   return {
     data: settled ? result?.data : undefined,
     error: settled ? result?.error : undefined,

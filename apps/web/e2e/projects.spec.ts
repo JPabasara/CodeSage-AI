@@ -59,7 +59,7 @@ const repoRows = (page: import("@playwright/test").Page) =>
 /** The connect form: type a URL, press Connect. */
 async function connect(page: import("@playwright/test").Page, url: string) {
   await page.getByLabel(/repository url/i).fill(url)
-  await page.getByRole("button", { name: /^connect$/i }).click()
+  await page.getByRole("button", { name: /^connect repository$/i }).click()
 }
 
 async function removeRepository(
@@ -67,7 +67,7 @@ async function removeRepository(
   repositoryName: string,
 ) {
   const row = repoRows(page).filter({ hasText: repositoryName })
-  await row.getByRole("button", { name: /remove .* repository/i }).click()
+  await row.getByRole("button", { name: /delete .* repository/i }).click()
   await page.getByRole("button", { name: /^remove repository$/i }).click()
 }
 

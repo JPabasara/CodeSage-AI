@@ -1,6 +1,8 @@
 "use client" // uses usePathname → must be a Client Component
 
+import { useState } from "react"
 import Link from "next/link"
+import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
 import {
   Building2,
@@ -8,7 +10,10 @@ import {
   LayoutDashboard,
   History,
   Lock,
+  LogOut,
+  Moon,
   SlidersHorizontal,
+  Sun,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -25,6 +30,16 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  SignOutDialog,
+  ThemeRadioItems,
+} from "@/components/layout/account-menu"
 import { DEMO_REPO_ID } from "@/lib/demo"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
@@ -98,6 +113,10 @@ export function AppRail() {
   const { setOpenMobile, state, toggleSidebar } = useSidebar()
   const sidebarCollapsed = state === "collapsed"
   const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
+  const [signingOut, setSigningOut] = useState(false)
+  const { resolvedTheme } = useTheme()
+  // The icon follows what is on screen, so "System default" shows sun or moon.
+  const ThemeIcon = resolvedTheme === "dark" ? Moon : Sun
   const sidebarStateLabel = sidebarCollapsed
     ? "Expand sidebar"
     : "Collapse sidebar"
@@ -121,9 +140,8 @@ export function AppRail() {
                       <SidebarMenuButton
                         asChild
                         isActive={item.isActive(pathname)}
-                        size="lg"
                         tooltip={item.label}
-                        className="text-sm"
+                        className="h-9 text-sm"
                       >
                         <Link
                           href={item.href}
@@ -161,13 +179,47 @@ export function AppRail() {
       <SidebarFooter className="border-t border-sidebar-border/70">
         <SidebarMenu>
           <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton tooltip="Theme" className="h-9 text-sm">
+                  <ThemeIcon />
+                  <span className="group-data-[collapsible=icon]:hidden">
+                    Theme
+                  </span>
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="right" align="end" className="w-44">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  Theme
+                </DropdownMenuLabel>
+                <ThemeRadioItems />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              tooltip="Sign out"
+              className="h-9 text-sm"
+              onClick={() => {
+                setOpenMobile(false)
+                setSigningOut(true)
+              }}
+            >
+              <LogOut />
+              <span className="group-data-[collapsible=icon]:hidden">
+                Sign out…
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
             <SidebarMenuButton
               type="button"
               onClick={toggleSidebar}
               tooltip={sidebarStateLabel}
               aria-label={sidebarStateLabel}
               title={sidebarStateLabel}
-              className="hidden md:flex"
+              className="hidden h-9 text-sm md:flex"
             >
               <SidebarStateIcon />
               <span className="group-data-[collapsible=icon]:hidden">
@@ -176,6 +228,7 @@ export function AppRail() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <SignOutDialog open={signingOut} onOpenChange={setSigningOut} />
       </SidebarFooter>
     </Sidebar>
   )

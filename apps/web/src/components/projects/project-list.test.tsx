@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, test, vi } from "vitest"
 
@@ -56,4 +56,66 @@ test("shows a named empty state naming what is empty and the next action when th
   expect(
     screen.getByText(/connect a public repository to start building/i),
   ).toBeInTheDocument()
+})
+
+// ── latest health, delete (13F) ────────────────────────────────────────────
+
+const withHealth = (score: number, delta: number) => [
+  {
+    ...mockRepos[0],
+    latest_health: { score, grade: "A" as const, delta },
+  },
+]
+
+test("latest health is a rounded score, like every other screen", () => {
+  // The API sends the unrounded score; it used to be printed as it came.
+  render(<ProjectList repos={withHealth(91.66128502980848, 2.4)} />)
+
+  const row = screen.getByText("acme-payments").closest("li")!
+  expect(row).toHaveTextContent("92/100")
+  expect(row).toHaveTextContent("+2")
+  expect(row).not.toHaveTextContent("91.66")
+})
+
+test("a falling score shows a real minus sign, and no change shows ±0", () => {
+  const { unmount } = render(<ProjectList repos={withHealth(70.2, -3.4)} />)
+  expect(screen.getByText("acme-payments").closest("li")).toHaveTextContent(
+    "−3",
+  )
+  unmount()
+
+  render(<ProjectList repos={withHealth(70.2, 0.2)} />)
+  expect(screen.getByText("acme-payments").closest("li")).toHaveTextContent(
+    "±0",
+  )
+})
+
+test("Delete is a labelled button, and only offered when onRemove is given", async () => {
+  const onRemove = vi.fn()
+  const { unmount } = render(
+    <ProjectList repos={mockRepos} onRemove={onRemove} />,
+  )
+
+  const button = screen.getByRole("button", {
+    name: "Delete acme/acme-payments repository",
+  })
+  // Visible text, not an icon: the name a screen reader hears starts with it.
+  expect(button).toHaveTextContent("Delete")
+  await userEvent.click(button)
+  expect(onRemove).toHaveBeenCalledWith(mockRepos[0])
+  unmount()
+
+  render(<ProjectList repos={mockRepos} />)
+  expect(
+    screen.queryByRole("button", { name: /^delete /i }),
+  ).not.toBeInTheDocument()
+})
+
+test("latest health says which branch it was scanned on", () => {
+  render(<ProjectList repos={mockRepos} />)
+  const row = screen.getByText("acme-payments").closest("li")!
+  // The hint is the default branch's latest scan.
+  expect(within(row).getByTestId("project-health-branch")).toHaveTextContent(
+    `on branch ${mockRepos[0].default_branch}`,
+  )
 })

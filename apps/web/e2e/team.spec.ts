@@ -2,9 +2,9 @@ import { test as base } from "@playwright/test"
 
 import { SESSION_COOKIE, expect, test } from "./session"
 
-// Team lives inside Workspace as a second tab: one place for "this workspace",
-// with settings and people kept on separate panels because they are separate
-// permissions.
+// Team lives on the Workspace page beside its settings: one place for "this
+// workspace", with settings and people in separate columns because they are
+// separate permissions. Old `?tab=team` links still land here.
 
 const MOCK_INVITATION_TOKEN = "orbit-studio-invitation-token-0123456789"
 
@@ -23,12 +23,15 @@ const asViewer = base.extend({
   },
 })
 
-test("an org-admin invites, revokes, and changes a role from the Team tab", async ({
+test("an org-admin invites, revokes, and changes a role on the Workspace page", async ({
   page,
 }) => {
   await page.goto("/workspace")
-  await main(page).getByRole("tab", { name: "Team" }).click()
-  await expect(page).toHaveURL(/\/workspace\?tab=team$/)
+  // No tabs: the team is on the page next to the settings.
+  await expect(main(page).getByRole("tab")).toHaveCount(0)
+  await expect(
+    main(page).getByRole("heading", { name: "Members" }),
+  ).toBeVisible()
 
   await page.getByLabel("Email").fill("e2e.teammate@example.com")
   await page.getByRole("button", { name: "Send invite" }).click()
@@ -48,7 +51,7 @@ test("an org-admin invites, revokes, and changes a role from the Team tab", asyn
   ).toHaveText("Viewer")
 })
 
-test("the Team tab is keyboard reachable and deactivation needs a named confirm", async ({
+test("an old ?tab=team link works, and deactivation needs a named confirm", async ({
   page,
 }) => {
   await page.goto("/workspace?tab=team")
@@ -86,7 +89,9 @@ test("accepting an invitation joins and enters the new workspace", async ({
   await expect(
     main(page).getByRole("heading", { name: "Orbit Studio" }),
   ).toBeVisible()
-  await expect(main(page).getByText("Developer")).toBeVisible()
+  await expect(
+    main(page).locator("header").getByText("Developer"),
+  ).toBeVisible()
 })
 
 test("an unusable invitation gets one plain answer", async ({ page }) => {
@@ -116,7 +121,7 @@ base(
 test.describe("mobile", () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test("the Team tab does not overflow a phone screen", async ({ page }) => {
+  test("the team column does not overflow a phone screen", async ({ page }) => {
     await page.goto("/workspace?tab=team")
     await expect(page.getByTestId("member-row").first()).toBeVisible()
     const overflow = await page.evaluate(

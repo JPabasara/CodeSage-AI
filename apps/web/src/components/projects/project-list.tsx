@@ -2,22 +2,21 @@
 
 import Link from "next/link"
 import {
-  Activity,
-  CalendarClock,
   CheckCircle2,
   ExternalLink,
+  FolderGit2,
   GitBranch,
   History,
   LayoutDashboard,
   LockKeyhole,
   UnlockKeyhole,
-  Trash2,
 } from "lucide-react"
 
+import { EmptyState } from "@/components/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import type { Repo } from "@/lib/types"
+import { Skeleton } from "@/components/ui/skeleton"
+import type { LatestHealth, Repo } from "@/lib/types"
 import { cn, gradeColor } from "@/lib/utils"
 
 export type ProjectListProps = {
@@ -27,6 +26,65 @@ export type ProjectListProps = {
   onRemove?: (repo: Repo) => void
   removingRepoId?: string
   activeRepoId?: string
+  /** What the empty list says under its title; the page names the workspace. */
+  emptyDescription?: React.ReactNode
+}
+
+/*
+ * One grid template for the header and every row, so the columns line up.
+ * Container queries rather than viewport ones: the app rail takes a variable
+ * share of the viewport, and what matters is the width this list actually has.
+ * Under @4xl the row stacks: repository, then health and date, then actions.
+ * The actions column has a fixed width, not `auto`: each row is its own grid,
+ * so `auto` sized the header's empty cell and every row's buttons differently
+ * and the health and date columns drifted out from under their headings.
+ */
+const COLUMNS =
+  "@4xl:grid-cols-[minmax(0,1fr)_8.5rem_7rem_25rem] @4xl:items-center @4xl:gap-x-4"
+
+const shortDate = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+})
+
+const fullDate = new Intl.DateTimeFormat("en", {
+  dateStyle: "full",
+  timeStyle: "short",
+})
+
+/** "+3", "−2" (a real minus sign), "±0" — rounded, like every other screen. */
+function formatDelta(value: number) {
+  const delta = Math.round(value)
+  if (delta === 0) return "±0"
+  return delta > 0 ? `+${delta}` : `−${Math.abs(delta)}`
+}
+
+function HealthCell({ health }: Readonly<{ health?: LatestHealth | null }>) {
+  if (!health) {
+    return <span className="text-muted-foreground">Not scanned yet</span>
+  }
+  return (
+    <span className="inline-flex items-baseline gap-2 tabular-nums">
+      {/* The same colour rule as the dashboard and history, from one helper. */}
+      <span
+        className="font-semibold"
+        style={{ color: gradeColor(health.grade) }}
+      >
+        {health.grade}
+      </span>
+      <span>
+        {Math.round(health.score)}
+        <span className="text-muted-foreground">/100</span>
+      </span>
+      <span
+        className="text-xs text-muted-foreground"
+        title="Change since the previous scan"
+      >
+        {formatDelta(health.delta)}
+      </span>
+    </span>
+  )
 }
 
 export function ProjectList({
@@ -36,172 +94,207 @@ export function ProjectList({
   onRemove,
   removingRepoId,
   activeRepoId,
+  emptyDescription = "Connect a public repository to start building a project health history.",
 }: Readonly<ProjectListProps>) {
   if (repos.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed bg-card/70 p-8 text-center">
-        <p className="text-sm font-medium">No repositories connected</p>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-          Connect a public repository to start building a project health
-          history.
-        </p>
-      </div>
+      <EmptyState
+        icon={<FolderGit2 />}
+        title="No repositories connected"
+        description={emptyDescription}
+      />
     )
   }
 
   return (
-    // Named, because this is not the only list on the page. The toast surface is
-    // an <ol> of <li>s too, so "the repository rows" has to be something a
-    // reader, human or test, can actually ask for.
-    <ul className="grid gap-3" aria-label="Connected repositories">
-      {repos.map((repo) => {
-        const isActive = repo.id === activeRepoId
-        const HealthIcon = repo.latest_health ? Activity : GitBranch
-        const VisibilityIcon =
-          repo.visibility === "private" ? LockKeyhole : UnlockKeyhole
-        const connectedAt = new Intl.DateTimeFormat("en", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }).format(new Date(repo.connected_at))
-        const repoLabel = `${repo.owner}/${repo.name}`
+    <div className="@container overflow-hidden rounded-lg border bg-card">
+      {/* Visual column labels only. Each cell carries its own label for
+          assistive technology, which also serves the stacked layout. */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          "hidden border-b bg-muted/40 px-4 py-2 text-xs font-medium text-muted-foreground @4xl:grid",
+          COLUMNS,
+        )}
+      >
+        <span>Repository</span>
+        <span>Latest health</span>
+        <span>Connected</span>
+        <span />
+      </div>
 
-        return (
-          <li key={repo.id} aria-current={isActive ? "true" : undefined}>
-            <Card
+      {/* Named, because this is not the only list on the page. The toast
+          surface is an <ol> of <li>s too, so "the repository rows" has to be
+          something a reader, human or test, can actually ask for. */}
+      <ul className="divide-y" aria-label="Connected repositories">
+        {repos.map((repo) => {
+          const isActive = repo.id === activeRepoId
+          const VisibilityIcon =
+            repo.visibility === "private" ? LockKeyhole : UnlockKeyhole
+          const connected = new Date(repo.connected_at)
+          const repoLabel = `${repo.owner}/${repo.name}`
+
+          return (
+            <li
+              key={repo.id}
+              aria-current={isActive ? "true" : undefined}
               className={cn(
-                "overflow-hidden border bg-card shadow-sm transition hover:border-primary/45 hover:shadow-md",
+                "relative grid gap-3 px-4 py-3 text-sm transition-colors",
+                COLUMNS,
                 isActive &&
-                  "border-primary bg-accent/20 ring-1 ring-primary/20",
+                  "bg-accent/50 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary",
               )}
             >
-              <CardContent className="p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="grid size-9 shrink-0 place-items-center rounded-md border bg-background text-primary">
-                        <GitBranch className="size-4" aria-hidden="true" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-base font-semibold leading-5">
-                          {repo.name}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {repo.owner}
-                        </p>
-                      </div>
-                      <Badge variant="secondary" className="gap-1">
-                        <VisibilityIcon className="size-3" aria-hidden="true" />
-                        {repo.visibility}
-                      </Badge>
-                      {isActive ? <Badge>Active</Badge> : null}
-                    </div>
-
-                    <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border bg-background px-2 py-1">
-                        <HealthIcon
-                          className="size-3.5 shrink-0"
-                          aria-hidden="true"
-                        />
-                        {repo.latest_health ? (
-                          <span className="min-w-0 truncate">
-                            Latest health{" "}
-                            <strong
-                              className="font-semibold"
-                              style={{
-                                color: gradeColor(repo.latest_health.grade),
-                              }}
-                            >
-                              {repo.latest_health.grade}
-                            </strong>{" "}
-                            {repo.latest_health.score}/100{" "}
-                            <span className="tabular-nums">
-                              {repo.latest_health.delta >= 0
-                                ? `+${repo.latest_health.delta}`
-                                : repo.latest_health.delta}
-                            </span>
-                          </span>
-                        ) : (
-                          <span>Not scanned yet</span>
-                        )}
-                      </span>
-                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border bg-background px-2 py-1">
-                        <CalendarClock
-                          className="size-3.5 shrink-0"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">
-                          Connected {connectedAt}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      size="lg"
-                      variant={isActive ? "secondary" : "outline"}
-                      disabled={isActive}
-                      aria-label={`${isActive ? "Selected" : "Select"} ${repoLabel}`}
-                      onClick={() => onSelect?.(repo)}
-                    >
-                      <CheckCircle2 className="size-4" />
-                      {isActive ? "Selected" : "Select"}
-                    </Button>
-                    <Button asChild size="lg">
-                      <Link
-                        href={`/dashboard/${repo.id}`}
-                        aria-label={`Go to dashboard for ${repoLabel}`}
-                        onClick={() => onSelect?.(repo)}
-                      >
-                        <LayoutDashboard className="size-4" />
-                        Go to Dashboard
-                      </Link>
-                    </Button>
-                    <Button asChild size="lg" variant="secondary">
-                      <Link
-                        href={`/dashboard/${repo.id}/history`}
-                        aria-label={`Open scan history for ${repoLabel}`}
-                        onClick={() => (onHistory ?? onSelect)?.(repo)}
-                      >
-                        <History className="size-4" />
-                        History
-                      </Link>
-                    </Button>
-                    <Button asChild size="icon-lg" variant="outline">
-                      <a
-                        href={repo.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`Open ${repoLabel} repository`}
-                        title={`Open ${repoLabel} repository`}
-                      >
-                        <ExternalLink className="size-4" />
-                      </a>
-                    </Button>
-                    {/* Omitted, not disabled, for a role without
-                        repository:disconnect: a control that exists only to be
-                        refused teaches nothing. The API re-checks regardless. */}
-                    {onRemove ? (
-                      <Button
-                        size="icon-lg"
-                        variant="destructive"
-                        aria-label={`Remove ${repoLabel} repository`}
-                        title={`Remove ${repoLabel} repository`}
-                        disabled={removingRepoId === repo.id}
-                        onClick={() => onRemove(repo)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    ) : null}
-                  </div>
+              <div className="min-w-0">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <p className="min-w-0 truncate font-semibold">{repo.name}</p>
+                  <Badge variant="outline" className="gap-1 rounded-sm">
+                    <VisibilityIcon aria-hidden="true" />
+                    {repo.visibility}
+                  </Badge>
+                  {isActive ? (
+                    <Badge className="rounded-sm">Active</Badge>
+                  ) : null}
                 </div>
-              </CardContent>
-            </Card>
-          </li>
-        )
-      })}
-    </ul>
+                <p className="truncate text-xs text-muted-foreground">
+                  {repo.owner}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 @4xl:contents">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs text-muted-foreground @4xl:sr-only">
+                    Latest health
+                  </span>
+                  {/* The hint is always the default branch's latest scan, so
+                      it says which branch that is. */}
+                  <span className="flex flex-col gap-0.5">
+                    <HealthCell health={repo.latest_health} />
+                    <span
+                      className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground"
+                      data-testid="project-health-branch"
+                    >
+                      <GitBranch className="size-3" aria-hidden="true" />
+                      <span className="sr-only">on branch </span>
+                      {repo.default_branch}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs text-muted-foreground @4xl:sr-only">
+                    Connected
+                  </span>
+                  <time
+                    dateTime={repo.connected_at}
+                    title={fullDate.format(connected)}
+                    className="text-muted-foreground tabular-nums"
+                  >
+                    {shortDate.format(connected)}
+                  </time>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 @4xl:flex-nowrap @4xl:justify-end">
+                <Button
+                  type="button"
+                  variant={isActive ? "secondary" : "outline"}
+                  disabled={isActive}
+                  aria-label={`${isActive ? "Selected" : "Select"} ${repoLabel}`}
+                  onClick={() => onSelect?.(repo)}
+                >
+                  {isActive ? <CheckCircle2 aria-hidden="true" /> : null}
+                  {isActive ? "Selected" : "Select"}
+                </Button>
+                <Button asChild>
+                  <Link
+                    href={`/dashboard/${repo.id}`}
+                    aria-label={`Go to dashboard for ${repoLabel}`}
+                    onClick={() => onSelect?.(repo)}
+                  >
+                    <LayoutDashboard aria-hidden="true" />
+                    Go to dashboard
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link
+                    href={`/dashboard/${repo.id}/history`}
+                    aria-label={`Open scan history for ${repoLabel}`}
+                    onClick={() => (onHistory ?? onSelect)?.(repo)}
+                  >
+                    <History aria-hidden="true" />
+                    History
+                  </Link>
+                </Button>
+                <Button asChild size="icon" variant="ghost">
+                  <a
+                    href={repo.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${repoLabel} repository`}
+                    title={`Open ${repoLabel} repository`}
+                  >
+                    <ExternalLink aria-hidden="true" />
+                  </a>
+                </Button>
+                {/* Omitted, not disabled, for a role without
+                    repository:disconnect: a control that exists only to be
+                    refused teaches nothing. The API re-checks regardless. */}
+                {onRemove ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    aria-label={`Delete ${repoLabel} repository`}
+                    disabled={removingRepoId === repo.id}
+                    onClick={() => onRemove(repo)}
+                  >
+                    Delete
+                  </Button>
+                ) : null}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+/** Same frame, header and row height as the list, so nothing jumps on load. */
+export function ProjectListSkeleton({
+  rows = 3,
+  ...props
+}: Readonly<{ rows?: number } & React.ComponentProps<"div">>) {
+  return (
+    <div
+      className="@container overflow-hidden rounded-lg border bg-card"
+      {...props}
+    >
+      <div
+        className={cn(
+          "hidden border-b bg-muted/40 px-4 py-2 @4xl:grid",
+          COLUMNS,
+        )}
+      >
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-16" />
+        <span />
+      </div>
+      <div className="divide-y">
+        {Array.from({ length: rows }, (_, i) => (
+          <div key={i} className={cn("grid gap-3 px-4 py-3", COLUMNS)}>
+            <div className="space-y-1.5">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+            <div className="flex gap-6 @4xl:contents">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+            <Skeleton className="h-7 w-full max-w-sm @4xl:w-96" />
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

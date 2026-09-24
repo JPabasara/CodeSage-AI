@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { TopBarPortal } from "@/components/layout/top-bar-slot"
 import type { Branch } from "@/lib/types"
-import { shortSha } from "@/lib/utils"
+import { cn, shortSha } from "@/lib/utils"
 
 export type SnapshotNavigation = {
   isHistorical: boolean
@@ -33,6 +33,12 @@ export type SnapshotNavigation = {
 export type DashboardTopNavProps = {
   repoName: string
   branches: Branch[]
+  /**
+   * The branch list has answered. With it, an empty list reads "No branches"
+   * rather than "Loading branches…" forever. Omitted, an empty list is taken
+   * to be still loading.
+   */
+  branchesLoaded?: boolean
   activeBranch: string
   onBranchChange: (branch: string) => void
   /**
@@ -43,6 +49,11 @@ export type DashboardTopNavProps = {
    */
   lastCommitSha?: string
   scannedAt?: string
+  /**
+   * The report is still on its way. The snapshot facts are left out rather
+   * than saying "No commit yet" about a branch that has one.
+   */
+  snapshotLoading?: boolean
   scan: ScanControlProps
   snapshotNavigation?: SnapshotNavigation
 }
@@ -50,10 +61,12 @@ export type DashboardTopNavProps = {
 export function DashboardTopNav({
   repoName,
   branches,
+  branchesLoaded = false,
   activeBranch,
   onBranchChange,
   lastCommitSha,
   scannedAt,
+  snapshotLoading = false,
   scan,
   snapshotNavigation,
 }: Readonly<DashboardTopNavProps>) {
@@ -113,13 +126,20 @@ export function DashboardTopNav({
             </Select>
           ) : (
             <span className="w-full text-xs opacity-75 md:w-24">
-              Loading branches…
+              {branchesLoaded && branches.length === 0
+                ? "No branches"
+                : "Loading branches…"}
             </span>
           )}
         </div>
 
         {/* Snapshot facts: quiet text, shown where there is room for it. */}
-        <span className="hidden min-w-0 items-center gap-2 text-xs text-topbar-foreground/75 lg:inline-flex">
+        <span
+          className={cn(
+            "hidden min-w-0 items-center gap-2 text-xs text-topbar-foreground/75",
+            !snapshotLoading && "lg:inline-flex",
+          )}
+        >
           <span
             className="inline-flex items-center gap-1 font-mono"
             title={
@@ -136,7 +156,7 @@ export function DashboardTopNav({
               ? `Last analyzed ${formattedScanTime}`
               : "Never scanned"}
           </span>
-          <span className="rounded-full bg-white/12 px-2 py-0.5 font-medium text-topbar-foreground">
+          <span className="rounded-sm bg-white/12 px-2 py-0.5 font-medium text-topbar-foreground">
             {snapshotNavigation?.isHistorical
               ? "Historical snapshot"
               : "Live dashboard"}

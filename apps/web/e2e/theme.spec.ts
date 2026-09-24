@@ -14,12 +14,12 @@ test.use({ colorScheme: "light" })
 
 const html = (page: import("@playwright/test").Page) => page.locator("html")
 
-/** Theme lives in the avatar menu: Light, Dark or System. */
+/** Theme lives at the foot of the rail: Light, Dark or System default. */
 async function chooseTheme(
   page: import("@playwright/test").Page,
-  name: "Light" | "Dark" | "System",
+  name: "Light" | "Dark" | "System default",
 ) {
-  await page.getByRole("button", { name: "Account menu" }).click()
+  await page.getByRole("button", { name: "Theme", exact: true }).click()
   await page.getByRole("menuitemradio", { name }).click()
 }
 
@@ -35,7 +35,7 @@ test("the theme switch changes the whole app and the choice survives a reload", 
   // Remembered, not merely applied.
   await page.reload()
   await expect(html(page)).toHaveClass(/dark/)
-  await page.getByRole("button", { name: "Account menu" }).click()
+  await page.getByRole("button", { name: "Theme", exact: true }).click()
   await expect(page.getByRole("menuitemradio", { name: "Dark" })).toBeChecked()
 })
 
