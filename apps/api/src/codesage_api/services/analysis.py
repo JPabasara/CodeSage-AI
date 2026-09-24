@@ -111,6 +111,32 @@ def get_status(
     return _status_out(attempt, attempt.branch.name)
 
 
+def get_active(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str | None,
+) -> ScanStatusOut | None:
+    """The scan still queued or running, if there is one.
+
+    A client only learns a scan id from the POST that started it, so a page that
+    was closed, refreshed, opened in another tab or on another device — or a
+    teammate's scan — was invisible until it finished. This is how a client finds
+    it again and resumes polling. With a branch, only that branch; without one,
+    the newest active scan on any branch of the repository.
+    """
+    if branch is None:
+        attempt = attempts.find_active_for_repository(session, workspace_id, repository_id)
+    else:
+        stored_branch = attempts.get_branch(session, workspace_id, repository_id, branch)
+        if stored_branch is None:
+            raise NotFound
+        attempt = attempts.find_active_for_branch(session, stored_branch.id)
+    if attempt is None:
+        return None
+    return _status_out(attempt, attempt.branch.name)
+
+
 def get_history(
     session: Session,
     workspace_id: uuid.UUID,
