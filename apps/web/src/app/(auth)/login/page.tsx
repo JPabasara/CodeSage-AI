@@ -1,12 +1,31 @@
 import type { Metadata } from "next"
 import Image from "next/image"
-import { ArrowRight, GitBranch, LockKeyhole, ScanSearch } from "lucide-react"
+import { GitBranch, LockKeyhole, ScanSearch } from "lucide-react"
 
-export const metadata: Metadata = { title: "Sign in" }
+import { SignInPanel } from "@/components/auth/sign-in-panel"
+import { signInErrorMessage } from "@/lib/sign-in"
+
+export const metadata: Metadata = {
+  title: "Sign in",
+  description:
+    "CodeSage AI ranks technical debt by bug risk, churn, severity, and team scoring priorities.",
+}
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
-export default function LoginPage() {
+/**
+ * The one entry screen. `/` redirects here, so a visitor is one click from
+ * Asgardeo. It is deliberately not skipped: sign-out lands here, and sending
+ * this page straight on to Asgardeo would sign a user silently back in.
+ */
+export default async function LoginPage({
+  searchParams,
+}: Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}>) {
+  const { error } = await searchParams
+  const errorMessage = signInErrorMessage(error)
+
   return (
     <main
       id="main-content"
@@ -66,8 +85,9 @@ export default function LoginPage() {
               Sign in to the CodeSage AI workspace.
             </h1>
             <p className="text-sm leading-6 text-zinc-300">
-              Repository scans, scoring profiles, and dashboard history stay
-              tied to your authenticated workspace session.
+              Rank the debt most likely to cause future bugs, then spend limited
+              refactoring time on the files and findings that matter before the
+              next release.
             </p>
           </div>
         </section>
@@ -103,13 +123,10 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <a
+            <SignInPanel
               href={`${API_BASE}/api/auth/login`}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-5 text-sm font-medium transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
-            >
-              Sign in with Asgardeo
-              <ArrowRight className="size-4" />
-            </a>
+              error={errorMessage}
+            />
 
             <div className="rounded-lg border bg-card p-4 text-xs leading-5 text-muted-foreground">
               <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
