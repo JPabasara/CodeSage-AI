@@ -7,6 +7,7 @@ import Image from "next/image"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppRail } from "@/components/layout/app-rail"
 import { SessionGuard } from "@/components/layout/session-guard"
+import { WorkspaceGate } from "@/components/workspace/no-workspace-state"
 
 export default function AppLayout({
   children,
@@ -15,8 +16,9 @@ export default function AppLayout({
     <TooltipProvider>
       <SidebarProvider className="h-svh min-h-0 overflow-hidden">
         {/* Renders nothing. It decides whether this visitor belongs in the app
-            shell at all: signed out goes to /login, and signed in with no
-            workspace goes to /onboarding rather than back to sign-in. */}
+            shell at all: signed out goes to /login. Signed in with no
+            workspace stays — WorkspaceGate below shows each page's locked
+            card instead of its content. */}
         <SessionGuard />
         <AppRail />
         <SidebarInset className="h-svh min-h-0 overflow-hidden">
@@ -48,7 +50,7 @@ export default function AppLayout({
             tabIndex={-1}
             className="min-h-0 flex-1 overflow-y-auto outline-none"
           >
-            {children}
+            <WorkspaceGate>{children}</WorkspaceGate>
           </main>
         </SidebarInset>
       </SidebarProvider>
