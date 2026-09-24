@@ -774,6 +774,40 @@ paths:
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
+  /api/repos/{repo_id}/scan/active:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [scans]
+      operationId: get_active_scan
+      summary: Find the scan still queued or running
+      description: |
+        A client learns a scan id only from the `POST` that started it. A page
+        that was left and reopened, refreshed, opened in another tab or on
+        another device, or a teammate's scan, would otherwise stay invisible
+        until it finished. This returns that scan so the client can resume
+        polling `GET …/scan/{scan_id}` and offer Stop.
+
+        With `branch`, only that branch; without it, the newest active scan on
+        any branch of the repository.
+      parameters:
+        - name: branch
+          in: query
+          required: false
+          schema: { type: string, minLength: 1 }
+          description: Restrict to one branch. Omit for any branch.
+      responses:
+        '200':
+          description: The active scan's current phase and progress.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanStatus' }
+        '204':
+          description: No scan is queued or running.
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/repos/{repo_id}/scan/{scan_id}:
     parameters:
       - $ref: '#/components/parameters/RepoId'
