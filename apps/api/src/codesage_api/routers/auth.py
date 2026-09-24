@@ -138,7 +138,6 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     try:
         session = auth_service.establish_session(db, claims)
         session_id = str(session.id)
-        needs_workspace = session.workspace_id is None
         db.commit()
     except Exception:
         db.rollback()
@@ -146,11 +145,11 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
-    # A user with no workspace has nowhere to land. Sending them to /projects
-    # would render a page that can only answer WORKSPACE_REQUIRED.
-    landing = "/onboarding/workspace" if needs_workspace else "/projects"
+    # Everyone lands in the app. A user with no workspace yet is still signed in,
+    # and the web shows each page's "create a workspace" state instead of a
+    # separate onboarding screen; it sends no workspace-bound request meanwhile.
     response = RedirectResponse(
-        f"{settings.frontend_base_url}{landing}", status_code=status.HTTP_302_FOUND
+        f"{settings.frontend_base_url}/projects", status_code=status.HTTP_302_FOUND
     )
     response.set_cookie(
         key=settings.session_cookie_name,
