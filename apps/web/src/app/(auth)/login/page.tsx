@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import Image from "next/image"
-import { GitBranch, LockKeyhole, ScanSearch } from "lucide-react"
+import { LockKeyhole, ScanSearch } from "lucide-react"
 
+import { LoginPreview } from "@/components/auth/login-preview"
 import { SignInPanel } from "@/components/auth/sign-in-panel"
 import { signInErrorMessage } from "@/lib/sign-in"
 
@@ -45,39 +46,14 @@ export default async function LoginPage({
             />
           </div>
 
-          <div
-            aria-hidden="true"
-            className="absolute inset-x-10 top-28 rounded-lg border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-emerald-950/30"
-          >
-            <div className="mb-5 flex items-center justify-between border-b border-white/10 pb-4">
-              <div className="flex items-center gap-2 text-xs text-white/60">
-                <GitBranch className="size-4 text-emerald-300" />
-                acme-payments/main
-              </div>
-              <span className="rounded-full bg-emerald-300/15 px-2 py-1 text-[0.625rem] font-semibold text-emerald-200">
-                scan complete
-              </span>
-            </div>
-            <div className="grid gap-3">
-              {[
-                ["Code health", "81", "bg-emerald-300"],
-                ["Refactor first", "14", "bg-amber-300"],
-                ["Bug-prone files", "6", "bg-rose-300"],
-              ].map(([label, value, color]) => (
-                <div
-                  key={label}
-                  className="grid grid-cols-[0.5rem_1fr_auto] items-center gap-3 rounded-md bg-black/25 p-3"
-                >
-                  <span className={`h-8 rounded-full ${color}`} />
-                  <span className="h-2 rounded-full bg-white/20" />
-                  <span className="text-sm font-semibold">{value}</span>
-                </div>
-              ))}
-            </div>
+          {/* The dashboard in miniature, dark like this panel: hover it, but
+              it goes nowhere until you sign in. */}
+          <div className="relative z-10 my-10">
+            <LoginPreview />
           </div>
 
           <div className="relative z-10 max-w-xl space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100">
+            <div className="inline-flex items-center gap-2 rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-100">
               <ScanSearch className="size-3.5" />
               Prioritize debt before it becomes release risk
             </div>
@@ -116,9 +92,7 @@ export default async function LoginPage({
                   Continue to your dashboard
                 </h2>
                 <p className="text-sm leading-6 text-muted-foreground">
-                  Sign-in is handled by Asgardeo, the configured identity
-                  provider. CodeSage receives the workspace session after the
-                  secure redirect completes.
+                  Sign in with your organisation account.
                 </p>
               </div>
             </div>
@@ -131,11 +105,10 @@ export default async function LoginPage({
             <div className="rounded-lg border bg-card p-4 text-xs leading-5 text-muted-foreground">
               <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
                 <LockKeyhole className="size-4 text-primary" />
-                Identity provider redirect
+                Secure sign-in
               </div>
-              The browser leaves this page for authentication and returns after
-              Asgardeo confirms your session. No password is collected by the
-              web app.
+              You sign in on Asgardeo and come straight back. CodeSage never
+              sees your password.
             </div>
           </div>
         </section>
