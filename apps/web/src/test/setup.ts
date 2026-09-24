@@ -5,6 +5,7 @@ import { server } from "@/lib/mocks/server"
 import { resetMockBackend } from "@/lib/mocks/handlers"
 import { WORKSPACE_ID } from "@/lib/mocks/fixtures"
 import { SELECTED_BRANCH_KEY } from "@/hooks/use-selected-branch"
+import { resetScanCenter } from "@/hooks/use-scan-center"
 import {
   noteActiveWorkspace,
   resetWorkspaceScope,
@@ -32,6 +33,8 @@ afterEach(() => {
   resetWorkspaceScope()
   // A branch remembered by one test must not choose the next test's branch.
   localStorage.removeItem(SELECTED_BRANCH_KEY)
+  // Scans are followed app-wide (module state); one test's scan is not the next's.
+  resetScanCenter()
 })
 afterAll(() => server.close())
 

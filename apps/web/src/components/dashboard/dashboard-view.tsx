@@ -20,7 +20,9 @@ import { useSelectedBranch } from "@/hooks/use-selected-branch"
 import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
-import { useScan } from "@/hooks/use-scan"
+import { discoverScan, onScanEvent, useScanFor } from "@/hooks/use-scan-center"
+import { useSession } from "@/hooks/use-session"
+import { ScanStatusStrip } from "@/components/layout/scan-status-strip"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
@@ -79,7 +81,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   useEffect(() => {
     if (settledOnRealBranch) rememberBranch(activeBranch)
   }, [activeBranch, settledOnRealBranch, rememberBranch])
-  const { data: scanHistory } = useScanHistory(repoId, activeBranch)
+  const { data: scanHistory, reload: reloadHistory } = useScanHistory(
+    repoId,
+    activeBranch,
+  )
 
   const {
     data: report,
@@ -87,19 +92,54 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     pending: scorePending,
     error,
     refetch,
+    reload: reloadReport,
   } = useHealthReport(repoId, activeBranch, snapshotId)
 
-  // The Scan button's state machine (start → poll progress → done/stop + toast).
-  //
-  // `refetch`, not `reload`: a finished scan makes the numbers on screen stale,
-  // so the loud form is the honest one. It is also what puts the "calculating
-  // your health score" state on screen while the new snapshot is scored (#109).
+  // The scan lives in the app-wide scan store, not in this page: leaving the
+  // dashboard mid-scan and coming back shows it still running, with Stop.
+  const { data: session } = useSession()
+  const permissions = session?.permissions ?? []
+  // Until the session answers, assume the button is usable rather than flash
+  // a locked one at everyone.
+  const canStartScan = !session || permissions.includes("scan:start")
+  const canStopScan =
+    !session ||
+    permissions.includes("scan:cancel_own") ||
+    permissions.includes("scan:cancel_any")
   const {
-    status: scanStatus,
-    stopping,
-    scan: runScan,
-    stop: stopScan,
-  } = useScan(repoId, refetch)
+    scan: trackedScan,
+    start: startTrackedScan,
+    stop: stopTrackedScan,
+  } = useScanFor(repoId, activeBranch, repo?.name)
+
+  // A scan this tab never started — a teammate's, another tab's, one from
+  // before a refresh on a cleared tab — is found and followed.
+  useEffect(() => {
+    if (!workspaceId || !activeBranch) return
+    void discoverScan({
+      workspaceId,
+      repoId,
+      branch: activeBranch,
+      repoName: repo?.name,
+    })
+  }, [workspaceId, repoId, activeBranch, repo?.name])
+
+  // When this branch's scan finishes, refresh the numbers in place — quietly,
+  // with no skeleton; a score still being prepared shows as exactly that.
+  useEffect(
+    () =>
+      onScanEvent((event) => {
+        if (
+          event.type === "finished" &&
+          event.scan.repoId === repoId &&
+          event.scan.branch === activeBranch
+        ) {
+          reloadReport()
+          reloadHistory()
+        }
+      }),
+    [repoId, activeBranch, reloadReport, reloadHistory],
+  )
 
   // The selected finding lives in the URL, not in state, so a refresh restores
   // detail mode and Back closes it. Fingerprints are stable across scans, which
@@ -361,12 +401,21 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         scannedAt={report?.scanned_at}
         snapshotNavigation={snapshotNavigation}
         scan={{
-          phase: scanStatus.phase,
-          progress: scanStatus.progress,
-          stopping,
-          onScan: () => runScan(activeBranch),
-          onStop: stopScan,
+          phase: trackedScan?.status.phase ?? "idle",
+          progress: trackedScan?.status.progress ?? 0,
+          stopping: trackedScan?.stopping ?? false,
+          // Only once there is a branch to scan.
+          onScan: activeBranch ? startTrackedScan : undefined,
+          // Stop lives in the status strip below the bar.
+          showStop: false,
+          lockedReason: canStartScan ? undefined : "Viewers can't start scans",
         }}
+      />
+
+      <ScanStatusStrip
+        scan={trackedScan}
+        canStop={canStopScan}
+        onStop={stopTrackedScan}
       />
 
       {body()}
