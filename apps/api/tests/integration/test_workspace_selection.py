@@ -107,7 +107,7 @@ def test_lists_only_authenticated_users_active_workspaces(workspace_set, client)
         item["workspace_id"]: (item["name"], item["role"], item["is_active"])
         for item in response.json()
     } == {
-        str(workspace_set["personal"]): ("My Workspace", "org-admin", True),
+        str(workspace_set["personal"]): ("Acme", "org-admin", True),
         str(workspace_set["active"]): ("Workspace", "manager", False),
     }
 
@@ -118,12 +118,14 @@ def test_existing_user_creates_and_selects_another_workspace(workspace_set, clie
     assert response.status_code == 201
     created = response.json()
     created_workspace = uuid.UUID(created["workspace_id"])
-    assert created == {
-        "workspace_id": str(created_workspace),
-        "name": "Platform Team",
-        "role": "org-admin",
-        "is_active": True,
-    }
+    assert created["workspace_id"] == str(created_workspace)
+    assert created["name"] == "Platform Team"
+    assert created["role"] == "org-admin"
+    assert created["is_active"] is True
+    # A brand-new workspace has its creator and nothing else in it.
+    assert created["project_count"] == 0
+    assert created["member_count"] == 1
+    assert created["description"] is None
 
     with Session(workspace_set["engine"]) as db:
         membership = db.scalar(
@@ -154,12 +156,11 @@ def test_org_admin_renames_active_workspace(workspace_set, client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "workspace_id": str(workspace_set["personal"]),
-        "name": "Core Services",
-        "role": "org-admin",
-        "is_active": True,
-    }
+    body = response.json()
+    assert body["workspace_id"] == str(workspace_set["personal"])
+    assert body["name"] == "Core Services"
+    assert body["role"] == "org-admin"
+    assert body["is_active"] is True
     with Session(workspace_set["engine"]) as db:
         assert db.get(Workspace, workspace_set["personal"]).name == "Core Services"
 
@@ -212,12 +213,11 @@ def test_switch_updates_only_current_server_side_session(workspace_set, client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "workspace_id": str(workspace_set["active"]),
-        "name": "Workspace",
-        "role": "manager",
-        "is_active": True,
-    }
+    switched = response.json()
+    assert switched["workspace_id"] == str(workspace_set["active"])
+    assert switched["name"] == "Workspace"
+    assert switched["role"] == "manager"
+    assert switched["is_active"] is True
     with Session(engine) as db:
         assert db.get(UserSession, workspace_set["session"]).workspace_id == workspace_set["active"]
         assert db.get(UserSession, second_session_id).workspace_id == workspace_set["personal"]

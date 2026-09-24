@@ -260,7 +260,11 @@ def test_downgrade_keeps_the_default_and_reupgrade_rebuilds_the_pool(database):
 
 
 def test_new_workspace_gets_its_pool_through_the_application_role(database):
-    from codesage_api.services.auth import IdentityClaims, establish_session
+    from codesage_api.services.auth import (
+        IdentityClaims,
+        create_workspace,
+        establish_session,
+    )
 
     config, _engine, super_engine = database
     command.upgrade(config, "head")
@@ -274,7 +278,12 @@ def test_new_workspace_gets_its_pool_through_the_application_role(database):
     with Session(super_engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
         record = establish_session(db, claims)
-        workspace_id = record.workspace_id
+        # The pool is seeded when the workspace is created, not at sign-in.
+        created = create_workspace(
+            db, session_id=record.id, user_id=record.user_id, name="Acme"
+        )
+        assert created is not None
+        workspace_id = created.workspace_id
         db.commit()
 
     rows = pool(super_engine, workspace_id)

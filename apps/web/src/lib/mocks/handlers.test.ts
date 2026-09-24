@@ -21,6 +21,7 @@ import { expect, test } from "vitest"
 import type {
   ApiError,
   HealthReport,
+  ProjectProfile,
   Repo,
   ScanStatus,
   ScanSummary,
@@ -53,6 +54,18 @@ function put(path: string, body: unknown) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
+}
+
+function patch(path: string, body: unknown) {
+  return fetch(`${BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+function del(path: string) {
+  return fetch(`${BASE}${path}`, { method: "DELETE" })
 }
 
 /**
@@ -828,8 +841,320 @@ test("different repositories score differently", async () => {
   expect(other.health_score).not.toBe(demo.health_score)
 })
 
+// ── the profile pool ────────────────────────────────────────────────────────
+
+const weights = {
+  security: 2,
+  code_design: 1,
+  requirement: 1,
+  documentation: 1,
+  test: 1,
+}
+
+/** Author one custom profile and return it, failing loudly if the POST does not. */
+async function makeProfile(name: string): Promise<ScoreProfile> {
+  const res = await post("/profiles", { name, weights, trust_s: 0.5 })
+  expect(res.status, `POST /profiles ${name}`).toBe(201)
+  return (await res.json()) as ScoreProfile
+}
+
+test("POST /profiles adds to the pool WITHOUT becoming the default", async () => {
+  const created = await makeProfile("Release gate")
+
+  expectShape(created, PROFILE_KEYS, [], "ScoreProfile (created)")
+  expect(created.is_preset).toBe(false)
+  expect(created.editable).toBe(true)
+  // Authoring a profile and choosing the one in force are separate acts.
+  expect(created.is_active).toBe(false)
+  expect(created.usage_count).toBe(0)
+
+  const pool = await get<ScoreProfile[]>("/profiles")
+  expect(pool).toHaveLength(4)
+  // Built-ins still come first, and the default has not moved.
+  expect(pool.slice(0, 3).every((p) => p.is_preset)).toBe(true)
+  expect(pool.find((p) => p.is_active)?.name).toBe("Balanced")
+})
+
+test("the sixth custom profile is refused, and built-ins do not count", async () => {
+  for (const name of ["One", "Two", "Three", "Four", "Five"]) {
+    await makeProfile(name)
+  }
+  // Five customs plus three built-ins: the limit is on the customs alone.
+  expect(await get<ScoreProfile[]>("/profiles")).toHaveLength(8)
+
+  const sixth = await post("/profiles", {
+    name: "Six",
+    weights,
+    trust_s: 0.5,
+  })
+  expect(sixth.status).toBe(409)
+  expect(((await sixth.json()) as ApiError).code).toBe("PROFILE_LIMIT_REACHED")
+})
+
+test("a duplicate name is refused after trimming and lower-casing", async () => {
+  await makeProfile("Release gate")
+
+  const clash = await post("/profiles", {
+    name: "  release GATE ",
+    weights,
+    trust_s: 0.5,
+  })
+  expect(clash.status).toBe(409)
+  expect(((await clash.json()) as ApiError).code).toBe("PROFILE_NAME_CONFLICT")
+})
+
+test("PATCH is partial: an omitted weight keeps its stored value", async () => {
+  const created = await makeProfile("Release gate")
+
+  const res = await patch(`/profiles/${created.id}`, {
+    weights: { test: 0.4 },
+  })
+  expect(res.status).toBe(200)
+  const saved = (await res.json()) as ScoreProfile
+
+  expect(saved.weights.test).toBe(0.4)
+  // The four the body never mentioned are untouched, which is the whole point
+  // of a PATCH from a form that tracks only what changed.
+  expect(saved.weights.security).toBe(2)
+  expect(saved.name).toBe("Release gate")
+  expect(saved.trust_s).toBe(0.5)
+})
+
+test("PATCH clamps out-of-range values rather than rejecting them", async () => {
+  const created = await makeProfile("Release gate")
+
+  const res = await patch(`/profiles/${created.id}`, {
+    weights: { security: 9, code_design: 0 },
+    trust_s: 5,
+  })
+  expect(res.status).toBe(200)
+  const saved = (await res.json()) as ScoreProfile
+  expect(saved.weights.security).toBe(3)
+  expect(saved.weights.code_design).toBe(0.1)
+  expect(saved.trust_s).toBe(1)
+})
+
+test("built-ins refuse every write, by code and not by silence", async () => {
+  const balanced = (await get<ScoreProfile[]>("/profiles")).find(
+    (p) => p.name === "Balanced",
+  )!
+  expect(balanced.editable).toBe(false)
+
+  const edited = await patch(`/profiles/${balanced.id}`, { name: "Mine" })
+  expect(edited.status).toBe(409)
+  expect(((await edited.json()) as ApiError).code).toBe("PROFILE_BUILT_IN")
+
+  const removed = await del(`/profiles/${balanced.id}`)
+  expect(removed.status).toBe(409)
+  expect(((await removed.json()) as ApiError).code).toBe("PROFILE_BUILT_IN")
+})
+
+test("an unused custom profile deletes; the default and an assigned one do not", async () => {
+  const spare = await makeProfile("Spare")
+  expect((await del(`/profiles/${spare.id}`)).status).toBe(204)
+
+  const chosen = await makeProfile("Chosen")
+  await put("/profiles/default", { profile_id: chosen.id })
+  const asDefault = await del(`/profiles/${chosen.id}`)
+  expect(asDefault.status).toBe(409)
+  expect(((await asDefault.json()) as ApiError).code).toBe("PROFILE_IN_USE")
+
+  const assigned = await makeProfile("Assigned")
+  await put(`/projects/${DEMO_REPO_ID}/profile`, { profile_id: assigned.id })
+  const inUse = await del(`/profiles/${assigned.id}`)
+  expect(inUse.status).toBe(409)
+  expect(((await inUse.json()) as ApiError).code).toBe("PROFILE_IN_USE")
+})
+
+test("a profile id from outside the pool is 404, not 403 or 409", async () => {
+  const stranger = "00000000-0000-4000-8000-000000000000"
+  expect((await fetch(`${BASE}/profiles/${stranger}`)).status).toBe(404)
+  expect(
+    (await put("/profiles/default", { profile_id: stranger })).status,
+  ).toBe(404)
+  expect(
+    (await put(`/projects/${DEMO_REPO_ID}/profile`, { profile_id: stranger }))
+      .status,
+  ).toBe(404)
+})
+
+test("PUT /profiles/default moves the default and is idempotent", async () => {
+  const securityFirst = (await get<ScoreProfile[]>("/profiles")).find(
+    (p) => p.name === "Security-first",
+  )!
+
+  const first = await put("/profiles/default", {
+    profile_id: securityFirst.id,
+  })
+  expect(first.status).toBe(200)
+  expect(((await first.json()) as ScoreProfile).is_active).toBe(true)
+
+  // The second PUT of the same id changes nothing.
+  const again = await put("/profiles/default", {
+    profile_id: securityFirst.id,
+  })
+  expect(((await again.json()) as ScoreProfile).id).toBe(securityFirst.id)
+
+  const pool = await get<ScoreProfile[]>("/profiles")
+  // Exactly one default: the pointer moved rather than being added to.
+  expect(pool.filter((p) => p.is_active)).toHaveLength(1)
+  expect(pool.find((p) => p.is_active)?.name).toBe("Security-first")
+})
+
+test("GET /projects/{id}/profile says what it is scored with, and where from", async () => {
+  const inherited = await get<ProjectProfile>(
+    `/projects/${DEMO_REPO_ID}/profile`,
+  )
+  expectShape(
+    inherited,
+    ["repo_id", "inherited", "effective", "workspace_default"],
+    ["override"],
+    "ProjectProfile",
+  )
+  expect(inherited.inherited).toBe(true)
+  // `override` is null exactly when `inherited` is true.
+  expect(inherited.override).toBeNull()
+  expect(inherited.effective.id).toBe(inherited.workspace_default.id)
+})
+
+test("an override applies to one project and leaves the others inheriting", async () => {
+  const securityFirst = (await get<ScoreProfile[]>("/profiles")).find(
+    (p) => p.name === "Security-first",
+  )!
+
+  const res = await put(`/projects/${DEMO_REPO_ID}/profile`, {
+    profile_id: securityFirst.id,
+  })
+  expect(res.status).toBe(200)
+  const assigned = (await res.json()) as ProjectProfile
+  expect(assigned.inherited).toBe(false)
+  expect(assigned.override?.id).toBe(securityFirst.id)
+  expect(assigned.effective.id).toBe(securityFirst.id)
+  // The workspace default is untouched by one project's choice.
+  expect(assigned.workspace_default.name).toBe("Balanced")
+
+  const neighbour = await get<ProjectProfile>(
+    `/projects/${SECOND_REPO_ID}/profile`,
+  )
+  expect(neighbour.inherited).toBe(true)
+  expect(neighbour.effective.name).toBe("Balanced")
+
+  // usage_count counts the projects that name it; the default's inheritors are
+  // what `is_active` already says, so they are not counted here.
+  const pool = await get<ScoreProfile[]>("/profiles")
+  expect(pool.find((p) => p.id === securityFirst.id)?.usage_count).toBe(1)
+  expect(pool.find((p) => p.name === "Balanced")?.usage_count).toBe(0)
+})
+
+test("the dashboard scores each project with its OWN effective profile", async () => {
+  const before = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  const securityFirst = (await get<ScoreProfile[]>("/profiles")).find(
+    (p) => p.name === "Security-first",
+  )!
+  await put(`/projects/${DEMO_REPO_ID}/profile`, {
+    profile_id: securityFirst.id,
+  })
+
+  const after = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  expect(after.profile).toBe("Security-first")
+  expect(after.health_score).not.toBe(before.health_score)
+  // …while its neighbour, which named nothing, is still on the default.
+  const neighbour = await get<HealthReport>(
+    `/repos/${SECOND_REPO_ID}/health?branch=main`,
+  )
+  expect(neighbour.profile).toBe("Balanced")
+
+  // An assignment is not a scan: no snapshot was written.
+  expect(after.snapshot_id).toBe(before.snapshot_id)
+  expect(after.scanned_at).toBe(before.scanned_at)
+})
+
+test("clearing an override is idempotent and restores inheritance", async () => {
+  const deliverySpeed = (await get<ScoreProfile[]>("/profiles")).find(
+    (p) => p.name === "Delivery-speed",
+  )!
+  await put(`/projects/${DEMO_REPO_ID}/profile`, {
+    profile_id: deliverySpeed.id,
+  })
+
+  const cleared = await del(`/projects/${DEMO_REPO_ID}/profile`)
+  expect(cleared.status).toBe(200)
+  expect(((await cleared.json()) as ProjectProfile).inherited).toBe(true)
+
+  // Clearing a project that has no override succeeds and says the same thing.
+  const again = await del(`/projects/${DEMO_REPO_ID}/profile`)
+  expect(again.status).toBe(200)
+  const state = (await again.json()) as ProjectProfile
+  expect(state.inherited).toBe(true)
+  expect(state.effective.name).toBe("Balanced")
+})
+
+test("removing a project takes its profile assignment with it", async () => {
+  const spare = await makeProfile("Spare")
+  await put(`/projects/${SECOND_REPO_ID}/profile`, { profile_id: spare.id })
+  expect(
+    (await get<ScoreProfile[]>("/profiles")).find((p) => p.id === spare.id)
+      ?.usage_count,
+  ).toBe(1)
+
+  expect(
+    (
+      await fetch(`${BASE}/projects/${SECOND_REPO_ID}`, {
+        method: "DELETE",
+      })
+    ).status,
+  ).toBe(204)
+
+  // The assignment cascades, so the profile is not left permanently
+  // undeletable by a project that no longer exists.
+  expect(
+    (await get<ScoreProfile[]>("/profiles")).find((p) => p.id === spare.id)
+      ?.usage_count,
+  ).toBe(0)
+  expect((await del(`/profiles/${spare.id}`)).status).toBe(204)
+})
+
 // ── system ──────────────────────────────────────────────────────────────────
 
 test("GET /healthz is alive", async () => {
   expect(await get<{ status: string }>("/healthz")).toEqual({ status: "ok" })
+})
+
+// ── members ─────────────────────────────────────────────────────────────────
+
+test("the only active org-admin can be neither demoted nor deactivated", async () => {
+  const self = "a1000000-0000-4000-8000-000000000001"
+  const demote = await fetch(`http://localhost/api/members/${self}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: "viewer" }),
+  })
+  expect(demote.status).toBe(409)
+  expect((await demote.json()).code).toBe("CONFLICT")
+
+  const deactivate = await fetch(`http://localhost/api/members/${self}`, {
+    method: "DELETE",
+  })
+  expect(deactivate.status).toBe(409)
+})
+
+test("member_count counts active members only, and follows deactivation", async () => {
+  const count = async () =>
+    (
+      (await (await fetch("http://localhost/api/auth/workspaces")).json()) as {
+        is_active: boolean
+        member_count: number
+      }[]
+    ).find((w) => w.is_active)?.member_count
+
+  expect(await count()).toBe(4)
+  await fetch(
+    "http://localhost/api/members/a1000000-0000-4000-8000-000000000003",
+    { method: "DELETE" },
+  )
+  expect(await count()).toBe(3)
 })

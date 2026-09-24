@@ -1,10 +1,10 @@
 "use client" // uses usePathname → must be a Client Component
 
-import { useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import {
+  Building2,
   FolderGit2,
   LayoutDashboard,
   History,
@@ -29,11 +29,12 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
-import { ApiRequestError } from "@/lib/api/client"
+import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher"
 import { DEMO_REPO_ID } from "@/lib/demo"
 import { useSession } from "@/hooks/use-session"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
+import { useWorkspaces } from "@/hooks/use-workspace"
 
 type NavItem = {
   href: string
@@ -74,6 +75,12 @@ function navItems(repoId: string | undefined): NavItem[] {
       icon: SlidersHorizontal,
       isActive: (p) => p.startsWith("/profiles"),
     },
+    {
+      href: "/workspace",
+      label: "Workspace",
+      icon: Building2,
+      isActive: (p) => p.startsWith("/workspace"),
+    },
   ]
 }
 
@@ -81,8 +88,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export function AppRail() {
   const pathname = usePathname()
-  const router = useRouter()
-  const { data: session, error } = useSession()
+  const { data: session } = useSession()
+  const { data: workspaces, loading: loadingWorkspaces } = useWorkspaces()
   const { data: repos } = useProjects()
   const { selectedProjectId } = useSelectedProject({
     availableRepoIds: repos?.map((repo) => repo.id),
@@ -99,14 +106,6 @@ export function AppRail() {
   const sidebarStateLabel = sidebarCollapsed
     ? "Expand sidebar"
     : "Collapse sidebar"
-
-  // The API is the actual security boundary; this is a UX fallback so a
-  // signed-out visitor is not left staring at an empty shell.
-  useEffect(() => {
-    if (error instanceof ApiRequestError && error.status === 401) {
-      router.push("/login")
-    }
-  }, [error, router])
 
   return (
     <Sidebar collapsible="icon" className="border-sidebar-border/80">
@@ -133,39 +132,46 @@ export function AppRail() {
             </span>
           </span>
         </Link>
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          loading={loadingWorkspaces}
+          onNavigate={() => setOpenMobile(false)}
+        />
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {nav.map((item) => {
-                const Icon = item.icon
-                return (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={item.isActive(pathname)}
-                      size="lg"
-                      tooltip={item.label}
-                      className="text-sm"
-                    >
-                      <Link
-                        href={item.href}
-                        onClick={() => setOpenMobile(false)}
+        <nav aria-label="Main navigation">
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {nav.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <SidebarMenuItem key={item.label}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={item.isActive(pathname)}
+                        size="lg"
+                        tooltip={item.label}
+                        className="text-sm"
                       >
-                        <Icon />
-                        <span className="group-data-[collapsible=icon]:hidden">
-                          {item.label}
-                        </span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+                        <Link
+                          href={item.href}
+                          onClick={() => setOpenMobile(false)}
+                        >
+                          <Icon />
+                          <span className="group-data-[collapsible=icon]:hidden">
+                            {item.label}
+                          </span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </nav>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border/70">

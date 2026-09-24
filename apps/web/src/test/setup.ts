@@ -1,8 +1,13 @@
 import "@testing-library/jest-dom/vitest"
-import { afterAll, afterEach, beforeAll } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest"
 import { cleanup } from "@testing-library/react"
 import { server } from "@/lib/mocks/server"
 import { resetMockBackend } from "@/lib/mocks/handlers"
+import { WORKSPACE_ID } from "@/lib/mocks/fixtures"
+import {
+  noteActiveWorkspace,
+  resetWorkspaceScope,
+} from "@/hooks/use-workspace-scope"
 
 // ── the mock backend (same handlers as the dev app) ─────────────────────────
 // Component tests fetch through MSW's Node interceptor, so a test exercises the
@@ -10,9 +15,20 @@ import { resetMockBackend } from "@/lib/mocks/handlers"
 // hits an endpoint we forgot to mock, instead of letting it escape to the real
 // network and hang.
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }))
+
+// Which workspace a component test is standing in.
+//
+// The app learns this from the session, and most component tests mock the
+// session hook away — so without this the workspace is simply unknown, and
+// anything keyed by it (the selected project, every query key) has nothing to
+// key by. Seeding it to the same workspace the mock backend serves is what the
+// real app sees a moment after sign-in.
+beforeEach(() => noteActiveWorkspace(WORKSPACE_ID))
+
 afterEach(() => {
   server.resetHandlers() // drop any per-test http overrides
   resetMockBackend() // clear the in-memory scan state (resetHandlers can't see it)
+  resetWorkspaceScope()
 })
 afterAll(() => server.close())
 

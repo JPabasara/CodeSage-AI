@@ -109,9 +109,15 @@ export function OverallHealthCard({
           </div>
 
           <div className="relative aspect-square h-20 w-20 shrink-0 overflow-visible sm:justify-self-center">
+            {/*
+              A <div> may not carry aria-label without a role, so axe rejected
+              the name outright. The pie carries its meaning visually, and the
+              legend below repeats the numbers — so name it as an image.
+            */}
             <ChartContainer
               config={chartConfig}
               className="aspect-square h-full w-full overflow-visible"
+              role="img"
               aria-label={ariaLabel}
             >
               <PieChart>

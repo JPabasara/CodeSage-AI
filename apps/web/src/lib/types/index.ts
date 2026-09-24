@@ -73,12 +73,24 @@ export interface ApiError {
 // ── Session: who is signed in (GET /api/auth/session) ───────────────────────
 
 /**
- * Only `user_id` and `workspace_id` are guaranteed. Everything else comes from
- * the identity provider and may be absent — render a fallback, never assume.
+ * Only `user_id` is guaranteed. `workspace_id` is null for someone who has
+ * signed in but has no workspace yet — a real authenticated state, not a
+ * failure. Everything below the identifiers comes from the identity provider
+ * and may be absent — render a fallback, never assume.
  */
 export interface Session {
   user_id: string
-  workspace_id: string
+  /** Null during onboarding. Workspace-bound calls then answer 409 WORKSPACE_REQUIRED. */
+  workspace_id?: string | null
+  /** True when the user must create or join a workspace before the app is usable. */
+  needs_workspace_setup?: boolean
+  role?: Role | null
+  /**
+   * What this caller may do in the active workspace, so the UI can hide controls
+   * it would be refused anyway. A convenience, never the boundary — the API
+   * re-checks every permission on every request.
+   */
+  permissions?: string[]
   email?: string | null
   name?: string | null
   avatar_url?: string | null
@@ -284,6 +296,37 @@ export interface ScoreProfile {
   editable: boolean // false for the three built-ins, which the database refuses to change
 }
 
+/**
+ * A workspace holds at most five custom profiles. The three built-ins do not
+ * count toward it, which is why this is a limit on the custom ones alone.
+ *
+ * The server is the enforcement point — it refuses the sixth with
+ * `PROFILE_LIMIT_REACHED`, transaction-safely. This constant only lets the UI
+ * say "4 of 5" and stop offering a create it knows would be refused.
+ */
+export const MAX_CUSTOM_PROFILES = 5
+
+/**
+ * The body of `POST /api/profiles`. `name` is required, unlike on the legacy
+ * apply endpoint: a profile that joins a pool has to be tellable apart from the
+ * other five.
+ */
+export type CreateProfileRequest = components["schemas"]["CreateProfileRequest"]
+
+/**
+ * The body of `PATCH /api/profiles/{profile_id}` — only what changed. An omitted
+ * field keeps its stored value, which is what makes this safe to send from a
+ * form that tracks edits rather than the whole profile.
+ */
+export type UpdateProfileRequest = components["schemas"]["UpdateProfileRequest"]
+
+/**
+ * The body of both PUTs that choose a profile — the workspace default and a
+ * project override. It carries the whole selection, never a delta, so re-sending
+ * it changes nothing.
+ */
+export type SelectProfileRequest = components["schemas"]["SelectProfileRequest"]
+
 /** Which profile one project is scored with, and where that came from. */
 export interface ProjectProfile {
   repo_id: string
@@ -314,16 +357,64 @@ export interface HealthReport {
   category_breakdown: CategoryBreakdownItem[] // the pie
 }
 
-// ── v2 — teams & roles. Seam only; not built in v1. ─────────────────────────
+// ── workspaces, members & roles ──────────────────────────
+//
+// These five are aliases of the generated schemas rather than re-declarations.
+// They were handwritten once, as a v1 sketch of a v2 feature, and by the time
+// the endpoints shipped the sketch was wrong in ways nothing caught: the
+// workspace had an `id` where the wire says `workspace_id`, and it carried its
+// members inline, which no response has ever done. Nothing imported them, so
+// nothing failed — the types simply sat there waiting to mislead whoever built
+// the screens.
+//
+// Aliasing removes that failure mode entirely. There is one definition, it is
+// generated from the contract, and it cannot drift.
 
-export type Role = "org-admin" | "manager" | "developer" | "viewer" // v2
-export interface Member {
-  user_id: string
-  name: string
-  role: Role
-} // v2
-export interface Workspace {
-  id: string
-  name: string
-  members: Member[]
-} // v2
+/** Who someone is in a workspace. Grants come from the permission matrix. */
+export type Role = components["schemas"]["Role"]
+
+/**
+ * One workspace as the switcher and the Workspace screen need it.
+ *
+ * `project_count` and `member_count` are derived by the API on read, not stored,
+ * so they are always current. `is_active` marks the one this session is bound
+ * to — exactly one at most, and none at all during onboarding.
+ */
+export type Workspace = components["schemas"]["WorkspaceSummary"]
+
+/**
+ * The body of `POST /api/auth/workspaces`. Only the name is required — a
+ * workspace is identified by what the team calls it, and the rest is decoration
+ * the Workspace screen can fill in later.
+ */
+export type CreateWorkspaceRequest =
+  components["schemas"]["CreateWorkspaceRequest"]
+
+/**
+ * The body of `PATCH /api/auth/workspaces/{id}` — only what changed.
+ *
+ * Omitting `description` leaves it alone; sending `null` clears it. Those are
+ * different intentions and the contract keeps them different, so the form has to
+ * as well.
+ */
+export type UpdateWorkspaceRequest =
+  components["schemas"]["UpdateWorkspaceRequest"]
+
+/** An existing member. `status` distinguishes active from deactivated. */
+export type Member = components["schemas"]["Member"]
+
+/** An invitation that has been sent but not yet accepted. */
+export type Invitation = components["schemas"]["Invitation"]
+
+/** What `GET /api/members` returns: both lists, in one response. */
+export type MemberList = components["schemas"]["MemberList"]
+
+/** The body of `POST /api/invitations`. The role is stored on the invitation. */
+export type CreateInvitationRequest =
+  components["schemas"]["CreateInvitationRequest"]
+
+/** A new invitation, plus the one-time link the email carries — for copying. */
+export type CreatedInvitation = components["schemas"]["CreatedInvitation"]
+
+/** What accepting an invitation activates: a membership, in one workspace. */
+export type AcceptedInvitation = components["schemas"]["AcceptedInvitation"]

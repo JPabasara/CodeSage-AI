@@ -1,9 +1,8 @@
-"""GET /api/auth/session — who is signed in (J3.2).
+"""GET /api/auth/session — who is signed in, and whether they can work yet (J3.2).
 
-The dependency chain (`get_current_user_id` -> `get_workspace_id` -> `get_db`) is
-already the app's one path to a valid tenant and is exercised elsewhere; overriding
-it here lets this file test only what this handler itself is responsible for:
-shaping a `Session` from the user row.
+The dependency chain is exercised elsewhere; overriding it here lets this file
+test only what the handler itself is responsible for: shaping a session from the
+user row, and saying plainly when there is no workspace to act in.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ from dataclasses import dataclass
 from fastapi.testclient import TestClient
 
 from codesage_api import deps
+from codesage_api.authorization.context import AuthorizationContext
 from codesage_api.main import create_app
 from codesage_api.routers import auth as auth_router
 
@@ -40,12 +40,34 @@ class FakeDb:
         assert ident == self._user.id, "must look up the caller's own row, not an arbitrary one"
         return self._user
 
+    def execute(self, *_args: object, **_kwargs: object) -> None:
+        return None
 
-def _client(user: FakeUser) -> TestClient:
+    def close(self) -> None:
+        return None
+
+
+def _client(
+    user: FakeUser,
+    *,
+    workspace_id: uuid.UUID | None = WORKSPACE_ID,
+    permissions: frozenset[str] = frozenset({"project:read"}),
+    role: str = "org-admin",
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[deps.get_current_user_id] = lambda: user.id
-    app.dependency_overrides[deps.get_workspace_id] = lambda: WORKSPACE_ID
-    app.dependency_overrides[deps.get_db] = lambda: FakeDb(user)
+    app.dependency_overrides[deps.get_optional_workspace_id] = lambda: workspace_id
+    auth_router.SessionLocal = lambda: FakeDb(user)  # type: ignore[assignment]
+    auth_router.resolve_authorization_context = (  # type: ignore[assignment]
+        lambda _db, _user, workspace: AuthorizationContext(
+            user_id=user.id,
+            workspace_id=workspace,
+            membership_id=uuid.uuid4(),
+            role_id=role,
+            permissions=permissions,
+        )
+    )
+    auth_router.set_workspace_context = lambda *_args: None  # type: ignore[assignment]
     return TestClient(app)
 
 
@@ -64,6 +86,9 @@ def test_returns_the_signed_in_user() -> None:
     assert response.json() == {
         "user_id": str(USER_ID),
         "workspace_id": str(WORKSPACE_ID),
+        "needs_workspace_setup": False,
+        "role": "org-admin",
+        "permissions": ["project:read"],
         "email": "dev@codesageai.dev",
         "name": "Janidu",
         "avatar_url": "https://avatars.example/janidu.png",
@@ -87,6 +112,29 @@ def test_renders_missing_display_fields_as_null() -> None:
     assert body["name"] is None
     assert body["avatar_url"] is None
     assert body["identity_provider"] is None
+
+
+def test_a_user_with_no_workspace_is_signed_in_and_told_to_set_one_up() -> None:
+    """Onboarding is a state of being signed in, not a failure to be signed in."""
+    user = FakeUser(
+        id=USER_ID,
+        email="new@codesageai.dev",
+        display_name="New",
+        avatar_url=None,
+        identity_provider="github",
+    )
+
+    response = _client(user, workspace_id=None).get("/api/auth/session")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_id"] is None
+    assert body["needs_workspace_setup"] is True
+    # No workspace means no standing in one; the web renders onboarding, not a
+    # shell full of controls that would all be refused.
+    assert body["role"] is None
+    assert body["permissions"] == []
+    assert body["user_id"] == str(USER_ID)
 
 
 def test_session_is_mounted_on_the_protected_router() -> None:

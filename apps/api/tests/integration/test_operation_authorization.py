@@ -85,6 +85,7 @@ def test_route_inventory_has_no_unclassified_operations():
         ("GET", "/api/auth/session"),
         ("GET", "/api/auth/workspaces"),
         ("POST", "/api/auth/workspaces"),
+        ("GET", "/api/auth/workspaces/{workspace_id}"),
         ("PATCH", "/api/auth/workspaces/{workspace_id}"),
         ("PUT", "/api/auth/workspaces/active"),
         ("POST", "/api/invitations/accept"),
