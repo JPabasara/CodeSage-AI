@@ -54,7 +54,9 @@ test("no session at all goes to sign-in", async () => {
 
   render(<SessionGuard />)
 
-  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/login"))
+  await waitFor(() =>
+    expect(nav.replace).toHaveBeenCalledWith("/login?error=session"),
+  )
 })
 
 test("the onboarding page itself is not redirected to onboarding", async () => {

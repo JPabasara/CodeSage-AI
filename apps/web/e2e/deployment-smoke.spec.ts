@@ -17,14 +17,9 @@ test("the deployed public web and API agree on the sign-in handoff", async ({
   await expect(health).toBeOK()
   await expect(health.json()).resolves.toEqual({ status: "ok" })
 
+  // The root is only an address: signed out, it lands on sign-in.
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "CodeSage AI" })).toBeVisible()
-
-  const signIn = page.getByRole("link", { name: /sign in/i }).first()
-  await expect(signIn).toBeVisible()
-  await expect(signIn).toHaveAttribute("href", /\/login$/)
-
-  await page.goto("/login")
+  await expect(page).toHaveURL(/\/login$/)
   await expect(
     page.getByRole("heading", { name: /continue to your dashboard/i }),
   ).toBeVisible()

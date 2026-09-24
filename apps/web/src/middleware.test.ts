@@ -10,8 +10,25 @@ function requestFor(path: string, cookie?: string): NextRequest {
 }
 
 describe("middleware", () => {
-  test("the root path is public", () => {
+  test("signed out, the root goes straight to sign-in", () => {
     const response = middleware(requestFor("/"))
+
+    expect(response.status).toBe(307)
+    expect(response.headers.get("location")).toBe("http://localhost:3000/login")
+  })
+
+  test("signed in, the root goes straight into the app", () => {
+    const response = middleware(requestFor("/", "codesage_session=abc123"))
+
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/projects",
+    )
+  })
+
+  test("/login is never redirected, even with a cookie — it may be stale", () => {
+    const response = middleware(
+      requestFor("/login?error=session", "codesage_session=stale"),
+    )
 
     expect(response.headers.get("location")).toBeNull()
   })

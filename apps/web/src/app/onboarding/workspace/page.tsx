@@ -13,6 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError, createWorkspace } from "@/lib/api/client"
 import { readPendingInvitation } from "@/lib/pending-invitation"
+import { SESSION_ENDED_URL } from "@/lib/sign-in"
 import { useSession } from "@/hooks/use-session"
 import { adoptWorkspace } from "@/hooks/use-workspace"
 
@@ -52,7 +53,7 @@ export default function OnboardingPage() {
       sessionError instanceof ApiRequestError &&
       sessionError.status === 401
     ) {
-      router.replace("/login")
+      router.replace(SESSION_ENDED_URL)
     }
   }, [router, sessionError])
 

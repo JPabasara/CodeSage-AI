@@ -31,6 +31,7 @@ import {
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher"
 import { DEMO_REPO_ID } from "@/lib/demo"
+import { markSignedOut } from "@/lib/sign-in"
 import { useSession } from "@/hooks/use-session"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
@@ -231,6 +232,7 @@ export function AppRail() {
               action={`${API_BASE}/api/auth/logout`}
               method="POST"
               className="min-w-0"
+              onSubmit={markSignedOut}
             >
               <SidebarMenuButton
                 type="submit"

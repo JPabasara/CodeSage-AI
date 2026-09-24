@@ -9,14 +9,26 @@ const SESSION_COOKIE =
 
 // The invitation page is public so a signed-out visitor can land on it and have
 // the token kept before sign-in; it asks for sign-in itself.
-const PUBLIC_PATHS = new Set(["/", "/login", "/invitations/accept"])
+const PUBLIC_PATHS = new Set(["/login", "/invitations/accept"])
 
 export function middleware(request: NextRequest) {
+  const signedIn = request.cookies.has(SESSION_COOKIE)
+
+  // `/` is only an address: send it to the one screen that fits. `/login` is
+  // never redirected here — a cookie is not proof of a live session, and a
+  // stale one would loop /login → /projects → 401 → /login. The login page asks
+  // the API instead.
+  if (request.nextUrl.pathname === "/") {
+    return NextResponse.redirect(
+      new URL(signedIn ? "/projects" : "/login", request.url),
+    )
+  }
+
   if (PUBLIC_PATHS.has(request.nextUrl.pathname)) {
     return NextResponse.next()
   }
 
-  if (!request.cookies.has(SESSION_COOKIE)) {
+  if (!signedIn) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
   return NextResponse.next()
