@@ -77,7 +77,7 @@ def _mock_response(
 
 
 def test_risk_client_predict_success():
-    """Client sends class-level 21-feature observations and returns file risk."""
+    """Client sends class observations and preserves class and file risk."""
     classes = [_class_metrics()]
 
     process = {
@@ -101,7 +101,10 @@ def test_risk_client_predict_success():
         result = predict(classes, process)
 
     assert isinstance(result, RiskClientResult)
-    assert result.scores == {
+    assert result.class_scores == {
+        ("src/Main.java", "Main"): pytest.approx(0.78)
+    }
+    assert result.file_scores == {
         "src/Main.java": pytest.approx(0.78)
     }
     assert result.model_version == "risk-2.0.0"
@@ -155,7 +158,8 @@ def test_risk_client_empty_inputs():
         result = predict([], {})
 
     assert result == RiskClientResult(
-        scores={},
+        class_scores={},
+        file_scores={},
         model_version="",
     )
 
@@ -281,7 +285,8 @@ def test_risk_client_ignores_process_only_paths():
         result = predict([], process)
 
     assert result == RiskClientResult(
-        scores={},
+        class_scores={},
+        file_scores={},
         model_version="",
     )
 
@@ -380,7 +385,7 @@ def test_risk_client_broadcasts_file_process_metrics_to_classes():
 
 
 def test_risk_client_aggregates_class_probabilities_by_file():
-    """Class probabilities are aggregated only after class-level inference."""
+    """Class probabilities are preserved and aggregated by source file."""
     classes = [
         _class_metrics(
             path="src/Example.java",
@@ -418,7 +423,11 @@ def test_risk_client_aggregates_class_probabilities_by_file():
     # 1 - (1 - 0.6)(1 - 0.3)
     # = 1 - 0.28
     # = 0.72
-    assert result.scores["src/Example.java"] == pytest.approx(
+    assert result.class_scores == {
+        ("src/Example.java", "Example"): pytest.approx(0.6),
+        ("src/Example.java", "Helper"): pytest.approx(0.3),
+    }
+    assert result.file_scores["src/Example.java"] == pytest.approx(
         0.72
     )
 
@@ -448,7 +457,10 @@ def test_single_class_file_preserves_probability():
     ):
         result = predict(classes, {})
 
-    assert result.scores == {
+    assert result.class_scores == {
+        ("src/A.java", "A"): pytest.approx(0.42)
+    }
+    assert result.file_scores == {
         "src/A.java": pytest.approx(0.42)
     }
 
@@ -541,7 +553,10 @@ def test_risk_client_filters_non_class_ck_entities():
     assert len(sent) == 1
     assert sent[0]["class_name"] == "Main"
 
-    assert result.scores["src/Main.java"] == pytest.approx(
+    assert result.class_scores == {
+        ("src/Main.java", "Main"): pytest.approx(0.5)
+    }
+    assert result.file_scores["src/Main.java"] == pytest.approx(
         0.5
     )
 

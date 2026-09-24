@@ -9,7 +9,8 @@ Grouped to match the four domains of SAD §9 Data View:
     source.py      — SourceFile, FileTreeNode, CodeSymbol, SourceLocation,
                      StaticMetric, ProcessMetric
     finding.py     — Finding, DebtCategory
-    ml.py          — SATDPrediction, BugRiskPrediction, MLModelVersion
+    ml.py          — SATDPrediction, BugRiskPrediction, ClassRiskPrediction,
+                     MLModelVersion
     provenance.py  — AnalysisEngineVersion, AnalysisEngineModelVersion
     rules.py       — RuleDefinition, SATDMarkerPattern
     profile.py     — ScoringProfile, ScoringPreset, WorkspaceProfileSettings,
@@ -26,10 +27,15 @@ only, FR-6). The v2 RBAC catalogue is now stored for DBR-5; API enforcement
 is a separate implementation step.
 """
 
-from codesage_api.db.models.authorization import Permission, Role, RolePermission
 from codesage_api.db.models.analysis import AnalysisAttempt, Snapshot
+from codesage_api.db.models.authorization import Permission, Role, RolePermission
 from codesage_api.db.models.finding import DebtCategory, Finding
-from codesage_api.db.models.ml import BugRiskPrediction, MLModelVersion, SATDPrediction
+from codesage_api.db.models.ml import (
+    BugRiskPrediction,
+    ClassRiskPrediction,
+    MLModelVersion,
+    SATDPrediction,
+)
 from codesage_api.db.models.profile import (
     RepositoryProfileAssignment,
     ScoringPreset,
@@ -63,6 +69,7 @@ __all__ = [
     "AnalysisEngineVersion",
     "Branch",
     "BugRiskPrediction",
+    "ClassRiskPrediction",
     "CodeSymbol",
     "DebtCategory",
     "FileTreeNode",
@@ -70,11 +77,11 @@ __all__ = [
     "MLModelVersion",
     "Membership",
     "Permission",
-    "Role",
-    "RolePermission",
     "ProcessMetric",
     "Repository",
     "RepositoryProfileAssignment",
+    "Role",
+    "RolePermission",
     "RuleDefinition",
     "SATDMarkerPattern",
     "SATDPrediction",
