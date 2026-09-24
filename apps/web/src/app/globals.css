@@ -18,6 +18,8 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-topbar: var(--topbar);
+  --color-topbar-foreground: var(--topbar-foreground);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -79,6 +81,10 @@
   --chart-5: oklch(0.62 0.13 315);
   --radius: 0.625rem;
   --sidebar: oklch(0.982 0.002 255);
+  /* The app bar: deep mint, white text, in both themes (Phase 13C). Darker
+     than any health colour, so it never reads as a score. */
+  --topbar: oklch(0.34 0.07 165);
+  --topbar-foreground: oklch(0.99 0.004 165);
   --sidebar-foreground: oklch(0.18 0.01 255);
   --sidebar-primary: oklch(0.44 0.13 160);
   --sidebar-primary-foreground: oklch(0.99 0.006 160);
@@ -130,6 +136,8 @@
   --chart-4: oklch(0.72 0.17 25);
   --chart-5: oklch(0.75 0.14 320);
   --sidebar: oklch(0.105 0.006 255);
+  --topbar: oklch(0.25 0.05 165);
+  --topbar-foreground: oklch(0.97 0.006 165);
   --sidebar-foreground: oklch(0.95 0.008 160);
   --sidebar-primary: oklch(0.76 0.16 158);
   --sidebar-primary-foreground: oklch(0.12 0.012 255);
