@@ -7,13 +7,6 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ErrorState } from "@/components/error-state"
@@ -23,13 +16,9 @@ import {
   type WorkspaceFields,
 } from "@/components/workspace/workspace-form"
 import { TeamPanel } from "@/components/workspace/team-panel"
+import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
+import { ApiRequestError, updateWorkspace } from "@/lib/api/client"
 import {
-  ApiRequestError,
-  createWorkspace,
-  updateWorkspace,
-} from "@/lib/api/client"
-import {
-  adoptWorkspace,
   publishWorkspacesChanged,
   useActiveWorkspace,
   useWorkspaces,
@@ -88,9 +77,7 @@ function WorkspaceView() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string>()
 
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string>()
-  const [newWorkspace, setNewWorkspace] = useState<WorkspaceFields>()
+  const [creatingNew, setCreatingNew] = useState(false)
 
   // Settings and Team share one page but not one panel: membership is a
   // different permission from workspace settings, so each tab shows only the
@@ -132,31 +119,6 @@ function WorkspaceView() {
       )
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function onCreate() {
-    if (!newWorkspace) return
-    setCreating(true)
-    setCreateError(undefined)
-    try {
-      const workspace = await createWorkspace(workspaceBody(newWorkspace))
-      // Creating one also selects it, so everything on screen now belongs to a
-      // different workspace — the scope is dropped before we navigate.
-      adoptWorkspace(workspace)
-      setNewWorkspace(undefined)
-      toast.success(`Created ${workspace.name}`)
-      router.push("/projects")
-    } catch (caught) {
-      setCreateError(
-        caught instanceof ApiRequestError
-          ? caught.code === "VALIDATION_FAILED"
-            ? "Check the name and website — a website must be a full http or https URL."
-            : caught.detail
-          : "Couldn't create that workspace.",
-      )
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -295,57 +257,18 @@ function WorkspaceView() {
                   its org-admin, and it starts empty.
                 </p>
               </div>
-              <Button
-                onClick={() => {
-                  setCreateError(undefined)
-                  setNewWorkspace({
-                    name: "",
-                    description: "",
-                    website_url: "",
-                  })
-                }}
-              >
+              <Button onClick={() => setCreatingNew(true)}>
                 <Plus aria-hidden="true" />
                 New workspace
               </Button>
             </section>
           ) : null}
 
-          <Dialog
-            open={Boolean(newWorkspace)}
-            onOpenChange={(open) => {
-              if (!open) setNewWorkspace(undefined)
-            }}
-          >
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Create a workspace</DialogTitle>
-                <DialogDescription>
-                  Creating it also switches you to it. Nothing from{" "}
-                  {active.name} comes with you.
-                </DialogDescription>
-              </DialogHeader>
-              {newWorkspace ? (
-                <WorkspaceForm
-                  values={newWorkspace}
-                  onChange={setNewWorkspace}
-                  onSubmit={onCreate}
-                  busy={creating}
-                  error={createError}
-                  submitLabel="Create workspace"
-                  busyLabel="Creating…"
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setNewWorkspace(undefined)}
-                  >
-                    Cancel
-                  </Button>
-                </WorkspaceForm>
-              ) : null}
-            </DialogContent>
-          </Dialog>
+          <CreateWorkspaceDialog
+            open={creatingNew}
+            onOpenChange={setCreatingNew}
+            description={`Creating it also switches you to it. Nothing from ${active.name} comes with you.`}
+          />
 
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
             <Building2 className="size-3.5" aria-hidden="true" />
