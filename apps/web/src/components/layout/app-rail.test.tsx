@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import type { ImgHTMLAttributes } from "react"
 import { beforeEach, expect, test, vi } from "vitest"
 
@@ -83,4 +83,18 @@ test("dashboard links go to Projects when no repository can be selected", () => 
     "href",
     "/projects",
   )
+})
+
+test("signing out leaves a note so the sign-in page can say so", () => {
+  sessionStorage.removeItem("codesage.signedOut")
+  renderRail()
+  const form = screen
+    .getByRole("button", { name: /sign out/i })
+    .closest("form") as HTMLFormElement
+  // jsdom does not implement form navigation; stop it after the handler ran.
+  form.addEventListener("submit", (event) => event.preventDefault())
+
+  fireEvent.submit(form)
+
+  expect(sessionStorage.getItem("codesage.signedOut")).toBe("1")
 })
