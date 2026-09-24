@@ -111,3 +111,14 @@ test("with no workspace every link stays, marked as locked", async () => {
   expect(projects).toHaveAccessibleName(/create a workspace first/i)
   expect(projects).toHaveAttribute("title", "Create a workspace first")
 })
+
+test("with no workspace every link stays, marked as locked", async () => {
+  const { noteActiveWorkspace } = await import("@/hooks/use-workspace-scope")
+  noteActiveWorkspace(null)
+  renderRail()
+
+  const nav = screen.getByRole("navigation", { name: "Main navigation" })
+  const projects = within(nav).getByRole("link", { name: /projects/i })
+  expect(projects).toHaveAccessibleName(/create a workspace first/i)
+  expect(projects).toHaveAttribute("title", "Create a workspace first")
+})
