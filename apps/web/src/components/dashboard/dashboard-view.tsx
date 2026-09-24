@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
+import { useSelectedBranch } from "@/hooks/use-selected-branch"
+import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
 import { useScan } from "@/hooks/use-scan"
@@ -52,12 +54,31 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     Boolean(branch && (!branchNames || branchNames.includes(branch)))
   const fallbackBranch =
     branches?.find((branch) => branch.is_default)?.name ?? branches?.[0]?.name
+  // The branch this project was last looked at. Only trusted once the branch
+  // list has landed and still contains it — a deleted branch falls back quietly.
+  const workspaceId = useActiveWorkspaceId()
+  const { storedBranch, rememberBranch } = useSelectedBranch(
+    workspaceId,
+    repoId,
+  )
+  const rememberedBranch =
+    branchNames && storedBranch && branchNames.includes(storedBranch)
+      ? storedBranch
+      : undefined
+  // The URL wins, then a pick made here, then the remembered one, then the
+  // repository's default.
   const activeBranch =
     (branchIsAvailable(branchFromUrl)
       ? branchFromUrl
       : branchIsAvailable(pickedBranch)
         ? pickedBranch
-        : fallbackBranch) ?? ""
+        : (rememberedBranch ?? fallbackBranch)) ?? ""
+
+  // Remember whatever the page settled on, once it is a real branch.
+  const settledOnRealBranch = Boolean(branchNames?.includes(activeBranch))
+  useEffect(() => {
+    if (settledOnRealBranch) rememberBranch(activeBranch)
+  }, [activeBranch, settledOnRealBranch, rememberBranch])
   const { data: scanHistory } = useScanHistory(repoId, activeBranch)
 
   const {
