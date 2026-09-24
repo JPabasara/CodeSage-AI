@@ -16,13 +16,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ErrorState } from "@/components/error-state"
@@ -47,6 +40,7 @@ import {
 import { useProfilePool, useProjectProfile } from "@/hooks/use-profiles"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
+import { NoProjectState } from "@/components/projects/no-project-state"
 import { useSession } from "@/hooks/use-session"
 import {
   MAX_CUSTOM_PROFILES,
@@ -133,17 +127,11 @@ export default function ProfilesPage() {
   } = useProfilePool()
   const { data: repos } = useProjects()
 
-  // The project this page opens on is the one the rest of the app is on, but
-  // choosing another here is a local act: someone comparing overrides should not
-  // find the dashboard has moved under them.
-  const { selectedProjectId } = useSelectedProject({
+  // One source of truth for "which project": the app bar's project picker. The
+  // override tab follows it, so this page and the dashboard never disagree.
+  const { selectedProjectId: projectId } = useSelectedProject({
     availableRepoIds: repos?.map((repo) => repo.id),
   })
-  const [pickedProjectId, setPickedProjectId] = useState<string>()
-  const projectId =
-    pickedProjectId && repos?.some((repo) => repo.id === pickedProjectId)
-      ? pickedProjectId
-      : selectedProjectId
   const {
     data: projectProfile,
     loading: loadingProjectProfile,
@@ -156,7 +144,17 @@ export default function ProfilesPage() {
   // derived from the context below, so the page opens on the profile actually in
   // force rather than on a client-side guess that could disagree with it.
   const [touchedId, setTouchedId] = useState<string>()
+
   const [draft, setDraft] = useState<Draft>()
+
+  // A different project picked in the app bar starts the override tab fresh:
+  // a half-made choice for one project must not carry over to the next.
+  const [shownProjectId, setShownProjectId] = useState(projectId)
+  if (shownProjectId !== projectId) {
+    setShownProjectId(projectId)
+    setTouchedId(undefined)
+    setDraft(undefined)
+  }
 
   const [saving, setSaving] = useState(false)
   const [choosing, setChoosing] = useState(false)
@@ -510,44 +508,20 @@ export default function ProfilesPage() {
               React warns about and which loses a keyboard selection made in
               between. */}
           {!repos ? (
-            <Skeleton className="h-9 w-64" />
+            <Skeleton className="h-5 w-64" />
           ) : repos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Connect a repository first — a project override needs a project.
-            </p>
+            <NoProjectState page="override" compact />
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-3">
-                <label
-                  htmlFor="profile-project"
-                  className="text-sm font-medium"
-                >
-                  Project
-                </label>
-                <Select
-                  value={projectId ?? ""}
-                  onValueChange={(next) => {
-                    setPickedProjectId(next)
-                    setTouchedId(undefined)
-                    setDraft(undefined)
-                  }}
-                >
-                  <SelectTrigger
-                    id="profile-project"
-                    className="w-64"
-                    aria-label="Project"
-                  >
-                    <SelectValue placeholder="Choose a project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(repos ?? []).map((repo) => (
-                      <SelectItem key={repo.id} value={repo.id}>
-                        {repo.owner}/{repo.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                For{" "}
+                <strong className="font-medium text-foreground">
+                  {selectedProject
+                    ? `${selectedProject.owner}/${selectedProject.name}`
+                    : "—"}
+                </strong>
+                . Choose another project from the picker at the top.
+              </p>
 
               {/* The effective-profile summary: what this project is scored
                   with, and whether that is inherited or its own choice. */}
