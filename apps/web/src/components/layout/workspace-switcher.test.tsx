@@ -114,3 +114,14 @@ test("a workspace with no remembered project opens Projects", async () => {
   await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/projects"))
   expect(writeSelectedProjectId(DEMO_REPO_ID, WORKSPACE_ID)).toBe(DEMO_REPO_ID)
 })
+
+test("with no workspace it says so and offers to create one", async () => {
+  render(<WorkspaceSwitcher workspaces={[]} />)
+
+  await userEvent.click(
+    screen.getByRole("button", { name: /no workspace\s*create workspace/i }),
+  )
+  expect(
+    await screen.findByRole("dialog", { name: "Create a workspace" }),
+  ).toBeVisible()
+})

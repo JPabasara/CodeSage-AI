@@ -27,17 +27,16 @@ beforeEach(() => {
   session.error = undefined
 })
 
-test("a signed-in user with no workspace goes to onboarding, not to sign-in", async () => {
-  // The difference the middleware cannot see: the session cookie is httpOnly, so
-  // at the edge this user looks exactly like any other signed-in one. Sending
-  // them to /login would have them sign in again and land straight back here.
+test("a signed-in user with no workspace stays in the app, not sent to sign-in", async () => {
+  // Each page shows its "create a workspace" card instead. Sending someone who
+  // just signed in back to /login would have them sign in again and land here
+  // again, never learning that what they are missing is a workspace.
   session.data = mockSessionOnboarding
 
   render(<SessionGuard />)
 
-  await waitFor(() =>
-    expect(nav.replace).toHaveBeenCalledWith("/onboarding/workspace"),
-  )
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(nav.replace).not.toHaveBeenCalled()
 })
 
 test("a user with a workspace is left where they are", async () => {
@@ -59,18 +58,6 @@ test("no session at all goes to sign-in", async () => {
   )
 })
 
-test("the onboarding page itself is not redirected to onboarding", async () => {
-  session.data = mockSessionOnboarding
-  nav.pathname = "/onboarding/workspace"
-
-  render(<SessionGuard />)
-
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  // Redirecting a page to itself is a loop, and the browser is the one that
-  // notices.
-  expect(nav.replace).not.toHaveBeenCalled()
-})
-
 test("an invitation kept through sign-in sends the user back to accept it", async () => {
   sessionStorage.setItem("codesage.pendingInvitation", "kept-token")
   session.data = mockSessionOnboarding
@@ -80,7 +67,5 @@ test("an invitation kept through sign-in sends the user back to accept it", asyn
   await waitFor(() =>
     expect(nav.replace).toHaveBeenCalledWith("/invitations/accept"),
   )
-  // Before onboarding: joining is the way in, not creating a workspace.
-  expect(nav.replace).not.toHaveBeenCalledWith("/onboarding/workspace")
   sessionStorage.removeItem("codesage.pendingInvitation")
 })

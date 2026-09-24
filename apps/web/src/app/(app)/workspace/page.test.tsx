@@ -134,8 +134,13 @@ test("creating another workspace switches to it, and it starts empty", async () 
     within(dialog).getByRole("button", { name: "Create workspace" }),
   )
 
-  await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/projects"))
-  expect(toastSuccess).toHaveBeenCalledWith("Created Second Team")
+  await waitFor(() =>
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Second Team is ready. Connect your first repository.",
+    ),
+  )
+  // It stays put: the page it was created from fills in for the new workspace.
+  expect(nav.push).not.toHaveBeenCalled()
 
   // Switched to it, and none of Acme Engineering's three projects came along.
   const workspaces = await getWorkspaces()
