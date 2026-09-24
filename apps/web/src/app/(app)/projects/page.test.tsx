@@ -223,11 +223,11 @@ test("removing the last project clears storage and sends rail links to Projects"
     expect(readSelectedProjectId(WORKSPACE_ID)).toBeUndefined()
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
       "href",
-      "/projects",
+      "/dashboard",
     )
     expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
       "href",
-      "/projects",
+      "/dashboard/history",
     )
   })
 })

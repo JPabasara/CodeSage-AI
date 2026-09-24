@@ -47,6 +47,7 @@ INVENTORY = {
     ("DELETE", "/api/projects/{repo_id}"): "repository:disconnect",
     ("GET", "/api/repos/{repo_id}/branches"): "repository:read",
     ("POST", "/api/repos/{repo_id}/scan"): "scan:start",
+    ("GET", "/api/repos/{repo_id}/scan/active"): "result:read",
     ("GET", "/api/repos/{repo_id}/scan/{scan_id}"): "result:read",
     ("POST", "/api/repos/{repo_id}/scan/{scan_id}/stop"): "scan:cancel_own|scan:cancel_any",
     ("GET", "/api/repos/{repo_id}/scans"): "history:read",
@@ -219,7 +220,7 @@ def test_every_operation_checks_role_before_business_service(
 
     for module, names in [
         (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
-        (analysis, ["start", "get_status", "cancel", "get_history"]),
+        (analysis, ["start", "get_status", "get_active", "cancel", "get_history"]),
         (
             profiles,
             [
@@ -290,6 +291,7 @@ def test_foreign_resources_are_404_before_work(account, resources, client, monke
     monkeypatch.setattr(analysis, "start", side_effect)
     monkeypatch.setattr(analysis, "cancel", side_effect)
     monkeypatch.setattr(analysis, "get_status", side_effect)
+    monkeypatch.setattr(analysis, "get_active", side_effect)
     monkeypatch.setattr(dashboard, "build_health_report", side_effect)
     monkeypatch.setattr(repositories, "disconnect", side_effect)
     for method, template in INVENTORY:
@@ -457,7 +459,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
 
     for module, names in [
         (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
-        (analysis, ["start", "get_status", "cancel", "get_history"]),
+        (analysis, ["start", "get_status", "get_active", "cancel", "get_history"]),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
         (

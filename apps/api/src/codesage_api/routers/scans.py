@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from codesage_api.authorization.routes import (
@@ -45,6 +45,31 @@ def start_scan(
     Skip-if-unchanged is decided here, before anything is queued.
     """
     return analysis.start(db, workspace_id, repo_id, body.branch, actor_user_id=user_id)
+
+
+# Registered before `/scan/{scan_id}`: that route would otherwise take "active"
+# as a scan id and answer 422.
+@router.get(
+    "/scan/active",
+    response_model=ScanStatusOut,
+    responses={204: {"description": "No scan is queued or running."}},
+    dependencies=[Depends(require_repository_permission("result:read"))],
+)
+def get_active_scan(
+    repo_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+    branch: Annotated[str | None, Query(min_length=1)] = None,
+) -> ScanStatusOut | Response:
+    """The scan still queued or running for this repository (or one branch of it).
+
+    200 with its status, or 204 when there is none. Lets a client that did not
+    start the scan — or no longer holds its id — find it and resume polling.
+    """
+    active = analysis.get_active(db, workspace_id, repo_id, branch)
+    if active is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return active
 
 
 @router.get(

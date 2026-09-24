@@ -195,3 +195,24 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Scan feedback (Phase 13E): the strip's sweep while there is no percentage,
+   and the brief highlight on a health score that just changed. Both are only
+   used behind `motion-safe:`. */
+@keyframes scan-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@keyframes score-flash {
+  from {
+    background-color: color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}

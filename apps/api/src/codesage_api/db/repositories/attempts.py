@@ -86,6 +86,27 @@ def find_active_for_branch(session: Session, branch_id: uuid.UUID) -> AnalysisAt
     )
 
 
+def find_active_for_repository(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+) -> AnalysisAttempt | None:
+    """The newest queued or running attempt on any branch of one repository."""
+    return session.scalar(
+        select(AnalysisAttempt)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(
+            Repository.id == repository_id,
+            Repository.workspace_id == workspace_id,
+            AnalysisAttempt.status.in_((AnalysisStatus.QUEUED, AnalysisStatus.RUNNING)),
+        )
+        .order_by(AnalysisAttempt.id.desc())
+        .limit(1)
+        .options(joinedload(AnalysisAttempt.branch))
+    )
+
+
 def find_latest_completed(session: Session, branch_id: uuid.UUID) -> AnalysisAttempt | None:
     return session.scalar(
         select(AnalysisAttempt)

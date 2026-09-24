@@ -385,6 +385,25 @@ export function getScanStatus(
   }).then(json<ScanStatus>)
 }
 
+/**
+ * The scan still queued or running on this repository — on one branch, or any
+ * when `branch` is omitted — or `null` when there is none (204).
+ *
+ * The way back to a scan whose id this page never held: one started before a
+ * refresh, in another tab or device, or by a teammate.
+ */
+export async function getActiveScan(
+  repoId: string,
+  branch?: string,
+): Promise<ScanStatus | null> {
+  const qs = branch ? `?${new URLSearchParams({ branch })}` : ""
+  const res = await fetch(`${API_BASE}/api/repos/${repoId}/scan/active${qs}`, {
+    credentials: "include",
+  })
+  if (res.status === 204) return null
+  return json<ScanStatus>(res)
+}
+
 export function stopScan(repoId: string, scanId: string): Promise<ScanStatus> {
   return fetch(`${API_BASE}/api/repos/${repoId}/scan/${scanId}/stop`, {
     method: "POST",

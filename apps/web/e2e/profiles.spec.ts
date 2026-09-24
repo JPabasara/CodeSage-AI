@@ -225,8 +225,12 @@ test("one project's override leaves every other project inheriting", async ({
   )
 
   // The second project is untouched by the first one's choice.
-  await page.getByRole("combobox", { name: "Project", exact: true }).click()
-  await page.getByRole("option", { name: "acme/web-store" }).click()
+  // Picked from the app bar: the override tab follows it.
+  await page
+    .getByTestId("app-top-bar")
+    .getByRole("combobox", { name: /^Project:/ })
+    .click()
+  await page.getByRole("option", { name: /web-store/ }).click()
   await expect(page.getByTestId("effective-summary")).toContainText(
     "Balanced, inherited from the workspace default",
   )

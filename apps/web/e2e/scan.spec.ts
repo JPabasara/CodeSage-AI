@@ -23,15 +23,15 @@ const scanningLabel = (page: import("@playwright/test").Page) =>
 
 /** The visible "Stopping…" label, for the same reason. */
 const stoppingLabel = (page: import("@playwright/test").Page) =>
-  page.getByText("Stopping…", { exact: true })
+  page.getByTestId("app-top-bar").getByText("Stopping…", { exact: true })
 
 /**
- * The scan control's own "Cancelled" label — matched exactly, because the toast
- * says "Scan cancelled" and an unscoped /cancelled/i matches both. The label is
- * the one that matters: it is what stays on screen after the toast fades.
+ * How a stopped scan ends (Phase 13E): the toast says it stopped and that the
+ * previous results are unchanged, with Try again — a stopped scan is still told
+ * apart from one that never ran.
  */
 const cancelledLabel = (page: import("@playwright/test").Page) =>
-  page.getByText("Cancelled", { exact: true })
+  page.getByText(/^Scan stopped · /)
 
 test.beforeEach(async ({ page }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
@@ -58,7 +58,7 @@ test("stopping a scan says Stopping…, then settles on Cancelled — never idle
   await scanButton(page).click()
   await expect(scanningLabel(page)).toBeVisible()
 
-  await page.getByRole("button", { name: /stop/i }).click()
+  await page.getByRole("button", { name: "Stop", exact: true }).click()
 
   // Cooperative cancellation: the worker only reads the flag between pipeline
   // stages, so there is a real interval where "Stopping…" is the honest answer.
@@ -76,7 +76,7 @@ test("a cancelled scan leaves the previous results intact", async ({
   page,
 }) => {
   await scanButton(page).click()
-  await page.getByRole("button", { name: /stop/i }).click()
+  await page.getByRole("button", { name: "Stop", exact: true }).click()
   await expect(cancelledLabel(page)).toBeVisible({ timeout: 15_000 })
 
   // Cancelling must never leave a half-written snapshot, so the dashboard still
@@ -87,7 +87,7 @@ test("a cancelled scan leaves the previous results intact", async ({
 
 test("a scan can be started again after being cancelled", async ({ page }) => {
   await scanButton(page).click()
-  await page.getByRole("button", { name: /stop/i }).click()
+  await page.getByRole("button", { name: "Stop", exact: true }).click()
   await expect(cancelledLabel(page)).toBeVisible({ timeout: 15_000 })
 
   await scanButton(page).click()

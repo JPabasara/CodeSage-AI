@@ -517,6 +517,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/{repo_id}/scan/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Find the scan still queued or running
+         * @description A client learns a scan id only from the `POST` that started it. A page
+         *     that was left and reopened, refreshed, opened in another tab or on
+         *     another device, or a teammate's scan, would otherwise stay invisible
+         *     until it finished. This returns that scan so the client can resume
+         *     polling `GET …/scan/{scan_id}` and offer Stop.
+         *
+         *     With `branch`, only that branch; without it, the newest active scan on
+         *     any branch of the repository.
+         */
+        get: operations["get_active_scan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo_id}/scan/{scan_id}": {
         parameters: {
             query?: never;
@@ -2387,6 +2417,42 @@ export interface operations {
             };
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
+        };
+    };
+    get_active_scan: {
+        parameters: {
+            query?: {
+                /** @description Restrict to one branch. Omit for any branch. */
+                branch?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active scan's current phase and progress. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatus"];
+                };
+            };
+            /** @description No scan is queued or running. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     get_scan_status: {

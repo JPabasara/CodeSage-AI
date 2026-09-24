@@ -69,7 +69,7 @@ test("dashboard links follow the project in the current dashboard URL", () => {
   )
 })
 
-test("dashboard links go to Projects when no repository can be selected", () => {
+test("with no project, Dashboard and Scan History open their no-project pages", () => {
   data.repos = []
 
   renderRail()
@@ -77,11 +77,11 @@ test("dashboard links go to Projects when no repository can be selected", () => 
   expect(screen.getAllByRole("link", { name: "Dashboard" })).toHaveLength(1)
   expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
     "href",
-    "/projects",
+    "/dashboard",
   )
   expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
     "href",
-    "/projects",
+    "/dashboard/history",
   )
 })
 
@@ -99,17 +99,6 @@ test("switcher, account and sign-out live in the top bar, not the rail", () => {
   renderRail()
   expect(screen.queryByRole("combobox", { name: /workspace/i })).toBeNull()
   expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull()
-})
-
-test("with no workspace every link stays, marked as locked", async () => {
-  const { noteActiveWorkspace } = await import("@/hooks/use-workspace-scope")
-  noteActiveWorkspace(null)
-  renderRail()
-
-  const nav = screen.getByRole("navigation", { name: "Main navigation" })
-  const projects = within(nav).getByRole("link", { name: /projects/i })
-  expect(projects).toHaveAccessibleName(/create a workspace first/i)
-  expect(projects).toHaveAttribute("title", "Create a workspace first")
 })
 
 test("with no workspace every link stays, marked as locked", async () => {

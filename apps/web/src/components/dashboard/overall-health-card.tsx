@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Pie, PieChart } from "recharts"
 
 import {
@@ -15,7 +15,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 import type { CategoryBreakdownItem, Grade } from "@/lib/types"
-import { gradeColor } from "@/lib/utils"
+import { cn, gradeColor } from "@/lib/utils"
 
 export const CATEGORY_COLORS: Record<string, string> = {
   "code-design": "var(--category-code-design)",
@@ -40,6 +40,7 @@ export function OverallHealthCard({
   redIssueCount,
   categoryBreakdown,
 }: Readonly<OverallHealthCardProps>) {
+  const [firstScore] = useState(score)
   const deltaSummary =
     delta === 0 ? "No change" : delta > 0 ? `Up +${delta}` : `Down ${delta}`
 
@@ -98,8 +99,20 @@ export function OverallHealthCard({
               >
                 {grade}
               </span>
-              <span className="text-base text-muted-foreground">
-                {score}/100
+              {/* Re-keyed by the score, so a new score after a scan replays a
+                  brief highlight — never on first load, and never under
+                  reduced motion. The API sends a float; people read whole
+                  numbers. */}
+              <span
+                key={score}
+                data-testid="health-score"
+                className={cn(
+                  "rounded px-0.5 text-base text-muted-foreground tabular-nums",
+                  score !== firstScore &&
+                    "motion-safe:animate-[score-flash_600ms_ease-out]",
+                )}
+              >
+                {Math.round(score)}/100
               </span>
             </div>
             <p className="mt-1 text-xs leading-4 text-muted-foreground">

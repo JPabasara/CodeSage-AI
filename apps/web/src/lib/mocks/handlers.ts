@@ -1472,6 +1472,21 @@ export const handlers = [
     return HttpResponse.json(started, { status: 202 })
   }),
 
+  // Before `:scanId`, or "active" would be taken for a scan id.
+  http.get("*/api/repos/:repoId/scan/active", ({ params, request }) => {
+    const repoId = params.repoId as string
+    if (!knownRepo(repoId)) return NOT_FOUND()
+    const branch = new URL(request.url).searchParams.get("branch")
+    const current = scans.get(repoId)
+    const active =
+      current &&
+      (current.phase === "queued" || current.phase === "running") &&
+      (!branch || current.branch === branch)
+    return active
+      ? HttpResponse.json(current)
+      : new HttpResponse(null, { status: 204 })
+  }),
+
   http.get("*/api/repos/:repoId/scan/:scanId", ({ params }) => {
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()

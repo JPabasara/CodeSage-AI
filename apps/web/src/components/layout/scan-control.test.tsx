@@ -61,7 +61,7 @@ test("stopping says so and refuses a second click", async () => {
 })
 
 test("running without stopping still shows progress and an enabled Stop", () => {
-  render(<ScanControl phase="running" progress={85} />)
+  render(<ScanControl phase="running" progress={85} onStop={() => {}} />)
   expect(screen.getByText(/85%/)).toBeInTheDocument()
   expect(screen.queryByText(/stopping/i)).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: /stop/i })).toBeEnabled()
@@ -108,4 +108,34 @@ test("a queued scan announces that it is waiting, not that it is scanning", () =
   expect(screen.getByRole("status")).toHaveTextContent(
     "Scan queued, waiting for a worker",
   )
+})
+
+test("Stop waits until the scan has an id to stop", () => {
+  // Pressed before the start request answered, there is nothing to cancel yet.
+  render(<ScanControl phase="queued" progress={0} />)
+  expect(screen.getByRole("button", { name: /stop/i })).toBeDisabled()
+})
+
+test("a role that cannot start scans sees Scan disabled, with the reason", async () => {
+  const { default: userEvent } = await import("@testing-library/user-event")
+  render(
+    <ScanControl
+      phase="idle"
+      progress={0}
+      lockedReason="Viewers can't start scans"
+    />,
+  )
+
+  expect(screen.getByRole("button", { name: /scan/i })).toBeDisabled()
+  await userEvent.tab()
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    "Viewers can't start scans",
+  )
+})
+
+test("with Stop elsewhere, the running state is a compact busy button", () => {
+  render(<ScanControl phase="running" progress={40} showStop={false} />)
+  expect(screen.getByRole("button", { name: "Scanning…" })).toBeDisabled()
+  expect(screen.queryByText(/40%/)).toBeNull() // the strip carries the number
+  expect(screen.queryByRole("button", { name: /stop/i })).toBeNull()
 })

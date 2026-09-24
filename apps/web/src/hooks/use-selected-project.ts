@@ -205,7 +205,11 @@ export function resolveSelectedProjectId({
   if (fallbackToFirstAvailable && available && available.length > 0) {
     return available[0]
   }
-  if (demoRepoId && isValidProjectId(demoRepoId)) return demoRepoId
+  // Only while the list is still loading. A workspace that has answered with no
+  // projects has none — linking to the demo repository would open a project
+  // that is not in it.
+  if (!available && demoRepoId && isValidProjectId(demoRepoId))
+    return demoRepoId
   return undefined
 }
 

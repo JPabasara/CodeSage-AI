@@ -1,9 +1,10 @@
 "use client"
 
-import { Play, Square } from "lucide-react"
+import { Loader2, Play, Square } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { LockedAction } from "@/components/locked-action"
 import type { ScanPhase } from "@/lib/types"
 
 export type ScanControlProps = {
@@ -14,7 +15,12 @@ export type ScanControlProps = {
   /** Rendered on the deep-mint app bar: light-on-dark buttons. */
   onBar?: boolean
   onScan?: () => void
+  /** Absent while the scan has no id yet (the request is still in flight). */
   onStop?: () => void
+  /** Set when this role cannot start scans: Scan is disabled with this caption. */
+  lockedReason?: string
+  /** False when Stop lives elsewhere (the dashboard's status strip) or the role cannot stop. */
+  showStop?: boolean
 }
 
 /**
@@ -52,6 +58,8 @@ export function ScanControl({
   onScan,
   onStop,
   onBar = false,
+  lockedReason,
+  showStop = true,
 }: Readonly<ScanControlProps>) {
   // On the mint bar the brand-mint button would vanish into its background.
   const scanClass = onBar ? "bg-white text-topbar hover:bg-white/90" : undefined
@@ -71,6 +79,28 @@ export function ScanControl({
     else if (queued) label = "Queued…"
     else label = `Scanning… ${progress}%`
 
+    // Stop and the numbers live elsewhere (the dashboard's status strip): here
+    // it is just the button's busy state, the same size as Scan, so the app
+    // bar neither jumps nor crowds while a scan runs.
+    if (!showStop) {
+      return (
+        <>
+          <Button size="sm" className={scanClass} disabled>
+            <Loader2
+              className="size-3.5 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            {stopping ? "Stopping…" : queued ? "Queued…" : "Scanning…"}
+          </Button>
+          <ScanAnnouncement
+            phase={phase}
+            progress={progress}
+            stopping={stopping}
+          />
+        </>
+      )
+    }
+
     return (
       <div className="flex items-center gap-2">
         {/*
@@ -82,21 +112,23 @@ export function ScanControl({
         <span className="text-sm tabular-nums">{label}</span>
         {/* Queued has nothing to fill, and an empty bar reads as 0%, not as
             "not started". The label carries it alone until work begins. */}
-        {queued ? null : (
+        {queued || !showStop ? null : (
           <Progress
             value={progress}
             className={onBar ? "w-24 bg-white/25 *:bg-white" : "w-24"}
           />
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          className={stopClass}
-          onClick={onStop}
-          disabled={stopping}
-        >
-          <Square className="size-3.5" /> Stop
-        </Button>
+        {showStop ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className={stopClass}
+            onClick={onStop}
+            disabled={stopping || !onStop}
+          >
+            <Square className="size-3.5" /> Stop
+          </Button>
+        ) : null}
         <ScanAnnouncement
           phase={phase}
           progress={progress}
@@ -126,8 +158,20 @@ export function ScanControl({
     )
   }
 
+  if (lockedReason) {
+    return (
+      <LockedAction reason={lockedReason}>
+        <Button size="sm" className={scanClass} disabled>
+          <Play className="size-3.5" /> Scan
+        </Button>
+      </LockedAction>
+    )
+  }
+
+  // No handler yet (the branch is still loading): disabled for that moment,
+  // rather than a click that silently does nothing.
   return (
-    <Button size="sm" className={scanClass} onClick={onScan}>
+    <Button size="sm" className={scanClass} onClick={onScan} disabled={!onScan}>
       <Play className="size-3.5" /> Scan
     </Button>
   )

@@ -114,6 +114,17 @@ onboarding(
       .getByRole("link", { name: /projects/i })
       .click()
     await expect(page.getByText(/no repositories connected/i)).toBeVisible()
+
+    // A page about one project says how to get one, rather than erroring.
+    await rail(page)
+      .getByRole("link", { name: "Dashboard", exact: true })
+      .click()
+    await expect(page).toHaveURL(/\/dashboard$/)
+    await expect(
+      main(page).getByRole("heading", {
+        name: /connect a repository to see its dashboard/i,
+      }),
+    ).toBeVisible()
   },
 )
 

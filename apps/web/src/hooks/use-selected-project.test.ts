@@ -204,3 +204,12 @@ test("an empty loaded project list clears the selection instead of keeping stale
     }),
   ).toBeUndefined()
 })
+
+test("the demo fallback is only for a list still loading, never an empty one", async () => {
+  const { resolveSelectedProjectId } = await import("./use-selected-project")
+  const demo = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+  expect(resolveSelectedProjectId({ demoRepoId: demo })).toBe(demo)
+  expect(
+    resolveSelectedProjectId({ demoRepoId: demo, availableRepoIds: [] }),
+  ).toBeUndefined()
+})
