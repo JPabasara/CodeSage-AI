@@ -69,6 +69,7 @@ LATER_TABLES = {
     "workspace_invitation",  # 0013
     "workspace_profile_settings",  # 0015
     "repository_profile_assignment",  # 0015
+    "class_risk_prediction",  # 0017
 }
 
 # Columns introduced after 0001.
@@ -77,6 +78,7 @@ LATER_COLUMNS = {
     "membership": ("role_id",),  # 0010
     "app_user": ("email_verified",),  # 0013
     "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),  # 0011
+    "finding": ("class_name", "method_name"),  # 0017
     "scoring_profile": (  # 0015
         "kind",
         "preset_key",
