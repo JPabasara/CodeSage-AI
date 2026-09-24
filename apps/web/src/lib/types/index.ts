@@ -296,6 +296,37 @@ export interface ScoreProfile {
   editable: boolean // false for the three built-ins, which the database refuses to change
 }
 
+/**
+ * A workspace holds at most five custom profiles. The three built-ins do not
+ * count toward it, which is why this is a limit on the custom ones alone.
+ *
+ * The server is the enforcement point — it refuses the sixth with
+ * `PROFILE_LIMIT_REACHED`, transaction-safely. This constant only lets the UI
+ * say "4 of 5" and stop offering a create it knows would be refused.
+ */
+export const MAX_CUSTOM_PROFILES = 5
+
+/**
+ * The body of `POST /api/profiles`. `name` is required, unlike on the legacy
+ * apply endpoint: a profile that joins a pool has to be tellable apart from the
+ * other five.
+ */
+export type CreateProfileRequest = components["schemas"]["CreateProfileRequest"]
+
+/**
+ * The body of `PATCH /api/profiles/{profile_id}` — only what changed. An omitted
+ * field keeps its stored value, which is what makes this safe to send from a
+ * form that tracks edits rather than the whole profile.
+ */
+export type UpdateProfileRequest = components["schemas"]["UpdateProfileRequest"]
+
+/**
+ * The body of both PUTs that choose a profile — the workspace default and a
+ * project override. It carries the whole selection, never a delta, so re-sending
+ * it changes nothing.
+ */
+export type SelectProfileRequest = components["schemas"]["SelectProfileRequest"]
+
 /** Which profile one project is scored with, and where that came from. */
 export interface ProjectProfile {
   repo_id: string
@@ -350,6 +381,24 @@ export type Role = components["schemas"]["Role"]
  * to — exactly one at most, and none at all during onboarding.
  */
 export type Workspace = components["schemas"]["WorkspaceSummary"]
+
+/**
+ * The body of `POST /api/auth/workspaces`. Only the name is required — a
+ * workspace is identified by what the team calls it, and the rest is decoration
+ * the Workspace screen can fill in later.
+ */
+export type CreateWorkspaceRequest =
+  components["schemas"]["CreateWorkspaceRequest"]
+
+/**
+ * The body of `PATCH /api/auth/workspaces/{id}` — only what changed.
+ *
+ * Omitting `description` leaves it alone; sending `null` clears it. Those are
+ * different intentions and the contract keeps them different, so the form has to
+ * as well.
+ */
+export type UpdateWorkspaceRequest =
+  components["schemas"]["UpdateWorkspaceRequest"]
 
 /** An existing member. `status` distinguishes active from deactivated. */
 export type Member = components["schemas"]["Member"]

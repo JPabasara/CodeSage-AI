@@ -1,217 +1,509 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { expect, test, vi } from "vitest"
+import { beforeEach, expect, test, vi } from "vitest"
 
 import { http, HttpResponse } from "msw"
 
 import ProfilesPage from "./page"
 import * as client from "@/lib/api/client"
-import { balancedProfile } from "@/lib/mocks/fixtures"
+import {
+  DEMO_REPO_ID,
+  mockSession,
+  mockSessionViewer,
+} from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
+import type { ProfileValues } from "@/components/profiles/profile-values"
+import type { Session } from "@/lib/types"
 
-/** Wait for the seed-from-active load to finish. */
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/profiles",
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
+// <Toaster> lives in the root layout, so a page rendered alone puts no toast in
+// the DOM. Assert on the calls instead: what matters is which message was
+// chosen for which refusal.
+const { toastError, toastSuccess } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { error: toastError, success: toastSuccess }),
+}))
+
+// The role is the one thing these screens branch on, so it is a knob rather
+// than a fixed fixture: a read-only role has to be renderable in the same file.
+const session = vi.hoisted(() => ({ current: null as Session | null }))
+vi.mock("@/hooks/use-session", () => ({
+  useSession: () => ({ data: session.current, loading: false }),
+}))
+
+beforeEach(() => {
+  localStorage.clear()
+  session.current = mockSession
+  toastError.mockClear()
+  toastSuccess.mockClear()
+})
+
+/** Wait for the pool read to land — the skeleton is gone once a card is here. */
 async function ready() {
   expect(await screen.findByText("Category weights")).toBeInTheDocument()
 }
 
-test("shows six numbers: five category weights plus the trust slider", async () => {
-  render(<ProfilesPage />)
-  await ready()
+const poolList = () =>
+  screen.getByRole("list", { name: /workspace profile pool/i })
 
-  for (const key of [
-    "security",
-    "code_design",
-    "requirement",
-    "documentation",
-    "test",
-  ]) {
-    expect(screen.getByTestId(`value-${key}`)).toBeInTheDocument()
+const card = (name: string) =>
+  within(poolList())
+    .getByRole("button", { name: new RegExp(`^${name}`) })
+    .closest("li") as HTMLElement
+
+const values: ProfileValues = {
+  weights: {
+    security: 2,
+    code_design: 1,
+    requirement: 1,
+    documentation: 1,
+    test: 1,
+  },
+  trust_s: 0.5,
+}
+
+/** Fill the pool through the real endpoint, so the limit is really reached. */
+async function fillCustomProfiles(count: number) {
+  for (let i = 0; i < count; i++) {
+    await client.createProfile({ name: `Custom ${i + 1}`, ...values })
   }
-  expect(screen.getByTestId("value-trust_s")).toBeInTheDocument()
+}
 
-  // Six sliders, no more and no fewer.
-  expect(screen.getAllByRole("slider")).toHaveLength(6)
-})
+// ── the pool ────────────────────────────────────────────────────────────────
 
-test("opens showing the profile that is really applied, not a guess", async () => {
-  render(<ProfilesPage />)
-  await ready()
-
-  // mockProfiles marks Balanced active: all weights 1.0, trust 0.5.
-  expect(screen.getByTestId("value-security")).toHaveTextContent("1.0")
-  expect(screen.getByTestId("value-trust_s")).toHaveTextContent("0.50")
-})
-
-test("picking a preset seeds the sliders without saving anything", async () => {
-  const put = vi.spyOn(client, "applyProfile")
-  render(<ProfilesPage />)
-  await ready()
-
-  await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
-
-  // Security-first is 3.0 on security.
-  await waitFor(() =>
-    expect(screen.getByTestId("value-security")).toHaveTextContent("3.0"),
-  )
-  // Nothing is sent while the user is choosing — only Apply writes.
-  expect(put).not.toHaveBeenCalled()
-  put.mockRestore()
-})
-
-test("Apply sends the complete profile — six numbers, never a delta", async () => {
-  const put = vi.spyOn(client, "applyProfile")
-  render(<ProfilesPage />)
-  await ready()
-
-  await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
-  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
-
-  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
-  const body = put.mock.calls[0][0]
-  expect(Object.keys(body.weights).sort()).toEqual([
-    "code_design",
-    "documentation",
-    "requirement",
-    "security",
-    "test",
-  ])
-  expect(typeof body.trust_s).toBe("number")
-  put.mockRestore()
-})
-
-test("adopts the clamped values the server returns, not what it sent", async () => {
-  // The server clamps rather than rejecting: 9.0 comes back as 3.0 with a 200.
-  const put = vi.spyOn(client, "applyProfile").mockResolvedValue({
-    id: "custom",
-    name: "Custom",
-    weights: {
-      security: 3.0, // clamped down from an out-of-range request
-      code_design: 1.0,
-      requirement: 1.0,
-      documentation: 1.0,
-      test: 1.0,
-    },
-    trust_s: 1,
-    is_preset: false,
-    is_active: true,
-    usage_count: 0,
-    editable: true,
-  })
-
-  render(<ProfilesPage />)
-  await ready()
-  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
-
-  await waitFor(() =>
-    expect(screen.getByTestId("value-security")).toHaveTextContent("3.0"),
-  )
-  expect(screen.getByTestId("value-trust_s")).toHaveTextContent("1.00")
-  put.mockRestore()
-})
-
-test("the three presets are offered", async () => {
+test("renders the three built-ins, and says which is the workspace default", async () => {
   render(<ProfilesPage />)
   await ready()
 
   for (const name of ["Balanced", "Security-first", "Delivery-speed"]) {
-    expect(screen.getByRole("button", { name })).toBeInTheDocument()
+    expect(card(name)).toBeInTheDocument()
   }
+  expect(within(card("Balanced")).getByText("Workspace default")).toBeVisible()
+  expect(screen.getByTestId("workspace-default-name")).toHaveTextContent(
+    "Balanced",
+  )
+  // Built-ins do not count toward the five-custom limit, so an untouched
+  // workspace has used none of them.
+  expect(screen.getByTestId("custom-count")).toHaveTextContent("0 of 5")
 })
 
-test("an untouched preset is sent WITH its name", async () => {
-  const put = vi.spyOn(client, "applyProfile")
+test("a custom profile joins the pool and is marked as one", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+
   render(<ProfilesPage />)
   await ready()
 
-  await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
-  expect(screen.getByTestId("profile-label")).toHaveTextContent(
-    "Security-first",
-  )
-
-  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
-  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
-
-  // The numbers are still exactly the preset's, so the name records where they
-  // came from.
-  expect(put.mock.calls[0][0].name).toBe("Security-first")
-  put.mockRestore()
+  const row = card("Release gate")
+  expect(within(row).getByText("Custom")).toBeVisible()
+  // Created, but NOT made the default: authoring and choosing are separate.
+  expect(within(row).queryByText("Workspace default")).not.toBeInTheDocument()
+  expect(screen.getByTestId("custom-count")).toHaveTextContent("1 of 5")
 })
 
-test("dragging away from a preset makes it Custom and omits the name", async () => {
-  const put = vi.spyOn(client, "applyProfile")
+test("built-ins expose no edit or delete action", async () => {
   render(<ProfilesPage />)
   await ready()
 
-  await userEvent.click(screen.getByRole("button", { name: "Security-first" }))
-  expect(screen.getByTestId("profile-label")).toHaveTextContent(
-    "Security-first",
+  const balanced = card("Balanced")
+  expect(
+    within(balanced).queryByRole("button", { name: /edit balanced/i }),
+  ).not.toBeInTheDocument()
+  expect(
+    within(balanced).queryByRole("button", { name: /delete balanced/i }),
+  ).not.toBeInTheDocument()
+  // Duplicating one is how a built-in becomes editable.
+  expect(
+    within(balanced).getByRole("button", { name: /duplicate balanced/i }),
+  ).toBeVisible()
+})
+
+test("selecting a card seeds the sliders from that profile", async () => {
+  render(<ProfilesPage />)
+  await ready()
+
+  expect(screen.getByTestId("value-security")).toHaveTextContent("1.0")
+
+  await userEvent.click(
+    within(card("Security-first")).getByRole("button", {
+      name: /^Security-first/,
+    }),
   )
 
-  // Nudge one weight - the values are no longer Security-first.
-  const securitySlider = screen.getByRole("slider", {
-    name: /security weight/i,
-  })
-  securitySlider.focus()
-  await userEvent.keyboard("{ArrowLeft}")
-
+  // Security-first is 3.0 on security and 0.5 on documentation.
   await waitFor(() =>
-    expect(screen.getByTestId("profile-label")).toHaveTextContent("Custom"),
+    expect(screen.getByTestId("value-security")).toHaveTextContent("3.0"),
   )
-
-  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
-  await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
-
-  // The name is omitted for a custom profile: sending "Security-first" here
-  // would mislabel one that is not.
-  expect(put.mock.calls[0][0].name).toBeUndefined()
-  put.mockRestore()
+  expect(screen.getByTestId("value-documentation")).toHaveTextContent("0.5")
 })
 
-test("the mock stores an edited preset as a custom, non-preset profile", async () => {
-  render(<ProfilesPage />)
-  await ready()
-
-  const securitySlider = screen.getByRole("slider", {
-    name: /security weight/i,
-  })
-  securitySlider.focus()
-  await userEvent.keyboard("{ArrowRight}")
-  await userEvent.click(screen.getByRole("button", { name: "Apply" }))
-
-  // Round-trips through the real MSW handler: name "Custom", is_preset false.
-  const saved = await client.getActiveProfile()
-  expect(saved.name).toBe("Custom")
-  expect(saved.is_preset).toBe(false)
-  expect(saved.is_active).toBe(true)
-})
-
-// ── a failed load is no longer a dead end (#110) ─────────────────────────────
-
-test("a failed profile load offers a Retry that actually reloads it", async () => {
+test("the pool read failing offers a Retry that actually reloads it", async () => {
   let broken = true
   server.use(
-    http.get("*/api/profiles/active", () =>
+    http.get("*/api/profiles", () =>
       broken
         ? HttpResponse.json(
             { detail: "Something broke.", code: "INTERNAL_ERROR" },
             { status: 500 },
           )
-        : HttpResponse.json(balancedProfile),
+        : undefined,
     ),
   )
 
   render(<ProfilesPage />)
   expect(
-    await screen.findByText(/couldn’t load the active profile/i),
+    await screen.findByText(/couldn’t load the profile pool/i),
   ).toBeInTheDocument()
 
-  // This screen returns early on error, so before #110 a failed read hid the
-  // whole page — sliders, presets and all — with nothing to press.
   broken = false
   await userEvent.click(screen.getByRole("button", { name: "Retry" }))
-
-  expect(await screen.findByText("Category weights")).toBeInTheDocument()
+  await ready()
   expect(
-    screen.queryByText(/couldn’t load the active profile/i),
+    screen.queryByText(/couldn’t load the profile pool/i),
   ).not.toBeInTheDocument()
+})
+
+// ── editing ─────────────────────────────────────────────────────────────────
+
+test("moving a slider marks the profile unsaved and sends nothing", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+  const patch = vi.spyOn(client, "updateProfile")
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    within(card("Release gate")).getByRole("button", { name: /^Release gate/ }),
+  )
+
+  const slider = await screen.findByRole("slider", { name: /security weight/i })
+  slider.focus()
+  await userEvent.keyboard("{ArrowRight}")
+
+  expect(await screen.findByTestId("unsaved-badge")).toBeVisible()
+  // A drag crosses many values; only Save writes one.
+  expect(patch).not.toHaveBeenCalled()
+  patch.mockRestore()
+})
+
+test("Save sends only what changed, and Discard puts the stored values back", async () => {
+  const created = await client.createProfile({
+    name: "Release gate",
+    ...values,
+  })
+  const patch = vi.spyOn(client, "updateProfile")
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    within(card("Release gate")).getByRole("button", { name: /^Release gate/ }),
+  )
+
+  const slider = await screen.findByRole("slider", { name: /test weight/i })
+  slider.focus()
+  await userEvent.keyboard("{ArrowRight}")
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+  const [profileId, body] = patch.mock.calls[0]
+  expect(profileId).toBe(created.id)
+  // PATCH, not PUT: the four untouched weights and the name are absent, so
+  // re-sending values the form only displayed cannot re-clamp them.
+  expect(Object.keys(body)).toEqual(["weights"])
+  expect(Object.keys(body.weights ?? {})).toEqual(["test"])
+  expect(screen.queryByTestId("unsaved-badge")).not.toBeInTheDocument()
+  patch.mockRestore()
+})
+
+test("the clamped values the server stored replace the draft", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+  // The server clamps rather than rejecting: 9.0 is stored, and returned, as 3.0.
+  const patch = vi.spyOn(client, "updateProfile")
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    within(card("Release gate")).getByRole("button", { name: /^Release gate/ }),
+  )
+
+  const slider = await screen.findByRole("slider", { name: /security weight/i })
+  slider.focus()
+  // Drive it past the 3.0 maximum. The client clamp holds the slider at the
+  // bound; the response is still what decides what is on screen.
+  for (let i = 0; i < 20; i++) await userEvent.keyboard("{ArrowRight}")
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+  await waitFor(() => expect(patch).toHaveBeenCalled())
+  await waitFor(() =>
+    expect(screen.getByTestId("value-security")).toHaveTextContent("3.0"),
+  )
+  patch.mockRestore()
+})
+
+test("editing another profile with unsaved changes asks before discarding", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    within(card("Release gate")).getByRole("button", { name: /^Release gate/ }),
+  )
+
+  const slider = await screen.findByRole("slider", { name: /security weight/i })
+  slider.focus()
+  await userEvent.keyboard("{ArrowRight}")
+
+  await userEvent.click(
+    within(card("Balanced")).getByRole("button", { name: /^Balanced/ }),
+  )
+  expect(
+    await screen.findByText(/discard unsaved changes\?/i),
+  ).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole("button", { name: "Keep editing" }))
+  expect(await screen.findByTestId("unsaved-badge")).toBeVisible()
+})
+
+// ── creating ────────────────────────────────────────────────────────────────
+
+test("a profile can be created from a built-in, and is offered a name", async () => {
+  const post = vi.spyOn(client, "createProfile")
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    screen.getByRole("button", { name: /duplicate security-first/i }),
+  )
+
+  const dialog = await screen.findByRole("dialog")
+  expect(within(dialog).getByLabelText("Name")).toHaveValue(
+    "Security-first copy",
+  )
+  // Seeded from the card it was duplicated from, so the sliders open on 3.0.
+  expect(screen.getByTestId("new-value-security")).toHaveTextContent("3.0")
+
+  await userEvent.clear(within(dialog).getByLabelText("Name"))
+  await userEvent.type(within(dialog).getByLabelText("Name"), "Release gate")
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Create profile" }),
+  )
+
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(post.mock.calls[0][0].name).toBe("Release gate")
+  expect(await screen.findByTestId("custom-count")).toHaveTextContent("1 of 5")
+  post.mockRestore()
+})
+
+test("the sixth custom profile is refused, with the count on screen", async () => {
+  await fillCustomProfiles(5)
+
+  render(<ProfilesPage />)
+  await ready()
+
+  expect(screen.getByTestId("custom-count")).toHaveTextContent("5 of 5")
+  // The create path is closed rather than offering a refusal the server has
+  // already promised.
+  expect(screen.getByRole("button", { name: /new profile/i })).toBeDisabled()
+  expect(
+    screen.getByText(/delete one before creating another/i),
+  ).toBeInTheDocument()
+})
+
+test("a name already in the pool keeps the dialog open and says so", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(screen.getByRole("button", { name: /new profile/i }))
+
+  const dialog = await screen.findByRole("dialog")
+  await userEvent.type(within(dialog).getByLabelText("Name"), "release gate")
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Create profile" }),
+  )
+
+  // Names are unique per workspace after trimming and lower-casing.
+  expect(
+    await within(dialog).findByText(/already uses that name/i),
+  ).toBeInTheDocument()
+  expect(screen.getByRole("dialog")).toBeInTheDocument()
+})
+
+// ── deleting ────────────────────────────────────────────────────────────────
+
+test("an unused custom profile is deleted after a named confirmation", async () => {
+  await client.createProfile({ name: "Release gate", ...values })
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    screen.getByRole("button", { name: /delete release gate/i }),
+  )
+
+  expect(await screen.findByText(/delete release gate\?/i)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "Delete profile" }))
+
+  await waitFor(() =>
+    expect(
+      within(poolList()).queryByRole("button", { name: /^Release gate/ }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(toastSuccess).toHaveBeenCalledWith("Deleted Release gate")
+})
+
+test("an in-use profile survives the delete, and the dialog explains why", async () => {
+  const created = await client.createProfile({
+    name: "Release gate",
+    ...values,
+  })
+  await client.setProjectProfile(DEMO_REPO_ID, created.id)
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    screen.getByRole("button", { name: /delete release gate/i }),
+  )
+  await userEvent.click(screen.getByRole("button", { name: "Delete profile" }))
+
+  expect(
+    await screen.findByText(/change those selections first/i),
+  ).toBeInTheDocument()
+  // The dialog stays open: the next step is to move the reference, not to press
+  // Delete again.
+  expect(screen.getByRole("dialog")).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
+  // And the profile is still in the pool — the refusal was not a silent delete.
+  expect(
+    within(poolList()).getByRole("button", { name: /^Release gate/ }),
+  ).toBeInTheDocument()
+})
+
+// ── choosing what is in force ───────────────────────────────────────────────
+
+test("the workspace default moves to the selected profile", async () => {
+  render(<ProfilesPage />)
+  await ready()
+
+  await userEvent.click(
+    within(card("Security-first")).getByRole("button", {
+      name: /^Security-first/,
+    }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /set as workspace default/i }),
+  )
+
+  await waitFor(() =>
+    expect(screen.getByTestId("workspace-default-name")).toHaveTextContent(
+      "Security-first",
+    ),
+  )
+  // Exactly one default: the badge moved rather than being added.
+  expect(
+    within(card("Balanced")).queryByText("Workspace default"),
+  ).not.toBeInTheDocument()
+  expect(
+    within(card("Security-first")).getByText("Workspace default"),
+  ).toBeVisible()
+})
+
+test("a project overrides the default, and clearing it inherits again", async () => {
+  render(<ProfilesPage />)
+  await ready()
+
+  await userEvent.click(screen.getByRole("tab", { name: /project profile/i }))
+  expect(await screen.findByTestId("effective-summary")).toHaveTextContent(
+    /is scored with Balanced, inherited from the workspace default/i,
+  )
+
+  await userEvent.click(
+    within(card("Delivery-speed")).getByRole("button", {
+      name: /^Delivery-speed/,
+    }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /use for this project/i }),
+  )
+
+  await waitFor(() =>
+    expect(screen.getByTestId("effective-summary")).toHaveTextContent(
+      /Delivery-speed, an override for this project alone/i,
+    ),
+  )
+  // The workspace default is untouched by a project's own choice.
+  expect(screen.getByTestId("workspace-default-name")).toHaveTextContent(
+    "Balanced",
+  )
+
+  await userEvent.click(screen.getByRole("button", { name: /clear override/i }))
+  await waitFor(() =>
+    expect(screen.getByTestId("effective-summary")).toHaveTextContent(
+      /Balanced, inherited from the workspace default/i,
+    ),
+  )
+})
+
+// ── roles ───────────────────────────────────────────────────────────────────
+
+test("a viewer reads the pool and is offered nothing to change", async () => {
+  session.current = mockSessionViewer
+  await client.createProfile({ name: "Release gate", ...values })
+
+  render(<ProfilesPage />)
+  await ready()
+
+  expect(card("Release gate")).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /new profile/i }),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /delete release gate/i }),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: /set as workspace default/i }),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByText(/needs the manager or org-admin role/i),
+  ).toBeInTheDocument()
+
+  // Read-only means readable: the numbers are still on screen, they just do not
+  // operate.
+  expect(
+    screen.getByRole("slider", { name: /security weight/i }),
+  ).toHaveAttribute("aria-disabled", "true")
+})
+
+test("a 403 from the API explains the permission rather than failing vaguely", async () => {
+  server.use(
+    http.put("*/api/profiles/default", () =>
+      HttpResponse.json(
+        { detail: "Forbidden.", code: "FORBIDDEN" },
+        { status: 403 },
+      ),
+    ),
+  )
+
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    within(card("Security-first")).getByRole("button", {
+      name: /^Security-first/,
+    }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /set as workspace default/i }),
+  )
+
+  expect(
+    await screen.findByText(/an org-admin or a manager can make this change/i),
+  ).toBeInTheDocument()
+  expect(toastError).toHaveBeenCalledWith(
+    expect.stringContaining("org-admin or a manager"),
+  )
 })

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { useWorkspaceEpoch } from "./use-workspace-scope"
+
 // Shared read-hook engine. Every data hook (useProjects, useHealthReport, …) is
 // a one-liner over this, so the { data, loading, error } shape and the
 // stale-request guard live in exactly one place.
@@ -51,9 +53,17 @@ export interface MutableQueryState<T> extends QueryState<T> {
  * excluded on purpose.
  */
 export function useQuery<T>(
-  key: string,
+  requestedKey: string,
   fetcher: () => Promise<T>,
 ): MutableQueryState<T> {
+  // Every read in this app is workspace-scoped, so the workspace is part of the
+  // key rather than something each hook has to remember to invalidate. A switch
+  // bumps the epoch, which changes this key, which clears `data` in the same
+  // render — that is what stops one workspace's projects, profiles or findings
+  // appearing for a moment under another workspace's name.
+  const epoch = useWorkspaceEpoch()
+  const key = `${epoch}:${requestedKey}`
+
   const [result, setResult] = useState<{
     key: string
     data?: T

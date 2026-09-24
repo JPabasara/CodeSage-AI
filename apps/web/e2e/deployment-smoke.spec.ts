@@ -33,8 +33,5 @@ test("the deployed public web and API agree on the sign-in handoff", async ({
     name: /sign in with asgardeo/i,
   })
   await expect(apiSignIn).toBeVisible()
-  await expect(apiSignIn).toHaveAttribute(
-    "href",
-    `${apiUrl}/api/auth/login`,
-  )
+  await expect(apiSignIn).toHaveAttribute("href", `${apiUrl}/api/auth/login`)
 })

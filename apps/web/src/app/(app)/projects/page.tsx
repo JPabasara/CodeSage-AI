@@ -26,6 +26,8 @@ import {
   useProjects,
 } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
+import { useSession } from "@/hooks/use-session"
+import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
 
 // Each code is a different thing for the user to do about it, which is why they
 // are separate rather than one 400; a bare "400 Bad Request" leaves someone who
@@ -43,6 +45,15 @@ export default function ProjectsPage() {
   // Project writes update every mounted consumer through useProjects; `refetch`
   // remains the loud Retry path that returns this screen to its skeletons.
   const { data: repos, loading, error, refetch } = useProjects()
+  const { data: session } = useSession()
+  const { data: workspaces } = useWorkspaces()
+  const activeWorkspace = useActiveWorkspace(workspaces)
+  // Which controls to offer. Hiding one the API would refuse is a courtesy; the
+  // API re-checks every request either way.
+  const canConnect =
+    session?.permissions?.includes("repository:connect") ?? false
+  const canDisconnect =
+    session?.permissions?.includes("repository:disconnect") ?? false
   const [connecting, setConnecting] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<Repo>()
   const [removingRepoId, setRemovingRepoId] = useState<string>()
@@ -112,8 +123,11 @@ export default function ProjectsPage() {
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-4 rounded-lg border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-primary">
-            Workspace
+          {/* The workspace name, not the word "Workspace": the same three
+              repositories mean something different depending on which one you
+              are standing in. */}
+          <p className="truncate text-xs font-medium uppercase tracking-wide text-primary">
+            {activeWorkspace?.name ?? "Workspace"}
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
@@ -153,15 +167,28 @@ export default function ProjectsPage() {
         </div>
       </header>
 
-      <ConnectRepo onConnect={onConnect} busy={connecting} />
+      {canConnect ? (
+        <ConnectRepo onConnect={onConnect} busy={connecting} />
+      ) : (
+        <p
+          role="status"
+          className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground"
+        >
+          You can open every project in this workspace. Connecting and removing
+          repositories needs the manager or org-admin role.
+        </p>
+      )}
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold">Connected repositories</h2>
             <p className="text-sm text-muted-foreground">
-              Open the dashboard or scan history for the repository you want to
-              review.
+              {repos && repos.length === 0
+                ? canConnect
+                  ? `${activeWorkspace?.name ?? "This workspace"} is empty. Connect a public repository above and it becomes this workspace's first project.`
+                  : `${activeWorkspace?.name ?? "This workspace"} has no repositories yet.`
+                : "Open the dashboard or scan history for the repository you want to review."}
             </p>
           </div>
         </div>
@@ -187,7 +214,7 @@ export default function ProjectsPage() {
             onHistory={(repo) => {
               selectProject(repo.id)
             }}
-            onRemove={setPendingRemoval}
+            onRemove={canDisconnect ? setPendingRemoval : undefined}
             removingRepoId={removingRepoId}
           />
         )}

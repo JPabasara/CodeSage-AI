@@ -7,6 +7,7 @@ import { beforeEach, expect, test, vi } from "vitest"
 import { DashboardView } from "@/components/dashboard/dashboard-view"
 import {
   DEMO_REPO_ID,
+  SECOND_REPO_ID,
   UNSCANNED_REPO_ID,
   mockFindings,
   mockHealthReport,
@@ -20,18 +21,25 @@ import { server } from "@/lib/mocks/server"
 const nav = vi.hoisted(() => {
   let params = new URLSearchParams()
   const listeners = new Set<() => void>()
+  // Every url this view navigates to, in order. The query string is applied to
+  // the store as before; the path is only recorded, since a container test has
+  // no route to change.
+  const visited: string[] = []
   return {
     read: () => params,
+    visited,
     subscribe: (fn: () => void) => {
       listeners.add(fn)
       return () => listeners.delete(fn)
     },
     navigate: (url: string) => {
+      visited.push(url)
       params = new URLSearchParams(url.split("?")[1] ?? "")
       listeners.forEach((fn) => fn())
     },
     reset: () => {
       params = new URLSearchParams()
+      visited.length = 0
     },
   }
 })
@@ -487,4 +495,33 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
   expect(
     screen.getByRole("list", { name: /ranked refactor findings/i }),
   ).toBeInTheDocument()
+})
+
+// ── the project selector (#Phase 11) ────────────────────────────────────────
+
+test("the project selector lists this workspace's projects and navigates", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const selector = screen.getByRole("combobox", { name: "Project" })
+  await user.click(selector)
+
+  // The list comes from GET /api/projects, which the API scopes to the active
+  // workspace — so a project from another workspace is not offerable here.
+  expect(
+    await screen.findByRole("option", { name: "acme/web-store" }),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole("option", { name: /nimbus/i }),
+  ).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole("option", { name: "acme/web-store" }))
+
+  // A bare dashboard URL: the branch, the snapshot and the open finding all
+  // belonged to the project being left. A snapshot id in particular is another
+  // project's row.
+  await waitFor(() =>
+    expect(nav.visited).toEqual([`/dashboard/${SECOND_REPO_ID}`]),
+  )
 })
