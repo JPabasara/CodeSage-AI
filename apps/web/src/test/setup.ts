@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react"
 import { server } from "@/lib/mocks/server"
 import { resetMockBackend } from "@/lib/mocks/handlers"
 import { WORKSPACE_ID } from "@/lib/mocks/fixtures"
+import { SELECTED_BRANCH_KEY } from "@/hooks/use-selected-branch"
 import {
   noteActiveWorkspace,
   resetWorkspaceScope,
@@ -29,6 +30,8 @@ afterEach(() => {
   server.resetHandlers() // drop any per-test http overrides
   resetMockBackend() // clear the in-memory scan state (resetHandlers can't see it)
   resetWorkspaceScope()
+  // A branch remembered by one test must not choose the next test's branch.
+  localStorage.removeItem(SELECTED_BRANCH_KEY)
 })
 afterAll(() => server.close())
 
