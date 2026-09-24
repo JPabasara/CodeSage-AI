@@ -33,8 +33,12 @@ const rail = (page: import("@playwright/test").Page) =>
 const main = (page: import("@playwright/test").Page) =>
   page.locator("#main-content")
 
+/** The deep-mint app bar: brand, workspace, project, account. */
+const topBar = (page: import("@playwright/test").Page) =>
+  page.getByTestId("app-top-bar")
+
 const switcher = (page: import("@playwright/test").Page) =>
-  rail(page).getByRole("combobox", { name: "Workspace" })
+  topBar(page).getByRole("combobox", { name: /^Workspace:/ })
 
 const repoRows = (page: import("@playwright/test").Page) =>
   page
@@ -99,8 +103,8 @@ onboarding(
     // Same page, now with its real content: the three built-in profiles.
     await expect(page).toHaveURL(/\/profiles$/)
     await expect(main(page).getByText("Balanced").first()).toBeVisible()
-    await expect(rail(page).getByText("Fresh Start")).toBeVisible()
-    await expect(rail(page).getByText("Org admin")).toBeVisible()
+    await expect(topBar(page).getByText("Fresh Start")).toBeVisible()
+    await expect(topBar(page).getByText("Org admin")).toBeVisible()
     await expect(
       rail(page).getByRole("link", { name: /create a workspace first/i }),
     ).toHaveCount(0)
@@ -148,7 +152,7 @@ test("an org-admin edits the workspace, and the new name is used everywhere", as
   ).toBeVisible()
   // The rail and the Projects page read the same workspace, so the rename is
   // visible wherever the workspace is named.
-  await expect(rail(page).getByText("Acme Platform")).toBeVisible()
+  await expect(topBar(page).getByText("Acme Platform")).toBeVisible()
   await page.goto("/projects")
   await expect(main(page).getByText("Acme Platform")).toBeVisible()
 })
@@ -167,7 +171,7 @@ test("switching workspace replaces the projects and leaves nothing behind", asyn
   await switchTo(page, "Nimbus Labs")
 
   await expect(page).toHaveURL(/\/projects$/)
-  await expect(rail(page).getByText("Nimbus Labs")).toBeVisible()
+  await expect(topBar(page).getByText("Nimbus Labs")).toBeVisible()
   await expect(repoRows(page)).toHaveCount(1)
   await expect(repoRows(page).getByText("nimbus-gateway")).toBeVisible()
   // Not one row, and not one name, from the workspace we just left — anywhere
@@ -248,14 +252,16 @@ test("the dashboard's project selector changes the URL and the data", async ({
   await page.goto(`/dashboard/${DEMO_REPO_ID}?snapshot_id=stale`)
   await expect(page.getByText("Code Health")).toBeVisible()
 
-  await page.getByRole("combobox", { name: "Project" }).click()
-  await page.getByRole("option", { name: "acme/web-store" }).click()
+  await topBar(page)
+    .getByRole("combobox", { name: /^Project:/ })
+    .click()
+  await page.getByRole("option", { name: /web-store/ }).click()
 
   // A bare dashboard URL: the snapshot id belonged to the project being left,
   // and asking this one for it would be asking for another project's row.
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
   await expect(
-    page.getByRole("heading", { name: "acme/web-store" }),
+    topBar(page).getByRole("combobox", { name: "Project: web-store" }),
   ).toBeVisible()
 })
 
@@ -263,11 +269,11 @@ test("the project selector offers only the active workspace's projects", async (
   page,
 }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await page.getByRole("combobox", { name: "Project" }).click()
+  await topBar(page)
+    .getByRole("combobox", { name: /^Project:/ })
+    .click()
 
-  await expect(
-    page.getByRole("option", { name: "acme/web-store" }),
-  ).toBeVisible()
+  await expect(page.getByRole("option", { name: /web-store/ })).toBeVisible()
   await expect(page.getByRole("option", { name: /nimbus/i })).toHaveCount(0)
 })
 
