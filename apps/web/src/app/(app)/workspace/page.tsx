@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Building2, FolderGit2, Plus, Users } from "lucide-react"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Building2, FolderGit2, Mail, Plus, Users } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -15,12 +15,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ErrorState } from "@/components/error-state"
 import {
   WorkspaceForm,
   workspaceBody,
   type WorkspaceFields,
 } from "@/components/workspace/workspace-form"
+import { TeamPanel } from "@/components/workspace/team-panel"
 import {
   ApiRequestError,
   createWorkspace,
@@ -32,15 +34,10 @@ import {
   useActiveWorkspace,
   useWorkspaces,
 } from "@/hooks/use-workspace"
+import { useMembers } from "@/hooks/use-members"
 import { useSession } from "@/hooks/use-session"
+import { ROLE_LABEL } from "@/lib/roles"
 import type { UpdateWorkspaceRequest, Workspace } from "@/lib/types"
-
-const ROLE_LABEL: Record<string, string> = {
-  "org-admin": "Org admin",
-  manager: "Manager",
-  developer: "Developer",
-  viewer: "Viewer",
-}
 
 const fieldsOf = (workspace: Workspace): WorkspaceFields => ({
   name: workspace.name,
@@ -65,8 +62,24 @@ function patchFor(
   return patch
 }
 
+type WorkspaceTab = "settings" | "team"
+
 export default function WorkspacePage() {
+  // useSearchParams() needs a Suspense boundary, or the build bails out of
+  // prerendering the whole route.
+  return (
+    <Suspense fallback={<Skeleton className="m-6 h-64" />}>
+      <WorkspaceView />
+    </Suspense>
+  )
+}
+
+function WorkspaceView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const tab: WorkspaceTab =
+    searchParams.get("tab") === "team" ? "team" : "settings"
+  const members = useMembers()
   const { data: session } = useSession()
   const { data: workspaces, loading, error, refetch, reload } = useWorkspaces()
   const active = useActiveWorkspace(workspaces)
@@ -79,10 +92,18 @@ export default function WorkspacePage() {
   const [createError, setCreateError] = useState<string>()
   const [newWorkspace, setNewWorkspace] = useState<WorkspaceFields>()
 
-  // Team administration deliberately lives on its own tab: membership is a
-  // different permission from workspace settings, and mixing them puts controls
-  // an org-admin cannot use next to ones they can.
+  // Settings and Team share one page but not one panel: membership is a
+  // different permission from workspace settings, so each tab shows only the
+  // controls that tab's permission grants. `?tab=team` makes Team linkable.
   const canEdit = session?.permissions?.includes("workspace:update") ?? false
+  const canManageMembers =
+    session?.permissions?.includes("member:manage") ?? false
+
+  function onTabChange(next: string) {
+    router.replace(next === "team" ? "/workspace?tab=team" : "/workspace", {
+      scroll: false,
+    })
+  }
   const values = draft ?? (active ? fieldsOf(active) : undefined)
 
   async function onSave() {
@@ -179,7 +200,7 @@ export default function WorkspacePage() {
           </p>
         </div>
 
-        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:min-w-[16rem]">
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3 lg:min-w-[22rem]">
           <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
             <FolderGit2 className="size-4 text-primary" aria-hidden="true" />
             <span>
@@ -201,104 +222,138 @@ export default function WorkspacePage() {
               Members
             </span>
           </span>
+          <span className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+            <Mail className="size-4 text-primary" aria-hidden="true" />
+            <span>
+              <strong
+                className="block text-sm text-foreground"
+                data-testid="workspace-invitation-count"
+              >
+                {members.data?.pending_invitations.length ?? "–"}
+              </strong>
+              Invited
+            </span>
+          </span>
         </div>
       </header>
 
-      <section className="space-y-4 rounded-lg border bg-card p-5 shadow-sm">
-        <div>
-          <h2 className="text-base font-semibold">Settings</h2>
-          <p className="text-sm text-muted-foreground">
-            {canEdit
-              ? "Everyone in this workspace sees this name."
-              : "Only an org-admin can change these. You can read them."}
-          </p>
-        </div>
+      <Tabs value={tab} onValueChange={onTabChange} className="gap-6">
+        <TabsList>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="team">Team</TabsTrigger>
+        </TabsList>
 
-        <WorkspaceForm
-          values={values}
-          onChange={setDraft}
-          onSubmit={onSave}
-          busy={saving}
-          error={saveError}
-          disabled={!canEdit}
-          submitLabel="Save changes"
-          busyLabel="Saving…"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setDraft(undefined)
-              setSaveError(undefined)
-            }}
-            disabled={!draft || saving}
-          >
-            Discard
-          </Button>
-        </WorkspaceForm>
-      </section>
+        <TabsContent value="team">
+          <TeamPanel
+            query={members}
+            canManage={canManageMembers}
+            currentUserId={session?.user_id}
+          />
+        </TabsContent>
 
-      {canEdit ? (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-5">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold">Another workspace</h2>
-            <p className="text-sm text-muted-foreground">
-              A separate set of projects, profiles and members. You become its
-              org-admin, and it starts empty.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              setCreateError(undefined)
-              setNewWorkspace({ name: "", description: "", website_url: "" })
-            }}
-          >
-            <Plus aria-hidden="true" />
-            New workspace
-          </Button>
-        </section>
-      ) : null}
+        <TabsContent value="settings" className="flex flex-col gap-6">
+          <section className="space-y-4 rounded-lg border bg-card p-5 shadow-sm">
+            <div>
+              <h2 className="text-base font-semibold">Settings</h2>
+              <p className="text-sm text-muted-foreground">
+                {canEdit
+                  ? "Everyone in this workspace sees this name."
+                  : "Only an org-admin can change these. You can read them."}
+              </p>
+            </div>
 
-      <Dialog
-        open={Boolean(newWorkspace)}
-        onOpenChange={(open) => {
-          if (!open) setNewWorkspace(undefined)
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Create a workspace</DialogTitle>
-            <DialogDescription>
-              Creating it also switches you to it. Nothing from {active.name}{" "}
-              comes with you.
-            </DialogDescription>
-          </DialogHeader>
-          {newWorkspace ? (
             <WorkspaceForm
-              values={newWorkspace}
-              onChange={setNewWorkspace}
-              onSubmit={onCreate}
-              busy={creating}
-              error={createError}
-              submitLabel="Create workspace"
-              busyLabel="Creating…"
+              values={values}
+              onChange={setDraft}
+              onSubmit={onSave}
+              busy={saving}
+              error={saveError}
+              disabled={!canEdit}
+              submitLabel="Save changes"
+              busyLabel="Saving…"
             >
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => setNewWorkspace(undefined)}
+                variant="ghost"
+                onClick={() => {
+                  setDraft(undefined)
+                  setSaveError(undefined)
+                }}
+                disabled={!draft || saving}
               >
-                Cancel
+                Discard
               </Button>
             </WorkspaceForm>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          </section>
 
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Building2 className="size-3.5" aria-hidden="true" />
-        Switch workspace from the selector at the top of the navigation rail.
-      </p>
+          {canEdit ? (
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-5">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold">Another workspace</h2>
+                <p className="text-sm text-muted-foreground">
+                  A separate set of projects, profiles and members. You become
+                  its org-admin, and it starts empty.
+                </p>
+              </div>
+              <Button
+                onClick={() => {
+                  setCreateError(undefined)
+                  setNewWorkspace({
+                    name: "",
+                    description: "",
+                    website_url: "",
+                  })
+                }}
+              >
+                <Plus aria-hidden="true" />
+                New workspace
+              </Button>
+            </section>
+          ) : null}
+
+          <Dialog
+            open={Boolean(newWorkspace)}
+            onOpenChange={(open) => {
+              if (!open) setNewWorkspace(undefined)
+            }}
+          >
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Create a workspace</DialogTitle>
+                <DialogDescription>
+                  Creating it also switches you to it. Nothing from{" "}
+                  {active.name} comes with you.
+                </DialogDescription>
+              </DialogHeader>
+              {newWorkspace ? (
+                <WorkspaceForm
+                  values={newWorkspace}
+                  onChange={setNewWorkspace}
+                  onSubmit={onCreate}
+                  busy={creating}
+                  error={createError}
+                  submitLabel="Create workspace"
+                  busyLabel="Creating…"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setNewWorkspace(undefined)}
+                  >
+                    Cancel
+                  </Button>
+                </WorkspaceForm>
+              ) : null}
+            </DialogContent>
+          </Dialog>
+
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Building2 className="size-3.5" aria-hidden="true" />
+            Switch workspace from the selector at the top of the navigation
+            rail.
+          </p>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
