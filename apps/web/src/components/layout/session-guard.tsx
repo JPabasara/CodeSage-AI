@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 
 import { ApiRequestError } from "@/lib/api/client"
 import { readPendingInvitation } from "@/lib/pending-invitation"
@@ -15,10 +15,10 @@ import { useSession } from "@/hooks/use-session"
  * cookie is httpOnly, so at the edge "signed in" is all it can see:
  *
  *  • no session at all → /login, saying the session ended;
- *  • signed in with no workspace → /onboarding, NOT /login. Sending someone who
- *    just signed in back to the sign-in page is the classic version of this bug:
- *    they sign in again, land here again, and never learn that what they are
- *    missing is a workspace;
+ *  • signed in with no workspace → stay. Each page shows its "create a
+ *    workspace" card (WorkspaceGate), and nothing workspace-bound is fetched.
+ *    Never /login: sending someone who just signed in back to sign-in is the
+ *    classic version of this bug — they would never learn what is missing;
  *  • signed in with a workspace → stay.
  *
  * And one detour before any of those: an invitation opened while signed out is
@@ -30,7 +30,6 @@ import { useSession } from "@/hooks/use-session"
  */
 export function SessionGuard() {
   const router = useRouter()
-  const pathname = usePathname()
   const { data: session, error } = useSession()
 
   useEffect(() => {
@@ -40,14 +39,8 @@ export function SessionGuard() {
     }
     if (session && readPendingInvitation()) {
       router.replace("/invitations/accept")
-      return
     }
-    // The same address the API's sign-in callback uses, so a new account lands
-    // in one place however it arrives.
-    if (session?.needs_workspace_setup && !pathname.startsWith("/onboarding")) {
-      router.replace("/onboarding/workspace")
-    }
-  }, [error, pathname, router, session])
+  }, [error, router, session])
 
   return null
 }

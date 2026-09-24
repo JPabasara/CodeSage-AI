@@ -67,6 +67,43 @@ export function invalidateWorkspaceScope() {
   emit()
 }
 
+/**
+ * Whether workspace-bound reads may run: `loading` until the session answers,
+ * `none` for a signed-in user with no workspace, `ready` once there is one.
+ *
+ * While it is not `ready` no workspace-bound request is sent at all — each would
+ * only answer 409 WORKSPACE_REQUIRED, and a screen of those reads as broken.
+ */
+export type WorkspaceGate = "loading" | "none" | "ready"
+
+export function gateFor(workspaceId: string | null | undefined): WorkspaceGate {
+  if (workspaceId === undefined) return "loading"
+  return workspaceId === null ? "none" : "ready"
+}
+
+export function useWorkspaceGate(): WorkspaceGate {
+  return gateFor(useActiveWorkspaceId())
+}
+
+const SESSION_STALE_EVENT = "codesage:session-stale"
+
+/**
+ * The API said WORKSPACE_REQUIRED where the app believed it had a workspace —
+ * the membership went away in another tab, say. Lock the screens now, and ask
+ * the session to re-read so the rest of the app learns the real answer.
+ */
+export function noteWorkspaceMissing() {
+  noteActiveWorkspace(null)
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SESSION_STALE_EVENT))
+  }
+}
+
+export function onSessionStale(listener: () => void) {
+  window.addEventListener(SESSION_STALE_EVENT, listener)
+  return () => window.removeEventListener(SESSION_STALE_EVENT, listener)
+}
+
 /** Test-only: put the store back to its initial state between renders. */
 export function resetWorkspaceScope() {
   epoch = 0

@@ -8,6 +8,7 @@ import {
   FolderGit2,
   LayoutDashboard,
   History,
+  Lock,
   SlidersHorizontal,
   LogOut,
   PanelLeftClose,
@@ -36,6 +37,7 @@ import { useSession } from "@/hooks/use-session"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
 import { useWorkspaces } from "@/hooks/use-workspace"
+import { useWorkspaceGate } from "@/hooks/use-workspace-scope"
 
 type NavItem = {
   href: string
@@ -89,6 +91,9 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 export function AppRail() {
   const pathname = usePathname()
+  // With no workspace every page is a "create one first" card; the rail says
+  // so up front, but keeps each link so the user can see what is there.
+  const locked = useWorkspaceGate() === "none"
   const { data: session } = useSession()
   const { data: workspaces, loading: loadingWorkspaces } = useWorkspaces()
   const { data: repos } = useProjects()
@@ -159,11 +164,25 @@ export function AppRail() {
                         <Link
                           href={item.href}
                           onClick={() => setOpenMobile(false)}
+                          title={
+                            locked ? "Create a workspace first" : undefined
+                          }
                         >
                           <Icon />
                           <span className="group-data-[collapsible=icon]:hidden">
                             {item.label}
                           </span>
+                          {locked ? (
+                            <>
+                              <Lock
+                                className="ml-auto size-3.5! text-muted-foreground group-data-[collapsible=icon]:hidden"
+                                aria-hidden="true"
+                              />
+                              <span className="sr-only">
+                                (create a workspace first)
+                              </span>
+                            </>
+                          ) : null}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

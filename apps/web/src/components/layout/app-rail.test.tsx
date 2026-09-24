@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import type { ImgHTMLAttributes } from "react"
 import { beforeEach, expect, test, vi } from "vitest"
 
@@ -97,4 +97,15 @@ test("signing out leaves a note so the sign-in page can say so", () => {
   fireEvent.submit(form)
 
   expect(sessionStorage.getItem("codesage.signedOut")).toBe("1")
+})
+
+test("with no workspace every link stays, marked as locked", async () => {
+  const { noteActiveWorkspace } = await import("@/hooks/use-workspace-scope")
+  noteActiveWorkspace(null)
+  renderRail()
+
+  const nav = screen.getByRole("navigation", { name: "Main navigation" })
+  const projects = within(nav).getByRole("link", { name: /projects/i })
+  expect(projects).toHaveAccessibleName(/create a workspace first/i)
+  expect(projects).toHaveAttribute("title", "Create a workspace first")
 })

@@ -116,3 +116,49 @@ test("a local update cannot be overwritten by an older request", async () => {
 
   expect(result.current.data).toEqual(["after-write"])
 })
+
+// ── the workspace gate ──────────────────────────────────────────────────────
+
+test("with no workspace, a workspace-bound read sends nothing and waits", async () => {
+  const { noteActiveWorkspace } = await import("./use-workspace-scope")
+  noteActiveWorkspace(null)
+  let calls = 0
+  const { result } = renderHook(() =>
+    useQuery("gated", () => {
+      calls += 1
+      return Promise.resolve("data")
+    }),
+  )
+
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(calls).toBe(0)
+  expect(result.current.loading).toBe(true)
+  expect(result.current.error).toBeUndefined()
+
+  // The workspace arrives; the read goes out once.
+  act(() => noteActiveWorkspace("ws-1"))
+  await waitFor(() => expect(result.current.data).toBe("data"))
+  expect(calls).toBe(1)
+})
+
+test("an account read runs without a workspace", async () => {
+  const { noteActiveWorkspace } = await import("./use-workspace-scope")
+  noteActiveWorkspace(null)
+  const { result } = renderHook(() =>
+    useQuery("session", () => Promise.resolve("me"), { scope: "account" }),
+  )
+  await waitFor(() => expect(result.current.data).toBe("me"))
+})
+
+test("WORKSPACE_REQUIRED from the API locks the app instead of erroring it", async () => {
+  const { ApiRequestError } = await import("@/lib/api/client")
+  const { readActiveWorkspaceId } = await import("./use-workspace-scope")
+  renderHook(() =>
+    useQuery("projects", () =>
+      Promise.reject(
+        new ApiRequestError(409, "WORKSPACE_REQUIRED", "Create one."),
+      ),
+    ),
+  )
+  await waitFor(() => expect(readActiveWorkspaceId()).toBeNull())
+})
