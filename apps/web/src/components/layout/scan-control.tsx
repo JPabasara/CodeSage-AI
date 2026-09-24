@@ -11,6 +11,8 @@ export type ScanControlProps = {
   progress: number // 0–100
   /** Stop has been requested but the scan has not reached a terminal phase yet. */
   stopping?: boolean
+  /** Rendered on the deep-mint app bar: light-on-dark buttons. */
+  onBar?: boolean
   onScan?: () => void
   onStop?: () => void
 }
@@ -49,7 +51,13 @@ export function ScanControl({
   stopping,
   onScan,
   onStop,
+  onBar = false,
 }: Readonly<ScanControlProps>) {
+  // On the mint bar the brand-mint button would vanish into its background.
+  const scanClass = onBar ? "bg-white text-topbar hover:bg-white/90" : undefined
+  const stopClass = onBar
+    ? "border-white/30 bg-transparent text-topbar-foreground hover:bg-white/15 hover:text-topbar-foreground dark:bg-transparent"
+    : undefined
   const queued = phase === "queued"
   const running = phase === "running" || queued
 
@@ -74,10 +82,16 @@ export function ScanControl({
         <span className="text-sm tabular-nums">{label}</span>
         {/* Queued has nothing to fill, and an empty bar reads as 0%, not as
             "not started". The label carries it alone until work begins. */}
-        {queued ? null : <Progress value={progress} className="w-24" />}
+        {queued ? null : (
+          <Progress
+            value={progress}
+            className={onBar ? "w-24 bg-white/25 *:bg-white" : "w-24"}
+          />
+        )}
         <Button
           size="sm"
           variant="outline"
+          className={stopClass}
           onClick={onStop}
           disabled={stopping}
         >
@@ -98,8 +112,14 @@ export function ScanControl({
   if (phase === "cancelled") {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-sm">Cancelled</span>
-        <Button size="sm" onClick={onScan}>
+        <span
+          className={
+            onBar ? "text-sm opacity-75" : "text-muted-foreground text-sm"
+          }
+        >
+          Cancelled
+        </span>
+        <Button size="sm" className={scanClass} onClick={onScan}>
           <Play className="size-3.5" /> Scan
         </Button>
       </div>
@@ -107,7 +127,7 @@ export function ScanControl({
   }
 
   return (
-    <Button size="sm" onClick={onScan}>
+    <Button size="sm" className={scanClass} onClick={onScan}>
       <Play className="size-3.5" /> Scan
     </Button>
   )
