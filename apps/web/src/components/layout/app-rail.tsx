@@ -59,13 +59,14 @@ function navItems(repoId: string | undefined): NavItem[] {
       isActive: (p) => p.startsWith("/projects"),
     },
     {
-      href: repoId ? `/dashboard/${repoId}` : "/projects",
+      // With no project to name, the index says how to get one.
+      href: repoId ? `/dashboard/${repoId}` : "/dashboard",
       label: "Dashboard",
       icon: LayoutDashboard,
       isActive: (p) => p.startsWith("/dashboard") && !p.endsWith("/history"),
     },
     {
-      href: repoId ? `/dashboard/${repoId}/history` : "/projects",
+      href: repoId ? `/dashboard/${repoId}/history` : "/dashboard/history",
       label: "Scan History",
       icon: History,
       isActive: (p) => p.endsWith("/history"),
