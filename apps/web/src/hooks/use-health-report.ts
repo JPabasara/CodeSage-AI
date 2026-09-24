@@ -5,6 +5,10 @@ import { useCallback, useEffect, useState } from "react"
 import { ApiRequestError, getHealthReport } from "@/lib/api/client"
 import type { HealthReport } from "@/lib/types"
 import type { QueryState } from "./use-query"
+import {
+  noteWorkspaceMissing,
+  useActiveWorkspaceId,
+} from "./use-workspace-scope"
 
 /**
  * How long to wait between asks while the score is still being computed.
@@ -81,7 +85,12 @@ export function useHealthReport(
     setNonce((n) => n + 1)
   }, [])
 
+  // The same gate as every other workspace-bound read: nothing is asked until
+  // the session names a workspace.
+  const blocked = !useActiveWorkspaceId()
+
   useEffect(() => {
+    if (blocked) return
     // Everything the retry loop owns lives in the effect's own closure, so the
     // cleanup below is the single place polling can stop — one timer, one flag,
     // and no way for a stale branch to keep asking after the key changed.
@@ -104,6 +113,12 @@ export function useHealthReport(
 
         // Anything else — 404 on a never-scanned branch, a real 500 — is the
         // caller's to render. Only SCORE_PENDING is worth waiting out.
+        if (
+          error instanceof ApiRequestError &&
+          error.code === "WORKSPACE_REQUIRED"
+        ) {
+          noteWorkspaceMissing()
+        }
         if (!isScorePending(error)) {
           setResult({ key, error })
           return
@@ -127,7 +142,7 @@ export function useHealthReport(
       alive = false
       if (timer) clearTimeout(timer)
     }
-  }, [key, nonce, repoId, branch, snapshotId])
+  }, [blocked, key, nonce, repoId, branch, snapshotId])
 
   // `key` guards against a stale answer: a response for the previous branch is
   // dropped rather than rendered under the new one.

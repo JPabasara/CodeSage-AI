@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import { useWorkspaceEpoch } from "./use-workspace-scope"
+import { ApiRequestError } from "@/lib/api/client"
+import {
+  noteWorkspaceMissing,
+  useActiveWorkspaceId,
+  useWorkspaceEpoch,
+} from "./use-workspace-scope"
 
 // Shared read-hook engine. Every data hook (useProjects, useHealthReport, …) is
 // a one-liner over this, so the { data, loading, error } shape and the
@@ -52,10 +57,28 @@ export interface MutableQueryState<T> extends QueryState<T> {
  * `key` is the only dependency; `fetcher` is a fresh closure each render and is
  * excluded on purpose.
  */
+export interface QueryOptions {
+  /**
+   * `workspace` (the default): the read belongs to the active workspace, so it
+   * waits until the session names one and is never sent without one.
+   * `account`: the read works without a workspace — the session itself, and the
+   * list of workspaces the user can pick from.
+   */
+  scope?: "workspace" | "account"
+}
+
 export function useQuery<T>(
   requestedKey: string,
   fetcher: () => Promise<T>,
+  options?: QueryOptions,
 ): MutableQueryState<T> {
+  // Until there is a workspace, a workspace-bound read has nothing to ask about:
+  // it stays `loading` and sends nothing. That is what keeps a new user's first
+  // screen free of 409s rather than full of error states.
+  const workspaceId = useActiveWorkspaceId()
+  const blocked =
+    (options?.scope ?? "workspace") === "workspace" && !workspaceId
+
   // Every read in this app is workspace-scoped, so the workspace is part of the
   // key rather than something each hook has to remember to invalidate. A switch
   // bumps the epoch, which changes this key, which clears `data` in the same
@@ -93,6 +116,7 @@ export function useQuery<T>(
   )
 
   useEffect(() => {
+    if (blocked) return
     let alive = true
     const startedAtRevision = revision.current
     fetcher()
@@ -102,6 +126,12 @@ export function useQuery<T>(
         }
       })
       .catch((error: unknown) => {
+        if (
+          error instanceof ApiRequestError &&
+          error.code === "WORKSPACE_REQUIRED"
+        ) {
+          noteWorkspaceMissing()
+        }
         if (alive && startedAtRevision === revision.current)
           setResult({
             key,
@@ -112,7 +142,7 @@ export function useQuery<T>(
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, nonce])
+  }, [key, nonce, blocked])
 
   const settled = result?.key === key
   return {

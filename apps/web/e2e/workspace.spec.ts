@@ -49,36 +49,75 @@ async function switchTo(page: import("@playwright/test").Page, name: string) {
 // ── arriving with nothing ───────────────────────────────────────────────────
 
 onboarding(
-  "a signed-in user with no workspace lands on onboarding, not on sign-in",
+  "a signed-in user with no workspace lands in the app, on a friendly card",
   async ({ page }) => {
+    // Every workspace-bound request would answer 409; none may be sent.
+    const refused: string[] = []
+    page.on("response", (response) => {
+      if (response.status() === 409) refused.push(response.url())
+    })
+
     await page.goto("/projects")
 
-    // The bug this prevents: sending them to /login, where they sign in again,
-    // land here again, and never learn that a workspace is what they are
-    // missing.
-    await expect(page).toHaveURL(/\/onboarding\/workspace$/)
+    // Not /login (they would sign in again and land here again), and no longer
+    // a separate onboarding screen before the product.
+    await expect(page).toHaveURL(/\/projects$/)
     await expect(
-      page.getByRole("heading", { name: /create your workspace/i }),
+      main(page).getByRole("heading", {
+        name: /create a workspace to connect repositories/i,
+      }),
     ).toBeVisible()
+    await expect(main(page).getByText(/invited to a team\?/i)).toBeVisible()
+    await expect(
+      rail(page).getByRole("link", {
+        name: /profiles.*create a workspace first/i,
+      }),
+    ).toBeVisible()
+
+    // Every page is locked the same calm way, never with an error state.
+    await rail(page)
+      .getByRole("link", { name: /profiles/i })
+      .click()
+    await expect(
+      main(page).getByRole("heading", { name: /belong to a workspace/i }),
+    ).toBeVisible()
+    await expect(main(page).getByText(/couldn.t load/i)).toHaveCount(0)
+    expect(refused).toEqual([])
   },
 )
 
 onboarding(
-  "creating the first workspace enters the app, empty and ready",
+  "creating the first workspace fills the page in place, as its org-admin",
   async ({ page }) => {
-    await page.goto("/onboarding") // the short address redirects
-    await page.getByLabel(/workspace name/i).fill("Fresh Start")
-    await page.getByLabel(/description/i).fill("Our first workspace.")
-    await page.getByRole("button", { name: "Create workspace" }).click()
+    await page.goto("/profiles")
+    await main(page).getByRole("button", { name: "Create workspace" }).click()
+    const dialog = page.getByRole("dialog")
+    await dialog.getByLabel(/workspace name/i).fill("Fresh Start")
+    await dialog.getByLabel(/description/i).fill("Our first workspace.")
+    await dialog.getByRole("button", { name: "Create workspace" }).click()
 
-    await expect(page).toHaveURL(/\/projects$/)
-    // No repository is created with a workspace, so the page says it is empty
-    // rather than showing a demo project nobody connected.
-    await expect(page.getByText(/no repositories connected/i)).toBeVisible()
-    await expect(
-      page.getByText(/Fresh Start is empty\. Connect a public repository/i),
-    ).toBeVisible()
+    // Same page, now with its real content: the three built-in profiles.
+    await expect(page).toHaveURL(/\/profiles$/)
+    await expect(main(page).getByText("Balanced").first()).toBeVisible()
     await expect(rail(page).getByText("Fresh Start")).toBeVisible()
+    await expect(rail(page).getByText("Org admin")).toBeVisible()
+    await expect(
+      rail(page).getByRole("link", { name: /create a workspace first/i }),
+    ).toHaveCount(0)
+
+    // No repository is created with a workspace.
+    await rail(page)
+      .getByRole("link", { name: /projects/i })
+      .click()
+    await expect(page.getByText(/no repositories connected/i)).toBeVisible()
+  },
+)
+
+onboarding(
+  "the old onboarding addresses forward into the app",
+  async ({ page }) => {
+    await page.goto("/onboarding/workspace")
+    await expect(page).toHaveURL(/\/projects$/)
   },
 )
 
