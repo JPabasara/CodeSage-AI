@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { FolderX, GitBranch, ScanSearch } from "lucide-react"
 import { toast } from "sonner"
 
 import { DashboardTopNav } from "@/components/layout/dashboard-topnav"
@@ -11,9 +12,17 @@ import { HealthGraphCard } from "@/components/dashboard/health-graph-card"
 import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
+import {
+  DASHBOARD_GRID,
+  DASHBOARD_LIST_SLOT,
+  DASHBOARD_MAIN_COLUMN,
+  DASHBOARD_TOP_ROW,
+  DASHBOARD_TREE_SLOT,
+  DashboardSkeleton,
+} from "@/components/dashboard/dashboard-skeleton"
+import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
 import { useSelectedBranch } from "@/hooks/use-selected-branch"
@@ -28,7 +37,7 @@ import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
 
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
-  const { data: branches } = useBranches(repoId)
+  const { data: branches, error: branchesError } = useBranches(repoId)
 
   // `repo_id` is a uuid in the contract, so the top nav cannot just print it —
   // "7c9e6679-7425-40de-…" is not a repository name. Look up the connected repo
@@ -43,8 +52,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       : "Loading project"
 
   // A user pick wins; until then fall back to the repo's default branch, then
-  // the first available one. Empty string only for the first render before
-  // branches load (the mock treats it as the default branch).
+  // the first available one. Empty string until the branches load; nothing is
+  // fetched for it (see `readsEnabled` below).
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -81,9 +90,23 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   useEffect(() => {
     if (settledOnRealBranch) rememberBranch(activeBranch)
   }, [activeBranch, settledOnRealBranch, rememberBranch])
+
+  // Resolve the branch first, then fetch once (13G). Asking before the branch
+  // list landed meant a request for a guessed branch, and its 404 flashed "No
+  // scans yet" at a project that has results. The one exception: if the branch
+  // list itself failed, ask for the URL's branch or, without one, the
+  // repository's default (the empty branch) rather than leave the page waiting
+  // on a list that is not coming.
+  const noBranches = branches !== undefined && branches.length === 0
+  const branchResolved =
+    settledOnRealBranch || (branchesError !== undefined && !branches)
+  const projectGone = reposLoaded && !repo
+  const readsEnabled = branchResolved && !projectGone
+
   const { data: scanHistory, reload: reloadHistory } = useScanHistory(
     repoId,
     activeBranch,
+    { enabled: readsEnabled },
   )
 
   const {
@@ -93,7 +116,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     error,
     refetch,
     reload: reloadReport,
-  } = useHealthReport(repoId, activeBranch, snapshotId)
+  } = useHealthReport(repoId, activeBranch, snapshotId, {
+    enabled: readsEnabled,
+  })
 
   // The scan lives in the app-wide scan store, not in this page: leaving the
   // dashboard mid-scan and coming back shows it still running, with Stop.
@@ -234,7 +259,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       : undefined
 
   // A branch that has never been scanned answers 404. That is the first-run
-  // state, not a failure, so it must not take the whole screen down.
+  // state, not a failure, so it must not take the whole screen down. Only a
+  // real read can say so: the report is not asked for until the branch is
+  // resolved, so there is no guessed-branch 404 to mistake for it.
   const neverScanned =
     error instanceof ApiRequestError && error.code === "NOT_FOUND"
 
@@ -242,67 +269,82 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // branch, so a freshly connected repository (404, no snapshot) lost the very
   // Scan button that would produce the first one. Only the body below swaps.
   const body = () => {
-    if (reposLoaded && !repo) {
+    if (projectGone) {
       return (
-        <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm">
-          <div className="space-y-1">
-            <p className="text-foreground font-medium">Choose a project</p>
-            <p>
-              This project is not connected to your workspace anymore. Select an
-              available repository to open its dashboard.
-            </p>
-          </div>
-          <Button asChild size="sm" variant="secondary">
-            <Link href="/projects">View projects</Link>
-          </Button>
-        </div>
+        <EmptyState
+          className="m-4 flex-1"
+          icon={<FolderX />}
+          title="Choose a project"
+          description="This project is not connected to your workspace anymore. Select an available repository to open its dashboard."
+          action={
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/projects">View projects</Link>
+            </Button>
+          }
+        />
       )
     }
 
-    // Two different waits, one shape. `loading` is "the request is in flight";
-    // `scorePending` is "the snapshot is stored and the API is still scoring it"
-    // (503 SCORE_PENDING). The second only ever follows a scan, so it earns a
-    // sentence — an unlabelled skeleton right after "Scan complete" reads as a
-    // stall. The hook keeps asking; nothing here has to.
-    if (loading || scorePending) {
+    // The repository has no branches at all, so there is nothing to scan and
+    // nothing to ask the report for.
+    if (noBranches) {
       return (
-        <div className="min-h-0 flex-1 space-y-4 overflow-hidden p-4">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Skeleton className="h-64 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-          {scorePending && (
-            <div
-              // polite, not assertive: it is progress, and it must not interrupt
-              // a screen reader mid-sentence.
-              role="status"
-              aria-live="polite"
-              className="text-muted-foreground flex flex-col items-center gap-1 text-center text-sm"
-            >
-              <p className="text-foreground font-medium">
-                Calculating your health score…
-              </p>
-              <p>
-                Your scan finished. Scoring it against the active profile takes
-                a few seconds.
-              </p>
-            </div>
-          )}
-        </div>
+        <EmptyState
+          className="m-4 flex-1"
+          icon={<GitBranch />}
+          title="No scans yet"
+          description="This repository has no branches yet. Push a branch, then run your first scan to see its health."
+        />
+      )
+    }
+
+    // Two different waits, one shape. `loading` is "the request is in flight"
+    // — or held until the project and branch are known; `scorePending` is "the
+    // snapshot is stored and the API is still scoring it" (503 SCORE_PENDING).
+    // The second only ever follows a scan, so it earns a sentence — an
+    // unlabelled skeleton right after "Scan complete" reads as a stall. The
+    // hook keeps asking; nothing here has to.
+    //
+    // A quiet reload after a scan keeps the report on screen, so neither of
+    // these shows then.
+    if (!reposLoaded || loading || scorePending) {
+      return (
+        <DashboardSkeleton
+          notice={
+            scorePending ? (
+              <div
+                // polite, not assertive: it is progress, and it must not
+                // interrupt a screen reader mid-sentence.
+                role="status"
+                aria-live="polite"
+                className="flex flex-col justify-center gap-1 rounded-lg border bg-card p-4 text-sm"
+              >
+                <p className="font-medium text-foreground">
+                  Calculating your health score…
+                </p>
+                <p className="text-muted-foreground">
+                  Your scan finished. Scoring it against the active profile
+                  takes a few seconds.
+                </p>
+              </div>
+            ) : undefined
+          }
+        />
       )
     }
 
     if (neverScanned) {
       return (
-        <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center text-sm">
-          <p className="text-foreground font-medium">No scans yet</p>
-          <p>
-            {activeBranch
+        <EmptyState
+          className="m-4 flex-1"
+          icon={<ScanSearch />}
+          title="No scans yet"
+          description={`${
+            activeBranch
               ? `Nothing has been analyzed on ${activeBranch} yet.`
-              : "This repository has not been analyzed yet."}{" "}
-            Run your first scan to see its health.
-          </p>
-        </div>
+              : "This repository has not been analyzed yet."
+          } Run your first scan to see its health.`}
+        />
       )
     }
 
@@ -324,8 +366,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     const findingFiles = new Set(report.findings.map((finding) => finding.file))
 
     return (
-      <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)]">
-        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+      <div className={DASHBOARD_GRID}>
+        <div className={DASHBOARD_MAIN_COLUMN}>
           {/* The one region that swaps, so the tree and the list stay usable. */}
           {detailMode ? (
             <FindingDetailPanel
@@ -333,7 +375,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               onClose={closeFinding}
             />
           ) : (
-            <div className="grid shrink-0 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+            <div className={DASHBOARD_TOP_ROW}>
               <OverallHealthCard
                 score={report.health_score}
                 grade={report.grade}
@@ -347,7 +389,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
           {/* Shrunk, not hidden, in detail mode — moving to the next finding is
               one click, with no close-and-reopen. */}
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className={DASHBOARD_LIST_SLOT}>
             <RefactorFirstList
               findings={report.findings}
               onSelect={openFinding}
@@ -356,7 +398,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           </div>
         </div>
 
-        <div className="min-h-0 overflow-hidden">
+        <div className={DASHBOARD_TREE_SLOT}>
           <FileTree
             nodes={report.tree}
             colorFor={(node) => healthColor(node.health_score)}
@@ -380,10 +422,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[oklch(0.985_0.002_255)] dark:bg-[oklch(0.12_0.006_255)]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <DashboardTopNav
         repoName={repoName}
         branches={branches ?? []}
+        branchesLoaded={branches !== undefined}
         activeBranch={activeBranch}
         onBranchChange={(branch) => {
           setTreeSelectionNotice(null)
@@ -399,6 +442,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         }}
         lastCommitSha={report?.commit_sha}
         scannedAt={report?.scanned_at}
+        snapshotLoading={!report && !error}
         snapshotNavigation={snapshotNavigation}
         scan={{
           phase: trackedScan?.status.phase ?? "idle",

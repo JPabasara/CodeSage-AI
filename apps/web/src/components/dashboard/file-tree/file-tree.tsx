@@ -32,11 +32,19 @@ function collectFolderPaths(nodes: TreeNode[], acc: Set<string>) {
   return acc
 }
 
-function nodeScoreLabel(node: TreeNode) {
-  return `${node.name}, grade ${node.grade}, score ${Math.round(
+function nodeScoreLabel(node: TreeNode, withFindings: boolean) {
+  const label = `${node.name}, grade ${node.grade}, score ${Math.round(
     node.health_score,
   )}`
+  return withFindings ? `${label}, has findings` : label
 }
+
+// The heat-map legend: the same three bands as healthColor().
+const LEGEND = [
+  { label: "Hot", color: "hsl(var(--health-bad))" },
+  { label: "Watch", color: "hsl(var(--health-mid))" },
+  { label: "Healthy", color: "hsl(var(--health-good))" },
+]
 
 export function FileTree({
   nodes,
@@ -92,6 +100,7 @@ export function FileTree({
       const isFolder = node.type === "folder"
       const isOpen = expanded.has(node.path)
       const isSelected = node.path === selectedPath
+      const withFindings = !isFolder && Boolean(hasFinding?.(node))
 
       let chevron
       if (!isFolder) chevron = <span className="inline-block w-3.5 shrink-0" />
@@ -104,29 +113,52 @@ export function FileTree({
             type="button"
             ref={isSelected ? selectedRef : undefined}
             aria-current={isSelected ? "true" : undefined}
-            aria-label={nodeScoreLabel(node)}
+            aria-label={nodeScoreLabel(node, withFindings)}
             className={cn(
-              "group/file flex h-8 w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-accent/70",
+              "group/file relative flex h-8 w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-muted",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              isSelected && "bg-accent font-medium ring-1 ring-primary",
+              // Selection is a tint and an inset outline, never a colour on
+              // the bar — the bar only ever means health.
+              isSelected &&
+                "bg-accent font-medium text-accent-foreground ring-1 ring-primary/60 ring-inset hover:bg-accent",
             )}
-            style={{
-              paddingLeft: depth * 14 + 6,
-              borderLeft: `3px solid ${colorFor(node)}`,
-            }}
+            // The bar sits on the row's own left edge, before the indent, so
+            // every row's health lines up in one column down the tree.
+            style={{ paddingLeft: depth * 14 + 12 }}
             onMouseEnter={() => onHoverNode?.(node)}
             onMouseLeave={() => onHoverNode?.(null)}
             onClick={() => selectNode(node)}
           >
+            <span
+              aria-hidden="true"
+              data-slot="health-bar"
+              className="absolute inset-y-0 left-0 w-1 rounded-sm"
+              style={{ backgroundColor: colorFor(node) }}
+            />
             {chevron}
             {isFolder ? (
-              <Folder className="size-4 shrink-0" />
+              <Folder
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
             ) : (
-              <File className="size-4 shrink-0" />
+              <File
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
             )}
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            {withFindings ? (
+              // A neutral mark, not a health colour: this file has findings
+              // to open. The label says so too.
+              <span
+                aria-hidden="true"
+                title="Has findings"
+                className="size-1.5 shrink-0 rounded-full bg-foreground/55"
+              />
+            ) : null}
             <span
-              className="ml-2 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background px-1.5 text-[0.625rem] font-medium tabular-nums text-muted-foreground"
+              className="ml-1 inline-flex h-5 min-w-11 shrink-0 items-center justify-end gap-1 rounded-sm px-1 text-[11px] text-muted-foreground tabular-nums"
               aria-hidden="true"
             >
               <span className="font-semibold text-foreground">
@@ -145,12 +177,12 @@ export function FileTree({
 
   if (nodes.length === 0) {
     return (
-      <div
+      <section
         aria-label="File health tree"
-        className="flex h-full min-h-0 flex-col items-center justify-center rounded-lg border-t-2 border-t-primary/60 bg-card p-8 text-center shadow-sm ring-1 ring-foreground/10 space-y-2"
+        className="flex h-full min-h-0 flex-col items-center justify-center space-y-2 rounded-lg border bg-card p-8 text-center"
       >
-        <div className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Folder className="size-5" />
+        <div className="flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <Folder className="size-5" aria-hidden="true" />
         </div>
         <div className="space-y-1">
           <p className="text-sm font-medium">No files in this tree</p>
@@ -161,61 +193,55 @@ export function FileTree({
             Run a scan to analyze and display the repository file hierarchy.
           </p>
         </div>
-      </div>
+      </section>
     )
   }
 
   return (
     <section
       aria-label="File health tree"
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border-t-2 border-t-primary/60 bg-card shadow-sm ring-1 ring-foreground/10"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-card"
     >
-      <div className="shrink-0 border-b px-3 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold">File health map</h2>
-            <p className="text-xs text-muted-foreground">
-              Scores are shown per file and folded up through folders.
-            </p>
-          </div>
+      <div className="shrink-0 space-y-2 border-b px-4 py-3">
+        <div>
+          <h2 className="text-[15px] font-semibold">File health map</h2>
+          <p className="text-xs text-muted-foreground">
+            Scores are shown per file and folded up through folders.
+          </p>
         </div>
 
+        {/* The keys mirror the mark on each row: a short bar, not a dot. */}
         <div
-          className="mt-3 flex flex-wrap items-center gap-2 text-[0.625rem] font-medium text-muted-foreground"
+          role="group"
           aria-label="Heat map legend"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
         >
-          <span>Heat map legend</span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="size-2 rounded-full"
-              style={{ backgroundColor: "hsl(var(--health-bad))" }}
-              aria-hidden="true"
-            />
-            Hot
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="size-2 rounded-full"
-              style={{ backgroundColor: "hsl(var(--health-mid))" }}
-              aria-hidden="true"
-            />
-            Watch
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="size-2 rounded-full"
-              style={{ backgroundColor: "hsl(var(--health-good))" }}
-              aria-hidden="true"
-            />
-            Healthy
-          </span>
+          {LEGEND.map((item) => (
+            <span key={item.label} className="inline-flex items-center gap-1.5">
+              <span
+                className="h-3 w-1 rounded-sm"
+                style={{ backgroundColor: item.color }}
+                aria-hidden="true"
+              />
+              {item.label}
+            </span>
+          ))}
+          {hasFinding ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="size-1.5 rounded-full bg-foreground/55"
+                aria-hidden="true"
+              />
+              Has findings
+            </span>
+          ) : null}
         </div>
 
         {selectionNotice ? (
           <p
             role="status"
             aria-live="polite"
-            className="mt-2 rounded-md border border-border/70 bg-background px-2 py-1 text-xs text-muted-foreground"
+            className="rounded-md border bg-muted/50 px-2 py-1 text-xs text-muted-foreground"
           >
             {selectionNotice}
           </p>

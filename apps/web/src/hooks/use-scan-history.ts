@@ -4,6 +4,15 @@ import { getScanHistory } from "@/lib/api/client"
 import type { ScanSummary } from "@/lib/types"
 import { useQuery, type QueryState } from "./use-query"
 
+export interface ScanHistoryOptions {
+  /**
+   * `false` holds the read until the caller knows what to ask for — the
+   * dashboard's branch, say. Nothing is sent and the state reads as loading.
+   * Defaults to `true`.
+   */
+  enabled?: boolean
+}
+
 /**
  * Every stored snapshot for one repository, newest first.
  *
@@ -17,8 +26,11 @@ import { useQuery, type QueryState } from "./use-query"
 export function useScanHistory(
   repoId: string,
   branch?: string,
+  options?: ScanHistoryOptions,
 ): QueryState<ScanSummary[]> {
-  return useQuery(`scans:${repoId}:${branch ?? "default"}`, () =>
-    getScanHistory(repoId, branch),
+  return useQuery(
+    `scans:${repoId}:${branch ?? "default"}`,
+    () => getScanHistory(repoId, branch),
+    { enabled: options?.enabled ?? true },
   )
 }

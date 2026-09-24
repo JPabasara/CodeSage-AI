@@ -2,11 +2,14 @@
 
 import { X } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
+import {
+  CategoryTag,
+  SeverityTag,
+  SourceTag,
+} from "@/components/dashboard/finding-tag"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import type { Finding } from "@/lib/types"
-import { severityColor } from "@/lib/utils"
 
 export type FindingDetailPanelProps = {
   finding: Finding | null
@@ -20,24 +23,13 @@ export function FindingDetailPanel({
   if (!finding) return null
 
   return (
-    <Card
-      aria-label="Finding detail"
-      className="gap-0 border-t-2 border-t-primary/60 shadow-sm"
-    >
+    <Card aria-label="Finding detail" className="shrink-0 gap-0 border ring-0">
       <CardHeader className="gap-0">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="outline"
-              style={{
-                borderColor: severityColor(finding.severity),
-                color: severityColor(finding.severity),
-              }}
-            >
-              {finding.severity}
-            </Badge>
-            <Badge variant="secondary">{finding.category}</Badge>
-            <Badge variant="secondary">{finding.source}</Badge>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <SeverityTag severity={finding.severity} />
+            <CategoryTag category={finding.category} />
+            {finding.source ? <SourceTag source={finding.source} /> : null}
           </div>
           <Button
             variant="ghost"
@@ -48,7 +40,7 @@ export function FindingDetailPanel({
             <X />
           </Button>
         </div>
-        <h2 className="mt-2 break-all font-mono text-sm font-semibold">
+        <h2 className="mt-2 font-mono text-sm font-semibold break-all tabular-nums">
           {finding.file}:{finding.line}
         </h2>
         {finding.symbol ? (
@@ -58,26 +50,33 @@ export function FindingDetailPanel({
 
       <CardContent className="space-y-4 pt-4 text-sm">
         <section>
-          <h3 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+          <h3 className="mb-1 text-xs font-medium text-muted-foreground">
             Why this matters
           </h3>
           <p>{finding.reason}</p>
         </section>
 
         {finding.metric_value !== undefined &&
-        finding.threshold !== undefined ? (
+        finding.metric_value !== null &&
+        finding.threshold !== undefined &&
+        finding.threshold !== null ? (
           <section>
-            <h3 className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+            <h3 className="mb-1 text-xs font-medium text-muted-foreground">
               Evidence
             </h3>
             <p>
               Measured{" "}
-              <span className="font-semibold">{finding.metric_value}</span>,
-              limit <span className="font-semibold">{finding.threshold}</span>
+              <span className="font-semibold tabular-nums">
+                {finding.metric_value}
+              </span>
+              , limit{" "}
+              <span className="font-semibold tabular-nums">
+                {finding.threshold}
+              </span>
               {finding.rule_id ? (
                 <span className="text-muted-foreground">
                   {" "}
-                  rule {finding.rule_id}
+                  · rule {finding.rule_id}
                 </span>
               ) : null}
             </p>

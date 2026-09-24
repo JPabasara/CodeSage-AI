@@ -65,6 +65,12 @@ export interface QueryOptions {
    * list of workspaces the user can pick from.
    */
   scope?: "workspace" | "account"
+  /**
+   * `false` holds the read until the caller knows what to ask — the
+   * dashboard's branch, say. Nothing is sent and the state reads as loading.
+   * Defaults to `true`.
+   */
+  enabled?: boolean
 }
 
 export function useQuery<T>(
@@ -77,7 +83,8 @@ export function useQuery<T>(
   // screen free of 409s rather than full of error states.
   const workspaceId = useActiveWorkspaceId()
   const blocked =
-    (options?.scope ?? "workspace") === "workspace" && !workspaceId
+    options?.enabled === false ||
+    ((options?.scope ?? "workspace") === "workspace" && !workspaceId)
 
   // Every read in this app is workspace-scoped, so the workspace is part of the
   // key rather than something each hook has to remember to invalidate. A switch
