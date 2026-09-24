@@ -22,6 +22,12 @@ describe("middleware", () => {
     expect(response.headers.get("location")).toBeNull()
   })
 
+  test("the invitation page is public, so the token survives until sign-in", () => {
+    const response = middleware(requestFor("/invitations/accept?token=abc"))
+
+    expect(response.headers.get("location")).toBeNull()
+  })
+
   test("redirects to /login when the session cookie is missing", () => {
     const response = middleware(requestFor("/projects"))
 

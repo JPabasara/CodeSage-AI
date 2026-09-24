@@ -20,6 +20,8 @@ import type {
   Finding,
   HealthPoint,
   HealthReport,
+  Invitation,
+  Member,
   Repo,
   Role,
   ScanSummary,
@@ -210,6 +212,96 @@ export const mockSessionOnboarding: Session = {
   permissions: [],
   email: "new@example.com",
 }
+
+// ── members & invitations ───────────────────────────────────────────────────
+
+/**
+ * Who is in each seeded workspace. Acme's four active members match its
+ * `member_count`; the inactive one keeps "deactivated" on a rendered path, and
+ * its missing name and email keep the display fallback on one too.
+ */
+export const mockMembers: Record<string, Member[]> = {
+  [WORKSPACE_ID]: [
+    {
+      membership_id: "a1000000-0000-4000-8000-000000000001",
+      user_id: mockSession.user_id,
+      email: mockSession.email,
+      name: mockSession.name,
+      role: "org-admin",
+      status: "active",
+    },
+    {
+      membership_id: "a1000000-0000-4000-8000-000000000002",
+      user_id: "b2000000-0000-4000-8000-000000000002",
+      email: "priya.manager@example.com",
+      name: "Priya Fernando",
+      role: "manager",
+      status: "active",
+    },
+    {
+      membership_id: "a1000000-0000-4000-8000-000000000003",
+      user_id: "b2000000-0000-4000-8000-000000000003",
+      email: "sam.developer@example.com",
+      name: "Sam Perera",
+      role: "developer",
+      status: "active",
+    },
+    {
+      membership_id: "a1000000-0000-4000-8000-000000000004",
+      user_id: mockSessionViewer.user_id,
+      email: mockSessionViewer.email,
+      name: mockSessionViewer.name,
+      role: "viewer",
+      status: "active",
+    },
+    {
+      membership_id: "a1000000-0000-4000-8000-000000000005",
+      user_id: "b2000000-0000-4000-8000-000000000005",
+      email: null,
+      name: null,
+      role: "developer",
+      status: "inactive",
+    },
+  ],
+  [SECOND_WORKSPACE_ID]: [
+    {
+      membership_id: "a2000000-0000-4000-8000-000000000001",
+      user_id: "b3000000-0000-4000-8000-000000000001",
+      email: "lead@nimbus.example.com",
+      name: "Nimbus Lead",
+      role: "org-admin",
+      status: "active",
+    },
+    {
+      membership_id: "a2000000-0000-4000-8000-000000000002",
+      user_id: mockSession.user_id,
+      email: mockSession.email,
+      name: mockSession.name,
+      role: "viewer",
+      status: "active",
+    },
+  ],
+}
+
+export const mockInvitations: Record<string, Invitation[]> = {
+  [WORKSPACE_ID]: [
+    {
+      invitation_id: "c1000000-0000-4000-8000-000000000001",
+      email: "new.hire@example.com",
+      role: "developer",
+      expires_at: "2026-12-31T00:00:00.000Z",
+    },
+  ],
+  [SECOND_WORKSPACE_ID]: [],
+}
+
+/**
+ * A token the mock accepts: it joins a third workspace, "Orbit Studio", as a
+ * developer. Any other token answers the same 404 an expired, revoked, used or
+ * wrong-email one does on the real API.
+ */
+export const MOCK_INVITATION_TOKEN = "orbit-studio-invitation-token-0123456789"
+export const INVITED_WORKSPACE_ID = "3a4b5c6d-7e8f-4091-a2b3-c4d5e6f70819"
 
 // ── branches ────────────────────────────────────────────────────────────────
 

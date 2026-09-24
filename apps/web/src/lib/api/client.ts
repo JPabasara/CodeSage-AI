@@ -4,15 +4,21 @@
 // dev those calls are intercepted by MSW; in production they hit the real API,
 // which needs the session cookie attached — see the note on credentials below.
 import type {
+  AcceptedInvitation,
   ApiError,
   Branch,
   ConnectRepoRequest,
+  CreatedInvitation,
+  CreateInvitationRequest,
   CreateProfileRequest,
   CreateWorkspaceRequest,
   ErrorCode,
   HealthReport,
+  Member,
+  MemberList,
   ProjectProfile,
   Repo,
+  Role,
   ScanStatus,
   ScanSummary,
   ScoreProfile,
@@ -384,4 +390,76 @@ export function stopScan(repoId: string, scanId: string): Promise<ScanStatus> {
     method: "POST",
     credentials: "include",
   }).then(json<ScanStatus>)
+}
+
+// ── members & invitations ────────────────────────────────────────────────────
+//
+// All scoped to the ACTIVE workspace, like everything else. Reading is open to
+// every role; every write needs `member:manage`, which only an org-admin has.
+// The API re-checks it — hiding a button is not the boundary.
+
+/** Members (any status) and the unexpired pending invitations, in one read. */
+export function getMembers(): Promise<MemberList> {
+  return fetch(`${API_BASE}/api/members`, {
+    credentials: "include",
+  }).then(json<MemberList>)
+}
+
+/**
+ * Invite an email address. The API emails the link and rolls the invitation
+ * back if delivery cannot be requested — that arrives as a 503
+ * `UPSTREAM_UNAVAILABLE`, and no pending invitation is left behind. An address
+ * already invited or already a member is a 409.
+ */
+export function createInvitation(
+  body: CreateInvitationRequest,
+): Promise<CreatedInvitation> {
+  return fetch(`${API_BASE}/api/invitations`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(json<CreatedInvitation>)
+}
+
+export function revokeInvitation(invitationId: string): Promise<void> {
+  return fetch(`${API_BASE}/api/invitations/${invitationId}`, {
+    method: "DELETE",
+    credentials: "include",
+  }).then(empty)
+}
+
+/**
+ * Accept an invitation as the signed-in identity. Invalid, expired, revoked,
+ * used and wrong-email tokens all answer the same 404 — which one it was is not
+ * the caller's to learn. Accepting does not switch workspace; the caller does.
+ */
+export function acceptInvitation(token: string): Promise<AcceptedInvitation> {
+  return fetch(`${API_BASE}/api/invitations/accept`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  }).then(json<AcceptedInvitation>)
+}
+
+/** Demoting the last active org-admin is a 409 `CONFLICT`. */
+export function changeMemberRole(
+  membershipId: string,
+  role: Role,
+): Promise<Member> {
+  return fetch(`${API_BASE}/api/members/${membershipId}/role`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  }).then(json<Member>)
+}
+
+/** Deactivating the last active org-admin is a 409 `CONFLICT`. */
+export function deactivateMember(membershipId: string): Promise<void> {
+  return fetch(`${API_BASE}/api/members/${membershipId}`, {
+    method: "DELETE",
+    credentials: "include",
+  }).then(empty)
 }

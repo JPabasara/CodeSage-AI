@@ -408,3 +408,13 @@ export type Invitation = components["schemas"]["Invitation"]
 
 /** What `GET /api/members` returns: both lists, in one response. */
 export type MemberList = components["schemas"]["MemberList"]
+
+/** The body of `POST /api/invitations`. The role is stored on the invitation. */
+export type CreateInvitationRequest =
+  components["schemas"]["CreateInvitationRequest"]
+
+/** A new invitation, plus the one-time link the email carries — for copying. */
+export type CreatedInvitation = components["schemas"]["CreatedInvitation"]
+
+/** What accepting an invitation activates: a membership, in one workspace. */
+export type AcceptedInvitation = components["schemas"]["AcceptedInvitation"]

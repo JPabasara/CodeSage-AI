@@ -1123,3 +1123,38 @@ test("removing a project takes its profile assignment with it", async () => {
 test("GET /healthz is alive", async () => {
   expect(await get<{ status: string }>("/healthz")).toEqual({ status: "ok" })
 })
+
+// ── members ─────────────────────────────────────────────────────────────────
+
+test("the only active org-admin can be neither demoted nor deactivated", async () => {
+  const self = "a1000000-0000-4000-8000-000000000001"
+  const demote = await fetch(`http://localhost/api/members/${self}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: "viewer" }),
+  })
+  expect(demote.status).toBe(409)
+  expect((await demote.json()).code).toBe("CONFLICT")
+
+  const deactivate = await fetch(`http://localhost/api/members/${self}`, {
+    method: "DELETE",
+  })
+  expect(deactivate.status).toBe(409)
+})
+
+test("member_count counts active members only, and follows deactivation", async () => {
+  const count = async () =>
+    (
+      (await (await fetch("http://localhost/api/auth/workspaces")).json()) as {
+        is_active: boolean
+        member_count: number
+      }[]
+    ).find((w) => w.is_active)?.member_count
+
+  expect(await count()).toBe(4)
+  await fetch(
+    "http://localhost/api/members/a1000000-0000-4000-8000-000000000003",
+    { method: "DELETE" },
+  )
+  expect(await count()).toBe(3)
+})

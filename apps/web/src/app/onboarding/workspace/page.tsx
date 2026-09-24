@@ -12,6 +12,7 @@ import {
 } from "@/components/workspace/workspace-form"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiRequestError, createWorkspace } from "@/lib/api/client"
+import { readPendingInvitation } from "@/lib/pending-invitation"
 import { useSession } from "@/hooks/use-session"
 import { adoptWorkspace } from "@/hooks/use-workspace"
 
@@ -36,6 +37,11 @@ export default function OnboardingPage() {
   // Already in a workspace — arriving here is a stale link or a back button,
   // not a state to sit in.
   useEffect(() => {
+    // Signed in to accept an invitation: joining is the way in, not creating.
+    if (session && readPendingInvitation()) {
+      router.replace("/invitations/accept")
+      return
+    }
     if (session && !session.needs_workspace_setup && session.workspace_id) {
       router.replace("/projects")
     }

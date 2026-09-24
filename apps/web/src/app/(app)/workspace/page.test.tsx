@@ -12,10 +12,11 @@ import {
 } from "@/lib/mocks/fixtures"
 import type { Session } from "@/lib/types"
 
-const nav = vi.hoisted(() => ({ push: vi.fn() }))
+const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), search: "" }))
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: nav.push, replace: vi.fn() }),
+  useRouter: () => ({ push: nav.push, replace: nav.replace }),
   usePathname: () => "/workspace",
+  useSearchParams: () => new URLSearchParams(nav.search),
 }))
 
 const { toastSuccess, toastError } = vi.hoisted(() => ({
@@ -33,6 +34,8 @@ vi.mock("@/hooks/use-session", () => ({
 
 beforeEach(() => {
   nav.push.mockClear()
+  nav.replace.mockClear()
+  nav.search = ""
   toastSuccess.mockClear()
   session.current = mockSession
 })
@@ -138,4 +141,39 @@ test("creating another workspace switches to it, and it starts empty", async () 
   const workspaces = await getWorkspaces()
   expect(workspaces.find((w) => w.is_active)?.name).toBe("Second Team")
   expect(await getProjects()).toEqual([])
+})
+
+test("Settings and Team are tabs of one page, and Team is linkable", async () => {
+  render(<WorkspacePage />)
+  await ready()
+
+  expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  )
+  // The header counts pending invitations once the member list lands.
+  await waitFor(() =>
+    expect(screen.getByTestId("workspace-invitation-count")).toHaveTextContent(
+      "1",
+    ),
+  )
+
+  await userEvent.click(screen.getByRole("tab", { name: "Team" }))
+  expect(nav.replace).toHaveBeenCalledWith("/workspace?tab=team", {
+    scroll: false,
+  })
+})
+
+test("?tab=team opens the Team tab directly", async () => {
+  nav.search = "tab=team"
+  render(<WorkspacePage />)
+  await ready()
+
+  expect(screen.getByRole("tab", { name: "Team" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  )
+  expect(
+    await screen.findByRole("heading", { name: "Members" }),
+  ).toBeInTheDocument()
 })
