@@ -18,8 +18,11 @@ import type {
   ApplyProfileRequest,
   CategoryWeights,
   ConnectRepoRequest,
+  CreateInvitationRequest,
   CreateProfileRequest,
   CreateWorkspaceRequest,
+  Invitation,
+  Member,
   ProjectProfile,
   Repo,
   Role,
@@ -40,7 +43,11 @@ import {
 import {
   balancedProfile,
   DEMO_REPO_ID,
+  INVITED_WORKSPACE_ID,
+  MOCK_INVITATION_TOKEN,
   mockBranches,
+  mockInvitations,
+  mockMembers,
   mockProfiles,
   mockRepos,
   mockSession,
@@ -111,6 +118,8 @@ interface WorkspaceRecord {
   created_at: string | null
   updated_at: string | null
   member_count: number
+  members: Member[]
+  invitations: Invitation[]
   repos: Repo[]
   pool: StoredProfile[]
   defaultProfileId: string
@@ -129,6 +138,11 @@ function seedWorkspaces(): Record<string, WorkspaceRecord> {
       created_at: workspace.created_at ?? null,
       updated_at: workspace.updated_at ?? null,
       member_count: workspace.member_count ?? 1,
+      // Copies: a test that deactivates someone must not edit the fixture.
+      members: structuredClone(mockMembers[workspace.workspace_id] ?? []),
+      invitations: structuredClone(
+        mockInvitations[workspace.workspace_id] ?? [],
+      ),
       repos: isPrimary ? [...mockRepos] : [...nimbusRepos],
       pool: seedPool(),
       defaultProfileId: balancedProfile.id,
@@ -153,6 +167,12 @@ let workspaceRecords: Record<string, WorkspaceRecord> = restore(
   WORKSPACES_KEY,
   seedWorkspaces(),
 )
+
+// A tab restored from before members existed: seed them rather than crash.
+for (const [id, record] of Object.entries(workspaceRecords)) {
+  record.members ??= structuredClone(mockMembers[id] ?? [])
+  record.invitations ??= structuredClone(mockInvitations[id] ?? [])
+}
 
 let activeWorkspaceId: string | null = restore(
   ACTIVE_WORKSPACE_KEY,
@@ -650,8 +670,43 @@ function workspaceOut(workspaceId: string): Workspace {
     // Derived on read, never stored: both change whenever a project or a member
     // does, and a stored copy would be wrong more often than right.
     project_count: isActive ? connected.length : record.repos.length,
-    member_count: record.member_count,
+    // Active members only: pending invitations and deactivated people are
+    // not counted, which is what the contract says.
+    member_count: record.members
+      ? record.members.filter((m) => m.status === "active").length
+      : record.member_count,
   }
+}
+
+/** The signed-in mock user's own membership row, in a workspace just made. */
+function creatorMembership(role: Role): Member {
+  return {
+    membership_id: uuid(),
+    user_id: mockSession.user_id,
+    email: mockSession.email ?? null,
+    name: mockSession.name ?? null,
+    role,
+    status: "active",
+  }
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const ROLES: Role[] = ["org-admin", "manager", "developer", "viewer"]
+
+/** Every member write needs `member:manage`, which only an org-admin holds. */
+function forbidUnlessAdmin() {
+  const record = activeWorkspaceId ? workspaceRecords[activeWorkspaceId] : null
+  if (record?.role === "org-admin") return null
+  return fail(403, "FORBIDDEN", "Only an org-admin can manage members.")
+}
+
+/** Demoting or deactivating the only active org-admin would orphan the workspace. */
+function isLastAdmin(members: Member[], target: Member) {
+  if (target.status !== "active" || target.role !== "org-admin") return false
+  return (
+    members.filter((m) => m.status === "active" && m.role === "org-admin")
+      .length === 1
+  )
 }
 
 const workspaceIds = () => Object.keys(workspaceRecords)
@@ -688,6 +743,7 @@ const trimmedOrNull = (value: string | null | undefined) => {
 const WORKSPACE_FREE = [
   "/api/auth/session",
   "/api/auth/workspaces",
+  "/api/invitations/accept",
   "/api/healthz",
 ]
 
@@ -735,6 +791,8 @@ export const handlers = [
         created_at: now,
         updated_at: now,
         member_count: 1,
+        members: [creatorMembership("org-admin")],
+        invitations: [],
         // Genuinely empty: no repository is created, and the Projects page
         // says so rather than inventing a demo one.
         repos: [],
@@ -823,6 +881,183 @@ export const handlers = [
       return HttpResponse.json(workspaceOut(workspaceId))
     },
   ),
+
+  // ── members & invitations ─────────────────────────────────────────────────
+  http.get("*/api/members", () => {
+    const record = workspaceRecords[activeWorkspaceId as string]
+    return HttpResponse.json({
+      members: record.members ?? [],
+      pending_invitations: record.invitations ?? [],
+    })
+  }),
+
+  http.post("*/api/invitations/accept", async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      token?: unknown
+    } | null
+    // One answer for every kind of unusable token, as on the real API. The
+    // seeded token works once: after that its workspace is already joined.
+    if (
+      body?.token !== MOCK_INVITATION_TOKEN ||
+      workspaceRecords[INVITED_WORKSPACE_ID]
+    ) {
+      return NOT_FOUND()
+    }
+    const now = new Date().toISOString()
+    const membership = creatorMembership("developer")
+    workspaceRecords = {
+      ...workspaceRecords,
+      [INVITED_WORKSPACE_ID]: {
+        name: "Orbit Studio",
+        description: "The workspace the seeded invitation joins.",
+        website_url: null,
+        role: "developer",
+        created_at: now,
+        updated_at: now,
+        member_count: 2,
+        members: [
+          {
+            membership_id: uuid(),
+            user_id: uuid(),
+            email: "owner@orbit.example.com",
+            name: "Orbit Owner",
+            role: "org-admin",
+            status: "active",
+          },
+          membership,
+        ],
+        invitations: [],
+        repos: [],
+        pool: seedPool(),
+        defaultProfileId: balancedProfile.id,
+        assignments: {},
+      },
+    }
+    persistState()
+    return HttpResponse.json({
+      workspace_id: INVITED_WORKSPACE_ID,
+      membership_id: membership.membership_id,
+      role: "developer",
+    })
+  }),
+
+  http.post("*/api/invitations", async ({ request }) => {
+    const denied = forbidUnlessAdmin()
+    if (denied) return denied
+    const record = workspaceRecords[activeWorkspaceId as string]
+    const body = (await request
+      .json()
+      .catch(() => null)) as Partial<CreateInvitationRequest> | null
+    const email = typeof body?.email === "string" ? body.email.trim() : ""
+    const errors: { field: string; detail: string }[] = []
+    if (!EMAIL.test(email)) {
+      errors.push({ field: "email", detail: "Enter a valid email address." })
+    }
+    if (!body?.role || !ROLES.includes(body.role)) {
+      errors.push({ field: "role", detail: "Input should be a valid role." })
+    }
+    if (errors.length > 0 || !body?.role) return invalid(errors)
+
+    const normalized = email.toLowerCase()
+    const taken =
+      record.invitations.some((i) => i.email === normalized) ||
+      record.members.some(
+        (m) => m.status === "active" && m.email?.toLowerCase() === normalized,
+      )
+    if (taken) {
+      return fail(
+        409,
+        "CONFLICT",
+        "That address is already a member or already invited.",
+      )
+    }
+    // A mailbox the mock cannot deliver to. The real API rolls the invitation
+    // back when Resend refuses it, so nothing is stored here either.
+    if (normalized.endsWith("@bounce.example")) {
+      return fail(
+        503,
+        "UPSTREAM_UNAVAILABLE",
+        "The invitation email could not be sent.",
+      )
+    }
+    const invitation: Invitation = {
+      invitation_id: uuid(),
+      email: normalized,
+      role: body.role,
+      expires_at: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+    }
+    record.invitations = [...record.invitations, invitation]
+    persistState()
+    const origin =
+      typeof location === "undefined"
+        ? "http://localhost:3000"
+        : location.origin
+    return HttpResponse.json(
+      {
+        ...invitation,
+        invitation_url: `${origin}/invitations/accept?token=${uuid()}`,
+      },
+      { status: 201 },
+    )
+  }),
+
+  http.delete("*/api/invitations/:invitationId", ({ params }) => {
+    const denied = forbidUnlessAdmin()
+    if (denied) return denied
+    const record = workspaceRecords[activeWorkspaceId as string]
+    const before = record.invitations.length
+    record.invitations = record.invitations.filter(
+      (i) => i.invitation_id !== params.invitationId,
+    )
+    if (record.invitations.length === before) return NOT_FOUND()
+    persistState()
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.patch(
+    "*/api/members/:membershipId/role",
+    async ({ params, request }) => {
+      const denied = forbidUnlessAdmin()
+      if (denied) return denied
+      const record = workspaceRecords[activeWorkspaceId as string]
+      const body = (await request.json().catch(() => null)) as {
+        role?: Role
+      } | null
+      if (!body?.role || !ROLES.includes(body.role)) {
+        return invalid([
+          { field: "role", detail: "Input should be a valid role." },
+        ])
+      }
+      const target = record.members.find(
+        (m) => m.membership_id === params.membershipId,
+      )
+      if (!target) return NOT_FOUND()
+      if (body.role !== "org-admin" && isLastAdmin(record.members, target)) {
+        return fail(409, "CONFLICT", "A workspace needs an active org-admin.")
+      }
+      target.role = body.role
+      // The session's role comes from this record, so a self-change is real.
+      if (target.user_id === mockSession.user_id) record.role = body.role
+      persistState()
+      return HttpResponse.json(target)
+    },
+  ),
+
+  http.delete("*/api/members/:membershipId", ({ params }) => {
+    const denied = forbidUnlessAdmin()
+    if (denied) return denied
+    const record = workspaceRecords[activeWorkspaceId as string]
+    const target = record.members.find(
+      (m) => m.membership_id === params.membershipId,
+    )
+    if (!target || target.status !== "active") return NOT_FOUND()
+    if (isLastAdmin(record.members, target)) {
+      return fail(409, "CONFLICT", "A workspace needs an active org-admin.")
+    }
+    target.status = "inactive"
+    persistState()
+    return new HttpResponse(null, { status: 204 })
+  }),
 
   // ── projects ──────────────────────────────────────────────────────────────
   http.get("*/api/projects", () => HttpResponse.json(connected)),
