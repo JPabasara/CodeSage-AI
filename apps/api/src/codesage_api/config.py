@@ -6,7 +6,7 @@ full list with explanations.
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -94,7 +94,42 @@ class Settings(BaseSettings):
     # a recalibration of k — it is not just a config change.
     analysed_extensions: list[str] = Field(default_factory=lambda: [".java"])
 
+    # ── Scan guardrails  ────────────────────────────────────────
+    # Every limit is a named setting with a code default, so the platform admin
+    # page (13I.4) can move them into the database without a code change.
+    #
+    # Checked at connect time against GitHub's own `size` (KB, whole history).
+    max_repository_size_mb: int = Field(default=300, ge=1)
+    # Checked at scan time against the checked-out branch, which can differ
+    # from what GitHub reports for the default branch.
+    max_java_files: int = Field(default=5_000, ge=1)
+    max_java_lines: int = Field(default=500_000, ge=1)
+    # ML-1 is called in one batch; beyond this the batch would outlive
+    # `ml_timeout_seconds` and the scan would lose SATD entirely.
+    max_satd_comments: int = Field(default=5_000, ge=1)
+    # The whole scan task. The soft limit ends the scan cleanly a minute before
+    # the hard limit kills the worker process.
+    scan_time_limit_seconds: int = Field(default=15 * 60, ge=120)
+    scan_soft_time_limit_seconds: int = Field(default=14 * 60, ge=60)
+    # Any single git command (clone, checkout, rev-parse, show).
+    git_timeout_seconds: int = Field(default=5 * 60, ge=10)
+    # Scans beyond this per workspace wait in the queue for a free slot.
+    max_running_scans_per_workspace: int = Field(default=1, ge=1)
+    # How often a waiting scan checks for a free slot.
+    scan_queue_retry_seconds: int = Field(default=15, ge=1)
+
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def _soft_limit_first(self) -> "Settings":
+        # A soft limit at or past the hard limit never fires: the worker is
+        # killed first, the `finally` never runs and the clone is left behind.
+        if self.scan_soft_time_limit_seconds >= self.scan_time_limit_seconds:
+            raise ValueError(
+                "CODESAGE_SCAN_SOFT_TIME_LIMIT_SECONDS must be below "
+                "CODESAGE_SCAN_TIME_LIMIT_SECONDS."
+            )
+        return self
 
 
 @lru_cache

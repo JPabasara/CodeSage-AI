@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from codesage_api.config import get_settings
 from codesage_api.db.enums import (
     AnalysisStatus,
     RepositoryConnectionStatus,
@@ -18,10 +19,16 @@ from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import (
     NotFound,
     RepositoryAlreadyConnected,
+    RepositoryHasNoJava,
     RepositoryMissingDefaultBranch,
     RepositoryScanRunning,
+    RepositoryTooLarge,
 )
-from codesage_api.integrations.github import fetch_branches, fetch_repository
+from codesage_api.integrations.github import (
+    GitHubRepository,
+    fetch_branches,
+    fetch_repository,
+)
 from codesage_api.logging import get_logger
 from codesage_api.schemas import BranchOut, LatestHealthOut, RepoOut
 from codesage_api.scoring.cache import profile_payload
@@ -31,6 +38,9 @@ from codesage_api.services import audit, dashboard, profiles
 from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
+
+#: GitHub's name for the one language CodeSage analyses (SRS §2.4).
+ANALYSED_GITHUB_LANGUAGES = frozenset({"Java"})
 
 
 def disconnect(
@@ -75,6 +85,19 @@ def disconnect(
     session.flush()
 
 
+def _check_guardrails(metadata: GitHubRepository) -> None:
+    """Refuse at connect what a scan could never finish .
+
+    Fast answers from what GitHub already knows. The worker checks again at scan
+    time, because the scanned branch can differ from what GitHub reports here.
+    """
+    limit_mb = get_settings().max_repository_size_mb
+    if metadata.size_kb > limit_mb * 1024:
+        raise RepositoryTooLarge(limit_mb)
+    if not ANALYSED_GITHUB_LANGUAGES.intersection(metadata.languages):
+        raise RepositoryHasNoJava(list(metadata.languages))
+
+
 def connect(
     session: Session,
     workspace_id: uuid.UUID,
@@ -91,6 +114,7 @@ def connect(
     )
     if existing is not None:
         raise RepositoryAlreadyConnected
+    _check_guardrails(metadata)
 
     repository = Repository(
         workspace_id=workspace_id,

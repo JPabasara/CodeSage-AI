@@ -31,6 +31,10 @@ class GitHubRepository:
     visibility: str
     default_branch: str
     default_branch_sha: str
+    # GitHub's own `size`, in KB, for the whole repository history.
+    size_kb: int
+    # GitHub's language names, most bytes first ("Java", "Kotlin", …).
+    languages: tuple[str, ...]
 
 
 def parse_github_url(url: str) -> tuple[str, str]:
@@ -110,6 +114,22 @@ def fetch_repository(url: str) -> GitHubRepository:
             branch_response.raise_for_status()
             branch_data = branch_response.json()
 
+            # Asked at connect so a repository with no Java is refused before a
+            # project exists, rather than producing an empty scan later.
+            languages_response = client.get(
+                f"/repos/{quote(owner)}/{quote(repository_name)}/languages"
+            )
+            if languages_response.status_code == 429 or (
+                languages_response.status_code == 403
+                and languages_response.headers.get("x-ratelimit-remaining") == "0"
+            ):
+                raise RateLimited
+            if languages_response.status_code >= 500:
+                raise UpstreamUnavailable
+
+            languages_response.raise_for_status()
+            language_bytes: dict[str, int] = languages_response.json()
+
     except (
         httpx.TimeoutException,
         httpx.NetworkError,
@@ -126,6 +146,10 @@ def fetch_repository(url: str) -> GitHubRepository:
         visibility=data["visibility"],
         default_branch=default_branch,
         default_branch_sha=branch_data["commit"]["sha"],
+        size_kb=int(data.get("size") or 0),
+        languages=tuple(
+            sorted(language_bytes, key=lambda name: language_bytes[name], reverse=True)
+        ),
     )
 
 
