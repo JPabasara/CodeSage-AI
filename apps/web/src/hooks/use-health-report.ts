@@ -1,13 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { ApiRequestError, getHealthReport } from "@/lib/api/client"
+import { fetchShared, forgetQueries, readCached } from "@/lib/query-cache"
 import type { HealthReport } from "@/lib/types"
 import type { QueryState } from "./use-query"
 import {
   noteWorkspaceMissing,
   useActiveWorkspaceId,
+  useWorkspaceEpoch,
 } from "./use-workspace-scope"
 
 /**
@@ -69,6 +71,10 @@ const isScorePending = (error: unknown) =>
  * that is neither data nor an error. `useQuery` has no way to say that, and it
  * is shared by every other read hook, none of which needs a retry loop.
  *
+ * It shares `useQuery`'s app-wide cache (13H.3): coming back to the dashboard
+ * shows the last report at once and revalidates it quietly. The cache is
+ * cleared when a scan finishes, a profile changes or the workspace switches.
+ *
  * `reload` and `refetch` mean the same here as they do in `useQuery` — quiet and
  * loud. The dashboard uses the loud one for both of its cases, including the end
  * of a scan: those numbers are *known* to be stale, so leaving them up while a
@@ -81,7 +87,10 @@ export function useHealthReport(
   options?: HealthReportOptions,
 ): HealthReportState {
   const enabled = options?.enabled ?? true
-  const key = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
+  const requestedKey = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
+  // The workspace epoch, as in `useQuery`: a switch changes the key, so one
+  // workspace's report never shows under another's name.
+  const key = `${useWorkspaceEpoch()}:${requestedKey}`
 
   const [result, setResult] = useState<{
     key: string
@@ -93,15 +102,23 @@ export function useHealthReport(
   // Bumping this re-runs the effect without changing the key. Both forms also
   // restart the score-pending deadline, because the effect recomputes it.
   const [nonce, setNonce] = useState(0)
-  const reload = useCallback(() => setNonce((n) => n + 1), [])
-  const refetch = useCallback(() => {
-    setResult(undefined)
+  // Reload and Retry must send a new request, not join one already out.
+  const fresh = useRef(false)
+  const reload = useCallback(() => {
+    fresh.current = true
     setNonce((n) => n + 1)
   }, [])
+  const refetch = useCallback(() => {
+    forgetQueries((requested) => requested === requestedKey)
+    fresh.current = true
+    setResult(undefined)
+    setNonce((n) => n + 1)
+  }, [requestedKey])
 
   // The same gate as every other workspace-bound read: nothing is asked until
   // the session names a workspace.
   const blocked = !useActiveWorkspaceId()
+  const cached = blocked || !enabled ? undefined : readCached<HealthReport>(key)
 
   useEffect(() => {
     if (blocked || !enabled) return
@@ -115,12 +132,27 @@ export function useHealthReport(
     // user, and a slow API must not silently buy itself extra tries. It resets
     // whenever the key changes or Retry is pressed — each is a fresh wait.
     const giveUpAt = Date.now() + SCORE_TIMEOUT_MS
+    let skipJoin = fresh.current
+    fresh.current = false
 
     const ask = async () => {
       try {
-        const data = await getHealthReport(repoId, branch, snapshotId)
-        if (alive) setResult({ key, data })
+        const data = await fetchShared(
+          key,
+          () => getHealthReport(repoId, branch, snapshotId),
+          { fresh: skipJoin },
+        )
+        skipJoin = false
+        // Same report as on screen (same snapshot, same scores): keep the
+        // state object, so nothing re-renders and no chart redraws.
+        if (alive)
+          setResult((current) =>
+            current?.key === key && current.data === data
+              ? current
+              : { key, data },
+          )
       } catch (thrown: unknown) {
+        skipJoin = false
         if (!alive) return
         const error =
           thrown instanceof Error ? thrown : new Error(String(thrown))
@@ -162,11 +194,12 @@ export function useHealthReport(
   // dropped rather than rendered under the new one. A held read is never
   // settled, so it reads as loading rather than as an empty answer.
   const settled = enabled && result?.key === key
+  const shown = settled ? result : cached && { key, data: cached.data }
   return {
-    data: settled ? result?.data : undefined,
+    data: shown ? shown.data : undefined,
     error: settled ? result?.error : undefined,
     pending: settled ? (result?.pending ?? false) : false,
-    loading: !settled,
+    loading: !shown,
     reload,
     refetch,
   }

@@ -119,6 +119,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   } = useHealthReport(repoId, activeBranch, snapshotId, {
     enabled: readsEnabled,
   })
+  // A report already on screen at the first render came from the cache: the
+  // charts were drawn before, so they appear drawn rather than animate again.
+  const [animateCharts] = useState(() => report === undefined)
 
   // The scan lives in the app-wide scan store, not in this page: leaving the
   // dashboard mid-scan and coming back shows it still running, with Stop.
@@ -382,6 +385,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
                 delta={report.delta}
                 redIssueCount={report.red_issue_count}
                 categoryBreakdown={report.category_breakdown}
+                animate={animateCharts}
               />
               <HealthGraphCard history={report.history} />
             </div>
