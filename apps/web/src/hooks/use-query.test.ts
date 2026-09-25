@@ -191,3 +191,86 @@ test("enabled: false sends nothing and waits; turning it on asks once", async ()
   await waitFor(() => expect(result.current.data).toBe("data"))
   expect(calls).toBe(1)
 })
+
+// ── the app-wide cache (13G, 13H.3) ─────────────────────────────────────────
+
+test("two mounted consumers of the same key cause one fetch", async () => {
+  let calls = 0
+  const fetcher = () => {
+    calls += 1
+    return Promise.resolve("shared")
+  }
+  const first = renderHook(() => useQuery("dedupe", fetcher))
+  const second = renderHook(() => useQuery("dedupe", fetcher))
+
+  await waitFor(() => expect(first.result.current.data).toBe("shared"))
+  await waitFor(() => expect(second.result.current.data).toBe("shared"))
+  expect(calls).toBe(1)
+})
+
+test("a second mount renders the cached answer at once, then revalidates quietly", async () => {
+  let calls = 0
+  let inFlight = deferred<string>()
+  const fetcher = () => {
+    calls += 1
+    return inFlight.promise
+  }
+  const first = renderHook(() => useQuery("revisit", fetcher))
+  inFlight.resolve("cached")
+  await waitFor(() => expect(first.result.current.data).toBe("cached"))
+  first.unmount()
+
+  inFlight = deferred<string>()
+  const second = renderHook(() => useQuery("revisit", fetcher))
+
+  // No skeleton: the first render already has the data.
+  expect(second.result.current.loading).toBe(false)
+  expect(second.result.current.data).toBe("cached")
+  expect(calls).toBe(2) // the quiet revalidation went out
+
+  inFlight.resolve("fresh")
+  await waitFor(() => expect(second.result.current.data).toBe("fresh"))
+})
+
+test("a revalidation with the same answer keeps the same object", async () => {
+  const fetcher = () => Promise.resolve({ snapshot_id: "s1", score: 72 })
+  const first = renderHook(() => useQuery("same", fetcher))
+  await waitFor(() => expect(first.result.current.data).toBeDefined())
+  const shown = first.result.current.data
+  first.unmount()
+
+  const second = renderHook(() => useQuery("same", fetcher))
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  })
+  // Same snapshot, same scores: nothing on screen changes.
+  expect(second.result.current.data).toBe(shown)
+})
+
+test("a workspace switch clears the cache", async () => {
+  const { invalidateWorkspaceScope } = await import("./use-workspace-scope")
+  const first = renderHook(() =>
+    useQuery("switch", () => Promise.resolve("workspace-a")),
+  )
+  await waitFor(() => expect(first.result.current.data).toBe("workspace-a"))
+  first.unmount()
+
+  act(() => invalidateWorkspaceScope())
+
+  const second = renderHook(() =>
+    useQuery("switch", () => deferred<string>().promise),
+  )
+  expect(second.result.current.loading).toBe(true)
+  expect(second.result.current.data).toBeUndefined()
+})
+
+test("refetch skips the cache, so Retry always shows loading", async () => {
+  const first = renderHook(() =>
+    useQuery("retry", () => Promise.resolve("old")),
+  )
+  await waitFor(() => expect(first.result.current.data).toBe("old"))
+
+  act(() => first.result.current.refetch())
+  expect(first.result.current.loading).toBe(true)
+  expect(first.result.current.data).toBeUndefined()
+})

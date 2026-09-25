@@ -248,3 +248,65 @@ test("unmounting stops the polling", async () => {
     expect(asks).toBe(asksAtUnmount)
   })
 })
+
+// ── the dashboard cache (13H.3) ─────────────────────────────────────────────
+
+test("coming back renders the cached report with no skeleton", async () => {
+  const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(first.result.current.data?.health_score).toBe(72))
+  const shown = first.result.current.data
+  first.unmount()
+
+  const second = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  expect(second.result.current.loading).toBe(false)
+  expect(second.result.current.data?.health_score).toBe(72)
+
+  // The quiet revalidation returns the same report: the same object stays.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(second.result.current.data).toBe(shown)
+})
+
+test("a scan finishing on the branch clears its cached report", async () => {
+  const { forgetScanResults } = await import("@/lib/query-cache")
+  const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(first.result.current.loading).toBe(false))
+  first.unmount()
+
+  forgetScanResults(DEMO_REPO_ID, "main")
+
+  const second = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  expect(second.result.current.loading).toBe(true)
+  await waitFor(() => expect(second.result.current.data?.health_score).toBe(72))
+})
+
+test("a profile write clears the cached report", async () => {
+  const { setDefaultProfile, getProfiles } = await import("@/lib/api/client")
+  const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(first.result.current.loading).toBe(false))
+  first.unmount()
+
+  const [profile] = await getProfiles()
+  await setDefaultProfile(profile!.id)
+
+  const second = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  expect(second.result.current.loading).toBe(true)
+})
+
+test("two dashboards on the same branch send one request", async () => {
+  let calls = 0
+  const count = ({ request }: { request: Request }) => {
+    if (new URL(request.url).pathname.endsWith("/health")) calls += 1
+  }
+  server.events.on("request:start", count)
+  try {
+    const a = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+    const b = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+    await waitFor(() => expect(a.result.current.data).toBeDefined())
+    await waitFor(() => expect(b.result.current.data).toBeDefined())
+  } finally {
+    server.events.removeListener("request:start", count)
+  }
+  expect(calls).toBe(1)
+})
