@@ -15,9 +15,11 @@ data
 dataset
 experiments
 
-# Only the production ML-2 artifact is baked into the image. Local Compose may
-# still mount the complete models directory over /models for development.
+# Only the production ML-1 and ML-2 artifacts are baked into the image. Local
+# Compose may still mount the complete models directory over /models for
+# development.
 models/*
+!models/satd_v1.joblib
 !models/risk_v2.joblib
 
 # Training code. The `training` extra is not installed in the image on purpose.
