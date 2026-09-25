@@ -27,6 +27,24 @@ export function signInErrorMessage(
 /** Where the app sends someone whose session stopped working. */
 export const SESSION_ENDED_URL = "/login?error=session"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+
+/**
+ * The sign-in link: a navigation to the API, never a fetch.
+ *
+ * `returnTo` is where to land afterwards, a path on the API's allowlist
+ * (`/invitations/accept`, `/projects`, `/dashboard/…`, `/profiles`,
+ * `/workspace`). The API keeps it in its signed handshake cookie, so it
+ * survives the identity provider and even an email-verification tab; anything
+ * off the list is ignored there.
+ */
+export function signInHref(returnTo?: string): string {
+  const url = `${API_BASE}/api/auth/login`
+  return returnTo
+    ? `${url}?${new URLSearchParams({ return_to: returnTo })}`
+    : url
+}
+
 // ── "You're signed out." ────────────────────────────────────────────────────
 //
 // Sign-out is a form POST that ends on the identity provider and comes back to

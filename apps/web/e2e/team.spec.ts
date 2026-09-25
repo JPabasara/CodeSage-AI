@@ -115,6 +115,17 @@ base(
         sessionStorage.getItem("codesage.pendingInvitation"),
       ),
     ).toBe(MOCK_INVITATION_TOKEN)
+
+    // Sign-in brings the invitee back here from any tab: the link carries this
+    // page, token included, as `return_to`.
+    const href = await page
+      .getByRole("link", { name: "Sign in" })
+      .getAttribute("href")
+    const signIn = new URL(href ?? "")
+    expect(signIn.pathname).toBe("/api/auth/login")
+    expect(signIn.searchParams.get("return_to")).toBe(
+      `/invitations/accept?token=${MOCK_INVITATION_TOKEN}`,
+    )
   },
 )
 

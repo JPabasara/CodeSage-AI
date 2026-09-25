@@ -5,7 +5,23 @@ import {
   markSignedOut,
   resetSignedOutNotice,
   signInErrorMessage,
+  signInHref,
 } from "./sign-in"
+
+test("the plain sign-in link carries no return_to", () => {
+  const url = new URL(signInHref())
+  expect(url.pathname).toBe("/api/auth/login")
+  expect(url.search).toBe("")
+})
+
+test("return_to is encoded as one query value, query and all", () => {
+  const url = new URL(signInHref("/invitations/accept?token=a&b=c d"))
+  // One parameter, not three: the inner `&` and `?` must not split it.
+  expect([...url.searchParams.keys()]).toEqual(["return_to"])
+  expect(url.searchParams.get("return_to")).toBe(
+    "/invitations/accept?token=a&b=c d",
+  )
+})
 
 beforeEach(() => {
   sessionStorage.clear()

@@ -4,15 +4,13 @@ import { LockKeyhole, ScanSearch } from "lucide-react"
 
 import { LoginPreview } from "@/components/auth/login-preview"
 import { SignInPanel } from "@/components/auth/sign-in-panel"
-import { signInErrorMessage } from "@/lib/sign-in"
+import { signInErrorMessage, signInHref } from "@/lib/sign-in"
 
 export const metadata: Metadata = {
   title: "Sign in",
   description:
     "CodeSage AI ranks technical debt by bug risk, churn, severity, and team scoring priorities.",
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 /**
  * The one entry screen. `/` redirects here, so a visitor is one click from
@@ -97,10 +95,7 @@ export default async function LoginPage({
               </div>
             </div>
 
-            <SignInPanel
-              href={`${API_BASE}/api/auth/login`}
-              error={errorMessage}
-            />
+            <SignInPanel href={signInHref()} error={errorMessage} />
 
             <div className="rounded-lg border bg-card p-4 text-xs leading-5 text-muted-foreground">
               <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
