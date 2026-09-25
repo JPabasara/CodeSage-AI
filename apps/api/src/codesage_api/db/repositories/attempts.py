@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session, joinedload
 
+from codesage_api.config import get_settings
 from codesage_api.db.enums import AnalysisStatus, AnalysisTriggerType
 from codesage_api.db.models import (
     AnalysisAttempt,
@@ -17,6 +18,8 @@ from codesage_api.db.models import (
     Repository,
     Snapshot,
 )
+from codesage_api.guardrails import STALE_GRACE_SECONDS, timed_out_message
+from codesage_api.scoring.enums import ScanErrorCode
 
 ENGINE_VERSION_IDENTIFIER = "codesage-v2"
 ENGINE_TOOL_VERSIONS: dict[str, object] = {
@@ -29,6 +32,15 @@ ENGINE_TOOL_VERSIONS: dict[str, object] = {
 class WorkerScanInput:
     repository_url: str
     commit_sha: str
+    branch_name: str
+
+
+class WorkspaceScanSlotBusy(Exception):
+    """The workspace already runs its maximum number of scans. The attempt stays
+    queued and the worker asks again later."""
+
+
+_ACTIVE = (AnalysisStatus.QUEUED, AnalysisStatus.RUNNING)
 
 
 def lock_repository_for_scan(
@@ -185,7 +197,63 @@ def get_for_repository(
 def mark_error(session: Session, attempt: AnalysisAttempt, message: str) -> None:
     attempt.status = AnalysisStatus.ERROR
     attempt.failure_information = message
+    attempt.failure_code = None
     session.flush()
+
+
+def expire_stale_running(session: Session, workspace_id: uuid.UUID) -> int:
+    """End RUNNING attempts older than any live scan could be.
+
+    The hard time limit kills the worker process, so its `finally` never runs
+    and the row would stay RUNNING for good, blocking its branch and, with the
+    per-workspace limit, every later scan in the workspace. Called wherever
+    "is a scan active?" is asked, so the answer heals itself.
+    """
+    settings = get_settings()
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(seconds=settings.scan_time_limit_seconds + STALE_GRACE_SECONDS)
+    workspace_branches = (
+        select(Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(Repository.workspace_id == workspace_id)
+    )
+    result = session.execute(
+        update(AnalysisAttempt)
+        .where(
+            AnalysisAttempt.branch_id.in_(workspace_branches),
+            AnalysisAttempt.status == AnalysisStatus.RUNNING,
+            AnalysisAttempt.start_time < cutoff,
+        )
+        .values(
+            status=AnalysisStatus.ERROR,
+            completion_time=now,
+            failure_information=timed_out_message(),
+            failure_code=ScanErrorCode.SCAN_TIMED_OUT.value,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+def count_running_in_workspace(
+    session: Session,
+    workspace_id: uuid.UUID,
+    *,
+    excluding: uuid.UUID,
+) -> int:
+    return int(
+        session.scalar(
+            select(func.count(AnalysisAttempt.id))
+            .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+            .join(Repository, Branch.repository_id == Repository.id)
+            .where(
+                Repository.workspace_id == workspace_id,
+                AnalysisAttempt.status == AnalysisStatus.RUNNING,
+                AnalysisAttempt.id != excluding,
+            )
+        )
+        or 0
+    )
 
 
 def begin_for_worker(
@@ -193,6 +261,18 @@ def begin_for_worker(
     workspace_id: uuid.UUID,
     attempt_id: uuid.UUID,
 ) -> WorkerScanInput | None:
+    """Claim a running slot for this attempt, or raise WorkspaceScanSlotBusy.
+
+    None when the attempt is gone or has already ended; a redelivered message
+    must not restart a scan that finished, failed or was expired.
+    """
+    # One transaction-scoped lock per workspace, so two workers cannot both see
+    # a free slot and both start. Advisory, so it needs no row the worker's
+    # workspace context might not be allowed to lock.
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"codesage:scan-slot:{workspace_id}"},
+    )
     attempt = session.scalar(
         select(AnalysisAttempt)
         .join(Branch, AnalysisAttempt.branch_id == Branch.id)
@@ -203,13 +283,25 @@ def begin_for_worker(
         )
         .options(joinedload(AnalysisAttempt.branch).joinedload(Branch.repository))
     )
-    if attempt is None:
+    if attempt is None or attempt.status not in _ACTIVE:
         return None
+
+    expire_stale_running(session, workspace_id)
+    running = count_running_in_workspace(session, workspace_id, excluding=attempt.id)
+    if running >= get_settings().max_running_scans_per_workspace:
+        raise WorkspaceScanSlotBusy
+
     attempt.status = AnalysisStatus.RUNNING
     attempt.start_time = datetime.now(UTC)
+    attempt.completion_time = None
     attempt.failure_information = None
+    attempt.failure_code = None
     session.flush()
-    return WorkerScanInput(attempt.branch.repository.url, attempt.commit_sha)
+    return WorkerScanInput(
+        attempt.branch.repository.url,
+        attempt.commit_sha,
+        attempt.branch.name,
+    )
 
 
 def get_worker_attempt(

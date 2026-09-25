@@ -83,7 +83,11 @@ LATER_COLUMNS = {
     ),
     "membership": ("role_id",),  # 0010
     "app_user": ("email_verified",),  # 0013
-    "analysis_attempt": ("initiated_by_user_id", "initiating_workspace_id"),  # 0011
+    "analysis_attempt": (  # 0011; failure_code 0018
+        "initiated_by_user_id",
+        "initiating_workspace_id",
+        "failure_code",
+    ),
     "finding": ("class_name", "method_name"),  # 0017
     "scoring_profile": (  # 0015
         "kind",

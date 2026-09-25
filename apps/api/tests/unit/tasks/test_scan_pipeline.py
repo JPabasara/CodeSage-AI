@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 
 from codesage_api.db.enums import (
     AnalysisStatus,
@@ -21,7 +25,7 @@ from codesage_api.db.models import (
     SATDPrediction,
     SourceFile,
 )
-from codesage_api.db.repositories.attempts import WorkerScanInput
+from codesage_api.db.repositories.attempts import WorkerScanInput, WorkspaceScanSlotBusy
 from codesage_api.detection.risk.client import RiskClientResult
 from codesage_api.detection.rules.engine import DetectedFinding
 from codesage_api.detection.satd.client import SATDResult
@@ -29,9 +33,32 @@ from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.ck_metrics import FileMetrics
 from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.extractors.pipeline import ExtractionResult
-from codesage_api.scoring.enums import Category
+from codesage_api.guardrails import (
+    NO_JAVA_MESSAGE,
+    JavaInventory,
+    ScanLimitReached,
+    git_timed_out_message,
+    timed_out_message,
+)
+from codesage_api.scoring.enums import Category, ScanErrorCode
 from codesage_api.tasks.cancel import ScanCancelled
+from codesage_api.tasks.repository_clone import CloneError, CloneTimedOut
 from codesage_api.tasks.scan_pipeline import PipelineResults, _finalize, run_scan
+
+
+@pytest.fixture(autouse=True)
+def _guardrails_pass():
+    """The stage tests below are about ordering, not limits: let every branch
+    through the Java check and skip the stale-clone sweep. The 13H.1 tests at
+    the end of this file override these where they matter."""
+    with (
+        patch(
+            "codesage_api.tasks.scan_pipeline.check_java_sources",
+            return_value=JavaInventory(files=1, lines=1),
+        ),
+        patch("codesage_api.tasks.scan_pipeline.sweep_stale_clones", return_value=0),
+    ):
+        yield
 
 
 @patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
@@ -290,7 +317,7 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     attempt_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
     session_scope.return_value.__enter__.return_value = Mock()
-    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40)
+    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main")
     stored_rule = SimpleNamespace(
         rule_id="large-file",
         category_id="code-design",
@@ -373,7 +400,7 @@ def test_task_handles_ml_service_degraded_mode(
     attempt_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
     session_scope.return_value.__enter__.return_value = Mock()
-    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40)
+    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main")
     list_definitions.return_value = []
     clone.return_value = SimpleNamespace(
         path=tmp_path,
@@ -421,7 +448,7 @@ def test_task_records_a_durable_error_when_a_stage_fails(
     attempt_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
     session_scope.return_value.__enter__.return_value = Mock()
-    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40)
+    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main")
     list_definitions.return_value = []
     clone.return_value = SimpleNamespace(
         path=tmp_path,
@@ -463,7 +490,7 @@ def test_task_records_cancelled_and_cleans_clone(
     attempt_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
     session_scope.return_value.__enter__.return_value = Mock()
-    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40)
+    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main")
     list_definitions.return_value = []
     clone.return_value = SimpleNamespace(
         path=tmp_path,
@@ -480,3 +507,205 @@ def test_task_records_cancelled_and_cleans_clone(
         None,
     )
     cleanup.assert_called_once_with(str(attempt_id), str(tmp_path))
+
+
+# ── 13H.1: guardrail endings, time limits, cleanup and the workspace slot ───
+
+_PIPELINE = "codesage_api.tasks.scan_pipeline"
+
+
+class _Run:
+    """One `run_scan` with every collaborator replaced, so each test changes
+    only the stage it is about."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.attempt_id = uuid.uuid4()
+        self.workspace_id = uuid.uuid4()
+        self.clone_dir = tmp_path / str(self.attempt_id)
+        self._mocks: dict[str, Mock] = {
+            "session_scope": MagicMock(),
+            "attempts.begin_for_worker": Mock(
+                return_value=WorkerScanInput(
+                    "https://github.com/example/repo.git", "a" * 40, "feature/x"
+                )
+            ),
+            "rules.list_definitions": Mock(return_value=[]),
+            "clone_path": Mock(return_value=self.clone_dir),
+            "clone_at_commit": Mock(
+                return_value=SimpleNamespace(
+                    path=self.clone_dir,
+                    commit_sha="a" * 40,
+                    committer_date=SimpleNamespace(),
+                )
+            ),
+            "extract": Mock(
+                return_value=ExtractionResult(
+                    static_metrics=[], class_metrics=[], process_metrics=[], comments=[]
+                )
+            ),
+            "detect": Mock(return_value=[]),
+            "risk_client.predict": Mock(return_value=None),
+            "classify": Mock(return_value=[]),
+            "_finalize": Mock(return_value=uuid.uuid4()),
+            "_set_terminal": Mock(),
+            "celery_app.send_task": Mock(),
+            "cancel.check": Mock(),
+            "cancel.cleanup": Mock(),
+            "progress.publish_progress": Mock(),
+            "progress.is_cancel_requested": Mock(return_value=False),
+            "progress.clear": Mock(),
+        }
+
+    def __getitem__(self, name: str) -> Mock:
+        return self._mocks[name]
+
+    def __call__(self) -> None:
+        with ExitStack() as stack:
+            for name, mock in self._mocks.items():
+                stack.enter_context(patch(f"{_PIPELINE}.{name}", mock))
+            run_scan.run(str(self.attempt_id), str(self.workspace_id))
+
+    def ended_with(self, status: AnalysisStatus, *details: object) -> None:
+        self["_set_terminal"].assert_called_once_with(
+            self.attempt_id, self.workspace_id, status, *details
+        )
+
+
+@pytest.fixture
+def scan(tmp_path: Path) -> _Run:
+    return _Run(tmp_path)
+
+
+def test_the_scanned_branch_alone_is_cloned(scan: _Run) -> None:
+    scan()
+
+    assert scan["clone_at_commit"].call_args.kwargs == {"branch": "feature/x"}
+    scan["_finalize"].assert_called_once()
+
+
+def test_a_branch_with_no_java_ends_cleanly_before_extraction(scan: _Run) -> None:
+    with patch(
+        f"{_PIPELINE}.check_java_sources",
+        side_effect=ScanLimitReached(ScanErrorCode.NO_JAVA_FILES, NO_JAVA_MESSAGE),
+    ):
+        scan()
+
+    scan.ended_with(AnalysisStatus.ERROR, NO_JAVA_MESSAGE, ScanErrorCode.NO_JAVA_FILES)
+    scan["extract"].assert_not_called()
+    scan["_finalize"].assert_not_called()
+    scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
+
+
+def test_a_branch_over_the_limits_ends_as_too_large(scan: _Run) -> None:
+    message = (
+        "This branch has 7,210 Java files, more than the 5,000 CodeSage can analyse today."
+    )
+    with patch(
+        f"{_PIPELINE}.check_java_sources",
+        side_effect=ScanLimitReached(ScanErrorCode.REPOSITORY_TOO_LARGE, message),
+    ):
+        scan()
+
+    scan.ended_with(AnalysisStatus.ERROR, message, ScanErrorCode.REPOSITORY_TOO_LARGE)
+    scan["extract"].assert_not_called()
+
+
+def test_the_soft_time_limit_ends_the_scan_and_still_cleans_up(scan: _Run) -> None:
+    scan["extract"].side_effect = SoftTimeLimitExceeded()
+
+    scan()
+
+    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT)
+    scan["_finalize"].assert_not_called()
+    scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
+
+
+def test_a_time_limit_inside_an_ml_call_is_not_mistaken_for_degraded_mode(
+    scan: _Run,
+) -> None:
+    """The ML clients wrap every exception as MLServiceUnavailable. Unwrapped,
+    the soft limit would become "carry on without SATD" and the scan would run
+    on into the hard kill, which skips `finally`."""
+    wrapped = MLServiceUnavailable("Failed to communicate with ML service")
+    wrapped.__cause__ = SoftTimeLimitExceeded()
+    scan["classify"].side_effect = wrapped
+
+    scan()
+
+    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT)
+    scan["_finalize"].assert_not_called()
+
+
+def test_a_git_timeout_ends_the_scan_as_timed_out(scan: _Run) -> None:
+    scan["clone_at_commit"].side_effect = CloneTimedOut("Git did not finish in time.")
+
+    scan()
+
+    scan.ended_with(
+        AnalysisStatus.ERROR, git_timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT
+    )
+
+
+def test_the_clone_folder_is_deleted_even_when_the_clone_itself_fails(scan: _Run) -> None:
+    # The clone never returned a path, so the pipeline has to know it already.
+    scan["clone_at_commit"].side_effect = CloneError("network")
+
+    scan()
+
+    scan.ended_with(AnalysisStatus.ERROR, "The repository could not be analysed.")
+    scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
+
+
+def test_satd_comments_are_capped_before_the_ml_call(scan: _Run, monkeypatch) -> None:
+    from codesage_api import guardrails
+    from codesage_api.config import Settings
+
+    monkeypatch.setattr(guardrails, "get_settings", lambda: Settings(max_satd_comments=2))
+    comments = [ExtractedComment("A.java", line, f"// TODO {line}") for line in range(5)]
+    scan["extract"].return_value = ExtractionResult(
+        static_metrics=[], class_metrics=[], process_metrics=[], comments=comments
+    )
+
+    scan()
+
+    scan["classify"].assert_called_once_with(comments[:2])
+
+
+def test_a_busy_workspace_keeps_the_scan_queued_and_asks_again(scan: _Run) -> None:
+    scan["attempts.begin_for_worker"].side_effect = WorkspaceScanSlotBusy
+
+    with patch.object(run_scan, "retry", side_effect=Retry()) as retry, pytest.raises(Retry):
+        scan()
+
+    retry.assert_called_once_with(countdown=15, max_retries=None)
+    scan["clone_at_commit"].assert_not_called()
+    scan["_set_terminal"].assert_not_called()
+    # The cancel flag belongs to the still-queued attempt; keep it.
+    scan["cancel.cleanup"].assert_not_called()
+    scan["progress.clear"].assert_not_called()
+
+
+def test_stop_pressed_while_waiting_for_a_slot_cancels_the_scan(scan: _Run) -> None:
+    scan["attempts.begin_for_worker"].side_effect = WorkspaceScanSlotBusy
+    scan["progress.is_cancel_requested"].return_value = True
+
+    with patch.object(run_scan, "retry") as retry:
+        scan()
+
+    retry.assert_not_called()
+    scan.ended_with(AnalysisStatus.CANCELLED, None)
+    scan["progress.clear"].assert_called_once_with(str(scan.attempt_id))
+
+
+def test_an_attempt_that_already_ended_is_not_restarted(scan: _Run) -> None:
+    scan["attempts.begin_for_worker"].return_value = None
+
+    scan()
+
+    scan["clone_at_commit"].assert_not_called()
+    scan["_set_terminal"].assert_not_called()
+
+
+def test_the_scan_task_carries_both_time_limits() -> None:
+    assert run_scan.soft_time_limit == 14 * 60
+    assert run_scan.time_limit == 15 * 60

@@ -67,6 +67,17 @@ class ScanPhase(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ScanErrorCode(StrEnum):
+    """Why a scan ended in `error`, for the failures a user can act on.
+
+    Absent for an unexpected failure; the stored `error` sentence covers that.
+    """
+
+    NO_JAVA_FILES = "NO_JAVA_FILES"
+    REPOSITORY_TOO_LARGE = "REPOSITORY_TOO_LARGE"
+    SCAN_TIMED_OUT = "SCAN_TIMED_OUT"
+
+
 TERMINAL_PHASES: frozenset[ScanPhase] = frozenset(
     {ScanPhase.DONE, ScanPhase.ERROR, ScanPhase.CANCELLED}
 )

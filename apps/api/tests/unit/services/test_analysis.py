@@ -9,7 +9,7 @@ import pytest
 from codesage_api.db.enums import AnalysisStatus
 from codesage_api.errors import NotFound
 from codesage_api.integrations.github import GitHubBranch
-from codesage_api.scoring.enums import ScanPhase
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase
 from codesage_api.services import analysis
 
 
@@ -22,14 +22,21 @@ def _branch() -> SimpleNamespace:
     )
 
 
-def _attempt(status: AnalysisStatus, commit_sha: str = "new-sha") -> SimpleNamespace:
+def _attempt(
+    status: AnalysisStatus,
+    commit_sha: str = "new-sha",
+    *,
+    failure_information: str | None = None,
+    failure_code: str | None = None,
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
         status=status,
         commit_sha=commit_sha,
         start_time=None,
         completion_time=None,
-        failure_information=None,
+        failure_information=failure_information,
+        failure_code=failure_code,
         branch=SimpleNamespace(name="main"),
     )
 
@@ -198,3 +205,112 @@ def test_cancel_rejects_unknown_or_cross_tenant_attempt(
 
     with pytest.raises(NotFound):
         analysis.cancel(Mock(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4())
+
+
+# ── 13H.1: why a scan failed, and scans that outlived their time limit ──────
+
+
+@patch("codesage_api.services.analysis.attempts")
+def test_a_guardrail_failure_reports_its_code_next_to_its_sentence(
+    attempt_repository: Mock,
+) -> None:
+    attempt = _attempt(
+        AnalysisStatus.ERROR,
+        failure_information="No Java files on this branch.",
+        failure_code="NO_JAVA_FILES",
+    )
+    attempt_repository.get_for_repository.return_value = attempt
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
+
+    assert result.phase is ScanPhase.ERROR
+    assert result.error == "No Java files on this branch."
+    assert result.error_code is ScanErrorCode.NO_JAVA_FILES
+
+
+@pytest.mark.parametrize(
+    "status",
+    [AnalysisStatus.QUEUED, AnalysisStatus.RUNNING, AnalysisStatus.DONE, AnalysisStatus.CANCELLED],
+)
+@patch("codesage_api.services.analysis.progress.read_progress", return_value=0)
+@patch("codesage_api.services.analysis.attempts")
+def test_error_code_is_absent_for_every_phase_but_error(
+    attempt_repository: Mock,
+    _read_progress: Mock,
+    status: AnalysisStatus,
+) -> None:
+    # A stale code on a row that was later retried must not leak into its status.
+    attempt = _attempt(status, failure_code="SCAN_TIMED_OUT")
+    attempt_repository.get_for_repository.return_value = attempt
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
+
+    assert result.error_code is None
+    assert result.error is None
+
+
+@pytest.mark.parametrize("stored", [None, "SOMETHING_THIS_BUILD_NEVER_HEARD_OF"])
+@patch("codesage_api.services.analysis.attempts")
+def test_an_unexpected_failure_has_no_code_and_never_a_500(
+    attempt_repository: Mock,
+    stored: str | None,
+) -> None:
+    attempt = _attempt(
+        AnalysisStatus.ERROR,
+        failure_information="The repository could not be analysed.",
+        failure_code=stored,
+    )
+    attempt_repository.get_for_repository.return_value = attempt
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
+
+    assert result.error == "The repository could not be analysed."
+    assert result.error_code is None
+
+
+@patch("codesage_api.services.analysis.attempts")
+def test_status_reads_end_abandoned_scans_before_answering(
+    attempt_repository: Mock,
+) -> None:
+    """A worker killed at the hard limit never ends its row. Every status read
+    first ends such rows, so a poll converges on `error` instead of `running`
+    forever."""
+    calls: list[str] = []
+    attempt_repository.expire_stale_running.side_effect = lambda *_: calls.append("expire")
+    attempt_repository.get_for_repository.side_effect = lambda *_: (
+        calls.append("read") or _attempt(AnalysisStatus.DONE)
+    )
+    attempt_repository.find_active_for_repository.side_effect = lambda *_: (
+        calls.append("read") or None
+    )
+    session = Mock()
+    workspace_id = uuid.uuid4()
+
+    analysis.get_status(session, workspace_id, uuid.uuid4(), uuid.uuid4())
+    analysis.get_active(session, workspace_id, uuid.uuid4(), None)
+
+    assert calls == ["expire", "read", "expire", "read"]
+    attempt_repository.expire_stale_running.assert_called_with(session, workspace_id)
+
+
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_start_ends_abandoned_scans_before_the_already_running_check(
+    attempt_repository: Mock,
+    github_fetch: Mock,
+) -> None:
+    calls: list[str] = []
+    attempt_repository.lock_repository_for_scan.return_value = SimpleNamespace()
+    attempt_repository.get_branch.return_value = _branch()
+    attempt_repository.expire_stale_running.side_effect = lambda *_: calls.append("expire")
+    attempt_repository.find_active_for_branch.side_effect = lambda *_: (
+        calls.append("active?") or None
+    )
+    attempt_repository.find_latest_completed.return_value = _attempt(
+        AnalysisStatus.DONE, commit_sha="same-sha"
+    )
+    github_fetch.return_value = GitHubBranch("main", "same-sha")
+
+    analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+
+    assert calls == ["expire", "active?"]

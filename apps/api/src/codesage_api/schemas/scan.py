@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from codesage_api.schemas.base import ApiModel
-from codesage_api.scoring.enums import Grade, ScanPhase
+from codesage_api.scoring.enums import Grade, ScanErrorCode, ScanPhase
 
 
 class StartScanIn(ApiModel):
@@ -22,6 +22,9 @@ class ScanStatusOut(ApiModel):
     started_at: str | None = None
     finished_at: str | None = None
     error: str | None = None
+    # Why it failed, when the reason is one the user can act on (13H.1). Absent
+    # for unexpected failures and for every phase but `error`.
+    error_code: ScanErrorCode | None = None
 
 
 class ScanSummaryOut(ApiModel):

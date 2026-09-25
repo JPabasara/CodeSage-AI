@@ -31,7 +31,8 @@ class ExtractionResult:
 def _extract_repository_comments(repository_path: Path) -> list[ExtractedComment]:
     comments: list[ExtractedComment] = []
     for path in sorted(repository_path.rglob("*.java")):
-        if ".git" in path.parts:
+        # A cloned symlink can point anywhere, including at /dev/zero.
+        if ".git" in path.parts or path.is_symlink():
             continue
         relative_path = path.relative_to(repository_path).as_posix()
         source_code = path.read_text(encoding="utf-8", errors="replace")
