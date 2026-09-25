@@ -1134,6 +1134,25 @@ export const handlers = [
         "That repository could not be reached. Check the URL and try again.",
       )
     }
+    // The 13H.1 guardrails: refused before a project exists.
+    if (name.startsWith("nojava-")) {
+      return HttpResponse.json(
+        {
+          detail:
+            "We couldn't find any Java in this repository. CodeSage reads Java for now; more languages are coming soon.",
+          code: "REPOSITORY_HAS_NO_JAVA",
+          languages: ["Python", "Shell"],
+        } satisfies ApiError,
+        { status: 400 },
+      )
+    }
+    if (name.startsWith("huge-")) {
+      return fail(
+        400,
+        "REPOSITORY_TOO_LARGE",
+        "This repository is larger than 300 MB, the most CodeSage can analyse today.",
+      )
+    }
     if (name.startsWith("ratelimited-")) {
       return fail(429, "RATE_LIMITED", "Too many requests. Try again shortly.")
     }

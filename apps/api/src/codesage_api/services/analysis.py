@@ -11,7 +11,7 @@ from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import NotFound, ScanAlreadyRunning
 from codesage_api.integrations.github import fetch_branch
 from codesage_api.schemas import ScanStatusOut, ScanSummaryOut
-from codesage_api.scoring.enums import ScanPhase
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase
 from codesage_api.services import dashboard
 from codesage_api.tasks import progress
 
@@ -21,6 +21,7 @@ def _status_out(
     branch_name: str,
 ) -> ScanStatusOut:
     phase = ScanPhase(attempt.status.value)
+    failed = attempt.status == AnalysisStatus.ERROR
     if phase is ScanPhase.DONE:
         percent = 100
     elif phase in {ScanPhase.QUEUED, ScanPhase.ERROR, ScanPhase.CANCELLED}:
@@ -36,8 +37,18 @@ def _status_out(
         commit_sha=attempt.commit_sha,
         started_at=(attempt.start_time.isoformat() if attempt.start_time else None),
         finished_at=(attempt.completion_time.isoformat() if attempt.completion_time else None),
-        error=(attempt.failure_information if attempt.status == AnalysisStatus.ERROR else None),
+        error=(attempt.failure_information if failed else None),
+        error_code=_error_code(attempt.failure_code) if failed else None,
     )
+
+
+def _error_code(stored: str | None) -> ScanErrorCode | None:
+    """A code this build no longer knows is dropped, not a 500: the stored
+    sentence still explains the failure."""
+    try:
+        return ScanErrorCode(stored) if stored else None
+    except ValueError:
+        return None
 
 
 def start(
@@ -59,6 +70,7 @@ def start(
     if stored_branch is None:
         raise NotFound
 
+    attempts.expire_stale_running(session, workspace_id)
     if attempts.find_active_for_branch(session, stored_branch.id) is not None:
         raise ScanAlreadyRunning
 
@@ -105,6 +117,7 @@ def get_status(
     attempt_id: uuid.UUID,
 ) -> ScanStatusOut:
 
+    attempts.expire_stale_running(session, workspace_id)
     attempt = attempts.get_for_repository(session, workspace_id, repository_id, attempt_id)
     if attempt is None:
         raise NotFound
@@ -125,6 +138,7 @@ def get_active(
     it again and resumes polling. With a branch, only that branch; without one,
     the newest active scan on any branch of the repository.
     """
+    attempts.expire_stale_running(session, workspace_id)
     if branch is None:
         attempt = attempts.find_active_for_repository(session, workspace_id, repository_id)
     else:

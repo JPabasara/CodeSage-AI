@@ -9,6 +9,10 @@ class CodeSageError(Exception):
     code: str = "INTERNAL_ERROR"
     message: str = "Something went wrong."
 
+    def body(self) -> dict[str, object]:
+        """The error envelope. Subclasses add contract-listed fields only."""
+        return {"detail": self.message, "code": self.code}
+
 
 class NotFound(CodeSageError):
     status_code = status.HTTP_404_NOT_FOUND
@@ -53,6 +57,37 @@ class RepositoryAlreadyConnected(CodeSageError):
     status_code = status.HTTP_409_CONFLICT
     code = "ALREADY_CONNECTED"
     message = "That repository is already connected to this workspace."
+
+
+class RepositoryTooLarge(CodeSageError):
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "REPOSITORY_TOO_LARGE"
+
+    def __init__(self, limit_mb: int) -> None:
+        self.message = (
+            f"This repository is larger than {limit_mb} MB, "
+            "the most CodeSage can analyse today."
+        )
+        super().__init__(self.message)
+
+
+class RepositoryHasNoJava(CodeSageError):
+    """GitHub found no Java. The body lists what it did find, so the sentence
+    reads as accurate rather than as a guess."""
+
+    status_code = status.HTTP_400_BAD_REQUEST
+    code = "REPOSITORY_HAS_NO_JAVA"
+    message = (
+        "We couldn't find any Java in this repository. "
+        "CodeSage reads Java for now; more languages are coming soon."
+    )
+
+    def __init__(self, languages: list[str]) -> None:
+        self.languages = languages
+        super().__init__(self.message)
+
+    def body(self) -> dict[str, object]:
+        return {**super().body(), "languages": self.languages}
 
 
 class RepositoryMissingDefaultBranch(CodeSageError):
@@ -162,10 +197,7 @@ def install_exception_handlers(app: FastAPI) -> None:
     async def _handle(request: Request, exc: CodeSageError) -> JSONResponse:
         # Only the curated `message` crosses the boundary. Stack traces, SQL and
         # upstream error text stay in the logs (SEC-16).
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.message, "code": exc.code},
-        )
+        return JSONResponse(status_code=exc.status_code, content=exc.body())
 
     @app.exception_handler(NotImplementedError)
     async def _not_built_yet(request: Request, exc: NotImplementedError) -> JSONResponse:

@@ -520,6 +520,18 @@ paths:
         "forbidden" — a user pasting their own repository has done nothing wrong
         and needs to know that private support requires a GitHub App installation,
         which is not in this release.
+
+        **Guardrails (13H.1).** Two more refusals come from what GitHub already
+        reports, so a repository CodeSage could never scan is refused before a
+        project exists:
+
+        - GitHub's `size` over the limit (300 MB by default) →
+          `REPOSITORY_TOO_LARGE`;
+        - no Java in GitHub's language list → `REPOSITORY_HAS_NO_JAVA`, with the
+          languages GitHub did find in `languages`.
+
+        Neither creates a project. The worker checks again at scan time, because
+        the scanned branch can differ from what GitHub reports here.
       requestBody:
         required: true
         content:
@@ -533,12 +545,23 @@ paths:
               schema: { $ref: '#/components/schemas/Repo' }
         '400':
           description: |
-            The URL is malformed, the repository is unreachable, or it is private.
-            Distinguish the three by `code`.
+            The URL is malformed, the repository is unreachable, it is private,
+            it is too large, or it has no Java. Distinguish them by `code`.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
               examples:
+                too_large:
+                  summary: Larger than the size limit
+                  value:
+                    detail: This repository is larger than 300 MB, the most CodeSage can analyse today.
+                    code: REPOSITORY_TOO_LARGE
+                no_java:
+                  summary: No Java in the repository
+                  value:
+                    detail: We couldn't find any Java in this repository. CodeSage reads Java for now; more languages are coming soon.
+                    code: REPOSITORY_HAS_NO_JAVA
+                    languages: [Python, Shell]
                 private:
                   summary: Private repository
                   value:
@@ -1448,6 +1471,14 @@ components:
           example: A scan is already running for this branch.
         code:
           $ref: '#/components/schemas/ErrorCode'
+        languages:
+          type: array
+          description: |
+            The languages GitHub reports for the repository, most code first.
+            Present with `REPOSITORY_HAS_NO_JAVA` only, so the message can name
+            what was found instead of guessing.
+          items: { type: string }
+          example: [Python, Shell]
         errors:
           type: array
           description: Field-level detail. Present on validation failures only.
@@ -1485,6 +1516,8 @@ components:
         - INVALID_REPOSITORY_URL  # 400
         - REPOSITORY_NOT_PUBLIC   # 400
         - REPOSITORY_UNREACHABLE  # 400
+        - REPOSITORY_TOO_LARGE    # 400
+        - REPOSITORY_HAS_NO_JAVA  # 400
         - ALREADY_CONNECTED       # 409
         - REPOSITORY_SCAN_RUNNING # 409
         - SCAN_ALREADY_RUNNING    # 409
@@ -1553,6 +1586,19 @@ components:
         because FR-11 sums *open* finding priorities — the filter needs something to
         filter on. The v1.1 accept / resolve / false-positive actions will set them.
       enum: [open, accepted, resolved, false-positive]
+
+    ScanErrorCode:
+      type: string
+      description: |
+        Why a scan ended in `error` (13H.1). New members may be added; existing
+        members never change meaning.
+
+        - `NO_JAVA_FILES`: the scanned branch has no `.java` files.
+        - `REPOSITORY_TOO_LARGE`: the branch has more Java files or lines than
+          the scan limits allow; `error` names the limit.
+        - `SCAN_TIMED_OUT`: the scan, or downloading the repository, ran past
+          its time limit (15 minutes for the whole scan by default).
+      enum: [NO_JAVA_FILES, REPOSITORY_TOO_LARGE, SCAN_TIMED_OUT]
 
     ScanPhase:
       type: string
@@ -1907,6 +1953,16 @@ components:
             Present only when `phase` is `error`. Stored on the attempt row, not
             merely logged, so a user-reported failure is diagnosable from the
             database alone (SP-13).
+        error_code:
+          description: |
+            Why the scan failed, when the reason is one the user can act on.
+            Present only when `phase` is `error`; null for an unexpected failure,
+            where `error` alone explains it. Clients choose their message by this
+            code; `error` carries the specific numbers (for example the limit
+            that was exceeded).
+          oneOf:
+            - $ref: '#/components/schemas/ScanErrorCode'
+            - type: 'null'
 
     ScanSummary:
       type: object

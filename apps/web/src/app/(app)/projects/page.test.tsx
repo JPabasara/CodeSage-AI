@@ -512,3 +512,62 @@ test("an empty workspace says so, and says what to do about it", async () => {
     ),
   ).toBeVisible()
 })
+
+// ── 13H.1 guardrails: refused before a project exists ───────────────────────
+
+/** The connect form itself, where the inline refusal lives. */
+const connectForm = () =>
+  screen.getByRole("region", { name: /connect a github repository/i })
+
+test("a repository with no Java is refused inline, naming what GitHub found", async () => {
+  render(<ProjectsPage />)
+  const list = await ready()
+  const rowsBefore = within(list).getAllByRole("listitem").length
+
+  await connect("https://github.com/acme/nojava-site")
+
+  const inline = await within(connectForm()).findByRole("alert")
+  expect(inline).toHaveTextContent(/couldn't find any java in this repository/i)
+  expect(inline).toHaveTextContent(/more languages are coming soon/i)
+  expect(inline).toHaveTextContent(/GitHub lists Python and Shell/)
+  // The toast says the same thing; the inline copy is what stays on screen.
+  expect(await failureMessage()).toBe(inline.textContent)
+
+  // No project was created, and the URL is still there to correct.
+  expect(within(list).getAllByRole("listitem")).toHaveLength(rowsBefore)
+  expect(screen.queryByText("nojava-site")).not.toBeInTheDocument()
+  expect(screen.getByLabelText(/repository url/i)).toHaveValue(
+    "https://github.com/acme/nojava-site",
+  )
+})
+
+test("a repository over the size limit is refused inline with the limit", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/acme/huge-monorepo")
+
+  expect(await within(connectForm()).findByRole("alert")).toHaveTextContent(
+    /larger than 300 MB/i,
+  )
+  expect(screen.queryByText("huge-monorepo")).not.toBeInTheDocument()
+})
+
+test("editing the URL clears the inline refusal, and a success leaves none", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/acme/nojava-site")
+  await within(connectForm()).findByRole("alert")
+
+  const input = screen.getByLabelText(/repository url/i)
+  await userEvent.clear(input)
+  expect(within(connectForm()).queryByRole("alert")).not.toBeInTheDocument()
+
+  await connect("https://github.com/octocat/hello-world")
+  await waitFor(() =>
+    expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world"),
+  )
+  expect(within(connectForm()).queryByRole("alert")).not.toBeInTheDocument()
+  expect(input).toHaveValue("")
+})

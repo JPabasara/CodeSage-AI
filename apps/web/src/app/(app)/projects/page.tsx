@@ -4,7 +4,8 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { ApiRequestError, connectRepo, removeProject } from "@/lib/api/client"
-import type { ErrorCode, Repo } from "@/lib/types"
+import { connectFailureMessage } from "@/lib/guardrail-messages"
+import type { Repo } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
 import { ErrorState } from "@/components/error-state"
 import { PageHeader } from "@/components/layout/page-header"
@@ -33,18 +34,6 @@ import { useSelectedProject } from "@/hooks/use-selected-project"
 import { useSession } from "@/hooks/use-session"
 import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
 
-// Each code is a different thing for the user to do about it, which is why they
-// are separate rather than one 400; a bare "400 Bad Request" leaves someone who
-// pasted a repository with no idea what went wrong.
-const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
-  INVALID_REPOSITORY_URL: "That does not look like a repository URL.",
-  REPOSITORY_NOT_PUBLIC:
-    "Only public repositories can be connected in this release.",
-  REPOSITORY_UNREACHABLE:
-    "That repository could not be reached. Check the URL and try again.",
-  ALREADY_CONNECTED: "That repository is already connected.",
-}
-
 export default function ProjectsPage() {
   // Project writes update every mounted consumer through useProjects; `refetch`
   // remains the loud Retry path that returns this screen to its skeletons.
@@ -59,6 +48,7 @@ export default function ProjectsPage() {
   const canDisconnect =
     session?.permissions?.includes("repository:disconnect") ?? false
   const [connecting, setConnecting] = useState(false)
+  const [connectError, setConnectError] = useState<string>()
   const [pendingRemoval, setPendingRemoval] = useState<Repo>()
   const [removingRepoId, setRemovingRepoId] = useState<string>()
   const { selectedProjectId, selectProject, clearProject } = useSelectedProject(
@@ -74,21 +64,21 @@ export default function ProjectsPage() {
   const scannedCount = repos?.filter((repo) => repo.latest_health).length ?? 0
   const activeProject = repos?.find((repo) => repo.id === selectedProjectId)
 
-  async function onConnect(url: string) {
+  /** Resolves false when refused, so the form keeps the URL under its message. */
+  async function onConnect(url: string): Promise<boolean> {
     setConnecting(true)
+    setConnectError(undefined)
     try {
       const repo = await connectRepo(url)
       publishProjectConnected(repo)
       selectProject(repo.id)
       toast.success(`Connected ${repo.owner}/${repo.name}`)
+      return true
     } catch (err) {
-      const code = err instanceof ApiRequestError ? err.code : undefined
-      toast.error(
-        (code && CONNECT_MESSAGE[code]) ??
-          (err instanceof Error
-            ? err.message
-            : "Couldn't connect that repository."),
-      )
+      const message = connectFailureMessage(err)
+      setConnectError(message)
+      toast.error(message)
+      return false
     } finally {
       setConnecting(false)
     }
@@ -179,6 +169,8 @@ export default function ProjectsPage() {
         className="mx-auto w-full max-w-2xl"
         onConnect={onConnect}
         busy={connecting}
+        error={connectError}
+        onErrorClear={() => setConnectError(undefined)}
         lockedReason={canConnect ? undefined : CONNECT_LOCKED_REASON}
       />
 

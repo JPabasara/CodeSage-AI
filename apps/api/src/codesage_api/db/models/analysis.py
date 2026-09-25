@@ -57,6 +57,8 @@ class AnalysisAttempt(UUIDPrimaryKey, Base):
     retry_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"))
     failure_information: Mapped[str | None] = mapped_column(Text)
+    # A ScanErrorCode when the failure is one the user can act on (13H.1).
+    failure_code: Mapped[str | None] = mapped_column(String(40))
     branch: Mapped[Branch] = relationship(back_populates="analysis_attempts")
     analysis_engine_version: Mapped[AnalysisEngineVersion] = relationship(back_populates="analysis_attempts")
     snapshot: Mapped[Snapshot | None] = relationship(back_populates="analysis_attempt", uselist=False, passive_deletes=True)

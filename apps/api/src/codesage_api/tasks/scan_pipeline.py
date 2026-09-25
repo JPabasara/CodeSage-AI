@@ -17,10 +17,13 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
+from codesage_api.config import get_settings
 from codesage_api.db.enums import (
     AnalysisStatus,
     FindingSource,
@@ -35,6 +38,7 @@ from codesage_api.db.models import (
     Finding,
     MLModelVersion,
     ProcessMetric,
+    RuleDefinition,
     SATDPrediction,
     Snapshot,
     SourceFile,
@@ -57,10 +61,24 @@ from codesage_api.detection.satd.client import SATDResult, classify
 from codesage_api.detection.satd.severity_markers import assign_severity
 from codesage_api.errors import MLServiceUnavailable
 from codesage_api.extractors.pipeline import ExtractionResult, extract
+from codesage_api.guardrails import (
+    STALE_GRACE_SECONDS,
+    ScanLimitReached,
+    cap_satd_comments,
+    check_java_sources,
+    git_timed_out_message,
+    timed_out_message,
+)
 from codesage_api.logging import get_logger, scan_context
+from codesage_api.scoring.enums import ScanErrorCode
 from codesage_api.tasks import cancel, progress
 from codesage_api.tasks.app import celery_app
-from codesage_api.tasks.repository_clone import clone_at_commit
+from codesage_api.tasks.repository_clone import (
+    CloneTimedOut,
+    clone_at_commit,
+    clone_path,
+    sweep_stale_clones,
+)
 
 logger = get_logger(__name__)
 
@@ -73,22 +91,37 @@ class PipelineResults:
     satd_predictions: list[SATDResult] = field(default_factory=list)
 
 
-@celery_app.task(bind=True, name="codesage.scan")
+_settings = get_settings()
+
+
+@celery_app.task(
+    bind=True,
+    name="codesage.scan",
+    # The soft limit raises SoftTimeLimitExceeded inside the task: the scan ends
+    # as SCAN_TIMED_OUT and `finally` still deletes the clone. The hard limit is
+    # the backstop that kills the process; `expire_stale_running` and
+    # `sweep_stale_clones` tidy up after it.
+    soft_time_limit=_settings.scan_soft_time_limit_seconds,
+    time_limit=_settings.scan_time_limit_seconds,
+)
 def run_scan(self, attempt_id: str, workspace_id: str) -> None:
     """Execute one analysis attempt end to end.
 
     Stages, with a cancel check between each:
 
-        1. clone at the scanned SHA, read its committer date
-        2. extract  — CK metrics, PyDriller process metrics, Tree-sitter comments
-        3. detect   — rule engine
-        4. finalize — one transaction
+        1. clone the branch, check out the scanned SHA, read its committer date
+        2. guardrails — some Java, but no more than the limits
+        3. extract  — CK metrics, PyDriller process metrics, Tree-sitter comments
+        4. detect   — rule engine
+        5. finalize — one transaction
+
+    At most `max_running_scans_per_workspace` run at once in one workspace;
+    the rest stay queued and ask again every `scan_queue_retry_seconds`.
     """
     # Authorization is checked when queued. Role changes do not revoke this job;
     # worker database access remains constrained by the recorded workspace.
     attempt_uuid = uuid.UUID(attempt_id)
     workspace_uuid = uuid.UUID(workspace_id)
-    clone_dir: str | None = None
 
     with scan_context(attempt_id):
         try:
@@ -96,109 +129,204 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
                 set_workspace_context(session, workspace_uuid)
                 scan_input = attempts.begin_for_worker(session, workspace_uuid, attempt_uuid)
                 stored_rules = rules.list_definitions(session)
-            if scan_input is None:
-                logger.error("Scan attempt was not found in its workspace")
-                return
+        except attempts.WorkspaceScanSlotBusy:
+            _wait_for_slot(self, attempt_id, attempt_uuid, workspace_uuid)
+            return
+        if scan_input is None:
+            logger.warning("Scan attempt was not found, or has already ended")
+            return
+        _run_claimed(attempt_id, attempt_uuid, workspace_uuid, scan_input, stored_rules)
 
-            progress.publish_progress(attempt_id, 5)
-            cancel.check(attempt_id)
-            cloned = clone_at_commit(
-                scan_input.repository_url,
-                scan_input.commit_sha,
-                attempt_uuid,
-            )
-            clone_dir = str(cloned.path)
-            progress.publish_progress(attempt_id, 25)
-            cancel.check(attempt_id)
 
-            extracted = extract(
-                cloned.path,
-                cloned.commit_sha,
-                cloned.committer_date,
-            )
-            progress.publish_progress(attempt_id, 60)
-            cancel.check(attempt_id)
+def _wait_for_slot(
+    task: Any,
+    attempt_id: str,
+    attempt_uuid: uuid.UUID,
+    workspace_uuid: uuid.UUID,
+) -> None:
+    """The workspace is at its running limit: stay queued and ask again later.
 
-            findings = detect(
-                extracted.static_metrics,
-                [
-                    from_stored(
-                        rule_id=rule.rule_id,
-                        category_id=rule.category_id,
-                        severity=rule.severity.value,
-                        threshold=rule.threshold,
-                        message_template=rule.message_template,
-                    )
-                    for rule in stored_rules
-                ],
-                cloned.path,
-                extracted.method_metrics,
-            )
+    A Stop pressed while queued is honoured here, because this attempt never
+    reaches a stage boundary where it would otherwise read the flag.
+    """
+    if progress.is_cancel_requested(attempt_id):
+        _set_terminal(attempt_uuid, workspace_uuid, AnalysisStatus.CANCELLED, None)
+        progress.clear(attempt_id)
+        return
+    logger.info("Workspace scan slot busy; the attempt stays queued")
+    # No retry cap: a running scan always ends, by itself, at its time limit or
+    # through `expire_stale_running`, so the slot is always freed eventually.
+    raise task.retry(countdown=_settings.scan_queue_retry_seconds, max_retries=None)
 
-            # ML-2 Risk Model prediction with graceful degradation
-            risk_result: RiskClientResult | None = None
-            try:
-                process_by_path = {
-                    p.path: p
-                    for p in extracted.process_metrics
-                }
 
-                risk_result = risk_client.predict(
-                    extracted.class_metrics,
-                    process_by_path,
+def _run_claimed(
+    attempt_id: str,
+    attempt_uuid: uuid.UUID,
+    workspace_uuid: uuid.UUID,
+    scan_input: attempts.WorkerScanInput,
+    stored_rules: list[RuleDefinition],
+) -> None:
+    workspace_id = str(workspace_uuid)
+    # Known before cloning, so `finally` deletes it even when the clone itself
+    # was interrupted halfway.
+    clone_dir = str(clone_path(attempt_uuid))
+    try:
+        swept = sweep_stale_clones(_settings.scan_time_limit_seconds + STALE_GRACE_SECONDS)
+        if swept:
+            logger.warning("Removed clones left by killed scans", extra={"count": swept})
+
+        progress.publish_progress(attempt_id, 5)
+        cancel.check(attempt_id)
+        cloned = clone_at_commit(
+            scan_input.repository_url,
+            scan_input.commit_sha,
+            attempt_uuid,
+            branch=scan_input.branch_name,
+        )
+        clone_dir = str(cloned.path)
+        inventory = check_java_sources(cloned.path)
+        logger.info(
+            "Java sources are within the scan limits",
+            extra={"java_files": inventory.files, "java_lines": inventory.lines},
+        )
+        progress.publish_progress(attempt_id, 25)
+        cancel.check(attempt_id)
+
+        extracted = extract(
+            cloned.path,
+            cloned.commit_sha,
+            cloned.committer_date,
+        )
+        progress.publish_progress(attempt_id, 60)
+        cancel.check(attempt_id)
+
+        findings = detect(
+            extracted.static_metrics,
+            [
+                from_stored(
+                    rule_id=rule.rule_id,
+                    category_id=rule.category_id,
+                    severity=rule.severity.value,
+                    threshold=rule.threshold,
+                    message_template=rule.message_template,
                 )
-            except MLServiceUnavailable as exc:
-                logger.warning(
-                    "ML risk service unavailable; scan proceeding in degraded mode",
-                    extra={"error": str(exc)},
-                )
+                for rule in stored_rules
+            ],
+            cloned.path,
+            extracted.method_metrics,
+        )
 
-            # ML-1 SATD prediction
-            try:
-                satd_predictions = [
-                    result for result in classify(extracted.comments) if result.is_debt
-                ]
-            except MLServiceUnavailable:
-                logger.warning(
-                    "SATD classifier unavailable; completing scan in degraded mode",
-                    extra={"comment_count": len(extracted.comments)},
-                )
-                satd_predictions = []
-            progress.publish_progress(attempt_id, 80)
-            cancel.check(attempt_id)
+        # ML-2 Risk Model prediction with graceful degradation
+        risk_result: RiskClientResult | None = None
+        try:
+            process_by_path = {
+                p.path: p
+                for p in extracted.process_metrics
+            }
 
-            snapshot_id = _finalize(
-                attempt_uuid,
-                workspace_uuid,
-                PipelineResults(
-                    extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions
-                ),
+            risk_result = risk_client.predict(
+                extracted.class_metrics,
+                process_by_path,
             )
-            progress.publish_progress(attempt_id, 100)
-            try:
-                celery_app.send_task(
-                    "codesage.warm_snapshot_score",
-                    args=[str(snapshot_id), workspace_id],
-                )
-            except Exception:
-                logger.exception("Could not enqueue snapshot score warm-up")
-        except cancel.ScanCancelled:
-            _set_terminal(
-                attempt_uuid,
-                workspace_uuid,
-                AnalysisStatus.CANCELLED,
-                None,
+        except MLServiceUnavailable as exc:
+            _reraise_time_limit(exc)
+            logger.warning(
+                "ML risk service unavailable; scan proceeding in degraded mode",
+                extra={"error": str(exc)},
+            )
+
+        # ML-1 SATD prediction, over at most `max_satd_comments` comments
+        comments = cap_satd_comments(extracted.comments)
+        if len(comments) < len(extracted.comments):
+            logger.warning(
+                "SATD comments capped for this scan",
+                extra={"comment_count": len(extracted.comments), "kept": len(comments)},
+            )
+        try:
+            satd_predictions = [
+                result for result in classify(comments) if result.is_debt
+            ]
+        except MLServiceUnavailable as exc:
+            _reraise_time_limit(exc)
+            logger.warning(
+                "SATD classifier unavailable; completing scan in degraded mode",
+                extra={"comment_count": len(comments)},
+            )
+            satd_predictions = []
+        progress.publish_progress(attempt_id, 80)
+        cancel.check(attempt_id)
+
+        snapshot_id = _finalize(
+            attempt_uuid,
+            workspace_uuid,
+            PipelineResults(
+                extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions
+            ),
+        )
+        progress.publish_progress(attempt_id, 100)
+        try:
+            celery_app.send_task(
+                "codesage.warm_snapshot_score",
+                args=[str(snapshot_id), workspace_id],
             )
         except Exception:
-            logger.exception("Scan pipeline failed")
-            _set_terminal(
-                attempt_uuid,
-                workspace_uuid,
-                AnalysisStatus.ERROR,
-                "The repository could not be analysed.",
-            )
-        finally:
-            cancel.cleanup(attempt_id, clone_dir)
+            logger.exception("Could not enqueue snapshot score warm-up")
+    except cancel.ScanCancelled:
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.CANCELLED,
+            None,
+        )
+    except ScanLimitReached as limit:
+        # A clean ending, not a crash: the sentence is the whole story.
+        logger.info("Scan ended by a guardrail", extra={"error_code": limit.code.value})
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            limit.message,
+            limit.code,
+        )
+    except SoftTimeLimitExceeded:
+        logger.warning("Scan reached its time limit")
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            timed_out_message(),
+            ScanErrorCode.SCAN_TIMED_OUT,
+        )
+    except CloneTimedOut:
+        logger.warning("A git command reached its time limit")
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            git_timed_out_message(),
+            ScanErrorCode.SCAN_TIMED_OUT,
+        )
+    except Exception:
+        logger.exception("Scan pipeline failed")
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            "The repository could not be analysed.",
+        )
+    finally:
+        cancel.cleanup(attempt_id, clone_dir)
+
+
+def _reraise_time_limit(exc: BaseException) -> None:
+    """The ML clients wrap every exception as MLServiceUnavailable, which would
+    turn the soft time limit into degraded mode and let the scan run on into
+    the hard kill. Find it in the cause chain and let it end the scan."""
+    cause = exc.__cause__
+    while cause is not None:
+        if isinstance(cause, SoftTimeLimitExceeded):
+            raise cause
+        cause = cause.__cause__
 
 
 def _finalize(
@@ -542,6 +670,7 @@ def _set_terminal(
     workspace_id: uuid.UUID,
     status: AnalysisStatus,
     failure_information: str | None,
+    failure_code: ScanErrorCode | None = None,
 ) -> None:
     with session_scope() as session:
         set_workspace_context(session, workspace_id)
@@ -551,3 +680,4 @@ def _set_terminal(
         attempt.status = status
         attempt.completion_time = datetime.now(UTC)
         attempt.failure_information = failure_information
+        attempt.failure_code = failure_code.value if failure_code else None

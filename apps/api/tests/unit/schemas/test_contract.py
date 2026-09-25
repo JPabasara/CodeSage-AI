@@ -284,3 +284,36 @@ def test_the_app_and_the_contract_agree_on_the_profile_surface() -> None:
         }
 
     assert profile_surface(served) == profile_surface(contract["paths"])
+
+
+def _contract() -> dict:
+    from pathlib import Path
+
+    import yaml
+
+    repo_root = Path(__file__).resolve().parents[5]
+    return yaml.safe_load((repo_root / "docs/api/openapi.yaml").read_text(encoding="utf-8"))
+
+
+def test_scan_error_codes_match_the_contract() -> None:
+    """13H.1. The web picks its sentence by this code, so the two lists must be
+    the same list."""
+    from codesage_api.scoring.enums import ScanErrorCode
+
+    contract = _contract()["components"]["schemas"]
+    assert set(contract["ScanErrorCode"]["enum"]) == {code.value for code in ScanErrorCode}
+
+    served = create_app().openapi()["components"]["schemas"]["ScanStatusOut"]
+    assert "error_code" in served["properties"]
+    assert "error_code" not in served.get("required", [])
+    assert "error_code" in contract["ScanStatus"]["properties"]
+
+
+def test_the_connect_guardrail_codes_and_languages_are_in_the_contract() -> None:
+    contract = _contract()["components"]["schemas"]
+    assert {"REPOSITORY_TOO_LARGE", "REPOSITORY_HAS_NO_JAVA"} <= set(
+        contract["ErrorCode"]["enum"]
+    )
+    # `additionalProperties: false` on Error: without this property a client
+    # validating the envelope would reject the no-Java refusal.
+    assert contract["Error"]["properties"]["languages"]["items"] == {"type": "string"}
