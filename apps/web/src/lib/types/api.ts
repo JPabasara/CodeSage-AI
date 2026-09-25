@@ -361,6 +361,18 @@ export interface paths {
          *     "forbidden" — a user pasting their own repository has done nothing wrong
          *     and needs to know that private support requires a GitHub App installation,
          *     which is not in this release.
+         *
+         *     **Guardrails (13H.1).** Two more refusals come from what GitHub already
+         *     reports, so a repository CodeSage could never scan is refused before a
+         *     project exists:
+         *
+         *     - GitHub's `size` over the limit (300 MB by default) →
+         *       `REPOSITORY_TOO_LARGE`;
+         *     - no Java in GitHub's language list → `REPOSITORY_HAS_NO_JAVA`, with the
+         *       languages GitHub did find in `languages`.
+         *
+         *     Neither creates a project. The worker checks again at scan time, because
+         *     the scanned branch can differ from what GitHub reports here.
          */
         post: operations["connect_project"];
         delete?: never;
@@ -906,6 +918,16 @@ export interface components {
              */
             detail: string;
             code: components["schemas"]["ErrorCode"];
+            /**
+             * @description The languages GitHub reports for the repository, most code first.
+             *     Present with `REPOSITORY_HAS_NO_JAVA` only, so the message can name
+             *     what was found instead of guessing.
+             * @example [
+             *       "Python",
+             *       "Shell"
+             *     ]
+             */
+            languages?: string[];
             /** @description Field-level detail. Present on validation failures only. */
             errors?: {
                 /**
@@ -931,7 +953,7 @@ export interface components {
          *     apart from nonsense ones.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -981,6 +1003,18 @@ export interface components {
          * @enum {string}
          */
         FindingStatus: "open" | "accepted" | "resolved" | "false-positive";
+        /**
+         * @description Why a scan ended in `error` (13H.1). New members may be added; existing
+         *     members never change meaning.
+         *
+         *     - `NO_JAVA_FILES`: the scanned branch has no `.java` files.
+         *     - `REPOSITORY_TOO_LARGE`: the branch has more Java files or lines than
+         *       the scan limits allow; `error` names the limit.
+         *     - `SCAN_TIMED_OUT`: the scan, or downloading the repository, ran past
+         *       its time limit (15 minutes for the whole scan by default).
+         * @enum {string}
+         */
+        ScanErrorCode: "NO_JAVA_FILES" | "REPOSITORY_TOO_LARGE" | "SCAN_TIMED_OUT";
         /**
          * @description `idle → queued → running → done | error | cancelled`.
          *
@@ -1259,6 +1293,14 @@ export interface components {
              *     database alone (SP-13).
              */
             error?: string | null;
+            /**
+             * @description Why the scan failed, when the reason is one the user can act on.
+             *     Present only when `phase` is `error`; null for an unexpected failure,
+             *     where `error` alone explains it. Clients choose their message by this
+             *     code; `error` carries the specific numbers (for example the limit
+             *     that was exceeded).
+             */
+            error_code?: components["schemas"]["ScanErrorCode"] | null;
         };
         /** @description One row in the Scan-History view (FR-19). */
         ScanSummary: {
@@ -2197,8 +2239,8 @@ export interface operations {
                 };
             };
             /**
-             * @description The URL is malformed, the repository is unreachable, or it is private.
-             *     Distinguish the three by `code`.
+             * @description The URL is malformed, the repository is unreachable, it is private,
+             *     it is too large, or it has no Java. Distinguish them by `code`.
              */
             400: {
                 headers: {

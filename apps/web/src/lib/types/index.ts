@@ -67,6 +67,7 @@ export interface ConnectRepoRequest {
 export interface ApiError {
   detail: string // a human-readable sentence naming what failed
   code: ErrorCode
+  languages?: string[] // REPOSITORY_HAS_NO_JAVA only: what GitHub did find
   errors?: { field: string; detail: string }[] // VALIDATION_FAILED only
 }
 
@@ -196,6 +197,12 @@ export interface Branch {
 export type ScanPhase =
   "idle" | "queued" | "running" | "done" | "error" | "cancelled"
 
+/**
+ * Why a scan ended in `error`, when the reason is one the user can act on.
+ * Absent for an unexpected failure, where `error` alone explains it.
+ */
+export type ScanErrorCode = components["schemas"]["ScanErrorCode"]
+
 export interface ScanStatus {
   scan_id: string
   phase: ScanPhase
@@ -207,6 +214,7 @@ export interface ScanStatus {
   started_at?: string | null
   finished_at?: string | null
   error?: string | null // present only when phase === "error"
+  error_code?: ScanErrorCode | null // ditto; the message is chosen by this
 }
 
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──
