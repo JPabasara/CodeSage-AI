@@ -23,4 +23,5 @@ data/external/*
 models/*.pkl
 models/*.joblib
 !models/.gitkeep
+!models/satd_v1.joblib
 !models/risk_v2.joblib

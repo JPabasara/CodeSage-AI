@@ -4,8 +4,9 @@
 # runs offline, which keeps the image small and makes it structurally impossible
 # to train in production.
 #
-# The production ML-2 artifact is baked in so registry images are self-contained.
-# Local Compose may mount the complete models directory over /models.
+# The production ML-1 and ML-2 artifacts are baked in so registry images are
+# self-contained. Local Compose may mount the complete models directory over
+# /models.
 
 FROM python:3.12-slim
 
@@ -22,6 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY pyproject.toml ./
 COPY src/ ./src/
+COPY models/satd_v1.joblib /models/satd_v1.joblib
 COPY models/risk_v2.joblib /models/risk_v2.joblib
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-build-isolation --no-deps .
