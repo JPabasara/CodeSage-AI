@@ -56,6 +56,10 @@ const repoRows = (page: import("@playwright/test").Page) =>
     .getByRole("list", { name: /connected repositories/i })
     .getByRole("listitem")
 
+/** The connect panel, where a refusal is shown under the URL field. */
+const connectForm = (page: import("@playwright/test").Page) =>
+  page.getByRole("region", { name: /connect a github repository/i })
+
 /** The connect form: type a URL, press Connect. */
 async function connect(page: import("@playwright/test").Page, url: string) {
   await page.getByLabel(/repository url/i).fill(url)
@@ -120,14 +124,28 @@ test("each connect failure explains itself in its own words", async ({
 
   for (const [url, message] of cases) {
     await connect(page, url)
-    await expect(page.getByText(message), url).toBeVisible()
-    // Clear the toast before the next case so a stale one cannot pass the check.
-    await page
-      .getByText(message)
-      .click({ trial: true })
-      .catch(() => {})
-    await page.waitForTimeout(150)
+    // Asserted under the URL field (13H.1): the toast says the same thing but
+    // is gone in seconds. `fill` replaces the kept URL, and a new submit
+    // replaces the previous refusal, so a stale message cannot pass the check.
+    await expect(connectForm(page).getByRole("alert"), url).toHaveText(message)
   }
+})
+
+test("a repository with no Java is refused with a clear sentence and adds no row", async ({
+  page,
+}) => {
+  const rowsBefore = await repoRows(page).count()
+
+  await connect(page, "https://github.com/acme/nojava-site")
+
+  const refusal = connectForm(page).getByRole("alert")
+  await expect(refusal).toContainText(
+    "We couldn't find any Java in this repository.",
+  )
+  await expect(refusal).toContainText("more languages are coming soon")
+  await expect(refusal).toContainText("GitHub lists Python and Shell")
+  await expect(repoRows(page)).toHaveCount(rowsBefore)
+  await expect(repoRows(page).filter({ hasText: "nojava-site" })).toHaveCount(0)
 })
 
 test("selecting a project opens its dashboard", async ({ page }) => {

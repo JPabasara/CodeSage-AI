@@ -49,6 +49,8 @@ export class ApiRequestError extends Error {
     readonly status: number,
     readonly code: ErrorCode | undefined,
     readonly detail: string,
+    /** `REPOSITORY_HAS_NO_JAVA` only: the languages GitHub did find. */
+    readonly languages?: string[],
   ) {
     super(detail)
     this.name = "ApiRequestError"
@@ -75,6 +77,7 @@ async function json<T>(res: Response): Promise<T> {
       res.status,
       body.code,
       body.detail ?? `${res.status} ${res.statusText}`,
+      Array.isArray(body.languages) ? body.languages : undefined,
     )
   }
   return res.json() as Promise<T>
@@ -172,7 +175,10 @@ export function switchWorkspace(workspaceId: string): Promise<Workspace> {
  * Connect a public repository by URL.
  *
  * Public only for now — a private URL comes back as `REPOSITORY_NOT_PUBLIC`.
- * Connecting one needs a GitHub App installation, which is v2.
+ * Connecting one needs a GitHub App installation, which is v2. A repository
+ * over the size limit is `REPOSITORY_TOO_LARGE`, and one with no Java is
+ * `REPOSITORY_HAS_NO_JAVA` with the languages GitHub found; neither creates a
+ * project.
  */
 export function connectRepo(url: string): Promise<Repo> {
   const body: ConnectRepoRequest = { url }

@@ -14,7 +14,11 @@ import {
   type ScanEvent,
 } from "./use-scan-center"
 import { noteActiveWorkspace } from "./use-workspace-scope"
+import { http, HttpResponse } from "msw"
+
 import { startScan as apiStartScan } from "@/lib/api/client"
+import { server } from "@/lib/mocks/server"
+import type { ScanStatus } from "@/lib/types"
 import {
   DEMO_REPO_ID,
   SECOND_WORKSPACE_ID,
@@ -181,4 +185,31 @@ test("in another workspace a scan waits, and resumes on the way back", async () 
   act(() => resumeScans(WORKSPACE_ID))
   await polls(1)
   expect(result.current.scan!.status.progress).toBeGreaterThan(progressBefore)
+})
+
+test("a scan ended by a guardrail fails with its plain sentence (13H.1)", async () => {
+  const reasons: string[] = []
+  onScanEvent((event) => {
+    if (event.type === "failed") reasons.push(event.reason)
+  })
+  await act(() => startScan(target))
+
+  // The worker found no Java on this branch: a clean ending, with a code.
+  server.use(
+    http.get("*/api/repos/:repoId/scan/:scanId", ({ params }) =>
+      HttpResponse.json({
+        scan_id: params.scanId as string,
+        phase: "error",
+        progress: 0,
+        branch: "main",
+        error: "No Java files on this branch.",
+        error_code: "NO_JAVA_FILES",
+      } satisfies ScanStatus),
+    ),
+  )
+  await polls(1)
+
+  expect(reasons).toEqual([
+    "No Java files on this branch. CodeSage reads Java for now; more languages are coming soon.",
+  ])
 })

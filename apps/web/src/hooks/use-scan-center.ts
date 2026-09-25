@@ -9,6 +9,7 @@ import {
   startScan as apiStartScan,
   stopScan as apiStopScan,
 } from "@/lib/api/client"
+import { scanFailureMessage } from "@/lib/guardrail-messages"
 import type { ScanStatus } from "@/lib/types"
 import {
   readActiveWorkspaceId,
@@ -229,7 +230,7 @@ async function poll(key: string) {
     emit({
       type: "failed",
       scan: current,
-      reason: next.error ?? "The scan could not be completed.",
+      reason: scanFailureMessage(next),
     })
 }
 
