@@ -356,3 +356,46 @@ test("a reload says it is refreshing until the new report lands", async () => {
 
   await waitFor(() => expect(result.current.refreshing).toBe(false))
 })
+
+// ── the scan store and the dashboard share one cache ────────────────────────
+
+test("one key format for the hook and the scan store", async () => {
+  const { healthKey } = await import("./use-health-report")
+  const { readWorkspaceEpoch } = await import("./use-workspace-scope")
+  const { readCached } = await import("@/lib/query-cache")
+  const { result } = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(result.current.data).toBeDefined())
+
+  // What the hook cached is exactly where the store will look for it.
+  expect(
+    readCached(healthKey(readWorkspaceEpoch(), DEMO_REPO_ID, "main"))?.data,
+  ).toBe(result.current.data)
+})
+
+test("a newer report in the cache wins over this hook's own answer", async () => {
+  const { healthKey } = await import("./use-health-report")
+  const { readWorkspaceEpoch } = await import("./use-workspace-scope")
+  const { writeCached } = await import("@/lib/query-cache")
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json(
+        { detail: "Not scanned yet.", code: "NOT_FOUND" },
+        { status: 404 },
+      ),
+    ),
+  )
+  const { result, rerender } = renderHook(() =>
+    useHealthReport(DEMO_REPO_ID, "main"),
+  )
+  await waitFor(() => expect(result.current.error).toBeDefined())
+
+  // The scan store fetched the first scan's report while this page waited.
+  writeCached(
+    healthKey(readWorkspaceEpoch(), DEMO_REPO_ID, "main"),
+    mockHealthReport,
+  )
+  rerender()
+  expect(result.current.data).toBe(mockHealthReport)
+  expect(result.current.error).toBeUndefined()
+  expect(result.current.loading).toBe(false)
+})

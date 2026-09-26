@@ -12,6 +12,8 @@ export type ScanControlProps = {
   progress: number // 0–100
   /** Stop has been requested but the scan has not reached a terminal phase yet. */
   stopping?: boolean
+  /** The scan is done and its health score is being calculated. */
+  scoring?: boolean
   /** Rendered on the deep-mint app bar: light-on-dark buttons. */
   onBar?: boolean
   onScan?: () => void
@@ -38,9 +40,13 @@ function ScanAnnouncement({
   phase,
   progress,
   stopping,
-}: Readonly<Pick<ScanControlProps, "phase" | "progress" | "stopping">>) {
+  scoring,
+}: Readonly<
+  Pick<ScanControlProps, "phase" | "progress" | "stopping" | "scoring">
+>) {
   let message: string
   if (stopping) message = "Stopping the scan"
+  else if (scoring) message = "Scan finished, calculating the health score"
   else if (phase === "queued") message = "Scan queued, waiting for a worker"
   else message = `Scanning, ${Math.floor(progress / 25) * 25} percent complete`
 
@@ -55,6 +61,7 @@ export function ScanControl({
   phase,
   progress,
   stopping,
+  scoring = false,
   onScan,
   onStop,
   onBar = false,
@@ -76,6 +83,7 @@ export function ScanControl({
     // reading that makes someone press Stop on a scan that never began.
     let label: string
     if (stopping) label = "Stopping…"
+    else if (scoring) label = "Scoring…"
     else if (queued) label = "Queued…"
     else label = `Scanning… ${progress}%`
 
@@ -90,12 +98,19 @@ export function ScanControl({
               className="size-3.5 animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
-            {stopping ? "Stopping…" : queued ? "Queued…" : "Scanning…"}
+            {stopping
+              ? "Stopping…"
+              : scoring
+                ? "Scoring…"
+                : queued
+                  ? "Queued…"
+                  : "Scanning…"}
           </Button>
           <ScanAnnouncement
             phase={phase}
             progress={progress}
             stopping={stopping}
+            scoring={scoring}
           />
         </>
       )
@@ -133,6 +148,7 @@ export function ScanControl({
           phase={phase}
           progress={progress}
           stopping={stopping}
+          scoring={scoring}
         />
       </div>
     )

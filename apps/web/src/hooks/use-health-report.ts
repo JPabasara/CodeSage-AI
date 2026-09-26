@@ -81,6 +81,19 @@ export interface HealthReportOptions {
   enabled?: boolean
 }
 
+/**
+ * The cache key of one report. Shared with the scan store, which fetches the
+ * new report when a scan's score is ready, so the dashboard finds it there.
+ */
+export function healthKey(
+  epoch: number,
+  repoId: string,
+  branch: string,
+  snapshotId?: string,
+) {
+  return `${epoch}:health:${repoId}:${branch}:${snapshotId ?? "latest"}`
+}
+
 const isScorePending = (error: unknown) =>
   error instanceof ApiRequestError && error.code === "SCORE_PENDING"
 
@@ -111,9 +124,12 @@ export function useHealthReport(
 ): HealthReportState {
   const enabled = options?.enabled ?? true
   const requestedKey = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
+  const epoch = useWorkspaceEpoch()
   // The workspace epoch, as in `useQuery`: a switch changes the key, so one
-  // workspace's report never shows under another's name.
-  const key = `${useWorkspaceEpoch()}:${requestedKey}`
+  // workspace's report never shows under another's name. Built inline rather
+  // than with `healthKey` (the React Compiler cannot keep this hook's
+  // callbacks memoized across that call); a test pins the two to one format.
+  const key = `${epoch}:${requestedKey}`
 
   const [result, setResult] = useState<{
     key: string
@@ -227,13 +243,25 @@ export function useHealthReport(
   // `key` guards against a stale answer: a response for the previous branch is
   // dropped rather than rendered under the new one. A held read is never
   // settled, so it reads as loading rather than as an empty answer.
+  //
+  // A newer answer in the app-wide cache wins over this hook's own: the scan
+  // store fetches a finished scan's report while the user is elsewhere, and a
+  // cache entry that differs from what this hook holds can only be newer —
+  // a failed read drops its entry, it never leaves a stale one behind.
   const settled = enabled && result?.key === key
-  const shown = settled ? result : cached && { key, data: cached.data }
+  const fromCache =
+    cached !== undefined && (!settled || result?.data !== cached.data)
+  const shown = fromCache
+    ? { key, data: cached.data }
+    : settled
+      ? result
+      : undefined
+  const own = settled && !fromCache
   return {
     data: shown ? shown.data : undefined,
-    error: settled ? result?.error : undefined,
-    pending: settled ? (result?.pending ?? false) : false,
-    pendingSlow: settled ? Boolean(result?.pending && result.slow) : false,
+    error: own ? result?.error : undefined,
+    pending: own ? (result?.pending ?? false) : false,
+    pendingSlow: own ? Boolean(result?.pending && result.slow) : false,
     refreshing: enabled && refreshing,
     loading: !shown,
     reload,

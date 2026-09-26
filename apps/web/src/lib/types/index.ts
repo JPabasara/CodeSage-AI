@@ -209,6 +209,11 @@ export type ScanErrorCode = components["schemas"]["ScanErrorCode"]
  */
 export type ScanStage = components["schemas"]["ScanStage"]
 
+/** Work in progress in the active workspace (`GET /api/activity`). */
+export type Activity = components["schemas"]["Activity"]
+export type ActiveScan = components["schemas"]["ActiveScan"]
+export type Rescoring = components["schemas"]["Rescoring"]
+
 export interface ScanStatus {
   scan_id: string
   phase: ScanPhase

@@ -584,19 +584,71 @@ test("choosing a branch remembers it for this project", async () => {
 
 // ── scans follow you across pages (Phase 13E) ───────────────────────────────
 
-test("leave the dashboard mid-scan, come back: still running, with Stop", async () => {
+// ── scans while results are on screen ──────────────────────────────────────
+
+/** Where the progress bar is, as the screen reader hears it. */
+const barValue = () =>
+  Number(
+    within(screen.getByTestId("scan-progress-panel"))
+      .getByRole("progressbar")
+      .getAttribute("aria-valuenow") ?? "0",
+  )
+
+test("a scan keeps the previous results usable, with a compact card above them", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+
+  const card = await screen.findByTestId("scan-progress-panel")
+  expect(card).toHaveAttribute("data-size", "compact")
+  // The results stay on screen and stay usable while it runs.
+  expect(screen.getByText("Code Health")).toBeInTheDocument()
+  expect(
+    screen.getByRole("list", { name: /ranked refactor findings/i }),
+  ).toBeInTheDocument()
+  expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
+    /acme-payments on main/,
+  )
+})
+
+test("when it is done, 'Show them' — the page never swaps by itself", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+  const analyzed = () =>
+    screen.getByTitle(/^Last analyzed/).getAttribute("title")
+  const before = analyzed()
+  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+
+  // Scan and score done: the card says so, and the OLD results are still up.
+  expect(
+    await screen.findByText("New results are ready", {}, { timeout: 15_000 }),
+  ).toBeInTheDocument()
+  expect(analyzed()).toBe(before)
+
+  await user.click(screen.getByRole("button", { name: "Show them" }))
+  await waitFor(() => expect(analyzed()).not.toBe(before))
+  expect(screen.queryByTestId("scan-progress-panel")).not.toBeInTheDocument()
+  expect(screen.getByText("Code Health")).toBeInTheDocument()
+}, 20_000)
+
+test("leave the dashboard mid-scan, come back: same bar, same line, still running", async () => {
   const user = userEvent.setup()
   const first = render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
   await user.click(screen.getByRole("button", { name: /^scan$/i }))
-  expect(await screen.findByTestId("scan-status-strip")).toBeInTheDocument()
+  await screen.findByTestId("scan-status-strip")
+  await waitFor(() => expect(barValue()).toBeGreaterThan(0))
+  const leftAt = barValue()
   first.unmount() // navigated away
 
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-
-  // The middle of the page is the scan panel now, not the old report (13H.4).
-  expect(await screen.findByTestId("scan-progress-panel")).toBeInTheDocument()
-  expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
+  await ready()
+  // Not restarted: at least where it was, never back at zero. (That the line
+  // is kept too is pinned in the store's own tests.)
+  expect(barValue()).toBeGreaterThanOrEqual(leftAt)
+  expect(screen.getByTestId("scan-panel-line")).not.toBeEmptyDOMElement()
   expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
     /acme-payments on main/,
   )
@@ -613,22 +665,32 @@ test("a scan started elsewhere is found when the dashboard opens", async () => {
   expect(await screen.findByTestId("scan-progress-panel")).toBeInTheDocument()
 })
 
-test("a running scan fills the middle with its stage, and the report returns after", async () => {
+test("a first scan has nothing to keep: the middle of the page is the job", async () => {
   const user = userEvent.setup()
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
+  render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
+  await screen.findByText(/no scans yet/i)
   await user.click(screen.getByRole("button", { name: /^scan$/i }))
 
   const panel = await screen.findByTestId("scan-progress-panel")
+  expect(panel).toHaveAttribute("data-size", "full")
   expect(panel).toHaveTextContent(
-    /Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there/,
+    /Waiting for a free scan slot|Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there|Calculating your health score/,
   )
-  // Then the score is calculated, in the same place, and the report is back.
-  expect(
-    await screen.findByText("Code Health", {}, { timeout: 15_000 }),
-  ).toBeInTheDocument()
-  expect(screen.queryByTestId("scan-progress-panel")).not.toBeInTheDocument()
-}, 20_000)
+})
+
+test("the dashboard says which profile its numbers are scored with", async () => {
+  render(
+    <TopBarSlotProvider>
+      <TopBarSlot name="context" />
+      <TopBarSlot name="actions" />
+      <DashboardView repoId={DEMO_REPO_ID} />
+    </TopBarSlotProvider>,
+  )
+  await ready()
+  const chip = await screen.findByTestId("scored-with")
+  expect(chip).toHaveTextContent(`Scored with ${mockHealthReport.profile}`)
+  expect(chip).toHaveAttribute("href", "/profiles")
+})
 
 test("the report waits for the branch: no empty-branch ask, and no 'No scans yet' flash", async () => {
   const healthAsked: (string | null)[] = []
