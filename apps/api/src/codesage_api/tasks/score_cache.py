@@ -85,9 +85,7 @@ def _warm(workspace_uuid: uuid.UUID, only: set[uuid.UUID] | None) -> list[tuple[
             )
             for ref in refs:
                 cached, created = dashboard.prepare_snapshot_score(session, ref, profile)
-                if created or (
-                    cached.status == "pending" and cached.started_at is None
-                ):
+                if dashboard.needs_enqueue(cached, created):
                     jobs.append((str(cached.id), profile_payload(profile)))
     return jobs
 
@@ -126,7 +124,9 @@ def warm_snapshot_score(snapshot_id: str, workspace_id: str) -> None:
     workspace_uuid = uuid.UUID(workspace_id)
     with session_scope() as session:
         set_workspace_context(session, workspace_uuid)
-        snapshot = dashboard_repository.get_snapshot_for_scoring(
+        # The row alone: this task only prepares the cache record. Hydrating
+        # every fact here (as the calculation does) doubled the wait.
+        snapshot = dashboard_repository.find_done_snapshot(
             session, workspace_uuid, uuid.UUID(snapshot_id)
         )
         if snapshot is None:
@@ -140,5 +140,6 @@ def warm_snapshot_score(snapshot_id: str, workspace_id: str) -> None:
         cached, created = dashboard.prepare_snapshot_score(session, snapshot, profile)
         cache_id = str(cached.id)
         payload = profile_payload(profile)
-    if created or (cached.status == "pending" and cached.started_at is None):
+        enqueue = dashboard.needs_enqueue(cached, created)
+    if enqueue:
         score_snapshot.delay(cache_id, workspace_id, payload)

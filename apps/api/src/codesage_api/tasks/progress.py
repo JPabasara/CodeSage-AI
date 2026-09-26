@@ -33,6 +33,11 @@ PROGRESS_KEY = "codesage:scan:{attempt_id}:progress"
 #: integer value for older readers.
 STAGE_KEY = "codesage:scan:{attempt_id}:stage"
 CANCEL_KEY = "codesage:scan:{attempt_id}:cancel"
+#: Set when a score calculation is queued, so polls do not queue it again.
+SCORE_QUEUED_KEY = "codesage:score:{cache_id}:queued"
+#: Long enough to cover a busy scoring queue; short enough that a job lost in a
+#: broker restart is queued again on the next poll after it expires.
+SCORE_QUEUED_TTL_SECONDS = 120
 
 #: Long enough to outlive any realistic scan, short enough that abandoned keys go away.
 KEY_TTL_SECONDS = 6 * 60 * 60
@@ -158,6 +163,27 @@ def read_progress(attempt_id: str) -> int:
         return max(0, min(100, int(value))) if value is not None else 0
     except (RedisError, TypeError, ValueError):
         return 0
+
+
+def claim_score_enqueue(cache_id: str) -> bool:
+    """True for the first caller in a while to queue this score; False while an
+    earlier one is still queued.
+
+    The dashboard polls every few seconds while a score is pending, and each
+    poll used to queue the same job again — twenty copies for one score. Fails
+    open: without Redis, queueing twice is better than never.
+    """
+    try:
+        return bool(
+            _client().set(
+                SCORE_QUEUED_KEY.format(cache_id=cache_id),
+                "1",
+                nx=True,
+                ex=SCORE_QUEUED_TTL_SECONDS,
+            )
+        )
+    except RedisError:
+        return True
 
 
 def request_cancel(attempt_id: str) -> None:

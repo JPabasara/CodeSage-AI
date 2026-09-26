@@ -134,6 +134,29 @@ def repository_id_for_snapshot(
     )
 
 
+def find_done_snapshot(
+    session: Session,
+    workspace_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+) -> Snapshot | None:
+    """The snapshot row alone — no files, classes or findings.
+
+    For callers that only need to know the snapshot exists and is complete.
+    Loading every fact of a large repository just to check that took ~40 s.
+    """
+    return session.scalar(
+        select(Snapshot)
+        .join(AnalysisAttempt, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(
+            Snapshot.id == snapshot_id,
+            Repository.workspace_id == workspace_id,
+            AnalysisAttempt.status == AnalysisStatus.DONE,
+        )
+    )
+
+
 def get_snapshot_for_scoring(
     session: Session,
     workspace_id: uuid.UUID,

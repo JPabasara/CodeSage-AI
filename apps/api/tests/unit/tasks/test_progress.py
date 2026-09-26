@@ -123,3 +123,24 @@ def test_publishing_a_stage_never_raises_when_redis_is_down(client: Mock) -> Non
 
     progress.publish_stage("scan-id", "cloning", 5)
     progress.publish_files_done("scan-id", 3)
+
+
+@patch("codesage_api.tasks.progress._client")
+def test_a_score_is_claimed_for_queueing_once(client: Mock) -> None:
+    client.return_value.set.side_effect = [True, None]
+
+    assert progress.claim_score_enqueue("cache-1") is True
+    assert progress.claim_score_enqueue("cache-1") is False
+    client.return_value.set.assert_called_with(
+        "codesage:score:cache-1:queued",
+        "1",
+        nx=True,
+        ex=progress.SCORE_QUEUED_TTL_SECONDS,
+    )
+
+
+@patch("codesage_api.tasks.progress._client")
+def test_without_redis_a_score_is_still_queued(client: Mock) -> None:
+    client.return_value.set.side_effect = ConnectionError
+
+    assert progress.claim_score_enqueue("cache-1") is True

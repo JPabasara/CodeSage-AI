@@ -505,3 +505,30 @@ def test_a_comment_repeated_in_one_file_scores_as_separate_findings() -> None:
     assert len({row.fingerprint for row in rows}) == 3
     assert sorted(row.line for row in rows) == [107, 112, 117]
     assert "same-comment" in {row.fingerprint for row in rows}
+
+
+def test_a_pending_score_is_queued_once_however_often_it_is_polled(monkeypatch) -> None:
+    """Each dashboard poll used to queue the same calculation again."""
+    claimed: set[str] = set()
+
+    def claim(cache_id: str) -> bool:
+        if cache_id in claimed:
+            return False
+        claimed.add(cache_id)
+        return True
+
+    monkeypatch.setattr(dashboard.progress, "claim_score_enqueue", claim)
+    waiting = SimpleNamespace(id="cache-1", status="pending", started_at=None)
+
+    polls = [dashboard.needs_enqueue(waiting, created=False) for _ in range(20)]
+
+    assert polls.count(True) == 1
+
+
+def test_a_score_already_running_or_ready_is_never_queued(monkeypatch) -> None:
+    monkeypatch.setattr(dashboard.progress, "claim_score_enqueue", lambda _id: True)
+    running = SimpleNamespace(id="c", status="running", started_at=object())
+    ready = SimpleNamespace(id="c", status="ready", started_at=object())
+
+    assert dashboard.needs_enqueue(running, created=False) is False
+    assert dashboard.needs_enqueue(ready, created=False) is False
