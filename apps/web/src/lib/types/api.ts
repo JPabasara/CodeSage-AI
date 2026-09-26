@@ -536,6 +536,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What is running in this workspace right now
+         * @description Every scan queued or running in the active workspace, and every project
+         *     whose health scores are being recalculated — after a profile change, or
+         *     while a finished scan is scored. The top bar's Activity menu polls this,
+         *     so everyone in the workspace sees the same work in progress, whoever
+         *     started it.
+         *
+         *     Re-scoring lists only score records still pending or running that were
+         *     created or started in the last 15 minutes, so a record whose job was
+         *     lost can never show as work in progress forever.
+         */
+        get: operations["get_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo_id}/scan/active": {
         parameters: {
             query?: never;
@@ -1330,6 +1358,32 @@ export interface components {
              *     "Usually about 2 min". Null before its first finished scan.
              */
             typical_seconds?: number | null;
+        };
+        /** @description Work in progress in the active workspace (`GET /api/activity`). */
+        Activity: {
+            /** @description Queued and running scans, oldest first. */
+            scans: components["schemas"]["ActiveScan"][];
+            /** @description Projects whose scores are being recalculated. */
+            rescoring: components["schemas"]["Rescoring"][];
+        };
+        /** @description One queued or running scan, with the project it belongs to. */
+        ActiveScan: {
+            /** Format: uuid */
+            repo_id: string;
+            /** @description `owner/name`, as the projects list shows it. */
+            repo_name: string;
+            status: components["schemas"]["ScanStatus"];
+        };
+        /**
+         * @description One project with scores still being calculated. `snapshots_left` counts
+         *     its stored scans not yet scored under the current profile.
+         */
+        Rescoring: {
+            /** Format: uuid */
+            repo_id: string;
+            /** @description `owner/name`, as the projects list shows it. */
+            repo_name: string;
+            snapshots_left: number;
         };
         /** @description One row in the Scan-History view (FR-19). */
         ScanSummary: {
@@ -2520,6 +2574,28 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    get_activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Work in progress. Both lists are empty when nothing is running. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activity"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
         };
     };
     get_active_scan: {

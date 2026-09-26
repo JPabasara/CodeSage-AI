@@ -20,6 +20,7 @@ import { expect, test } from "vitest"
 
 import type {
   ApiError,
+  Activity,
   HealthReport,
   ProjectProfile,
   Repo,
@@ -1062,6 +1063,16 @@ test("an override applies to one project and leaves the others inheriting", asyn
   expect(pool.find((p) => p.name === "Balanced")?.usage_count).toBe(0)
 })
 
+/** Ask until the score is ready: a profile change re-scores for a moment. */
+async function healthOnceScored(repoId: string): Promise<HealthReport> {
+  for (let i = 0; i < 20; i += 1) {
+    const res = await fetch(`${BASE}/repos/${repoId}/health?branch=main`)
+    if (res.status === 200) return (await res.json()) as HealthReport
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  throw new Error("the score never became ready")
+}
+
 test("the dashboard scores each project with its OWN effective profile", async () => {
   const before = await get<HealthReport>(
     `/repos/${DEMO_REPO_ID}/health?branch=main`,
@@ -1073,9 +1084,16 @@ test("the dashboard scores each project with its OWN effective profile", async (
     profile_id: securityFirst.id,
   })
 
-  const after = await get<HealthReport>(
-    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  // Assigning a profile re-scores the project, like the real API's warm-up:
+  // the score is pending for a moment, and Activity lists it meanwhile.
+  const whileRescoring = await fetch(
+    `${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`,
   )
+  expect(whileRescoring.status).toBe(503)
+  const activity = await get<Activity>("/activity")
+  expect(activity.rescoring.map((r) => r.repo_id)).toContain(DEMO_REPO_ID)
+
+  const after = await healthOnceScored(DEMO_REPO_ID)
   expect(after.profile).toBe("Security-first")
   expect(after.health_score).not.toBe(before.health_score)
   // …while its neighbour, which named nothing, is still on the default.
@@ -1173,4 +1191,48 @@ test("member_count counts active members only, and follows deactivation", async 
     { method: "DELETE" },
   )
   expect(await count()).toBe(3)
+})
+
+// ── activity ────────────────────────────────────────────────────────────────
+
+test("activity lists running scans with their project, and nothing when quiet", async () => {
+  const quiet = await get<Activity>("/activity")
+  expect(quiet).toEqual({ scans: [], rescoring: [] })
+
+  const started = (await (
+    await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+  ).json()) as ScanStatus
+  const busy = await get<Activity>("/activity")
+  expect(busy.scans).toHaveLength(1)
+  expectShape(
+    busy.scans[0],
+    ["repo_id", "repo_name", "status"],
+    [],
+    "ActiveScan",
+  )
+  expect(busy.scans[0]?.repo_id).toBe(DEMO_REPO_ID)
+  expect(busy.scans[0]?.repo_name).toMatch(/\//)
+  expect(busy.scans[0]?.status.scan_id).toBe(started.scan_id)
+})
+
+test("a finished scan is a new snapshot; the old one still answers by its id", async () => {
+  const before = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  const scan = (await (
+    await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+  ).json()) as ScanStatus
+  for (let i = 0; i < 10; i += 1) {
+    const status = await get<ScanStatus>(
+      `/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`,
+    )
+    if (status.phase === "done") break
+  }
+
+  const after = await healthOnceScored(DEMO_REPO_ID)
+  expect(after.snapshot_id).not.toBe(before.snapshot_id)
+  const old = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main&snapshot_id=${before.snapshot_id}`,
+  )
+  expect(old.snapshot_id).toBe(before.snapshot_id)
 })

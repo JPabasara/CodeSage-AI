@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useBranches } from "@/hooks/use-branches"
+import { useProjectProfile } from "@/hooks/use-profiles"
 import { useProjects } from "@/hooks/use-projects"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { ScanSummary } from "@/lib/types"
@@ -208,13 +209,33 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
     error,
     refetch,
   } = useScanHistory(repoId, branch === ALL ? undefined : branch)
+  // Every row is re-weighed under the profile in force now — say which, or a
+  // score that changed after a profile edit reads as a different scan result.
+  const { data: projectProfile } = useProjectProfile(repoId)
+  const profileName = projectProfile?.effective.name
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6">
       <PageHeader
         title="Scan History"
         context={<ProjectContext repoId={repoId} />}
-        description="Every stored snapshot for this repository, newest first, scored under the profile in force now."
+        description={
+          profileName ? (
+            <span data-testid="history-profile">
+              Every stored snapshot, newest first. All scans are shown under the{" "}
+              <strong className="font-medium text-foreground">
+                {profileName}
+              </strong>{" "}
+              profile —{" "}
+              <Link href="/profiles" className="underline underline-offset-2">
+                change it in Profiles
+              </Link>
+              .
+            </span>
+          ) : (
+            "Every stored snapshot for this repository, newest first, scored under the profile in force now."
+          )
+        }
         aside={
           <>
             <Select value={branch} onValueChange={setBranch}>

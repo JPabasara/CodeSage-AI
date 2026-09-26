@@ -382,8 +382,15 @@ def _enqueue_missing_scores(
     profile: Profile,
     ready_snapshot_ids: set[uuid.UUID],
 ) -> None:
+    """Queue every missing score, newest snapshot first.
+
+    `snapshots` arrive oldest first, the order the caller returns them in. The
+    single scoring worker runs jobs in the order they were queued, so the newest
+    snapshot — the one the dashboard shows — goes first instead of waiting
+    behind every old one. Only the queue order changes, never the response.
+    """
     jobs: list[str] = []
-    for snapshot in snapshots:
+    for snapshot in reversed(snapshots):
         if snapshot.id in ready_snapshot_ids:
             continue
         cached, created = prepare_snapshot_score(session, snapshot, profile)

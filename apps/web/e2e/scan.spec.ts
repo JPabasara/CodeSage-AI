@@ -113,19 +113,27 @@ test("the scan control never offers Scan and Stop at the same time", async ({
 // The mock backend reproduces that window deliberately: without it this path is
 // dead code everywhere except production.
 
-test("a finished scan says it is calculating the score, then fills in by itself", async ({
+test("the card says the score is being calculated, then waits for 'Show them'", async ({
   page,
 }) => {
   await scanButton(page).click()
-  await expect(scanButton(page)).toBeVisible({ timeout: 15_000 }) // terminal
+  const card = page.getByTestId("scan-progress-panel")
 
-  // A wait, not a failure — this is the screen an evaluator sees first.
-  await expect(page.getByText(/calculating your health score/i)).toBeVisible()
+  // A wait, not a failure — and the previous results stay on screen.
+  await expect(card).toContainText(/calculating your health score/i, {
+    timeout: 15_000,
+  })
+  await expect(page.getByText("Code Health")).toBeVisible()
   await expect(page.getByText(/couldn’t load this dashboard/i)).toHaveCount(0)
 
-  // …and it resolves with nothing pressed and no refresh.
-  await expect(page.getByText("Code Health")).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(/calculating your health score/i)).toHaveCount(0)
+  // Ready: nothing swaps by itself; one click shows the new results.
+  await expect(card).toContainText("New results are ready", {
+    timeout: 15_000,
+  })
+  await page.getByRole("button", { name: "Show them" }).click()
+  await expect(card).toHaveCount(0)
+  await expect(page.getByText("Code Health")).toBeVisible()
+  await expect(scanButton(page)).toBeVisible()
 })
 
 // 13H.4: the middle of the dashboard shows the scan's stage, a friendly line
@@ -137,8 +145,10 @@ test("a running scan shows a stage label and a bar that only moves forward", asy
 
   const panel = page.getByTestId("scan-progress-panel")
   await expect(panel).toBeVisible()
+  // This project has results already: the job is a compact card above them.
+  await expect(panel).toHaveAttribute("data-size", "compact")
   await expect(panel.getByRole("status")).toHaveText(
-    /Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there/,
+    /Waiting for a free scan slot|Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there|Calculating your health score/,
   )
   await expect(page.getByTestId("scan-panel-line")).not.toBeEmpty()
 

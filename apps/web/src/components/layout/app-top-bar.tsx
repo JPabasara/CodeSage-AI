@@ -11,7 +11,7 @@ import {
   ProjectSwitcher,
 } from "@/components/layout/project-switcher"
 import { TopBarSlot } from "@/components/layout/top-bar-slot"
-import { ScanPill } from "@/components/layout/scan-status-strip"
+import { ActivityMenu } from "@/components/layout/activity-menu"
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher"
 import { useWorkspaces } from "@/hooks/use-workspace"
 import { useWorkspaceGate } from "@/hooks/use-workspace-scope"
@@ -80,7 +80,7 @@ export function AppTopBar() {
         </div>
 
         <div className="order-2 flex shrink-0 items-center gap-2 md:order-3 md:ml-auto">
-          {ready ? <ScanPill /> : null}
+          {ready ? <ActivityMenu /> : null}
           <TopBarSlot
             name="actions"
             className="flex items-center gap-2 empty:hidden"

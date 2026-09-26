@@ -8,10 +8,17 @@ from codesage_api.config import get_settings
 from codesage_api.db.enums import AnalysisStatus
 from codesage_api.db.models import AnalysisAttempt
 from codesage_api.db.repositories import attempts
+from codesage_api.db.repositories import dashboard as dashboard_repository
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import NotFound, ScanAlreadyRunning, ScanQueueFull
 from codesage_api.integrations.github import fetch_branch
-from codesage_api.schemas import ScanStatusOut, ScanSummaryOut
+from codesage_api.schemas import (
+    ActiveScanOut,
+    ActivityOut,
+    RescoringOut,
+    ScanStatusOut,
+    ScanSummaryOut,
+)
 from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
 from codesage_api.services import dashboard
 from codesage_api.tasks import progress
@@ -175,6 +182,34 @@ def get_active(
     if attempt is None:
         return None
     return _status_out(attempt, attempt.branch.name)
+
+
+def list_activity(session: Session, workspace_id: uuid.UUID) -> ActivityOut:
+    """Everything running in the workspace right now, for the Activity menu.
+
+    Abandoned scans are ended first, exactly as the status endpoint does, so a
+    scan whose worker died never shows as running here. Each scan's status is
+    built the same way `GET …/scan/{scan_id}` builds it, so a client can switch
+    to polling that endpoint without the shape changing under it.
+    """
+    attempts.expire_stale_running(session, workspace_id)
+    scans = [
+        ActiveScanOut(
+            repo_id=str(attempt.branch.repository_id),
+            repo_name=f"{attempt.branch.repository.owner}/{attempt.branch.repository.name}",
+            status=_status_out(attempt, attempt.branch.name),
+        )
+        for attempt in attempts.list_active_in_workspace(session, workspace_id)
+    ]
+    rescoring = [
+        RescoringOut(
+            repo_id=str(row.repository_id),
+            repo_name=f"{row.owner}/{row.name}",
+            snapshots_left=row.snapshots_left,
+        )
+        for row in dashboard_repository.list_rescoring(session, workspace_id)
+    ]
+    return ActivityOut(scans=scans, rescoring=rescoring)
 
 
 def get_history(

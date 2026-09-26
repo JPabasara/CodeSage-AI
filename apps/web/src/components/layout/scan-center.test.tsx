@@ -1,10 +1,27 @@
-import { act, render } from "@testing-library/react"
+import { act, render, renderHook } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 
 import { ScanCenter } from "./scan-center"
-import { POLL_MS, scanKey, startScan, stopScan } from "@/hooks/use-scan-center"
-import { DEMO_REPO_ID, WORKSPACE_ID } from "@/lib/mocks/fixtures"
+import {
+  POLL_MS,
+  scanKey,
+  startScan,
+  stopScan,
+  useScanFor,
+} from "@/hooks/use-scan-center"
+import {
+  healthKey,
+  SCORE_POLL_MS,
+  SCORE_TIMEOUT_MS,
+} from "@/hooks/use-health-report"
+import { readWorkspaceEpoch } from "@/hooks/use-workspace-scope"
+import { writeCached } from "@/lib/query-cache"
+import {
+  DEMO_REPO_ID,
+  mockHealthReport,
+  WORKSPACE_ID,
+} from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }))
@@ -44,28 +61,92 @@ const polls = (n: number) =>
     await vi.advanceTimersByTimeAsync(POLL_MS * n)
   })
 
-test("queued is acknowledged, and a finish says so with a way to the result", async () => {
-  server.use(
-    http.get("*/api/repos/:repoId/health", () =>
-      HttpResponse.json({ health_score: 81.4, delta: 3, grade: "B" }),
-    ),
-  )
+test("queued is acknowledged, and 'ready' comes only with the score", async () => {
   render(<ScanCenter />)
   await act(() => startScan(target))
   expect(toasts.plain).toHaveBeenCalledWith(
     "Scan queued · acme-payments · main",
   )
 
+  // The scan is done, but its score is still being calculated: no toast yet.
   await polls(8)
+  expect(toasts.success).not.toHaveBeenCalled()
 
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCORE_POLL_MS * 4)
+  })
   expect(toasts.success).toHaveBeenCalledWith(
-    "Scan finished · health 81 (+3)",
-    expect.objectContaining({ description: "acme-payments · main" }),
+    "acme-payments · main is ready",
+    expect.objectContaining({
+      description: expect.stringMatching(
+        /^Health \d+ \([A-F]\) · [+−]\d+ since the last scan$/,
+      ),
+    }),
   )
+})
+
+test("'View dashboard' goes there and shows the new results, not the pinned ones", async () => {
+  // Results were on screen before the scan: the job will wait for a look.
+  writeCached(healthKey(readWorkspaceEpoch(), DEMO_REPO_ID, "main"), {
+    ...mockHealthReport,
+    snapshot_id: "before",
+  })
+  const { result } = renderHook(() => useScanFor(DEMO_REPO_ID, "main"))
+  render(<ScanCenter />)
+  await act(() => startScan(target))
+  await polls(8)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCORE_POLL_MS * 4)
+  })
+  expect(result.current.scan?.job).toBe("ready")
+
   const { action } = toasts.success.mock.calls[0][1]
-  action.onClick()
+  expect(action.label).toBe("View dashboard")
+  act(() => action.onClick())
   expect(nav.push).toHaveBeenCalledWith(
     `/dashboard/${DEMO_REPO_ID}?branch=main`,
+  )
+  expect(result.current.scan).toBeUndefined()
+})
+
+test("a score that comes too late still ends the job, and says so", async () => {
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json(
+        { detail: "Still scoring.", code: "SCORE_PENDING" },
+        { status: 503 },
+      ),
+    ),
+  )
+  render(<ScanCenter />)
+  await act(() => startScan(target))
+  await polls(8)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCORE_TIMEOUT_MS + SCORE_POLL_MS)
+  })
+  expect(toasts.success).toHaveBeenCalledWith(
+    "Scan complete · acme-payments · main",
+    expect.objectContaining({
+      description: expect.stringMatching(/still being calculated/),
+    }),
+  )
+})
+
+test("nothing new on the branch says 'already up to date'", async () => {
+  render(<ScanCenter />)
+  await act(() => startScan(target))
+  await polls(8)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCORE_POLL_MS * 4)
+  })
+  toasts.plain.mockClear()
+
+  await act(() => startScan(target)) // same head commit as the last scan
+  expect(toasts.plain).toHaveBeenCalledWith(
+    "acme-payments is already up to date",
+    expect.objectContaining({
+      description: "No new commits on main since the last scan.",
+    }),
   )
 })
 

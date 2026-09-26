@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from codesage_api.db.enums import AnalysisStatus
@@ -17,9 +19,24 @@ from codesage_api.db.models import (
     Repository,
     SATDPrediction,
     Snapshot,
+    SnapshotScore,
     SourceFile,
     SourceLocation,
 )
+
+#: How long a pending or running score counts as work in progress. A score
+#: takes well under a minute even on a large repository; a row older than this
+#: belongs to a job that was lost (a worker restart, a dropped message), and
+#: must not show as "re-scoring" forever.
+RESCORING_WINDOW = timedelta(minutes=15)
+
+
+@dataclass(frozen=True, slots=True)
+class RescoringRow:
+    repository_id: uuid.UUID
+    owner: str
+    name: str
+    snapshots_left: int
 
 
 def _scoring_options():
@@ -175,3 +192,41 @@ def get_snapshot_for_scoring(
         .options(*_scoring_options())
     )
     return session.scalars(statement).unique().one_or_none()
+
+
+def list_rescoring(session: Session, workspace_id: uuid.UUID) -> list[RescoringRow]:
+    """Projects in the workspace with scores still pending or running.
+
+    Counted per snapshot, not per score row: one snapshot can hold a waiting row
+    for more than one profile, and the user waits for scans, not rows. Only rows
+    created or started within RESCORING_WINDOW count, measured with the
+    database clock that stamps `computed_at`.
+    """
+    repo_name = func.concat(Repository.owner, "/", Repository.name)
+    recent = func.coalesce(SnapshotScore.started_at, SnapshotScore.computed_at) >= (
+        func.now() - RESCORING_WINDOW
+    )
+    rows = session.execute(
+        select(
+            Repository.id,
+            Repository.owner,
+            Repository.name,
+            func.count(func.distinct(SnapshotScore.snapshot_id)),
+        )
+        .select_from(SnapshotScore)
+        .join(Snapshot, SnapshotScore.snapshot_id == Snapshot.id)
+        .join(AnalysisAttempt, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(
+            Repository.workspace_id == workspace_id,
+            SnapshotScore.status.in_(("pending", "running")),
+            recent,
+        )
+        .group_by(Repository.id, Repository.owner, Repository.name)
+        .order_by(repo_name.asc(), Repository.id.asc())
+    ).all()
+    return [
+        RescoringRow(repository_id, owner, name, int(count))
+        for repository_id, owner, name, count in rows
+    ]

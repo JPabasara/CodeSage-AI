@@ -35,6 +35,7 @@ EXPECTED_PRODUCT_PATHS = {
     "/api/repos/{repo_id}/scan/active": {"get"},
     "/api/repos/{repo_id}/scan/{scan_id}": {"get"},
     "/api/repos/{repo_id}/scan/{scan_id}/stop": {"post"},
+    "/api/activity": {"get"},
     "/api/profiles": {"get", "post"},
     "/api/profiles/active": {"get", "put"},
     "/api/profiles/default": {"get", "put"},
@@ -52,6 +53,24 @@ def test_openapi_contains_every_srs_endpoint() -> None:
     for path, methods in EXPECTED_PRODUCT_PATHS.items():
         assert path in paths, f"{path} is missing"
         assert methods <= set(paths[path]), f"{path} is missing {methods - set(paths[path])}"
+
+
+def test_activity_matches_the_contract() -> None:
+    """The top bar's Activity menu is generated from the contract's `get_activity`
+    operation, so the id and both always-present lists must be served as written."""
+    spec = create_app().openapi()
+    operation = spec["paths"]["/api/activity"]["get"]
+    assert operation["operationId"] == "get_activity"
+    assert operation["tags"] == ["scans"]
+    ref = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+    schemas = spec["components"]["schemas"]
+    activity = schemas[ref.rsplit("/", 1)[-1]]
+    assert set(activity["properties"]) == {"scans", "rescoring"}
+    assert set(activity["required"]) == {"scans", "rescoring"}
+    assert set(schemas["ActiveScanOut"]["required"]) == {"repo_id", "repo_name", "status"}
+    rescoring = schemas["RescoringOut"]
+    assert set(rescoring["required"]) == {"repo_id", "repo_name", "snapshots_left"}
+    assert rescoring["properties"]["snapshots_left"]["minimum"] == 1
 
 
 def test_canonical_srs_vocabulary() -> None:
