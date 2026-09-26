@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react"
 
+import { clearQueryCache } from "@/lib/query-cache"
+
 // Which workspace the app is currently looking at, and a counter that changes
 // whenever that answer changes.
 //
@@ -63,6 +65,7 @@ export function noteActiveWorkspace(workspaceId: string | null | undefined) {
  * would send every screen to re-read a workspace the session is not yet in.
  */
 export function invalidateWorkspaceScope() {
+  clearQueryCache()
   epoch += 1
   emit()
 }
@@ -106,6 +109,7 @@ export function onSessionStale(listener: () => void) {
 
 /** Test-only: put the store back to its initial state between renders. */
 export function resetWorkspaceScope() {
+  clearQueryCache()
   epoch = 0
   activeWorkspaceId = undefined
   emit()

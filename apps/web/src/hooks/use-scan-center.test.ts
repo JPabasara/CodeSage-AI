@@ -213,3 +213,28 @@ test("a scan ended by a guardrail fails with its plain sentence (13H.1)", async 
     "No Java files on this branch. CodeSage reads Java for now; more languages are coming soon.",
   ])
 })
+
+test("a full workspace queue refuses the start with the server's sentence", async () => {
+  const sentence =
+    "5 scans are already waiting in this workspace. Try again when one finishes."
+  server.use(
+    http.post("*/api/repos/:repoId/scan", () =>
+      HttpResponse.json(
+        { detail: sentence, code: "SCAN_QUEUE_FULL" },
+        { status: 429 },
+      ),
+    ),
+  )
+  const reasons: string[] = []
+  const stop = onScanEvent((event) => {
+    if (event.type === "start-failed") reasons.push(event.reason)
+  })
+  const { result } = renderHook(() => useScanFor(DEMO_REPO_ID, "main"))
+
+  await act(() => startScan(target))
+  stop()
+
+  expect(reasons).toEqual([sentence])
+  // Nothing is left looking queued: the scan was never accepted.
+  expect(result.current.scan).toBeUndefined()
+})

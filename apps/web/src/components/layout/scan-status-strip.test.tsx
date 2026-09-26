@@ -37,11 +37,14 @@ test.each([
   expect(formatElapsed(ms)).toBe(text)
 })
 
-test("says what, where, how far and how long", () => {
+test("says what and where; the number and the clock live in the panel", () => {
   render(<ScanStatusStrip scan={scan()} canStop onStop={() => {}} />)
   const strip = screen.getByTestId("scan-status-strip")
   expect(strip).toHaveTextContent("Scanning acme-payments on develop")
-  expect(strip).toHaveTextContent("40% · 1m 12s")
+  // 13H.4: the percentage and elapsed time are in the middle of the page,
+  // so the strip does not repeat them — only its thin line shows progress.
+  expect(strip).not.toHaveTextContent("%")
+  expect(strip).not.toHaveTextContent("1m 12s")
 })
 
 test("queued says it is waiting, with no made-up percentage", () => {

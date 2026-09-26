@@ -31,6 +31,11 @@ export type OverallHealthCardProps = {
   delta: number
   redIssueCount: number
   categoryBreakdown: CategoryBreakdownItem[]
+  /**
+   * Play the donut's draw-in. The dashboard turns it off when the report came
+   * from the cache — it was already drawn once. Defaults to `true`.
+   */
+  animate?: boolean
 }
 
 // The donut's geometry, in px. The chart box is fixed so the tooltip can be
@@ -67,8 +72,12 @@ export function OverallHealthCard({
   delta,
   redIssueCount,
   categoryBreakdown,
+  animate = true,
 }: Readonly<OverallHealthCardProps>) {
   const [firstScore] = useState(score)
+  // Draw in once, on the first render only; a revalidation or a new score
+  // after a scan updates the donut in place.
+  const [drawIn, setDrawIn] = useState(animate)
   const deltaSummary =
     delta === 0 ? "No change" : delta > 0 ? `Up +${delta}` : `Down ${delta}`
 
@@ -336,6 +345,8 @@ export function OverallHealthCard({
                   paddingAngle={slices.length > 1 ? 2 : 0}
                   cornerRadius={slices.length > 0 ? 2 : 0}
                   rootTabIndex={-1}
+                  isAnimationActive={drawIn}
+                  onAnimationEnd={() => setDrawIn(false)}
                   shape={renderSector}
                   onMouseEnter={
                     interactive

@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import { ApiRequestError } from "@/lib/api/client"
 import {
+  fetchShared,
+  readCached,
+  writeCached,
+  forgetQueries,
+} from "@/lib/query-cache"
+import {
   noteWorkspaceMissing,
   useActiveWorkspaceId,
   useWorkspaceEpoch,
@@ -99,25 +105,42 @@ export function useQuery<T>(
     data?: T
     error?: Error
   }>()
+  // The app-wide cache (13H.3): a page mounting again shows the last answer
+  // at once and refreshes it quietly, instead of starting from a skeleton. A
+  // held read shows nothing — it has not decided what to ask yet.
+  const cached = blocked ? undefined : readCached<T>(key)
+
   // Bumping this re-runs the effect without changing the key.
   const [nonce, setNonce] = useState(0)
   const revision = useRef(0)
-  const reload = useCallback(() => setNonce((n) => n + 1), [])
-
-  // Same re-run, but the result is dropped first. `settled` then goes false,
-  // which is the single switch that turns `loading` back on.
-  const refetch = useCallback(() => {
-    setResult(undefined)
+  // Set by reload and refetch: the next request must be a new one, not a join
+  // onto a request that left before the write that asked for it.
+  const fresh = useRef(false)
+  const reload = useCallback(() => {
+    fresh.current = true
     setNonce((n) => n + 1)
   }, [])
+
+  // Same re-run, but the result — and the cached copy — is dropped first.
+  // Nothing is left to show, which is the single switch that turns `loading`
+  // back on.
+  const refetch = useCallback(() => {
+    forgetQueries((requested) => requested === requestedKey)
+    fresh.current = true
+    setResult(undefined)
+    setNonce((n) => n + 1)
+  }, [requestedKey])
 
   const update = useCallback(
     (updater: (current: T | undefined) => T | undefined) => {
       revision.current += 1
-      setResult((current) => ({
-        key,
-        data: updater(current?.key === key ? current.data : undefined),
-      }))
+      setResult((current) => {
+        const data = updater(
+          current?.key === key ? current.data : readCached<T>(key)?.data,
+        )
+        writeCached(key, data)
+        return { key, data }
+      })
     },
     [key],
   )
@@ -126,10 +149,18 @@ export function useQuery<T>(
     if (blocked) return
     let alive = true
     const startedAtRevision = revision.current
-    fetcher()
+    const skipJoin = fresh.current
+    fresh.current = false
+    fetchShared(key, fetcher, { fresh: skipJoin })
       .then((data) => {
         if (alive && startedAtRevision === revision.current) {
-          setResult({ key, data })
+          // The same answer as on screen keeps the same state object, so a
+          // quiet revalidation that changed nothing re-renders nothing.
+          setResult((current) =>
+            current?.key === key && current.data === data && !current.error
+              ? current
+              : { key, data },
+          )
         }
       })
       .catch((error: unknown) => {
@@ -152,10 +183,11 @@ export function useQuery<T>(
   }, [key, nonce, blocked])
 
   const settled = result?.key === key
+  const shown = settled ? result : cached && { key, data: cached.data }
   return {
-    data: settled ? result?.data : undefined,
+    data: shown ? shown.data : undefined,
     error: settled ? result?.error : undefined,
-    loading: !settled,
+    loading: !shown,
     reload,
     refetch,
     update,

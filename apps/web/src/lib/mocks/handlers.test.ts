@@ -499,6 +499,20 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
 
 // ── scan lifecycle ──────────────────────────────────────────────────────────
 
+/** Every optional ScanStatus key the contract defines, 13H.4's stage included. */
+const SCAN_STATUS_OPTIONAL = [
+  "branch",
+  "commit_sha",
+  "started_at",
+  "finished_at",
+  "error",
+  "error_code",
+  "stage",
+  "files_done",
+  "files_total",
+  "typical_seconds",
+]
+
 test("the scan lifecycle is contract-shaped, and answers 202 at both writes", async () => {
   const started = await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
   // 202, not 200: the work is queued on a worker, never done in this request.
@@ -508,7 +522,7 @@ test("the scan lifecycle is contract-shaped, and answers 202 at both writes", as
   expectShape(
     scan,
     ["scan_id", "phase", "progress"],
-    ["branch", "commit_sha", "started_at", "finished_at", "error"],
+    SCAN_STATUS_OPTIONAL,
     "ScanStatus (start)",
   )
   expect(scan.scan_id).toMatch(UUID)
@@ -516,10 +530,12 @@ test("the scan lifecycle is contract-shaped, and answers 202 at both writes", as
   const ticked = await get<ScanStatus>(
     `/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`,
   )
+  // 13H.4: a running scan names its stage, and the mock agrees with the bands.
+  expect(ticked.stage).toBeTruthy()
   expectShape(
     ticked,
     ["scan_id", "phase", "progress"],
-    ["branch", "commit_sha", "started_at", "finished_at", "error"],
+    SCAN_STATUS_OPTIONAL,
     "ScanStatus (tick)",
   )
 
@@ -528,7 +544,7 @@ test("the scan lifecycle is contract-shaped, and answers 202 at both writes", as
   expectShape(
     (await stopped.json()) as ScanStatus,
     ["scan_id", "phase", "progress"],
-    ["branch", "commit_sha", "started_at", "finished_at", "error"],
+    SCAN_STATUS_OPTIONAL,
     "ScanStatus (stop)",
   )
 })

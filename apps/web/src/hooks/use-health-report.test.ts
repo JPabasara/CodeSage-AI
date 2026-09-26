@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest"
 
 import {
   SCORE_POLL_MS,
+  SCORE_SLOW_MS,
   SCORE_TIMEOUT_MS,
   useHealthReport,
 } from "./use-health-report"
@@ -158,6 +159,35 @@ test("pending → ready: waits out SCORE_PENDING and resolves with no help", asy
   })
 })
 
+test("a slow score keeps waiting past a minute, and says it is slow", async () => {
+  await withFakeTimers(async () => {
+    let asks = 0
+    server.use(
+      http.get("*/api/repos/:repoId/health", () => {
+        asks += 1
+        return asks <= 40 ? scorePending() : HttpResponse.json(mockHealthReport)
+      }),
+    )
+
+    const { result } = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+    await advanceUntil(() => result.current.pending)
+    expect(result.current.pendingSlow).toBe(false)
+
+    // Past the "usual" minute: still pending — no error — but flagged slow.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCORE_SLOW_MS + SCORE_POLL_MS)
+    })
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.pending).toBe(true)
+    expect(result.current.pendingSlow).toBe(true)
+
+    // The score lands (here after ~90 s) and simply shows.
+    await advanceUntil(() => result.current.data !== undefined)
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.pendingSlow).toBe(false)
+  })
+})
+
 test("pending → give-up: a score that never arrives becomes an error, not a spinner", async () => {
   await withFakeTimers(async () => {
     let asks = 0
@@ -174,16 +204,17 @@ test("pending → give-up: a score that never arrives becomes an error, not a sp
 
     // Past the stated deadline it stops asking and says so.
     await advanceUntil(() => result.current.error !== undefined, {
-      limit: SCORE_TIMEOUT_MS / SCORE_POLL_MS + 5,
+      step: 10_000,
+      limit: SCORE_TIMEOUT_MS / 10_000 + 5,
     })
 
     expect(result.current.pending).toBe(false)
-    expect(result.current.error?.message).toMatch(/taking longer than usual/i)
+    expect(result.current.error?.message).toMatch(/still isn't ready/i)
 
     // …and having given up, it really has: no further requests.
     const asksAtGiveUp = asks
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(SCORE_POLL_MS * 5)
+      await vi.advanceTimersByTimeAsync(SCORE_POLL_MS * 30)
     })
     expect(asks).toBe(asksAtGiveUp)
   })
@@ -247,4 +278,81 @@ test("unmounting stops the polling", async () => {
     })
     expect(asks).toBe(asksAtUnmount)
   })
+})
+
+// ── the dashboard cache (13H.3) ─────────────────────────────────────────────
+
+test("coming back renders the cached report with no skeleton", async () => {
+  const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(first.result.current.data?.health_score).toBe(72))
+  const shown = first.result.current.data
+  first.unmount()
+
+  const second = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  expect(second.result.current.loading).toBe(false)
+  expect(second.result.current.data?.health_score).toBe(72)
+
+  // The quiet revalidation returns the same report: the same object stays.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(second.result.current.data).toBe(shown)
+})
+
+test("a scan finishing on the branch clears its cached report", async () => {
+  const { forgetScanResults } = await import("@/lib/query-cache")
+  const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(first.result.current.loading).toBe(false))
+  first.unmount()
+
+  forgetScanResults(DEMO_REPO_ID, "main")
+
+  const second = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  expect(second.result.current.loading).toBe(true)
+  await waitFor(() => expect(second.result.current.data?.health_score).toBe(72))
+})
+
+test("a profile write clears the cached report", async () => {
+  const { setDefaultProfile, getProfiles } = await import("@/lib/api/client")
+  const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(first.result.current.loading).toBe(false))
+  first.unmount()
+
+  const [profile] = await getProfiles()
+  await setDefaultProfile(profile!.id)
+
+  const second = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  expect(second.result.current.loading).toBe(true)
+})
+
+test("two dashboards on the same branch send one request", async () => {
+  let calls = 0
+  const count = ({ request }: { request: Request }) => {
+    if (new URL(request.url).pathname.endsWith("/health")) calls += 1
+  }
+  server.events.on("request:start", count)
+  try {
+    const a = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+    const b = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+    await waitFor(() => expect(a.result.current.data).toBeDefined())
+    await waitFor(() => expect(b.result.current.data).toBeDefined())
+  } finally {
+    server.events.removeListener("request:start", count)
+  }
+  expect(calls).toBe(1)
+})
+
+// ── after a scan (13H.4) ────────────────────────────────────────────────────
+
+test("a reload says it is refreshing until the new report lands", async () => {
+  const { result } = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
+  await waitFor(() => expect(result.current.data).toBeDefined())
+  expect(result.current.refreshing).toBe(false)
+
+  act(() => result.current.reload())
+  expect(result.current.refreshing).toBe(true)
+  // The old report stays available; the dashboard chooses not to show it.
+  expect(result.current.data).toBeDefined()
+
+  await waitFor(() => expect(result.current.refreshing).toBe(false))
 })

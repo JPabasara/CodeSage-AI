@@ -31,6 +31,7 @@ from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
 from codesage_api.services import profiles
+from codesage_api.tasks import progress
 from codesage_api.tasks.app import celery_app
 
 
@@ -349,6 +350,13 @@ def _result_payload(scored: _ScoredSnapshot) -> dict[str, object]:
     }
 
 
+def needs_enqueue(cached: SnapshotScore, created: bool) -> bool:
+    """Queue a score calculation once: when it is new or not yet picked up, and
+    only if no earlier request queued it in the last couple of minutes."""
+    waiting = created or (cached.status == "pending" and cached.started_at is None)
+    return waiting and progress.claim_score_enqueue(str(cached.id))
+
+
 def _enqueue_pending_score(
     session: Session,
     workspace_id: uuid.UUID,
@@ -356,10 +364,7 @@ def _enqueue_pending_score(
     profile: Profile,
 ) -> None:
     cached, created = prepare_snapshot_score(session, snapshot, profile)
-    should_enqueue = created or (
-        cached.status == "pending" and cached.started_at is None
-    )
-    if not should_enqueue:
+    if not needs_enqueue(cached, created):
         return
     # The worker must not race an uncommitted cache row. SET LOCAL is restored by
     # the next request/worker session, and this read path performs no later query.
@@ -382,7 +387,7 @@ def _enqueue_missing_scores(
         if snapshot.id in ready_snapshot_ids:
             continue
         cached, created = prepare_snapshot_score(session, snapshot, profile)
-        if created or (cached.status == "pending" and cached.started_at is None):
+        if needs_enqueue(cached, created):
             jobs.append(str(cached.id))
     if not jobs:
         return

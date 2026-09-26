@@ -222,3 +222,17 @@ def test_satd_client_handles_malformed_response_gracefully():
             classify(comments)
 
 
+
+
+def test_the_comment_pass_reports_each_java_file_it_reads(tmp_path) -> None:
+    from codesage_api.extractors.pipeline import _extract_repository_comments
+
+    (tmp_path / "src").mkdir()
+    for name in ("A.java", "B.java", "C.java"):
+        (tmp_path / "src" / name).write_text("class X { // TODO: tidy\n}\n")
+    (tmp_path / "README.md").write_text("not java")
+    heard: list[tuple[int, int]] = []
+
+    _extract_repository_comments(tmp_path, lambda done, total: heard.append((done, total)))
+
+    assert heard == [(1, 3), (2, 3), (3, 3)]

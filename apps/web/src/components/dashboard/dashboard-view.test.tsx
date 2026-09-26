@@ -593,8 +593,10 @@ test("leave the dashboard mid-scan, come back: still running, with Stop", async 
   first.unmount() // navigated away
 
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
+  // The middle of the page is the scan panel now, not the old report (13H.4).
+  expect(await screen.findByTestId("scan-progress-panel")).toBeInTheDocument()
+  expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
   expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
     /acme-payments on main/,
   )
@@ -606,10 +608,27 @@ test("a scan started elsewhere is found when the dashboard opens", async () => {
   await apiStartScan(DEMO_REPO_ID, "main")
 
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
   expect(await screen.findByTestId("scan-status-strip")).toBeInTheDocument()
+  expect(await screen.findByTestId("scan-progress-panel")).toBeInTheDocument()
 })
+
+test("a running scan fills the middle with its stage, and the report returns after", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+
+  const panel = await screen.findByTestId("scan-progress-panel")
+  expect(panel).toHaveTextContent(
+    /Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there/,
+  )
+  // Then the score is calculated, in the same place, and the report is back.
+  expect(
+    await screen.findByText("Code Health", {}, { timeout: 15_000 }),
+  ).toBeInTheDocument()
+  expect(screen.queryByTestId("scan-progress-panel")).not.toBeInTheDocument()
+}, 20_000)
 
 test("the report waits for the branch: no empty-branch ask, and no 'No scans yet' flash", async () => {
   const healthAsked: (string | null)[] = []

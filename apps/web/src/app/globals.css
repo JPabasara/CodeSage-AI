@@ -229,3 +229,38 @@
     background-color: transparent;
   }
 }
+
+/* The scan panel (13H.4): a breathing ring, a stage icon that pops in and a friendly line that fades in. All behind `motion-safe:`. */
+@keyframes panel-breathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes panel-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes panel-fade {
+  from {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

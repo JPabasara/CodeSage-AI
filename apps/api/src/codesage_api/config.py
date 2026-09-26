@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     git_timeout_seconds: int = Field(default=5 * 60, ge=10)
     # Scans beyond this per workspace wait in the queue for a free slot.
     max_running_scans_per_workspace: int = Field(default=1, ge=1)
+    # How many scans may wait in one workspace's queue. One more is refused
+    # with SCAN_QUEUE_FULL: without a cap one workspace could queue a scan per
+    # branch and make every other workspace wait behind them.
+    max_queued_scans_per_workspace: int = Field(default=5, ge=1)
     # How often a waiting scan checks for a free slot.
     scan_queue_retry_seconds: int = Field(default=15, ge=1)
 

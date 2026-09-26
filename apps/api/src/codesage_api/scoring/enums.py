@@ -67,6 +67,21 @@ class ScanPhase(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ScanStage(StrEnum):
+    """Which part of the pipeline a running scan is in (13H.4).
+
+    Reported next to `progress` so the client can label the wait and move its
+    bar within the stage's band instead of sitting still between jumps.
+    """
+
+    CLONING = "cloning"
+    READING_CODE = "reading_code"
+    FINDING_DEBT = "finding_debt"
+    PREDICTING_RISK = "predicting_risk"
+    SCORING = "scoring"
+    FINISHING = "finishing"
+
+
 class ScanErrorCode(StrEnum):
     """Why a scan ended in `error`, for the failures a user can act on.
 

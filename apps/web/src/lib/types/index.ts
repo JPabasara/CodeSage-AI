@@ -203,6 +203,12 @@ export type ScanPhase =
  */
 export type ScanErrorCode = components["schemas"]["ScanErrorCode"]
 
+/**
+ * Which pipeline stage a running scan is in (13H.4). Each owns a band of the
+ * progress bar — see `STAGE_BANDS` in `lib/scan-progress`.
+ */
+export type ScanStage = components["schemas"]["ScanStage"]
+
 export interface ScanStatus {
   scan_id: string
   phase: ScanPhase
@@ -215,6 +221,11 @@ export interface ScanStatus {
   finished_at?: string | null
   error?: string | null // present only when phase === "error"
   error_code?: ScanErrorCode | null // ditto; the message is chosen by this
+  // 13H.4, only while running and all optional: an older API sends none.
+  stage?: ScanStage | null
+  files_done?: number | null // Java files read so far (reading_code only)
+  files_total?: number | null
+  typical_seconds?: number | null // this repository's usual scan length
 }
 
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──

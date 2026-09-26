@@ -4,14 +4,15 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from codesage_api.config import get_settings
 from codesage_api.db.enums import AnalysisStatus
 from codesage_api.db.models import AnalysisAttempt
 from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
-from codesage_api.errors import NotFound, ScanAlreadyRunning
+from codesage_api.errors import NotFound, ScanAlreadyRunning, ScanQueueFull
 from codesage_api.integrations.github import fetch_branch
 from codesage_api.schemas import ScanStatusOut, ScanSummaryOut
-from codesage_api.scoring.enums import ScanErrorCode, ScanPhase
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
 from codesage_api.services import dashboard
 from codesage_api.tasks import progress
 
@@ -22,12 +23,16 @@ def _status_out(
 ) -> ScanStatusOut:
     phase = ScanPhase(attempt.status.value)
     failed = attempt.status == AnalysisStatus.ERROR
+    # Stage details mean something only while the worker is running; every
+    # other phase answers without asking Redis at all.
+    reading = progress.ProgressReading()
     if phase is ScanPhase.DONE:
         percent = 100
     elif phase in {ScanPhase.QUEUED, ScanPhase.ERROR, ScanPhase.CANCELLED}:
         percent = 0
     else:
-        percent = progress.read_progress(str(attempt.id))
+        reading = progress.read_status(str(attempt.id))
+        percent = reading.percent
 
     return ScanStatusOut(
         scan_id=str(attempt.id),
@@ -39,7 +44,19 @@ def _status_out(
         finished_at=(attempt.completion_time.isoformat() if attempt.completion_time else None),
         error=(attempt.failure_information if failed else None),
         error_code=_error_code(attempt.failure_code) if failed else None,
+        stage=_stage(reading.stage),
+        files_done=reading.files_done,
+        files_total=reading.files_total,
+        typical_seconds=reading.typical_seconds,
     )
+
+
+def _stage(stored: str | None) -> ScanStage | None:
+    """An unknown stage from a newer worker reads as "not reported"."""
+    try:
+        return ScanStage(stored) if stored else None
+    except ValueError:
+        return None
 
 
 def _error_code(stored: str | None) -> ScanErrorCode | None:
@@ -86,6 +103,15 @@ def start(
     # check if there is new commit
     if completed is not None and completed.commit_sha == remote_branch.head_commit_sha:
         return _status_out(completed, stored_branch.name)
+
+    # The workspace's queue is capped. Checked last — joining a running scan
+    # and "nothing new to scan" are answers, not queue entries — and under a
+    # per-workspace lock held until the commit below, so two presses at the
+    # same moment cannot both take the last place.
+    attempts.lock_workspace_queue(session, workspace_id)
+    limit = get_settings().max_queued_scans_per_workspace
+    if attempts.count_queued_in_workspace(session, workspace_id) >= limit:
+        raise ScanQueueFull(limit)
 
     attempt = attempts.create_queued(
         session,

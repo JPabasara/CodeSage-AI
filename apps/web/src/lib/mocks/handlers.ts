@@ -60,6 +60,7 @@ import {
   WORKSPACE_ID,
 } from "./fixtures"
 import { scanHistoryFor } from "./scoring"
+import { STAGE_BANDS, stageOf } from "@/lib/scan-progress"
 
 // ── error helper ────────────────────────────────────────────────────────────
 
@@ -321,6 +322,34 @@ function idleScan(): ScanStatus {
   return { scan_id: uuid(), phase: "idle", progress: 0 }
 }
 
+/** How many Java files the demo repository "has", for "Reading 1,240 Java files". */
+const MOCK_JAVA_FILES = 1240
+
+/** What the mock's scans usually take — short, so no test ever reads as slow. */
+const MOCK_TYPICAL_SECONDS = 5
+
+/**
+ * The stage details the real worker reports (13H.4), derived from the mock's
+ * percentage: the stage whose band holds it, and during reading_code a file
+ * count that moves with it.
+ */
+function withStage(status: ScanStatus): ScanStatus {
+  const stage = stageOf({ progress: status.progress })
+  const [start, end] = STAGE_BANDS.reading_code
+  const reading = stage === "reading_code"
+  return {
+    ...status,
+    stage,
+    files_total: reading ? MOCK_JAVA_FILES : null,
+    files_done: reading
+      ? Math.round(
+          ((status.progress - start) / (end - start)) * MOCK_JAVA_FILES,
+        )
+      : null,
+    typical_seconds: MOCK_TYPICAL_SECONDS,
+  }
+}
+
 function tick(repoId: string): ScanStatus {
   const current = scans.get(repoId) ?? idleScan()
   if (current.phase !== "running") return current
@@ -346,7 +375,7 @@ function tick(repoId: string): ScanStatus {
 
   const progress = Math.min(100, current.progress + SCAN_STEP)
   if (progress < 100) {
-    const next: ScanStatus = { ...current, progress }
+    const next: ScanStatus = withStage({ ...current, progress })
     scans.set(repoId, next)
     return next
   }
@@ -356,6 +385,9 @@ function tick(repoId: string): ScanStatus {
     phase: "done",
     progress: 100,
     finished_at: now,
+    stage: null,
+    files_done: null,
+    files_total: null,
   }
   scans.set(repoId, done)
   if (done.branch) {
@@ -1486,6 +1518,8 @@ export const handlers = [
       branch: info.name,
       commit_sha: head,
       started_at: now,
+      stage: "cloning",
+      typical_seconds: MOCK_TYPICAL_SECONDS,
     }
     scans.set(repoId, started)
     return HttpResponse.json(started, { status: 202 })

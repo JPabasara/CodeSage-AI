@@ -28,6 +28,7 @@ import type {
   UpdateWorkspaceRequest,
   Workspace,
 } from "@/lib/types"
+import { forgetScores } from "@/lib/query-cache"
 
 // Empty in dev, so the request is same-origin and MSW's service worker sees it.
 // In production this points at the deployed API.
@@ -85,6 +86,15 @@ async function json<T>(res: Response): Promise<T> {
 
 async function empty(res: Response): Promise<void> {
   if (!res.ok) await json<never>(res)
+}
+
+/**
+ * After a profile write succeeds: scores may have moved, so every cached report
+ * is forgotten and the next dashboard visit asks the server (13H.3).
+ */
+function scoresChanged<T>(value: T): T {
+  forgetScores()
+  return value
 }
 
 // Sign-in and sign-out are deliberately NOT here — both are navigations, not
@@ -274,7 +284,9 @@ export function createProfile(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).then(json<ScoreProfile>)
+  })
+    .then(json<ScoreProfile>)
+    .then(scoresChanged)
 }
 
 /**
@@ -294,7 +306,9 @@ export function updateProfile(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).then(json<ScoreProfile>)
+  })
+    .then(json<ScoreProfile>)
+    .then(scoresChanged)
 }
 
 /**
@@ -308,7 +322,9 @@ export function deleteProfile(profileId: string): Promise<void> {
   return fetch(`${API_BASE}/api/profiles/${profileId}`, {
     method: "DELETE",
     credentials: "include",
-  }).then(empty)
+  })
+    .then(empty)
+    .then(scoresChanged)
 }
 
 /**
@@ -325,7 +341,9 @@ export function setDefaultProfile(profileId: string): Promise<ScoreProfile> {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).then(json<ScoreProfile>)
+  })
+    .then(json<ScoreProfile>)
+    .then(scoresChanged)
 }
 
 /**
@@ -356,7 +374,9 @@ export function setProjectProfile(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).then(json<ProjectProfile>)
+  })
+    .then(json<ProjectProfile>)
+    .then(scoresChanged)
 }
 
 /**
@@ -368,7 +388,9 @@ export function clearProjectProfile(repoId: string): Promise<ProjectProfile> {
   return fetch(`${API_BASE}/api/projects/${repoId}/profile`, {
     method: "DELETE",
     credentials: "include",
-  }).then(json<ProjectProfile>)
+  })
+    .then(json<ProjectProfile>)
+    .then(scoresChanged)
 }
 
 // ── scan lifecycle ───────────────────────────────────────────────────────────

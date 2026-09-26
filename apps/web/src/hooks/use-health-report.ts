@@ -1,13 +1,15 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { ApiRequestError, getHealthReport } from "@/lib/api/client"
+import { fetchShared, forgetQueries, readCached } from "@/lib/query-cache"
 import type { HealthReport } from "@/lib/types"
 import type { QueryState } from "./use-query"
 import {
   noteWorkspaceMissing,
   useActiveWorkspaceId,
+  useWorkspaceEpoch,
 } from "./use-workspace-scope"
 
 /**
@@ -20,17 +22,28 @@ import {
 export const SCORE_POLL_MS = 2_000
 
 /**
+ * Past this the wait is "longer than usual": the panel says so kindly, and
+ * asks come less often. It is not a failure — a large repository really can
+ * take over a minute to score, and giving up here showed an error for a score
+ * that arrived seconds later.
+ */
+export const SCORE_SLOW_MS = 60_000
+
+/** How often to ask once the wait is slow. */
+export const SCORE_SLOW_POLL_MS = 5_000
+
+/**
  * How long we keep waiting before calling it a failure.
  *
- * A give-up is not optional. A worker that died would otherwise leave the
- * dashboard on "calculating" forever, and a spinner that never resolves reads as
- * a hang rather than a fault — the user is given nothing to do about it. A
- * minute is far longer than scoring takes and short enough to notice.
+ * A give-up is still not optional. A scoring worker that died would otherwise
+ * leave the dashboard on "calculating" forever, and a spinner that never
+ * resolves reads as a hang rather than a fault. Ten minutes is far past any
+ * real score, so only a broken worker reaches it.
  */
-export const SCORE_TIMEOUT_MS = 60_000
+export const SCORE_TIMEOUT_MS = 10 * 60_000
 
 const SCORE_TIMEOUT_MESSAGE =
-  "The health score is taking longer than usual to calculate. Try again in a moment."
+  "The health score still isn't ready. Try again in a moment."
 
 export interface HealthReportState extends QueryState<HealthReport> {
   /**
@@ -42,6 +55,18 @@ export interface HealthReportState extends QueryState<HealthReport> {
    * very first request has not answered yet.
    */
   pending: boolean
+  /**
+   * The score has been pending for longer than usual ({@link SCORE_SLOW_MS}).
+   * Still waiting, not an error: the panel switches to its "taking longer"
+   * lines.
+   */
+  pendingSlow: boolean
+  /**
+   * A `reload` is out and has not answered yet. The dashboard reloads only
+   * when a scan finishes, so this is "the new numbers are on their way" — the
+   * report on screen is known to be stale while it is true (13H.4).
+   */
+  refreshing: boolean
 }
 
 export interface HealthReportOptions {
@@ -69,6 +94,10 @@ const isScorePending = (error: unknown) =>
  * that is neither data nor an error. `useQuery` has no way to say that, and it
  * is shared by every other read hook, none of which needs a retry loop.
  *
+ * It shares `useQuery`'s app-wide cache (13H.3): coming back to the dashboard
+ * shows the last report at once and revalidates it quietly. The cache is
+ * cleared when a scan finishes, a profile changes or the workspace switches.
+ *
  * `reload` and `refetch` mean the same here as they do in `useQuery` — quiet and
  * loud. The dashboard uses the loud one for both of its cases, including the end
  * of a scan: those numbers are *known* to be stale, so leaving them up while a
@@ -81,27 +110,41 @@ export function useHealthReport(
   options?: HealthReportOptions,
 ): HealthReportState {
   const enabled = options?.enabled ?? true
-  const key = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
+  const requestedKey = `health:${repoId}:${branch}:${snapshotId ?? "latest"}`
+  // The workspace epoch, as in `useQuery`: a switch changes the key, so one
+  // workspace's report never shows under another's name.
+  const key = `${useWorkspaceEpoch()}:${requestedKey}`
 
   const [result, setResult] = useState<{
     key: string
     data?: HealthReport
     error?: Error
     pending?: boolean
+    slow?: boolean
   }>()
 
   // Bumping this re-runs the effect without changing the key. Both forms also
   // restart the score-pending deadline, because the effect recomputes it.
   const [nonce, setNonce] = useState(0)
-  const reload = useCallback(() => setNonce((n) => n + 1), [])
-  const refetch = useCallback(() => {
-    setResult(undefined)
+  // Reload and Retry must send a new request, not join one already out.
+  const fresh = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const reload = useCallback(() => {
+    fresh.current = true
+    setRefreshing(true)
     setNonce((n) => n + 1)
   }, [])
+  const refetch = useCallback(() => {
+    forgetQueries((requested) => requested === requestedKey)
+    fresh.current = true
+    setResult(undefined)
+    setNonce((n) => n + 1)
+  }, [requestedKey])
 
   // The same gate as every other workspace-bound read: nothing is asked until
   // the session names a workspace.
   const blocked = !useActiveWorkspaceId()
+  const cached = blocked || !enabled ? undefined : readCached<HealthReport>(key)
 
   useEffect(() => {
     if (blocked || !enabled) return
@@ -114,13 +157,30 @@ export function useHealthReport(
     // A wall clock, not an attempt count: the deadline is what we promise the
     // user, and a slow API must not silently buy itself extra tries. It resets
     // whenever the key changes or Retry is pressed — each is a fresh wait.
-    const giveUpAt = Date.now() + SCORE_TIMEOUT_MS
+    const startedWaiting = Date.now()
+    const giveUpAt = startedWaiting + SCORE_TIMEOUT_MS
+    let skipJoin = fresh.current
+    fresh.current = false
 
     const ask = async () => {
       try {
-        const data = await getHealthReport(repoId, branch, snapshotId)
-        if (alive) setResult({ key, data })
+        const data = await fetchShared(
+          key,
+          () => getHealthReport(repoId, branch, snapshotId),
+          { fresh: skipJoin },
+        )
+        skipJoin = false
+        if (alive) setRefreshing(false)
+        // Same report as on screen (same snapshot, same scores): keep the
+        // state object, so nothing re-renders and no chart redraws.
+        if (alive)
+          setResult((current) =>
+            current?.key === key && current.data === data
+              ? current
+              : { key, data },
+          )
       } catch (thrown: unknown) {
+        skipJoin = false
         if (!alive) return
         const error =
           thrown instanceof Error ? thrown : new Error(String(thrown))
@@ -134,19 +194,25 @@ export function useHealthReport(
           noteWorkspaceMissing()
         }
         if (!isScorePending(error)) {
+          setRefreshing(false)
           setResult({ key, error })
           return
         }
 
         if (Date.now() >= giveUpAt) {
+          setRefreshing(false)
           setResult({ key, error: new Error(SCORE_TIMEOUT_MESSAGE) })
           return
         }
 
-        setResult({ key, pending: true })
+        const slow = Date.now() - startedWaiting >= SCORE_SLOW_MS
+        setResult({ key, pending: true, slow })
         // Chained, not an interval: the next ask is scheduled by the answer to
         // the last one, so a slow response can never stack up requests.
-        timer = setTimeout(() => void ask(), SCORE_POLL_MS)
+        timer = setTimeout(
+          () => void ask(),
+          slow ? SCORE_SLOW_POLL_MS : SCORE_POLL_MS,
+        )
       }
     }
 
@@ -162,11 +228,14 @@ export function useHealthReport(
   // dropped rather than rendered under the new one. A held read is never
   // settled, so it reads as loading rather than as an empty answer.
   const settled = enabled && result?.key === key
+  const shown = settled ? result : cached && { key, data: cached.data }
   return {
-    data: settled ? result?.data : undefined,
+    data: shown ? shown.data : undefined,
     error: settled ? result?.error : undefined,
     pending: settled ? (result?.pending ?? false) : false,
-    loading: !settled,
+    pendingSlow: settled ? Boolean(result?.pending && result.slow) : false,
+    refreshing: enabled && refreshing,
+    loading: !shown,
     reload,
     refetch,
   }

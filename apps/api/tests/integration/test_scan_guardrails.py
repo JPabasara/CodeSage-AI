@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from codesage_api.db.enums import (
@@ -177,3 +177,143 @@ def test_the_status_endpoint_reads_back_the_stored_code(account) -> None:
 
     assert status.error == "No Java files on this branch."
     assert status.error_code is not None and status.error_code.value == "NO_JAVA_FILES"
+
+
+# ── 13H.4: "Usually about 2 min" ────────────────────────────────────────────
+
+
+def test_the_typical_duration_is_the_median_of_recent_finished_scans(account) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    base = datetime.now(UTC) - timedelta(days=1)
+    ids = _seed(
+        engine,
+        user_id,
+        workspace_id,
+        [(AnalysisStatus.DONE, base + timedelta(hours=i)) for i in range(3)]
+        + [(AnalysisStatus.ERROR, base), (AnalysisStatus.QUEUED, None)],
+    )
+    # 60s, 120s and one slow 900s run: the median ignores the outlier. The
+    # failed scan's hour-long run is not a typical scan at all.
+    with Session(engine) as db:
+        for attempt_id, seconds in zip(ids, [60, 120, 900, 3600], strict=False):
+            attempt = db.get(AnalysisAttempt, attempt_id)
+            attempt.completion_time = attempt.start_time + timedelta(seconds=seconds)
+        repository_id = db.get(AnalysisAttempt, ids[0]).branch.repository_id
+        db.commit()
+
+    with _as_app(engine, workspace_id) as db:
+        assert attempts.typical_duration_seconds(db, repository_id) == 120
+        # And the worker hands it on with the claimed scan.
+        claimed = attempts.begin_for_worker(db, workspace_id, ids[4])
+        db.commit()
+    assert claimed is not None and claimed.typical_seconds == 120
+
+
+def test_a_repository_never_scanned_has_no_typical_duration(account) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    (queued,) = _seed(engine, user_id, workspace_id, [(AnalysisStatus.QUEUED, None)])
+    with Session(engine) as db:
+        repository_id = db.get(AnalysisAttempt, queued).branch.repository_id
+
+    with _as_app(engine, workspace_id) as db:
+        assert attempts.typical_duration_seconds(db, repository_id) is None
+
+
+# ── the per-workspace queue cap ─────────────────────────────────────────────
+
+
+def _empty_repository(engine, workspace_id: uuid.UUID) -> uuid.UUID:
+    """A connected repository with one branch and no scans yet."""
+    with Session(engine) as db:
+        repository = Repository(
+            workspace_id=workspace_id,
+            source_platform=RepositoryPlatform.GITHUB,
+            external_repository_id=str(uuid.uuid4()),
+            name=f"queue-{uuid.uuid4().hex[:6]}",
+            owner="acme",
+            url="https://github.com/acme/queue",
+            visibility=RepositoryVisibility.PUBLIC,
+            connection_status=RepositoryConnectionStatus.CONNECTED,
+        )
+        db.add_all([repository, Branch(repository=repository, name="main", head_commit_sha="a" * 40, is_default=True)])
+        db.commit()
+        return repository.id
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    from codesage_api.integrations.github import GitHubBranch
+    from codesage_api.tasks.scan_pipeline import run_scan
+
+    monkeypatch.setattr(analysis, "fetch_branch", lambda *_: GitHubBranch("main", uuid.uuid4().hex))
+    monkeypatch.setattr(run_scan, "delay", lambda *_: None)
+
+
+def _start(engine, workspace_id, repository_id, user_id):
+    with _as_app(engine, workspace_id) as db:
+        return analysis.start(db, workspace_id, repository_id, "main", actor_user_id=user_id)
+
+
+def test_the_sixth_waiting_scan_in_a_workspace_is_refused(account, no_network) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    _seed(engine, user_id, workspace_id, [(AnalysisStatus.QUEUED, None)] * 4)
+
+    fifth = _start(engine, workspace_id, _empty_repository(engine, workspace_id), user_id)
+    assert fifth.phase.value == "queued"
+
+    from codesage_api.errors import ScanQueueFull
+
+    with pytest.raises(ScanQueueFull):
+        _start(engine, workspace_id, _empty_repository(engine, workspace_id), user_id)
+
+    # A running scan is not waiting: once one of the queue starts, a place frees.
+    with Session(engine) as db:
+        waiting = db.scalars(
+            select(AnalysisAttempt).where(AnalysisAttempt.status == AnalysisStatus.QUEUED)
+        ).first()
+        waiting.status = AnalysisStatus.RUNNING
+        db.commit()
+    assert _start(engine, workspace_id, _empty_repository(engine, workspace_id), user_id).phase.value == "queued"
+
+
+def test_two_presses_at_once_cannot_both_take_the_last_place(
+    account, no_network, monkeypatch
+) -> None:
+    import threading
+    import time
+
+    from codesage_api.errors import ScanQueueFull
+
+    engine, _, user_id, workspace_id, _ = account
+    # Widen the gap between "count the queue" and "add to it", so without the
+    # workspace lock both presses would count four and both be queued.
+    real_count = attempts.count_queued_in_workspace
+
+    def slow_count(*args):
+        counted = real_count(*args)
+        time.sleep(0.5)
+        return counted
+
+    monkeypatch.setattr(analysis.attempts, "count_queued_in_workspace", slow_count)
+    _seed(engine, user_id, workspace_id, [(AnalysisStatus.QUEUED, None)] * 4)
+    targets = [_empty_repository(engine, workspace_id) for _ in range(2)]
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+
+    def press(repository_id: uuid.UUID) -> None:
+        barrier.wait()
+        try:
+            _start(engine, workspace_id, repository_id, user_id)
+            outcomes.append("queued")
+        except ScanQueueFull:
+            outcomes.append("refused")
+
+    threads = [threading.Thread(target=press, args=(target,)) for target in targets]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert sorted(outcomes) == ["queued", "refused"]
+    with Session(engine) as db:
+        assert attempts.count_queued_in_workspace(db, workspace_id) == 5

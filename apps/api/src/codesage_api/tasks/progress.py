@@ -4,6 +4,7 @@
 
     PostgreSQL  phase          done | error | cancelled must survive a restart
     Redis       progress %     losing it costs nothing; the next poll recomputes
+    Redis       stage details  the same: stage, files read, typical duration
     Redis       cancel flag    transient by nature; a restart cancels nothing
 
 Losing a percentage on a broker restart is harmless. Losing the fact that a scan
@@ -17,7 +18,9 @@ silently kills the next scan of the same attempt.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
+from typing import Any
 
 from redis import Redis
 from redis.exceptions import RedisError
@@ -25,7 +28,16 @@ from redis.exceptions import RedisError
 from codesage_api.config import get_settings
 
 PROGRESS_KEY = "codesage:scan:{attempt_id}:progress"
+#: A hash beside the percentage: `stage`, `files_done`, `files_total`,
+#: `typical_seconds` (13H.4). Separate so the percentage key keeps its plain
+#: integer value for older readers.
+STAGE_KEY = "codesage:scan:{attempt_id}:stage"
 CANCEL_KEY = "codesage:scan:{attempt_id}:cancel"
+#: Set when a score calculation is queued, so polls do not queue it again.
+SCORE_QUEUED_KEY = "codesage:score:{cache_id}:queued"
+#: Long enough to cover a busy scoring queue; short enough that a job lost in a
+#: broker restart is queued again on the next poll after it expires.
+SCORE_QUEUED_TTL_SECONDS = 120
 
 #: Long enough to outlive any realistic scan, short enough that abandoned keys go away.
 KEY_TTL_SECONDS = 6 * 60 * 60
@@ -54,6 +66,95 @@ def publish_progress(attempt_id: str, percent: int) -> None:
         return
 
 
+@dataclass(frozen=True, slots=True)
+class ProgressReading:
+    """Everything a status poll shows about a running scan, from one round trip."""
+
+    percent: int = 0
+    stage: str | None = None
+    files_done: int | None = None
+    files_total: int | None = None
+    typical_seconds: int | None = None
+
+
+def _count(value: str | None) -> int | None:
+    try:
+        return max(0, int(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def publish_stage(
+    attempt_id: str,
+    stage: str,
+    percent: int,
+    *,
+    files_total: int | None = None,
+    typical_seconds: int | None = None,
+) -> None:
+    """Enter a pipeline stage: its name and the percentage where its band starts.
+
+    Entering a stage resets the file counter, so a count from reading code never
+    shows under a later stage. Never raises — progress is decoration.
+    """
+    # `Any`: redis-py types the mapping with an invariant key union no plain
+    # dict literal satisfies.
+    fields: dict[Any, Any] = {"stage": stage}
+    if files_total is not None:
+        fields["files_total"] = max(0, int(files_total))
+        fields["files_done"] = 0
+    if typical_seconds is not None:
+        fields["typical_seconds"] = max(0, int(typical_seconds))
+    key = STAGE_KEY.format(attempt_id=attempt_id)
+    try:
+        pipe = _client().pipeline(transaction=False)
+        if files_total is None:
+            pipe.hdel(key, "files_done", "files_total")
+        pipe.hset(key, mapping=fields)
+        pipe.expire(key, KEY_TTL_SECONDS)
+        pipe.set(
+            PROGRESS_KEY.format(attempt_id=attempt_id),
+            max(0, min(100, int(percent))),
+            ex=KEY_TTL_SECONDS,
+        )
+        pipe.execute()
+    except RedisError:
+        return
+
+
+def publish_files_done(attempt_id: str, files_done: int) -> None:
+    """How many Java files have been read so far, inside `reading_code`."""
+    try:
+        _client().hset(
+            STAGE_KEY.format(attempt_id=attempt_id),
+            "files_done",
+            max(0, int(files_done)),
+        )
+    except RedisError:
+        return
+
+
+def read_status(attempt_id: str) -> ProgressReading:
+    """Percentage and stage details in one round trip. Never raises: a missing
+    or unreadable value reads as "not reported"."""
+    try:
+        pipe = _client().pipeline(transaction=False)
+        pipe.get(PROGRESS_KEY.format(attempt_id=attempt_id))
+        pipe.hgetall(STAGE_KEY.format(attempt_id=attempt_id))
+        raw_percent, details = pipe.execute()
+    except RedisError:
+        return ProgressReading()
+    details = details if isinstance(details, dict) else {}
+    percent = _count(raw_percent)
+    return ProgressReading(
+        percent=min(100, percent) if percent is not None else 0,
+        stage=details.get("stage") or None,
+        files_done=_count(details.get("files_done")),
+        files_total=_count(details.get("files_total")),
+        typical_seconds=_count(details.get("typical_seconds")),
+    )
+
+
 def read_progress(attempt_id: str) -> int:
     """Current percentage, or 0 if the key is gone. Never raises — a missing
     percentage must not turn a status poll into a 500."""
@@ -62,6 +163,27 @@ def read_progress(attempt_id: str) -> int:
         return max(0, min(100, int(value))) if value is not None else 0
     except (RedisError, TypeError, ValueError):
         return 0
+
+
+def claim_score_enqueue(cache_id: str) -> bool:
+    """True for the first caller in a while to queue this score; False while an
+    earlier one is still queued.
+
+    The dashboard polls every few seconds while a score is pending, and each
+    poll used to queue the same job again — twenty copies for one score. Fails
+    open: without Redis, queueing twice is better than never.
+    """
+    try:
+        return bool(
+            _client().set(
+                SCORE_QUEUED_KEY.format(cache_id=cache_id),
+                "1",
+                nx=True,
+                ex=SCORE_QUEUED_TTL_SECONDS,
+            )
+        )
+    except RedisError:
+        return True
 
 
 def request_cancel(attempt_id: str) -> None:
@@ -82,11 +204,12 @@ def is_cancel_requested(attempt_id: str) -> bool:
 
 
 def clear(attempt_id: str) -> None:
-    """Drop both keys once the attempt reaches a terminal phase."""
+    """Drop every key once the attempt reaches a terminal phase."""
     try:
         _client().delete(
             PROGRESS_KEY.format(attempt_id=attempt_id),
             CANCEL_KEY.format(attempt_id=attempt_id),
+            STAGE_KEY.format(attempt_id=attempt_id),
         )
     except RedisError:
         return

@@ -42,3 +42,41 @@ def test_score_worker_sets_tenant_context_before_reading_cache(monkeypatch) -> N
 
     assert tenant_is_bound is True
     calculate.assert_not_called()
+
+
+def test_warming_a_new_snapshot_never_hydrates_it(monkeypatch) -> None:
+    """The prepare step reads the snapshot row alone. Hydrating every fact of a
+    large repository here took ~40 s on apache/dubbo, before scoring began."""
+    session = MagicMock(spec=Session)
+    snapshot = MagicMock(id=uuid.uuid4())
+
+    @contextmanager
+    def scoped_session():
+        yield session
+
+    monkeypatch.setattr(score_cache, "set_workspace_context", MagicMock())
+    monkeypatch.setattr(score_cache, "session_scope", scoped_session)
+    hydrate = MagicMock()
+    monkeypatch.setattr(score_cache.dashboard_repository, "get_snapshot_for_scoring", hydrate)
+    monkeypatch.setattr(
+        score_cache.dashboard_repository, "find_done_snapshot", MagicMock(return_value=snapshot)
+    )
+    monkeypatch.setattr(
+        score_cache.dashboard_repository,
+        "repository_id_for_snapshot",
+        MagicMock(return_value=uuid.uuid4()),
+    )
+    monkeypatch.setattr(score_cache.profiles, "resolve_effective", MagicMock())
+    monkeypatch.setattr(score_cache, "profile_payload", MagicMock(return_value={}))
+    cached = MagicMock(id=uuid.uuid4(), status="pending", started_at=None)
+    monkeypatch.setattr(
+        score_cache.dashboard, "prepare_snapshot_score", MagicMock(return_value=(cached, True))
+    )
+    monkeypatch.setattr(score_cache.dashboard.progress, "claim_score_enqueue", lambda _id: True)
+    delay = MagicMock()
+    monkeypatch.setattr(score_cache.score_snapshot, "delay", delay)
+
+    score_cache.warm_snapshot_score.run(str(snapshot.id), str(uuid.uuid4()))
+
+    hydrate.assert_not_called()
+    delay.assert_called_once()

@@ -10,6 +10,7 @@ import {
   stopScan as apiStopScan,
 } from "@/lib/api/client"
 import { scanFailureMessage } from "@/lib/guardrail-messages"
+import { forgetScanResults } from "@/lib/query-cache"
 import type { ScanStatus } from "@/lib/types"
 import {
   readActiveWorkspaceId,
@@ -223,8 +224,12 @@ async function poll(key: string) {
     return
   }
   forget(key)
-  if (next.phase === "done") emit({ type: "finished", scan: current })
-  else if (next.phase === "cancelled")
+  if (next.phase === "done") {
+    // Forget the cached report first, so no page shows the pre-scan numbers
+    // from memory once it hears the scan is done.
+    forgetScanResults(scan.repoId, scan.branch)
+    emit({ type: "finished", scan: current })
+  } else if (next.phase === "cancelled")
     emit({ type: "cancelled", scan: current })
   else
     emit({

@@ -7,10 +7,11 @@ from unittest.mock import Mock, patch
 import pytest
 
 from codesage_api.db.enums import AnalysisStatus
-from codesage_api.errors import NotFound
+from codesage_api.errors import NotFound, ScanQueueFull
 from codesage_api.integrations.github import GitHubBranch
-from codesage_api.scoring.enums import ScanErrorCode, ScanPhase
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
 from codesage_api.services import analysis
+from codesage_api.tasks import progress
 
 
 def _branch() -> SimpleNamespace:
@@ -57,6 +58,7 @@ def test_start_creates_commits_and_enqueues_queued_attempt(
     attempt_repository.find_active_for_branch.return_value = None
     attempt_repository.find_latest_completed.return_value = None
     attempt_repository.create_queued.return_value = queued
+    attempt_repository.count_queued_in_workspace.return_value = 0
     github_fetch.return_value = GitHubBranch("main", "new-sha")
 
     workspace_id = uuid.uuid4()
@@ -117,11 +119,14 @@ def test_start_rejects_repository_removed_before_scan_lock(
     attempt_repository.get_branch.assert_not_called()
 
 
-@patch("codesage_api.services.analysis.progress.read_progress", return_value=47)
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=47),
+)
 @patch("codesage_api.services.analysis.attempts")
 def test_get_status_reads_durable_phase_and_ephemeral_progress(
     attempt_repository: Mock,
-    read_progress: Mock,
+    read_status: Mock,
 ) -> None:
     running = _attempt(AnalysisStatus.RUNNING)
     attempt_repository.get_for_repository.return_value = running
@@ -130,7 +135,7 @@ def test_get_status_reads_durable_phase_and_ephemeral_progress(
 
     assert result.phase is ScanPhase.RUNNING
     assert result.progress == 47
-    read_progress.assert_called_once_with(str(running.id))
+    read_status.assert_called_once_with(str(running.id))
 
 
 @pytest.mark.parametrize(
@@ -143,7 +148,10 @@ def test_get_status_reads_durable_phase_and_ephemeral_progress(
         (AnalysisStatus.CANCELLED, ScanPhase.CANCELLED, 0),
     ],
 )
-@patch("codesage_api.services.analysis.progress.read_progress", return_value=47)
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=47),
+)
 @patch("codesage_api.services.analysis.attempts")
 def test_status_maps_every_database_phase(
     attempt_repository: Mock,
@@ -232,7 +240,10 @@ def test_a_guardrail_failure_reports_its_code_next_to_its_sentence(
     "status",
     [AnalysisStatus.QUEUED, AnalysisStatus.RUNNING, AnalysisStatus.DONE, AnalysisStatus.CANCELLED],
 )
-@patch("codesage_api.services.analysis.progress.read_progress", return_value=0)
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(),
+)
 @patch("codesage_api.services.analysis.attempts")
 def test_error_code_is_absent_for_every_phase_but_error(
     attempt_repository: Mock,
@@ -314,3 +325,162 @@ def test_start_ends_abandoned_scans_before_the_already_running_check(
     analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
 
     assert calls == ["expire", "active?"]
+
+
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(
+        percent=31,
+        stage="reading_code",
+        files_done=120,
+        files_total=1240,
+        typical_seconds=130,
+    ),
+)
+@patch("codesage_api.services.analysis.attempts")
+def test_a_running_scan_reports_its_stage_file_counts_and_typical_duration(
+    attempt_repository: Mock,
+    _read_status: Mock,
+) -> None:
+    running = _attempt(AnalysisStatus.RUNNING)
+    attempt_repository.get_for_repository.return_value = running
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
+
+    assert result.stage is ScanStage.READING_CODE
+    assert (result.files_done, result.files_total) == (120, 1240)
+    assert result.typical_seconds == 130
+
+
+@pytest.mark.parametrize(
+    "status",
+    [AnalysisStatus.QUEUED, AnalysisStatus.DONE, AnalysisStatus.ERROR, AnalysisStatus.CANCELLED],
+)
+@patch("codesage_api.services.analysis.progress.read_status")
+@patch("codesage_api.services.analysis.attempts")
+def test_stage_details_are_absent_unless_running(
+    attempt_repository: Mock,
+    read_status: Mock,
+    status: AnalysisStatus,
+) -> None:
+    attempt = _attempt(status)
+    attempt_repository.get_for_repository.return_value = attempt
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
+
+    assert result.stage is None
+    assert result.files_done is None and result.files_total is None
+    read_status.assert_not_called()
+
+
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=40, stage="a_stage_from_the_future"),
+)
+@patch("codesage_api.services.analysis.attempts")
+def test_an_unknown_stage_reads_as_not_reported_never_a_500(
+    attempt_repository: Mock,
+    _read_status: Mock,
+) -> None:
+    running = _attempt(AnalysisStatus.RUNNING)
+    attempt_repository.get_for_repository.return_value = running
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
+
+    assert result.stage is None
+    assert result.progress == 40
+
+
+# ── the per-workspace queue cap ─────────────────────────────────────────────
+
+
+def _ready_to_queue(attempt_repository: Mock, github_fetch: Mock, waiting: int) -> None:
+    attempt_repository.lock_repository_for_scan.return_value = SimpleNamespace()
+    attempt_repository.get_branch.return_value = _branch()
+    attempt_repository.find_active_for_branch.return_value = None
+    attempt_repository.find_latest_completed.return_value = None
+    attempt_repository.create_queued.return_value = _attempt(AnalysisStatus.QUEUED)
+    attempt_repository.count_queued_in_workspace.return_value = waiting
+    github_fetch.return_value = GitHubBranch("main", "new-sha")
+
+
+@patch("codesage_api.tasks.scan_pipeline.run_scan.delay")
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_a_full_workspace_queue_refuses_with_a_clear_sentence(
+    attempt_repository: Mock,
+    github_fetch: Mock,
+    enqueue: Mock,
+) -> None:
+    _ready_to_queue(attempt_repository, github_fetch, waiting=5)
+    session = Mock()
+
+    with pytest.raises(ScanQueueFull) as refused:
+        analysis.start(session, uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+
+    assert refused.value.code == "SCAN_QUEUE_FULL"
+    assert refused.value.status_code == 429
+    assert refused.value.message == (
+        "5 scans are already waiting in this workspace. Try again when one finishes."
+    )
+    attempt_repository.create_queued.assert_not_called()
+    session.commit.assert_not_called()
+    enqueue.assert_not_called()
+
+
+@patch("codesage_api.tasks.scan_pipeline.run_scan.delay")
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_the_last_place_in_the_queue_is_taken_under_the_workspace_lock(
+    attempt_repository: Mock,
+    github_fetch: Mock,
+    _enqueue: Mock,
+) -> None:
+    _ready_to_queue(attempt_repository, github_fetch, waiting=4)
+    session = Mock()
+    workspace_id = uuid.uuid4()
+    order: list[str] = []
+    attempt_repository.lock_workspace_queue.side_effect = lambda *_: order.append("lock")
+    attempt_repository.count_queued_in_workspace.side_effect = lambda *_: order.append("count") or 4
+    attempt_repository.create_queued.side_effect = lambda *_, **__: (
+        order.append("create") or _attempt(AnalysisStatus.QUEUED)
+    )
+    session.commit.side_effect = lambda: order.append("commit")
+
+    result = analysis.start(session, workspace_id, uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+
+    assert result.phase is ScanPhase.QUEUED
+    assert order == ["lock", "count", "create", "commit"]
+    attempt_repository.lock_workspace_queue.assert_called_once_with(session, workspace_id)
+
+
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_joining_a_running_scan_never_counts_against_the_queue(
+    attempt_repository: Mock,
+    github_fetch: Mock,
+) -> None:
+    _ready_to_queue(attempt_repository, github_fetch, waiting=99)
+    attempt_repository.find_active_for_branch.return_value = _attempt(AnalysisStatus.RUNNING)
+
+    with pytest.raises(analysis.ScanAlreadyRunning):
+        analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+
+    attempt_repository.count_queued_in_workspace.assert_not_called()
+
+
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_nothing_new_to_scan_never_counts_against_the_queue(
+    attempt_repository: Mock,
+    github_fetch: Mock,
+) -> None:
+    _ready_to_queue(attempt_repository, github_fetch, waiting=99)
+    attempt_repository.find_latest_completed.return_value = _attempt(
+        AnalysisStatus.DONE, commit_sha="new-sha"
+    )
+
+    result = analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+
+    assert result.phase is ScanPhase.DONE
+    attempt_repository.count_queued_in_workspace.assert_not_called()
