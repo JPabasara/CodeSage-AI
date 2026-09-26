@@ -127,3 +127,42 @@ test("a finished scan says it is calculating the score, then fills in by itself"
   await expect(page.getByText("Code Health")).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText(/calculating your health score/i)).toHaveCount(0)
 })
+
+// 13H.4: the middle of the dashboard shows the scan's stage, a friendly line
+// and a bar that only ever moves forward.
+test("a running scan shows a stage label and a bar that only moves forward", async ({
+  page,
+}) => {
+  await scanButton(page).click()
+
+  const panel = page.getByTestId("scan-progress-panel")
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole("status")).toHaveText(
+    /Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there/,
+  )
+  await expect(page.getByTestId("scan-panel-line")).not.toBeEmpty()
+
+  // Sample the bar while the scan runs: never a step backwards. Read from
+  // the DOM directly, so a panel that has just gone ends the loop at once.
+  const seen: number[] = []
+  for (let i = 0; i < 100; i += 1) {
+    const value = await page.evaluate(
+      () =>
+        document
+          .querySelector(
+            '[data-testid="scan-progress-panel"] [role="progressbar"]',
+          )
+          ?.getAttribute("aria-valuenow") ?? "gone",
+    )
+    if (value === "gone") break
+    seen.push(Number(value))
+    await page.waitForTimeout(100)
+  }
+  expect(seen.length).toBeGreaterThan(3)
+  for (let i = 1; i < seen.length; i += 1) {
+    expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]!)
+  }
+
+  // Then the score, in the same place, and the report is back.
+  await expect(page.getByText("Code Health")).toBeVisible({ timeout: 15_000 })
+})

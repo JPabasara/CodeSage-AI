@@ -29,9 +29,16 @@ import { useSelectedBranch } from "@/hooks/use-selected-branch"
 import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
-import { discoverScan, onScanEvent, useScanFor } from "@/hooks/use-scan-center"
+import {
+  discoverScan,
+  isActivePhase,
+  onScanEvent,
+  useScanFor,
+} from "@/hooks/use-scan-center"
 import { useSession } from "@/hooks/use-session"
 import { ScanStatusStrip } from "@/components/layout/scan-status-strip"
+import { ScanProgressPanel } from "@/components/dashboard/scan-progress-panel"
+import { useSmoothProgress } from "@/hooks/use-smooth-progress"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { Finding, TreeNode } from "@/lib/types"
 import { healthColor } from "@/lib/utils"
@@ -113,6 +120,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     data: report,
     loading,
     pending: scorePending,
+    pendingSlow: scorePendingSlow,
+    refreshing: reportRefreshing,
     error,
     refetch,
     reload: reloadReport,
@@ -139,6 +148,30 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     start: startTrackedScan,
     stop: stopTrackedScan,
   } = useScanFor(repoId, activeBranch, repo?.name)
+  const scanActive = Boolean(
+    trackedScan && isActivePhase(trackedScan.status.phase),
+  )
+
+  // After a scan, its score is calculated before the new report exists. That
+  // wait is the last section of the same bar (13H.4), so remember the scan
+  // that just finished (for its clock and name) and when the wait began.
+  const calculating = scorePending || reportRefreshing
+  const [finishedScan, setFinishedScan] = useState<{
+    startedAt: number
+    repoName?: string
+    branch: string
+  }>()
+  // The wait ended: forget the scan, so a later wait (a profile change, say)
+  // does not borrow its clock. Adjusted during render, not in an effect.
+  const [wasCalculating, setWasCalculating] = useState(calculating)
+  if (calculating !== wasCalculating) {
+    setWasCalculating(calculating)
+    if (!calculating) setFinishedScan(undefined)
+  }
+
+  // One smoothed number for every bar on the page, so the top bar and the
+  // panel never disagree; it carries on through the score's wait.
+  const smoothProgress = useSmoothProgress(trackedScan?.status, calculating)
 
   // A scan this tab never started — a teammate's, another tab's, one from
   // before a refresh on a cleared tab — is found and followed.
@@ -162,6 +195,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           event.scan.repoId === repoId &&
           event.scan.branch === activeBranch
         ) {
+          setFinishedScan({
+            startedAt: event.scan.startedAt,
+            repoName: event.scan.repoName,
+            branch: event.scan.branch,
+          })
           reloadReport()
           reloadHistory()
         }
@@ -301,39 +339,45 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
-    // Two different waits, one shape. `loading` is "the request is in flight"
-    // — or held until the project and branch are known; `scorePending` is "the
-    // snapshot is stored and the API is still scoring it" (503 SCORE_PENDING).
-    // The second only ever follows a scan, so it earns a sentence — an
-    // unlabelled skeleton right after "Scan complete" reads as a stall. The
-    // hook keeps asking; nothing here has to.
-    //
-    // A quiet reload after a scan keeps the report on screen, so neither of
-    // these shows then.
-    if (!reposLoaded || loading || scorePending) {
+    // A scan of this branch is queued or running: the middle of the page is
+    // about that, with a stage, a bar and a friendly line (13H.4). The numbers
+    // underneath are about to change anyway.
+    if (scanActive && trackedScan) {
       return (
-        <DashboardSkeleton
-          notice={
-            scorePending ? (
-              <div
-                // polite, not assertive: it is progress, and it must not
-                // interrupt a screen reader mid-sentence.
-                role="status"
-                aria-live="polite"
-                className="flex flex-col justify-center gap-1 rounded-lg border bg-card p-4 text-sm"
-              >
-                <p className="font-medium text-foreground">
-                  Calculating your health score…
-                </p>
-                <p className="text-muted-foreground">
-                  Your scan finished. Scoring it against the active profile
-                  takes a few seconds.
-                </p>
-              </div>
-            ) : undefined
-          }
+        <ScanProgressPanel
+          kind="scan"
+          status={trackedScan.status}
+          progress={smoothProgress}
+          startedAt={trackedScan.startedAt}
+          repoName={trackedScan.repoName ?? repo?.name}
+          branch={trackedScan.branch}
+          stopping={trackedScan.stopping}
         />
       )
+    }
+
+    // The scan finished: its new report is on the way, or the API is still
+    // scoring it (503 SCORE_PENDING). Both only ever follow a scan, so they
+    // get the same panel — straight from the scan's, with no flash of the old
+    // numbers in between. The hook keeps asking; nothing here has to.
+    if (scorePending || reportRefreshing) {
+      return (
+        <ScanProgressPanel
+          kind="calculating"
+          progress={smoothProgress}
+          startedAt={finishedScan?.startedAt}
+          repoName={finishedScan?.repoName ?? repo?.name}
+          branch={finishedScan?.branch ?? activeBranch}
+          slow={scorePendingSlow}
+        />
+      )
+    }
+
+    // `loading` is "the request is in flight" — or held until the project and
+    // branch are known. A quiet reload after a scan keeps the report on
+    // screen, so this does not show then.
+    if (!reposLoaded || loading) {
+      return <DashboardSkeleton />
     }
 
     if (neverScanned) {
@@ -450,7 +494,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         snapshotNavigation={snapshotNavigation}
         scan={{
           phase: trackedScan?.status.phase ?? "idle",
-          progress: trackedScan?.status.progress ?? 0,
+          progress:
+            smoothProgress !== undefined
+              ? Math.floor(smoothProgress)
+              : (trackedScan?.status.progress ?? 0),
           stopping: trackedScan?.stopping ?? false,
           // Only once there is a branch to scan.
           onScan: activeBranch ? startTrackedScan : undefined,
@@ -462,6 +509,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
       <ScanStatusStrip
         scan={trackedScan}
+        progress={smoothProgress}
         canStop={canStopScan}
         onStop={stopTrackedScan}
       />

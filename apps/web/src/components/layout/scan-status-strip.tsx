@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Square } from "lucide-react"
@@ -22,20 +21,11 @@ export function formatElapsed(ms: number) {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
 
-/** Ticks once a second while mounted — for the elapsed clock only. */
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [active])
-  return now
-}
-
 /**
  * The slim bar under the app bar while this dashboard's scan is queued or
- * running: what is being scanned, for how long, how far along — and Stop.
+ * running: what is being scanned, a thin line for how far along — and Stop.
+ * The percentage and the clock are in the scan panel in the middle, so they
+ * are not repeated here.
  *
  * Nothing here polls. The scan store does that once, for every screen.
  */
@@ -43,17 +33,19 @@ export function ScanStatusStrip({
   scan,
   canStop,
   onStop,
+  progress: smoothed,
 }: Readonly<{
   scan: TrackedScan | undefined
   canStop: boolean
   onStop: () => void
+  /** The dashboard's smoothed percentage (13H.4); the raw one when absent. */
+  progress?: number
 }>) {
   const active = Boolean(scan && isActivePhase(scan.status.phase))
-  const now = useNow(active)
   if (!scan || !active) return null
 
   const queued = scan.status.phase === "queued"
-  const progress = scan.status.progress
+  const progress = Math.floor(smoothed ?? scan.status.progress)
   const determinate = !queued && progress > 0
   const what = `${scan.repoName ?? "this project"} on ${scan.branch}`
   const label = scan.stopping
@@ -73,10 +65,6 @@ export function ScanStatusStrip({
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-        <span className="text-muted-foreground tabular-nums">
-          {determinate ? `${progress}% · ` : ""}
-          {formatElapsed(now - scan.startedAt)}
-        </span>
         {canStop ? (
           <Button
             size="sm"
@@ -97,7 +85,7 @@ export function ScanStatusStrip({
       >
         {determinate ? (
           <div
-            className="h-full bg-primary transition-[width] duration-500 ease-out"
+            className="h-full bg-primary"
             style={{ width: `${progress}%` }}
           />
         ) : (

@@ -157,3 +157,19 @@ signedIn(
     }
   },
 )
+
+// 13H.4: the scan panel is on screen for a few seconds per scan — long enough
+// to be read, so long enough to be checked.
+for (const theme of ["light", "dark"] as const) {
+  signedIn(
+    `0 axe violations on the scan panel in ${theme} mode`,
+    async ({ page }) => {
+      await page.goto(`/dashboard/${DEMO_REPO_ID}`)
+      await expect(page.getByText("Code Health")).toBeVisible()
+      if (theme === "dark") await setDarkMode(page)
+      await page.getByRole("button", { name: /^scan$/i }).click()
+      await expect(page.getByTestId("scan-progress-panel")).toBeVisible()
+      await checkAxe(page, `the scan panel (${theme})`)
+    },
+  )
+}

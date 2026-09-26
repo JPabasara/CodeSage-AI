@@ -22,17 +22,28 @@ import {
 export const SCORE_POLL_MS = 2_000
 
 /**
+ * Past this the wait is "longer than usual": the panel says so kindly, and
+ * asks come less often. It is not a failure — a large repository really can
+ * take over a minute to score, and giving up here showed an error for a score
+ * that arrived seconds later.
+ */
+export const SCORE_SLOW_MS = 60_000
+
+/** How often to ask once the wait is slow. */
+export const SCORE_SLOW_POLL_MS = 5_000
+
+/**
  * How long we keep waiting before calling it a failure.
  *
- * A give-up is not optional. A worker that died would otherwise leave the
- * dashboard on "calculating" forever, and a spinner that never resolves reads as
- * a hang rather than a fault — the user is given nothing to do about it. A
- * minute is far longer than scoring takes and short enough to notice.
+ * A give-up is still not optional. A scoring worker that died would otherwise
+ * leave the dashboard on "calculating" forever, and a spinner that never
+ * resolves reads as a hang rather than a fault. Ten minutes is far past any
+ * real score, so only a broken worker reaches it.
  */
-export const SCORE_TIMEOUT_MS = 60_000
+export const SCORE_TIMEOUT_MS = 10 * 60_000
 
 const SCORE_TIMEOUT_MESSAGE =
-  "The health score is taking longer than usual to calculate. Try again in a moment."
+  "The health score still isn't ready. Try again in a moment."
 
 export interface HealthReportState extends QueryState<HealthReport> {
   /**
@@ -44,6 +55,18 @@ export interface HealthReportState extends QueryState<HealthReport> {
    * very first request has not answered yet.
    */
   pending: boolean
+  /**
+   * The score has been pending for longer than usual ({@link SCORE_SLOW_MS}).
+   * Still waiting, not an error: the panel switches to its "taking longer"
+   * lines.
+   */
+  pendingSlow: boolean
+  /**
+   * A `reload` is out and has not answered yet. The dashboard reloads only
+   * when a scan finishes, so this is "the new numbers are on their way" — the
+   * report on screen is known to be stale while it is true (13H.4).
+   */
+  refreshing: boolean
 }
 
 export interface HealthReportOptions {
@@ -97,6 +120,7 @@ export function useHealthReport(
     data?: HealthReport
     error?: Error
     pending?: boolean
+    slow?: boolean
   }>()
 
   // Bumping this re-runs the effect without changing the key. Both forms also
@@ -104,8 +128,10 @@ export function useHealthReport(
   const [nonce, setNonce] = useState(0)
   // Reload and Retry must send a new request, not join one already out.
   const fresh = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
   const reload = useCallback(() => {
     fresh.current = true
+    setRefreshing(true)
     setNonce((n) => n + 1)
   }, [])
   const refetch = useCallback(() => {
@@ -131,7 +157,8 @@ export function useHealthReport(
     // A wall clock, not an attempt count: the deadline is what we promise the
     // user, and a slow API must not silently buy itself extra tries. It resets
     // whenever the key changes or Retry is pressed — each is a fresh wait.
-    const giveUpAt = Date.now() + SCORE_TIMEOUT_MS
+    const startedWaiting = Date.now()
+    const giveUpAt = startedWaiting + SCORE_TIMEOUT_MS
     let skipJoin = fresh.current
     fresh.current = false
 
@@ -143,6 +170,7 @@ export function useHealthReport(
           { fresh: skipJoin },
         )
         skipJoin = false
+        if (alive) setRefreshing(false)
         // Same report as on screen (same snapshot, same scores): keep the
         // state object, so nothing re-renders and no chart redraws.
         if (alive)
@@ -166,19 +194,25 @@ export function useHealthReport(
           noteWorkspaceMissing()
         }
         if (!isScorePending(error)) {
+          setRefreshing(false)
           setResult({ key, error })
           return
         }
 
         if (Date.now() >= giveUpAt) {
+          setRefreshing(false)
           setResult({ key, error: new Error(SCORE_TIMEOUT_MESSAGE) })
           return
         }
 
-        setResult({ key, pending: true })
+        const slow = Date.now() - startedWaiting >= SCORE_SLOW_MS
+        setResult({ key, pending: true, slow })
         // Chained, not an interval: the next ask is scheduled by the answer to
         // the last one, so a slow response can never stack up requests.
-        timer = setTimeout(() => void ask(), SCORE_POLL_MS)
+        timer = setTimeout(
+          () => void ask(),
+          slow ? SCORE_SLOW_POLL_MS : SCORE_POLL_MS,
+        )
       }
     }
 
@@ -199,6 +233,8 @@ export function useHealthReport(
     data: shown ? shown.data : undefined,
     error: settled ? result?.error : undefined,
     pending: settled ? (result?.pending ?? false) : false,
+    pendingSlow: settled ? Boolean(result?.pending && result.slow) : false,
+    refreshing: enabled && refreshing,
     loading: !shown,
     reload,
     refetch,

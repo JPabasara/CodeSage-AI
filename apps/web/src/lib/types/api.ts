@@ -1011,6 +1011,13 @@ export interface components {
          */
         FindingStatus: "open" | "accepted" | "resolved" | "false-positive";
         /**
+         * @description The pipeline stage of a running scan, in order. Each owns a band of the
+         *     progress bar: cloning 5–25, reading_code 25–60, finding_debt 60–70,
+         *     predicting_risk 70–85, scoring 85–97, finishing 97–100.
+         * @enum {string}
+         */
+        ScanStage: "cloning" | "reading_code" | "finding_debt" | "predicting_risk" | "scoring" | "finishing";
+        /**
          * @description Why a scan ended in `error` (13H.1). New members may be added; existing
          *     members never change meaning.
          *
@@ -1308,6 +1315,21 @@ export interface components {
              *     that was exceeded).
              */
             error_code?: components["schemas"]["ScanErrorCode"] | null;
+            /**
+             * @description Which pipeline stage a running scan is in (13H.4). Present only while
+             *     `phase` is `running`, and null when the worker has not reported one.
+             *     Additive: a client that ignores it still has `progress`.
+             */
+            stage?: components["schemas"]["ScanStage"] | null;
+            /** @description Java files read so far. Only during `reading_code`. */
+            files_done?: number | null;
+            /** @description Java files this scan will read. Only during `reading_code`. */
+            files_total?: number | null;
+            /**
+             * @description Median duration of this repository's last few finished scans, for
+             *     "Usually about 2 min". Null before its first finished scan.
+             */
+            typical_seconds?: number | null;
         };
         /** @description One row in the Scan-History view (FR-19). */
         ScanSummary: {
