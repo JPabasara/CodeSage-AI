@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -28,15 +29,27 @@ class ExtractionResult:
     method_metrics: list[MethodMetrics] = field(default_factory=list)
 
 
-def _extract_repository_comments(repository_path: Path) -> list[ExtractedComment]:
+#: Called as `on_file(files_done, files_total)` after each Java file is read.
+FileProgress = Callable[[int, int], None]
+
+
+def _extract_repository_comments(
+    repository_path: Path,
+    on_file: FileProgress | None = None,
+) -> list[ExtractedComment]:
     comments: list[ExtractedComment] = []
-    for path in sorted(repository_path.rglob("*.java")):
-        # A cloned symlink can point anywhere, including at /dev/zero.
-        if ".git" in path.parts or path.is_symlink():
-            continue
+    # A cloned symlink can point anywhere, including at /dev/zero.
+    paths = [
+        path
+        for path in sorted(repository_path.rglob("*.java"))
+        if ".git" not in path.parts and not path.is_symlink()
+    ]
+    for done, path in enumerate(paths, start=1):
         relative_path = path.relative_to(repository_path).as_posix()
         source_code = path.read_text(encoding="utf-8", errors="replace")
         comments.extend(extract_comments_from_file(relative_path, source_code))
+        if on_file is not None:
+            on_file(done, len(paths))
     return comments
 
 
@@ -44,11 +57,16 @@ def extract(
     repository_path: Path,
     commit_sha: str,
     committer_date: datetime,
+    on_file: FileProgress | None = None,
 ) -> ExtractionResult:
-    """Extract stored numeric facts plus transient SATD comment inputs."""
+    """Extract stored numeric facts plus transient SATD comment inputs.
+
+    `on_file` hears each Java file as the comment pass reads it — the one part
+    of extraction that walks files itself, so the one that can report them.
+    """
     ck_metrics = extract_ck_analysis(repository_path)
     process = extract_process_metrics(repository_path, commit_sha, committer_date)
-    comments = _extract_repository_comments(repository_path)
+    comments = _extract_repository_comments(repository_path, on_file)
 
     return ExtractionResult(
         static_metrics=ck_metrics.files,

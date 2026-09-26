@@ -11,7 +11,7 @@ from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import NotFound, ScanAlreadyRunning
 from codesage_api.integrations.github import fetch_branch
 from codesage_api.schemas import ScanStatusOut, ScanSummaryOut
-from codesage_api.scoring.enums import ScanErrorCode, ScanPhase
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
 from codesage_api.services import dashboard
 from codesage_api.tasks import progress
 
@@ -22,12 +22,16 @@ def _status_out(
 ) -> ScanStatusOut:
     phase = ScanPhase(attempt.status.value)
     failed = attempt.status == AnalysisStatus.ERROR
+    # Stage details mean something only while the worker is running; every
+    # other phase answers without asking Redis at all.
+    reading = progress.ProgressReading()
     if phase is ScanPhase.DONE:
         percent = 100
     elif phase in {ScanPhase.QUEUED, ScanPhase.ERROR, ScanPhase.CANCELLED}:
         percent = 0
     else:
-        percent = progress.read_progress(str(attempt.id))
+        reading = progress.read_status(str(attempt.id))
+        percent = reading.percent
 
     return ScanStatusOut(
         scan_id=str(attempt.id),
@@ -39,7 +43,19 @@ def _status_out(
         finished_at=(attempt.completion_time.isoformat() if attempt.completion_time else None),
         error=(attempt.failure_information if failed else None),
         error_code=_error_code(attempt.failure_code) if failed else None,
+        stage=_stage(reading.stage),
+        files_done=reading.files_done,
+        files_total=reading.files_total,
+        typical_seconds=reading.typical_seconds,
     )
+
+
+def _stage(stored: str | None) -> ScanStage | None:
+    """An unknown stage from a newer worker reads as "not reported"."""
+    try:
+        return ScanStage(stored) if stored else None
+    except ValueError:
+        return None
 
 
 def _error_code(stored: str | None) -> ScanErrorCode | None:

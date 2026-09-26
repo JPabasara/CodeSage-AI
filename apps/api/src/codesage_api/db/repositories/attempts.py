@@ -33,6 +33,38 @@ class WorkerScanInput:
     repository_url: str
     commit_sha: str
     branch_name: str
+    #: How long this repository's recent scans took, for "Usually about 2 min".
+    typical_seconds: int | None = None
+
+
+#: How many recent finished scans the typical duration is taken over.
+TYPICAL_SAMPLE = 5
+
+
+def typical_duration_seconds(session: Session, repository_id: uuid.UUID) -> int | None:
+    """The median duration of this repository's last few finished scans.
+
+    A median, not a mean: one scan that sat behind a slow ML call should not
+    make every later estimate pessimistic. None before the first finished scan.
+    """
+    rows = session.execute(
+        select(AnalysisAttempt.start_time, AnalysisAttempt.completion_time)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .where(
+            Branch.repository_id == repository_id,
+            AnalysisAttempt.status == AnalysisStatus.DONE,
+            AnalysisAttempt.start_time.is_not(None),
+            AnalysisAttempt.completion_time.is_not(None),
+        )
+        .order_by(AnalysisAttempt.completion_time.desc())
+        .limit(TYPICAL_SAMPLE)
+    ).all()
+    durations: list[float] = sorted(
+        (done - started).total_seconds() for started, done in rows if done >= started
+    )
+    if not durations:
+        return None
+    return round(durations[len(durations) // 2])
 
 
 class WorkspaceScanSlotBusy(Exception):
@@ -301,6 +333,7 @@ def begin_for_worker(
         attempt.branch.repository.url,
         attempt.commit_sha,
         attempt.branch.name,
+        typical_duration_seconds(session, attempt.branch.repository_id),
     )
 
 

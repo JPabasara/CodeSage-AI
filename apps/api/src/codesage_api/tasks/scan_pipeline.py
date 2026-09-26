@@ -15,6 +15,7 @@ matches the deployment view.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -70,7 +71,7 @@ from codesage_api.guardrails import (
     timed_out_message,
 )
 from codesage_api.logging import get_logger, scan_context
-from codesage_api.scoring.enums import ScanErrorCode
+from codesage_api.scoring.enums import ScanErrorCode, ScanStage
 from codesage_api.tasks import cancel, progress
 from codesage_api.tasks.app import celery_app
 from codesage_api.tasks.repository_clone import (
@@ -159,6 +160,22 @@ def _wait_for_slot(
     raise task.retry(countdown=_settings.scan_queue_retry_seconds, max_retries=None)
 
 
+#: Report at most this many file counts per scan, so a 10,000-file repository
+#: does not turn into 10,000 Redis writes.
+FILE_REPORTS_PER_SCAN = 50
+
+
+def _file_reporter(attempt_id: str) -> Callable[[int, int], None]:
+    """`on_file` for extraction: publish every ~2% of files, and the last one."""
+
+    def report(done: int, total: int) -> None:
+        step = max(1, total // FILE_REPORTS_PER_SCAN)
+        if done == total or done % step == 0:
+            progress.publish_files_done(attempt_id, done)
+
+    return report
+
+
 def _run_claimed(
     attempt_id: str,
     attempt_uuid: uuid.UUID,
@@ -175,7 +192,12 @@ def _run_claimed(
         if swept:
             logger.warning("Removed clones left by killed scans", extra={"count": swept})
 
-        progress.publish_progress(attempt_id, 5)
+        progress.publish_stage(
+            attempt_id,
+            ScanStage.CLONING,
+            5,
+            typical_seconds=scan_input.typical_seconds,
+        )
         cancel.check(attempt_id)
         cloned = clone_at_commit(
             scan_input.repository_url,
@@ -189,15 +211,21 @@ def _run_claimed(
             "Java sources are within the scan limits",
             extra={"java_files": inventory.files, "java_lines": inventory.lines},
         )
-        progress.publish_progress(attempt_id, 25)
+        progress.publish_stage(
+            attempt_id,
+            ScanStage.READING_CODE,
+            25,
+            files_total=inventory.files,
+        )
         cancel.check(attempt_id)
 
         extracted = extract(
             cloned.path,
             cloned.commit_sha,
             cloned.committer_date,
+            on_file=_file_reporter(attempt_id),
         )
-        progress.publish_progress(attempt_id, 60)
+        progress.publish_stage(attempt_id, ScanStage.FINDING_DEBT, 60)
         cancel.check(attempt_id)
 
         findings = detect(
@@ -217,6 +245,7 @@ def _run_claimed(
         )
 
         # ML-2 Risk Model prediction with graceful degradation
+        progress.publish_stage(attempt_id, ScanStage.PREDICTING_RISK, 70)
         risk_result: RiskClientResult | None = None
         try:
             process_by_path = {
@@ -253,7 +282,7 @@ def _run_claimed(
                 extra={"comment_count": len(comments)},
             )
             satd_predictions = []
-        progress.publish_progress(attempt_id, 80)
+        progress.publish_stage(attempt_id, ScanStage.SCORING, 85)
         cancel.check(attempt_id)
 
         snapshot_id = _finalize(
@@ -263,7 +292,7 @@ def _run_claimed(
                 extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions
             ),
         )
-        progress.publish_progress(attempt_id, 100)
+        progress.publish_stage(attempt_id, ScanStage.FINISHING, 97)
         try:
             celery_app.send_task(
                 "codesage.warm_snapshot_score",

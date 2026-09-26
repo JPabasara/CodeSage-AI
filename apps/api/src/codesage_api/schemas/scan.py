@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from codesage_api.schemas.base import ApiModel
-from codesage_api.scoring.enums import Grade, ScanErrorCode, ScanPhase
+from codesage_api.scoring.enums import Grade, ScanErrorCode, ScanPhase, ScanStage
 
 
 class StartScanIn(ApiModel):
@@ -25,6 +25,13 @@ class ScanStatusOut(ApiModel):
     # Why it failed, when the reason is one the user can act on (13H.1). Absent
     # for unexpected failures and for every phase but `error`.
     error_code: ScanErrorCode | None = None
+    # 13H.4, all optional and only while `running`: which stage the worker is
+    # in, how many Java files it has read so far, and how long this repository's
+    # recent scans usually took. Older clients ignore them.
+    stage: ScanStage | None = None
+    files_done: int | None = Field(default=None, ge=0)
+    files_total: int | None = Field(default=None, ge=0)
+    typical_seconds: int | None = Field(default=None, ge=0)
 
 
 class ScanSummaryOut(ApiModel):

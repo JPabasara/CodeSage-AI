@@ -1623,6 +1623,14 @@ components:
         filter on. The v1.1 accept / resolve / false-positive actions will set them.
       enum: [open, accepted, resolved, false-positive]
 
+    ScanStage:
+      type: string
+      description: |
+        The pipeline stage of a running scan, in order. Each owns a band of the
+        progress bar: cloning 5–25, reading_code 25–60, finding_debt 60–70,
+        predicting_risk 70–85, scoring 85–97, finishing 97–100.
+      enum: [cloning, reading_code, finding_debt, predicting_risk, scoring, finishing]
+
     ScanErrorCode:
       type: string
       description: |
@@ -1999,6 +2007,28 @@ components:
           oneOf:
             - $ref: '#/components/schemas/ScanErrorCode'
             - type: 'null'
+        stage:
+          description: |
+            Which pipeline stage a running scan is in (13H.4). Present only while
+            `phase` is `running`, and null when the worker has not reported one.
+            Additive: a client that ignores it still has `progress`.
+          oneOf:
+            - $ref: '#/components/schemas/ScanStage'
+            - type: 'null'
+        files_done:
+          type: [integer, 'null']
+          minimum: 0
+          description: Java files read so far. Only during `reading_code`.
+        files_total:
+          type: [integer, 'null']
+          minimum: 0
+          description: Java files this scan will read. Only during `reading_code`.
+        typical_seconds:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Median duration of this repository's last few finished scans, for
+            "Usually about 2 min". Null before its first finished scan.
 
     ScanSummary:
       type: object

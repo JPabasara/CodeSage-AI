@@ -41,6 +41,7 @@ from codesage_api.guardrails import (
     timed_out_message,
 )
 from codesage_api.scoring.enums import Category, ScanErrorCode
+from codesage_api.tasks import scan_pipeline
 from codesage_api.tasks.cancel import ScanCancelled
 from codesage_api.tasks.repository_clone import CloneError, CloneTimedOut
 from codesage_api.tasks.scan_pipeline import PipelineResults, _finalize, run_scan
@@ -551,7 +552,8 @@ class _Run:
             "celery_app.send_task": Mock(),
             "cancel.check": Mock(),
             "cancel.cleanup": Mock(),
-            "progress.publish_progress": Mock(),
+            "progress.publish_stage": Mock(),
+            "progress.publish_files_done": Mock(),
             "progress.is_cancel_requested": Mock(return_value=False),
             "progress.clear": Mock(),
         }
@@ -709,3 +711,53 @@ def test_an_attempt_that_already_ended_is_not_restarted(scan: _Run) -> None:
 def test_the_scan_task_carries_both_time_limits() -> None:
     assert run_scan.soft_time_limit == 14 * 60
     assert run_scan.time_limit == 15 * 60
+
+
+# ── 13H.4: named stages, file counts and the typical duration ──────────────
+
+
+def test_every_stage_is_published_in_order_with_its_band_start(scan: _Run) -> None:
+    scan["attempts.begin_for_worker"].return_value = WorkerScanInput(
+        "https://github.com/example/repo.git", "a" * 40, "main", typical_seconds=130
+    )
+    with patch(
+        f"{_PIPELINE}.check_java_sources",
+        return_value=SimpleNamespace(files=1240, lines=90_000),
+    ):
+        scan()
+
+    calls = scan["progress.publish_stage"].call_args_list
+    assert [(c.args[1], c.args[2]) for c in calls] == [
+        ("cloning", 5),
+        ("reading_code", 25),
+        ("finding_debt", 60),
+        ("predicting_risk", 70),
+        ("scoring", 85),
+        ("finishing", 97),
+    ]
+    # The typical duration rides on the first stage; the file total on reading.
+    assert calls[0].kwargs == {"typical_seconds": 130}
+    assert calls[1].kwargs == {"files_total": 1240}
+    # Extraction was handed a file reporter.
+    assert callable(scan["extract"].call_args.kwargs["on_file"])
+
+
+def test_the_file_reporter_publishes_about_fifty_counts_and_always_the_last() -> None:
+    with patch(f"{_PIPELINE}.progress.publish_files_done") as publish:
+        report = scan_pipeline._file_reporter("scan-id")
+        for done in range(1, 1001):
+            report(done, 1000)
+
+    published = [c.args[1] for c in publish.call_args_list]
+    assert len(published) == scan_pipeline.FILE_REPORTS_PER_SCAN
+    assert published[-1] == 1000
+    assert published == sorted(published)
+
+
+def test_a_tiny_repository_reports_every_file() -> None:
+    with patch(f"{_PIPELINE}.progress.publish_files_done") as publish:
+        report = scan_pipeline._file_reporter("scan-id")
+        for done in range(1, 4):
+            report(done, 3)
+
+    assert [c.args[1] for c in publish.call_args_list] == [1, 2, 3]

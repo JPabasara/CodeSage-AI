@@ -177,3 +177,43 @@ def test_the_status_endpoint_reads_back_the_stored_code(account) -> None:
 
     assert status.error == "No Java files on this branch."
     assert status.error_code is not None and status.error_code.value == "NO_JAVA_FILES"
+
+
+# ── 13H.4: "Usually about 2 min" ────────────────────────────────────────────
+
+
+def test_the_typical_duration_is_the_median_of_recent_finished_scans(account) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    base = datetime.now(UTC) - timedelta(days=1)
+    ids = _seed(
+        engine,
+        user_id,
+        workspace_id,
+        [(AnalysisStatus.DONE, base + timedelta(hours=i)) for i in range(3)]
+        + [(AnalysisStatus.ERROR, base), (AnalysisStatus.QUEUED, None)],
+    )
+    # 60s, 120s and one slow 900s run: the median ignores the outlier. The
+    # failed scan's hour-long run is not a typical scan at all.
+    with Session(engine) as db:
+        for attempt_id, seconds in zip(ids, [60, 120, 900, 3600], strict=False):
+            attempt = db.get(AnalysisAttempt, attempt_id)
+            attempt.completion_time = attempt.start_time + timedelta(seconds=seconds)
+        repository_id = db.get(AnalysisAttempt, ids[0]).branch.repository_id
+        db.commit()
+
+    with _as_app(engine, workspace_id) as db:
+        assert attempts.typical_duration_seconds(db, repository_id) == 120
+        # And the worker hands it on with the claimed scan.
+        claimed = attempts.begin_for_worker(db, workspace_id, ids[4])
+        db.commit()
+    assert claimed is not None and claimed.typical_seconds == 120
+
+
+def test_a_repository_never_scanned_has_no_typical_duration(account) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    (queued,) = _seed(engine, user_id, workspace_id, [(AnalysisStatus.QUEUED, None)])
+    with Session(engine) as db:
+        repository_id = db.get(AnalysisAttempt, queued).branch.repository_id
+
+    with _as_app(engine, workspace_id) as db:
+        assert attempts.typical_duration_seconds(db, repository_id) is None

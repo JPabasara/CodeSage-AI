@@ -9,8 +9,9 @@ import pytest
 from codesage_api.db.enums import AnalysisStatus
 from codesage_api.errors import NotFound
 from codesage_api.integrations.github import GitHubBranch
-from codesage_api.scoring.enums import ScanErrorCode, ScanPhase
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
 from codesage_api.services import analysis
+from codesage_api.tasks import progress
 
 
 def _branch() -> SimpleNamespace:
@@ -117,11 +118,14 @@ def test_start_rejects_repository_removed_before_scan_lock(
     attempt_repository.get_branch.assert_not_called()
 
 
-@patch("codesage_api.services.analysis.progress.read_progress", return_value=47)
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=47),
+)
 @patch("codesage_api.services.analysis.attempts")
 def test_get_status_reads_durable_phase_and_ephemeral_progress(
     attempt_repository: Mock,
-    read_progress: Mock,
+    read_status: Mock,
 ) -> None:
     running = _attempt(AnalysisStatus.RUNNING)
     attempt_repository.get_for_repository.return_value = running
@@ -130,7 +134,7 @@ def test_get_status_reads_durable_phase_and_ephemeral_progress(
 
     assert result.phase is ScanPhase.RUNNING
     assert result.progress == 47
-    read_progress.assert_called_once_with(str(running.id))
+    read_status.assert_called_once_with(str(running.id))
 
 
 @pytest.mark.parametrize(
@@ -143,7 +147,10 @@ def test_get_status_reads_durable_phase_and_ephemeral_progress(
         (AnalysisStatus.CANCELLED, ScanPhase.CANCELLED, 0),
     ],
 )
-@patch("codesage_api.services.analysis.progress.read_progress", return_value=47)
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=47),
+)
 @patch("codesage_api.services.analysis.attempts")
 def test_status_maps_every_database_phase(
     attempt_repository: Mock,
@@ -232,7 +239,10 @@ def test_a_guardrail_failure_reports_its_code_next_to_its_sentence(
     "status",
     [AnalysisStatus.QUEUED, AnalysisStatus.RUNNING, AnalysisStatus.DONE, AnalysisStatus.CANCELLED],
 )
-@patch("codesage_api.services.analysis.progress.read_progress", return_value=0)
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(),
+)
 @patch("codesage_api.services.analysis.attempts")
 def test_error_code_is_absent_for_every_phase_but_error(
     attempt_repository: Mock,
@@ -314,3 +324,67 @@ def test_start_ends_abandoned_scans_before_the_already_running_check(
     analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
 
     assert calls == ["expire", "active?"]
+
+
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(
+        percent=31,
+        stage="reading_code",
+        files_done=120,
+        files_total=1240,
+        typical_seconds=130,
+    ),
+)
+@patch("codesage_api.services.analysis.attempts")
+def test_a_running_scan_reports_its_stage_file_counts_and_typical_duration(
+    attempt_repository: Mock,
+    _read_status: Mock,
+) -> None:
+    running = _attempt(AnalysisStatus.RUNNING)
+    attempt_repository.get_for_repository.return_value = running
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
+
+    assert result.stage is ScanStage.READING_CODE
+    assert (result.files_done, result.files_total) == (120, 1240)
+    assert result.typical_seconds == 130
+
+
+@pytest.mark.parametrize(
+    "status",
+    [AnalysisStatus.QUEUED, AnalysisStatus.DONE, AnalysisStatus.ERROR, AnalysisStatus.CANCELLED],
+)
+@patch("codesage_api.services.analysis.progress.read_status")
+@patch("codesage_api.services.analysis.attempts")
+def test_stage_details_are_absent_unless_running(
+    attempt_repository: Mock,
+    read_status: Mock,
+    status: AnalysisStatus,
+) -> None:
+    attempt = _attempt(status)
+    attempt_repository.get_for_repository.return_value = attempt
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
+
+    assert result.stage is None
+    assert result.files_done is None and result.files_total is None
+    read_status.assert_not_called()
+
+
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=40, stage="a_stage_from_the_future"),
+)
+@patch("codesage_api.services.analysis.attempts")
+def test_an_unknown_stage_reads_as_not_reported_never_a_500(
+    attempt_repository: Mock,
+    _read_status: Mock,
+) -> None:
+    running = _attempt(AnalysisStatus.RUNNING)
+    attempt_repository.get_for_repository.return_value = running
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
+
+    assert result.stage is None
+    assert result.progress == 40
