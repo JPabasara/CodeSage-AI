@@ -11,12 +11,26 @@ from codesage_api.authorization.routes import repository_context
 from codesage_api.authorization.context import AuthorizationContext
 from codesage_api.deps import get_authorization_context, get_current_user_id, get_db, get_workspace_id
 from codesage_api.main import create_app
-from codesage_api.schemas import ScanStatusOut
+from codesage_api.schemas import ActivityOut, ScanStatusOut
 from codesage_api.scoring.enums import ScanPhase
 from codesage_api.services import analysis
 
 
-def _client() -> tuple[TestClient, MagicMock, uuid.UUID]:
+_EVERY_PERMISSION = frozenset(
+    {
+        "project:read",
+        "repository:connect",
+        "profile:read",
+        "profile:update",
+        "history:read",
+        "result:read",
+    }
+)
+
+
+def _client(
+    permissions: frozenset[str] = _EVERY_PERMISSION,
+) -> tuple[TestClient, MagicMock, uuid.UUID]:
     app = create_app()
     db = MagicMock(spec=Session)
     workspace_id = uuid.uuid4()
@@ -29,10 +43,7 @@ def _client() -> tuple[TestClient, MagicMock, uuid.UUID]:
     app.dependency_overrides[get_db] = database
     app.dependency_overrides[get_authorization_context] = lambda: AuthorizationContext(
         user_id=uuid.uuid4(), workspace_id=workspace_id, membership_id=uuid.uuid4(),
-        role_id="org-admin", permissions=frozenset({
-            "project:read", "repository:connect", "profile:read", "profile:update", "history:read",
-            "result:read",
-        }),
+        role_id="org-admin", permissions=permissions,
     )
     app.dependency_overrides[repository_context] = app.dependency_overrides[get_authorization_context]
     return TestClient(app), db, workspace_id
@@ -136,3 +147,35 @@ def test_service_finds_the_active_scan_per_branch_or_across_the_repository(
         pass
     else:
         raise AssertionError("an unknown branch must be a 404")
+
+
+def test_activity_lists_the_workspace_work_in_progress(monkeypatch) -> None:
+    client, db, workspace_id = _client()
+    calls: list[tuple[object, uuid.UUID]] = []
+
+    def list_activity(session, workspace):
+        calls.append((session, workspace))
+        return ActivityOut(scans=[], rescoring=[])
+
+    monkeypatch.setattr(analysis, "list_activity", list_activity)
+
+    with client:
+        response = client.get("/api/activity")
+
+    assert response.status_code == 200
+    # Both lists are always present, even when nothing runs.
+    assert response.json() == {"scans": [], "rescoring": []}
+    assert calls == [(db, workspace_id)]
+
+
+def test_activity_needs_result_read(monkeypatch) -> None:
+    """A member who may not read results must not learn what is being scanned."""
+    client, _db, _workspace_id = _client(frozenset({"project:read"}))
+    list_activity = MagicMock(side_effect=AssertionError("reached the service"))
+    monkeypatch.setattr(analysis, "list_activity", list_activity)
+
+    with client:
+        response = client.get("/api/activity")
+
+    assert response.status_code == 403
+    list_activity.assert_not_called()

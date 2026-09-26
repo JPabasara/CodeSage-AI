@@ -37,9 +37,18 @@ from codesage_api.schemas.profile import (
     UpdateProfileIn,
 )
 from codesage_api.schemas.repo import ConnectRepoIn, LatestHealthOut, RepoOut
-from codesage_api.schemas.scan import ScanStatusOut, ScanSummaryOut, StartScanIn
+from codesage_api.schemas.scan import (
+    ActiveScanOut,
+    ActivityOut,
+    RescoringOut,
+    ScanStatusOut,
+    ScanSummaryOut,
+    StartScanIn,
+)
 
 __all__ = [
+    "ActiveScanOut",
+    "ActivityOut",
     "ApiModel",
     "BranchOut",
     "CategoryBreakdownItemOut",
@@ -55,6 +64,7 @@ __all__ = [
     "LatestHealthOut",
     "ProjectProfileOut",
     "RepoOut",
+    "RescoringOut",
     "ScanStatusOut",
     "ScanSummaryOut",
     "ScoreProfileIn",
