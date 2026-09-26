@@ -15,6 +15,7 @@ import {
   readPendingInvitation,
   savePendingInvitation,
 } from "@/lib/pending-invitation"
+import { signInHref } from "@/lib/sign-in"
 import { useSession } from "@/hooks/use-session"
 import { useWorkspaceSwitch } from "@/hooks/use-workspace"
 
@@ -36,9 +37,10 @@ export default function AcceptInvitationPage() {
  * `/invitations/accept?token=…` — the link in an invitation email.
  *
  * Public in the middleware on purpose: a signed-out visitor must reach this page
- * so the token can be kept (in this tab's sessionStorage) before sign-in leaves
- * for the identity provider. The token is then scrubbed from the address bar, so
- * it does not sit in history or leak through a Referer.
+ * so its sign-in link can carry the token back here as `return_to`. The token is
+ * also kept in this tab's sessionStorage (a fallback for one release) and then
+ * scrubbed from the address bar, so it does not sit in history or leak through
+ * a Referer.
  */
 function AcceptInvitation() {
   const router = useRouter()
@@ -120,8 +122,18 @@ function AcceptInvitation() {
         title="Sign in to accept your invitation"
         body="Sign in with the email address the invitation was sent to. You will come back here to finish joining."
       >
+        {/* Straight to sign-in, carrying this page as `return_to`. The API keeps
+            it in its signed handshake cookie, so the invitee lands back here
+            even from the email-verification tab, which has none of this tab's
+            sessionStorage. A plain <a>: this leaves the app. */}
         <Button asChild>
-          <Link href="/login">Sign in</Link>
+          <a
+            href={signInHref(
+              `/invitations/accept?${new URLSearchParams({ token })}`,
+            )}
+          >
+            Sign in
+          </a>
         </Button>
       </Shell>
     )

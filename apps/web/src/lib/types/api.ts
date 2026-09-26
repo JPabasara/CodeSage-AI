@@ -23,6 +23,13 @@ export interface paths {
          *
          *     The path carries no provider name: which identity provider the user picks
          *     is Asgardeo's business, not this API's.
+         *
+         *     **Where to land afterwards.** `return_to` is kept inside the signed
+         *     handshake cookie, never in the URL sent to Asgardeo, so Asgardeo's
+         *     exact-URL checks are unaffected. Without one, a `return_to` from an
+         *     unfinished sign-in in the same browser (up to an hour old) is carried
+         *     forward. That is how the email-verification tab, which opens this URL
+         *     fresh, still ends on the invitation the user came from.
          */
         get: operations["begin_sign_in"];
         put?: never;
@@ -1803,7 +1810,24 @@ export type $defs = Record<string, never>;
 export interface operations {
     begin_sign_in: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description A relative path to open after sign-in. Only `/invitations/accept`,
+                 *     `/projects`, `/dashboard` and paths under `/dashboard/`, `/profiles`
+                 *     and `/workspace` are accepted, with an optional query. Anything else
+                 *     (an absolute URL, `//host`, a backslash, an encoded `//` or `..`, an
+                 *     unlisted path) is **ignored, not refused**, so there is no open
+                 *     redirect and no error page.
+                 * @example /invitations/accept?token=…
+                 */
+                return_to?: string;
+                /**
+                 * @description Set only by the callback's one silent retry. It marks this sign-in's
+                 *     `state`, so a retry that fails again ends on the login page instead
+                 *     of looping. Clients never send it.
+                 */
+                retry?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1840,25 +1864,27 @@ export interface operations {
         requestBody?: never;
         responses: {
             /**
-             * @description Session established. Redirects to the Projects page. Sets the session
-             *     cookie with `HttpOnly`, `Secure`, `SameSite=Lax`.
+             * @description One of three redirects:
+             *
+             *     - **Session established.** Redirects to the `return_to` given at
+             *       `/api/auth/login` (checked against the allowlist again), otherwise
+             *       to the Projects page. Sets the session cookie with `HttpOnly`,
+             *       `Secure`, `SameSite=Lax`.
+             *     - **Handshake missing, expired or mismatched** (typically: the user
+             *       verified their email in another tab, or took longer than ten
+             *       minutes). Restarts sign-in once, silently, at
+             *       `/api/auth/login?retry=true`. The user still has an Asgardeo
+             *       session, so no password is asked.
+             *     - **The retry failed as well, or the code exchange was refused.**
+             *       Redirects to `/login?error=expired|invalid|failed`. The retry is
+             *       marked in `state`, which Asgardeo echoes back, so it can never
+             *       loop, even in a browser that keeps no cookies.
              */
             302: {
                 headers: {
                     Location?: string;
                     /** @example codesage_session=…; HttpOnly; Secure; SameSite=Lax; Path=/ */
                     "Set-Cookie"?: string;
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /**
-             * @description The `state` did not validate, or the code exchange failed. Redirects to
-             *     the login page with an error rather than rendering a JSON body — the
-             *     caller here is a browser mid-navigation, not a script.
-             */
-            400: {
-                headers: {
                     [name: string]: unknown;
                 };
                 content?: never;

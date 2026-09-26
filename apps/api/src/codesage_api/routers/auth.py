@@ -5,11 +5,11 @@ import hashlib
 import secrets
 import uuid
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import RedirectResponse
-from itsdangerous import BadSignature, URLSafeTimedSerializer
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.authorization.context import AuthorizationContext
@@ -37,13 +37,23 @@ from codesage_api.services import auth as auth_service
 from codesage_api.services.memberships import (
     resolve_authorization_context,
 )
+from codesage_api.services.return_to import safe_return_to
 
 public_router = APIRouter(prefix="/auth", tags=["auth"])
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 HANDSHAKE_COOKIE = "codesage_signin"
+#: How long `state` and the PKCE verifier are honoured.
 HANDSHAKE_SECONDS = 600
+#: How long the browser keeps the handshake cookie, so the `return_to` inside it
+#: outlives a slow email verification. The callback still refuses a handshake
+#: older than HANDSHAKE_SECONDS; only `return_to` is read from an older one.
+RETURN_TO_SECONDS = 3600
+#: Appended to `state` on the one silent retry. `state` is echoed back by the
+#: identity provider, so this marker survives a browser that keeps no cookies at
+#: all, where a cookie-based guard would itself be lost and the retry would loop.
+RETRY_STATE_SUFFIX = ".retry"
 WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
 
 
@@ -67,10 +77,21 @@ def _signer() -> URLSafeTimedSerializer:
 
 
 @public_router.get("/login")
-def begin_sign_in() -> RedirectResponse:
+def begin_sign_in(
+    request: Request,
+    return_to: str | None = None,
+    retry: bool = False,
+) -> RedirectResponse:
     """Send the browser to Asgardeo to sign in.
 
     This is a navigation, not a fetch — the browser has to leave the page.
+
+    `return_to` is where to land afterwards, from a short allowlist; anything
+    else is ignored. It travels inside the signed handshake cookie, never in a
+    URL Asgardeo sees, so its exact-URL checks are unaffected. Without one, a
+    `return_to` from an earlier, unfinished sign-in in this browser is carried
+    forward: that is how the email-verification tab, which starts a fresh
+    sign-in, still ends on the invitation the user came from.
     """
     settings = get_settings()
 
@@ -81,7 +102,8 @@ def begin_sign_in() -> RedirectResponse:
     if not settings.asgardeo_base_url or not settings.asgardeo_client_id:
         raise MisconfiguredSignIn
 
-    state = secrets.token_urlsafe(32)
+    destination = safe_return_to(return_to) or _pending_return_to(request)
+    state = secrets.token_urlsafe(32) + (RETRY_STATE_SUFFIX if retry else "")
     verifier = secrets.token_urlsafe(64)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -102,16 +124,31 @@ def begin_sign_in() -> RedirectResponse:
         f"{settings.asgardeo_base_url}/oauth2/authorize?{query}",
         status_code=status.HTTP_302_FOUND,
     )
+    handshake: dict[str, str] = {"state": state, "verifier": verifier}
+    if destination:
+        handshake["return_to"] = destination
     response.set_cookie(
         key=HANDSHAKE_COOKIE,
-        value=_signer().dumps({"state": state, "verifier": verifier}),
+        value=_signer().dumps(handshake),
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
-        max_age=HANDSHAKE_SECONDS,
+        max_age=RETURN_TO_SECONDS,
         path="/api/auth",
     )
     return response
+
+
+def _pending_return_to(request: Request) -> str | None:
+    """`return_to` from an unfinished sign-in in this browser, if any."""
+    handshake = request.cookies.get(HANDSHAKE_COOKIE)
+    if not handshake:
+        return None
+    try:
+        issued = _signer().loads(handshake, max_age=RETURN_TO_SECONDS)
+    except BadSignature:
+        return None
+    return safe_return_to(issued.get("return_to")) if isinstance(issued, dict) else None
 
 
 @public_router.get("/callback")
@@ -119,15 +156,22 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
 
     settings = get_settings()
 
+    # A missing, expired or mismatched handshake is usually not an attack: the
+    # user verified their email in another tab, took longer than ten minutes, or
+    # started a second sign-in. Restart once, silently: they already have an
+    # Asgardeo session, so no password is asked. The retry marks its `state`,
+    # and a retry that fails again goes to the login page, so it cannot loop.
     handshake = request.cookies.get(HANDSHAKE_COOKIE)
     if not handshake:
-        return _back_to_login("expired")
+        return _retry_or_back_to_login(state, "expired")
     try:
         issued = _signer().loads(handshake, max_age=HANDSHAKE_SECONDS)
+    except SignatureExpired:
+        return _retry_or_back_to_login(state, "expired")
     except BadSignature:
-        return _back_to_login("invalid")
+        return _retry_or_back_to_login(state, "invalid")
     if not secrets.compare_digest(issued["state"], state):
-        return _back_to_login("invalid")
+        return _retry_or_back_to_login(state, "invalid")
 
     try:
         claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
@@ -145,11 +189,14 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
-    # Everyone lands in the app. A user with no workspace yet is still signed in,
-    # and the web shows each page's "create a workspace" state instead of a
-    # separate onboarding screen; it sends no workspace-bound request meanwhile.
+    # Everyone lands in the app: on `return_to` when sign-in began with one (an
+    # invitation, say), otherwise on /projects. A user with no workspace yet is
+    # still signed in, and the web shows each page's "create a workspace" state
+    # instead of a separate onboarding screen.
+    destination = safe_return_to(issued.get("return_to")) or "/projects"
     response = RedirectResponse(
-        f"{settings.frontend_base_url}/projects", status_code=status.HTTP_302_FOUND
+        f"{settings.frontend_base_url.rstrip('/')}{destination}",
+        status_code=status.HTTP_302_FOUND,
     )
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -163,6 +210,20 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     )
     response.delete_cookie(HANDSHAKE_COOKIE, path="/api/auth")
     return response
+
+
+def _retry_or_back_to_login(state: str, reason: str) -> RedirectResponse:
+    if state.endswith(RETRY_STATE_SUFFIX):
+        return _back_to_login(reason)
+    # Back to our own /login on the host the callback is served from, which is
+    # the configured redirect URI's host. The old handshake cookie is left in
+    # place so the new sign-in can carry its `return_to` forward.
+    callback = urlsplit(get_settings().asgardeo_redirect_uri)
+    login_path = callback.path.removesuffix("/callback") + "/login"
+    return RedirectResponse(
+        urlunsplit((callback.scheme, callback.netloc, login_path, "retry=true", "")),
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 def _back_to_login(reason: str) -> RedirectResponse:

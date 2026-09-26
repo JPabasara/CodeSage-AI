@@ -80,9 +80,15 @@ test("signed out: the token is kept and sign-in is offered", async () => {
   expect(
     await screen.findByRole("heading", { name: /sign in to accept/i }),
   ).toBeVisible()
-  expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
-    "href",
-    "/login",
+  // Straight to sign-in, with this page (token included) as `return_to`, so the
+  // invitee comes back here even from the email-verification tab.
+  const href = screen
+    .getByRole("link", { name: "Sign in" })
+    .getAttribute("href")
+  const signIn = new URL(href ?? "")
+  expect(signIn.pathname).toBe("/api/auth/login")
+  expect(signIn.searchParams.get("return_to")).toBe(
+    `/invitations/accept?token=${MOCK_INVITATION_TOKEN}`,
   )
   expect(readPendingInvitation()).toBe(MOCK_INVITATION_TOKEN)
   expect(accept).not.toHaveBeenCalled()
