@@ -492,6 +492,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         scannedAt={report?.scanned_at}
         snapshotLoading={!report && !error}
         snapshotNavigation={snapshotNavigation}
+        profileName={report?.profile}
         scan={{
           phase: trackedScan?.status.phase ?? "idle",
           progress:

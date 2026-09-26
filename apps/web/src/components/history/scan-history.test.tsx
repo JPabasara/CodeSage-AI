@@ -202,3 +202,15 @@ test("the heading names the project the history belongs to", async () => {
     await within(header).findByText("acme/acme-payments"),
   ).toBeInTheDocument()
 })
+
+test("says which profile every row is scored with, and where to change it", async () => {
+  render(<ScanHistory repoId={DEMO_REPO_ID} />)
+  const line = await screen.findByTestId("history-profile")
+  // The mock project inherits the workspace default, Balanced.
+  expect(line).toHaveTextContent(
+    "All scans are shown under the Balanced profile — change it in Profiles.",
+  )
+  expect(
+    within(line).getByRole("link", { name: "change it in Profiles" }),
+  ).toHaveAttribute("href", "/profiles")
+})
