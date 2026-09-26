@@ -831,7 +831,26 @@ paths:
                 detail: A scan is already running for this branch.
                 code: SCAN_ALREADY_RUNNING
         '422': { $ref: '#/components/responses/ValidationFailed' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+        '429':
+          description: |
+            Either GitHub's request limit was reached (`RATE_LIMITED`), or this
+            workspace already has as many scans waiting as it may
+            (`SCAN_QUEUE_FULL`, default 5). Joining a running scan and "nothing
+            new to scan" never count against the queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              examples:
+                queue_full:
+                  summary: Too many scans waiting in this workspace
+                  value:
+                    detail: 5 scans are already waiting in this workspace. Try again when one finishes.
+                    code: SCAN_QUEUE_FULL
+                rate_limited:
+                  summary: GitHub's request limit
+                  value:
+                    detail: GitHub's request limit has been reached. Please try again later.
+                    code: RATE_LIMITED
 
   /api/repos/{repo_id}/scan/active:
     parameters:
@@ -1558,6 +1577,7 @@ components:
         - REPOSITORY_SCAN_RUNNING # 409
         - SCAN_ALREADY_RUNNING    # 409
         - SCAN_NOT_CANCELLABLE    # 409
+        - SCAN_QUEUE_FULL         # 429
         - PROFILE_LIMIT_REACHED   # 409
         - PROFILE_BUILT_IN        # 409
         - PROFILE_IN_USE          # 409

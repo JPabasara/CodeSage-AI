@@ -267,6 +267,35 @@ def expire_stale_running(session: Session, workspace_id: uuid.UUID) -> int:
     return int(getattr(result, "rowcount", 0) or 0)
 
 
+def lock_workspace_queue(session: Session, workspace_id: uuid.UUID) -> None:
+    """Serialise "count the queue, then add to it" per workspace.
+
+    Transaction-scoped: released by the commit that inserts the new attempt,
+    or by the rollback of a refused one. Without it two presses at the same
+    moment could both see four waiting and both become the fifth.
+    """
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"codesage:scan-queue:{workspace_id}"},
+    )
+
+
+def count_queued_in_workspace(session: Session, workspace_id: uuid.UUID) -> int:
+    """Scans waiting for a slot in this workspace — queued, not yet running."""
+    return int(
+        session.scalar(
+            select(func.count(AnalysisAttempt.id))
+            .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+            .join(Repository, Branch.repository_id == Repository.id)
+            .where(
+                Repository.workspace_id == workspace_id,
+                AnalysisAttempt.status == AnalysisStatus.QUEUED,
+            )
+        )
+        or 0
+    )
+
+
 def count_running_in_workspace(
     session: Session,
     workspace_id: uuid.UUID,

@@ -4,11 +4,12 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from codesage_api.config import get_settings
 from codesage_api.db.enums import AnalysisStatus
 from codesage_api.db.models import AnalysisAttempt
 from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
-from codesage_api.errors import NotFound, ScanAlreadyRunning
+from codesage_api.errors import NotFound, ScanAlreadyRunning, ScanQueueFull
 from codesage_api.integrations.github import fetch_branch
 from codesage_api.schemas import ScanStatusOut, ScanSummaryOut
 from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
@@ -102,6 +103,15 @@ def start(
     # check if there is new commit
     if completed is not None and completed.commit_sha == remote_branch.head_commit_sha:
         return _status_out(completed, stored_branch.name)
+
+    # The workspace's queue is capped. Checked last — joining a running scan
+    # and "nothing new to scan" are answers, not queue entries — and under a
+    # per-workspace lock held until the commit below, so two presses at the
+    # same moment cannot both take the last place.
+    attempts.lock_workspace_queue(session, workspace_id)
+    limit = get_settings().max_queued_scans_per_workspace
+    if attempts.count_queued_in_workspace(session, workspace_id) >= limit:
+        raise ScanQueueFull(limit)
 
     attempt = attempts.create_queued(
         session,

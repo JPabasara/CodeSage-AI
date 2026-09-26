@@ -960,7 +960,7 @@ export interface components {
          *     apart from nonsense ones.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "SCAN_QUEUE_FULL" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -2506,7 +2506,20 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationFailed"];
-            429: components["responses"]["RateLimited"];
+            /**
+             * @description Either GitHub's request limit was reached (`RATE_LIMITED`), or this
+             *     workspace already has as many scans waiting as it may
+             *     (`SCAN_QUEUE_FULL`, default 5). Joining a running scan and "nothing
+             *     new to scan" never count against the queue.
+             */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     get_active_scan: {

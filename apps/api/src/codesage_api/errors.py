@@ -159,6 +159,21 @@ class ScanAlreadyRunning(CodeSageError):
     message = "A scan is already running for this branch."
 
 
+class ScanQueueFull(CodeSageError):
+    """The workspace already has as many scans waiting as it may."""
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "SCAN_QUEUE_FULL"
+
+    def __init__(self, limit: int) -> None:
+        waiting = "1 scan is" if limit == 1 else f"{limit} scans are"
+        self.message = (
+            f"{waiting} already waiting in this workspace. "
+            "Try again when one finishes."
+        )
+        super().__init__(self.message)
+
+
 class ScorePending(CodeSageError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     code = "SCORE_PENDING"
