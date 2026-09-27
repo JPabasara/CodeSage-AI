@@ -12,6 +12,9 @@ The current production stack is:
 - Neon Postgres outside the app host
 - Upstash Redis outside the app host
 
+Since 2026-09-27 Redis runs inside the cluster; Postgres stays on Neon. See
+Phase 23.
+
 The target stack is the same app, but running in Kubernetes:
 
 ```text
@@ -28,10 +31,11 @@ Private inside cluster:
   ml
   worker
   score-worker
+  redis (since Phase 23)
 
 Outside cluster:
   Neon Postgres
-  Upstash Redis
+  Upstash Redis (until Phase 23)
 ```
 
 The three public container images stay public:
@@ -66,6 +70,7 @@ infra/
       ml.yaml
       worker.yaml
       score-worker.yaml
+      redis.yaml
       ingress.yaml
       keda-worker.yaml
       keda-score-worker.yaml
@@ -89,6 +94,7 @@ What each file is for:
 | `ml.yaml`                            | ML FastAPI Deployment and internal Service                                          |
 | `worker.yaml`                        | Celery scan worker, queue `scans`                                                   |
 | `score-worker.yaml`                  | Celery score worker, queue `scoring`                                                |
+| `redis.yaml`                         | In-cluster Redis for the Celery queues and scan progress (Phase 23)                 |
 | `ingress.yaml`                       | Routes real hostnames to web and api                                                |
 | `keda-worker.yaml`                   | Scales scan workers from Redis queue length                                         |
 | `keda-score-worker.yaml`             | Optional scaling for score workers                                                  |
@@ -304,6 +310,9 @@ Scale workers to zero while the queues are empty. This keeps idle Celery workers
 from polling Redis continuously. The first scan can start a little slower because
 KEDA must observe the queued job and Kubernetes must start a worker pod.
 
+Changed in Phase 23: with Redis in the cluster there is no quota to protect, so
+one worker and one score worker now stay warm (`minReplicaCount: 1`).
+
 ---
 
 ## Phase 8 - Create app namespace and secrets
@@ -369,7 +378,8 @@ CODESAGE_COOKIE_SECURE=true
 CODESAGE_ML_SERVICE_URL=http://ml:8001
 ```
 
-For Redis:
+For Redis (as first deployed; Phase 23 replaced Upstash with the in-cluster
+Redis, `redis://:PASSWORD@redis:6379/0` with `enableTLS: "false"`):
 
 - Use the existing Upstash `rediss://...` URL.
 - KEDA uses split Redis settings because the Redis Lists scaler expects
@@ -622,6 +632,9 @@ score-worker:
   min replicas: 0
   max replicas: 2
 ```
+
+Changed in Phase 23: both minimums are now 1, and pods scale back to one, not
+zero.
 
 Demo test:
 
@@ -1355,6 +1368,218 @@ Policy behavior:
 Re-run the production smoke test after applying the policy. Also confirm that
 the Railway fallback still works; it is outside this Kubernetes policy and
 should be unaffected.
+
+---
+
+## Phase 23 - Move Redis into the cluster and right-size the pods
+
+Done on 2026-09-27 (IMPLEMENTATION.MD, Phase 13I.1). Postgres stays on Neon.
+
+Why: in this app Redis only holds the Celery queues, scan progress and the
+cancel flag, so losing it costs nothing. Upstash put every Celery poll and every
+KEDA check over the internet with TLS, against a command quota. No application
+code changes: the app picks TLS from the URL scheme.
+
+Run every command below from the repo root on Windows, with the SSH tunnel open:
+
+```powershell
+ssh -4 -i C:\Users\jpaba\.ssh\codesage_k3s_linode_ed25519 -L 6443:127.0.0.1:6443 root@139.162.41.167
+$env:KUBECONFIG = "C:\Users\jpaba\.kube\codesageai-k3s.yaml"
+```
+
+### 23.1 - Start Redis next to Upstash
+
+Nothing uses the new Redis yet, so this step cannot break the app.
+
+Check first that the KEDA operator has the label the Redis NetworkPolicy
+selects:
+
+```powershell
+kubectl get pods -n keda --show-labels   # keda-operator-... must have app=keda-operator
+```
+
+Create the password Secret. The password is 64 hex characters, so it needs no
+quoting anywhere:
+
+```powershell
+$b = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$pw = -join ($b | ForEach-Object { $_.ToString('x2') })
+kubectl -n codesageai create secret generic redis-auth --from-literal=password=$pw
+```
+
+Apply Redis and its NetworkPolicy:
+
+```powershell
+kubectl apply -f infra/k3s/linode/redis.yaml
+kubectl -n codesageai rollout status deploy/redis --timeout=120s
+kubectl apply -f infra/k3s/linode/networkpolicy.yaml
+```
+
+Check it:
+
+```powershell
+kubectl -n codesageai exec deploy/redis -- sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'          # PONG
+kubectl -n codesageai exec deploy/redis -- redis-cli ping                                                  # NOAUTH Authentication required.
+kubectl -n codesageai exec deploy/api -- python -c "import socket; s=socket.create_connection(('redis',6379),3); s.sendall(b'PING\r\n'); print(s.recv(100))"   # b'-NOAUTH ...'
+kubectl -n codesageai exec deploy/ml -- python -c "import socket; socket.create_connection(('redis',6379),3)"   # refused or timed out
+```
+
+`ml` gets `Connection refused`, not a timeout: the k3s NetworkPolicy enforcer
+rejects instead of dropping. Either way, it is blocked.
+
+### 23.2 - Switch the app and KEDA to the in-cluster Redis
+
+Do this with no scan running. Anything still queued in Upstash does not carry
+over.
+
+1. Check that the queues are empty and nothing is scanning:
+
+   ```powershell
+   kubectl -n codesageai exec deploy/api -- python -c "import redis; from codesage_api.config import get_settings as g; r=redis.Redis.from_url(g().redis_url); print(r.llen('scans'), r.llen('scoring'), r.hlen('unacked'))"   # 0 0 0
+   ```
+
+2. `--from-env-file` replaces the whole Secret, so check that the local file has
+   every key the server has. `Compare-Object` must print nothing:
+
+   ```powershell
+   $server = (kubectl -n codesageai get secret codesage-secrets -o json | ConvertFrom-Json).data.PSObject.Properties.Name
+   $file = Select-String -Path infra/k3s/linode/secrets.prod.env -Pattern '^\s*([A-Z_]+)=' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+   Compare-Object ($server | Sort-Object) ($file | Sort-Object)
+   ```
+
+   Use `ConvertFrom-Json`, not a `go-template` with `{{"\n"}}`: Windows
+   PowerShell 5.1 strips the inner double quotes and the template fails.
+
+3. Print the new values from the `redis-auth` Secret:
+
+   ```powershell
+   $pw = [Text.Encoding]::ASCII.GetString([Convert]::FromBase64String((kubectl -n codesageai get secret redis-auth -o jsonpath='{.data.password}')))
+   "CODESAGE_REDIS_URL=redis://:$pw@redis:6379/0"
+   "CODESAGE_KEDA_REDIS_ADDRESS=redis.codesageai.svc:6379"
+   "CODESAGE_KEDA_REDIS_USERNAME=default"
+   "CODESAGE_KEDA_REDIS_PASSWORD=$pw"
+   ```
+
+4. In `secrets.prod.env`, comment out **all four** Upstash lines, including
+   `CODESAGE_REDIS_URL`, and paste the new ones below them. A key left twice makes
+   kubectl refuse the whole file (`cannot add key ..., another key by that name
+   already exists`).
+
+5. Update the Secret **first**, then KEDA, then restart:
+
+   ```powershell
+   kubectl -n codesageai create secret generic codesage-secrets --from-env-file infra/k3s/linode/secrets.prod.env --dry-run=client -o yaml | kubectl apply -f -
+   kubectl apply -f infra/k3s/linode/keda-worker.yaml -f infra/k3s/linode/keda-score-worker.yaml
+   kubectl -n codesageai rollout restart deploy/api deploy/worker deploy/score-worker
+   kubectl -n codesageai rollout status deploy/api --timeout=180s
+   kubectl -n keda rollout restart deploy/keda-operator
+   ```
+
+   If KEDA gets `enableTLS: "false"` while the Secret still points at Upstash,
+   it talks plain text to Upstash, logs `connection to redis failed: EOF`, and no
+   worker starts, so scans sit in "Queued". Restarting the operator makes it read
+   the new Secret at once instead of waiting out its retry backoff.
+
+6. Check it:
+
+   ```powershell
+   kubectl -n codesageai exec deploy/api -- python -c "import redis; from codesage_api.config import get_settings as g; u=g().redis_url; print(u.split('@')[-1], redis.Redis.from_url(u).ping())"   # redis:6379/0 True
+   kubectl -n codesageai get scaledobject                                                                  # READY True
+   (kubectl -n keda logs deploy/keda-operator --since=1m | Select-String -SimpleMatch 'connection to redis failed').Count   # 0
+   ```
+
+   Then run a real scan from the app.
+
+Rollback: uncomment the Upstash lines and comment out the new ones, set
+`enableTLS: "true"` in both KEDA files, and repeat step 5. The Upstash lines
+stay in `secrets.prod.env` until 2026-10-04. Only the k3s Upstash database is
+retired; the Railway staging stack keeps its own (Phase 17).
+
+### 23.3 - Right-size the pods
+
+Measured first, on apache/commons-lang (629 Java files, about 5 minutes): the
+scan worker peaked at 418Mi but sat at its 2-core CPU limit for about a minute
+while CK read the files. The system (k3s, ingress, KEDA, cert-manager, CoreDNS)
+uses about 2.2 GiB of the node's 7.75 GiB.
+
+```powershell
+while ($true) { kubectl -n codesageai top pod -l app.kubernetes.io/component=worker --no-headers; Start-Sleep 10 }
+```
+
+The plan that came out of it:
+
+| Part | Pods | Scaled by | Request CPU / memory | Limit CPU / memory |
+| --- | --- | --- | --- | --- |
+| web | 1–2 | HPA, CPU 70% | 100m / 256Mi | 500m / 512Mi |
+| api | 1–2 | HPA, CPU 70% | 250m / 384Mi | 1 / 768Mi |
+| ml | 1 | — | 250m / 512Mi | 2 / 1.5Gi |
+| worker | 1–3 | KEDA, `scans` | 500m / 512Mi | 3 / 1280Mi |
+| score-worker | 1–2 | KEDA, `scoring` | 100m / 256Mi | 1 / 768Mi |
+| redis | 1 | — | 100m / 160Mi | 100m / 160Mi |
+
+What else changed and why:
+
+- One worker and one score worker stay warm (`minReplicaCount: 1`, no
+  `idleReplicaCount`), so a scan starts in about a second, not about ten.
+  `idleReplicaCount: 0` would still scale to zero, even with a minimum of 1.
+- KEDA's `pollingInterval` only matters when scaling from zero, so it is gone;
+  the HPA checks about every 15 seconds. KEDA waits 10 minutes before scaling
+  down.
+- Worker grace period 960 seconds, longer than the 15-minute scan limit, so a
+  scale-down or a deploy lets Celery finish the running scan.
+- `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=60` keeps CK's heap at 768 MB. The JVM
+  sizes its heap from the container limit, so without it the smaller limit would
+  have shrunk the heap to 320 MB.
+- No `replicas` in the four scaled Deployments: the HPA or KEDA owns the count.
+- `maxSurge: 1`, `maxUnavailable: 0` everywhere: deploys cause no downtime.
+- `imagePullPolicy: IfNotPresent`: CI deploys immutable `sha-` tags.
+- tini is PID 1 in the api image, and the worker, score-worker and migrate
+  manifests set `args:` only (a Kubernetes `command:` would replace tini).
+  Without tini, a worker stopped while Celery was still starting ignored
+  SIGTERM, kept taking scans, and would have been killed mid-scan.
+
+**Apply manifests with the running image.** The files name `:latest`, but
+production runs the `sha-` tags CI sets. A plain `kubectl apply` would change the
+image, so substitute the running one:
+
+```powershell
+Set-Location infra/k3s/linode
+$api = kubectl -n codesageai get deploy api -o jsonpath='{.spec.template.spec.containers[0].image}'
+$ml  = kubectl -n codesageai get deploy ml  -o jsonpath='{.spec.template.spec.containers[0].image}'
+$web = kubectl -n codesageai get deploy web -o jsonpath='{.spec.template.spec.containers[0].image}'
+foreach ($f in 'api.yaml','web.yaml','ml.yaml','worker.yaml','score-worker.yaml') {
+  (Get-Content $f -Raw).Replace('ghcr.io/jpabasara/codesage-ai/api:latest',$api).Replace('ghcr.io/jpabasara/codesage-ai/ml:latest',$ml).Replace('ghcr.io/jpabasara/codesage-ai/web:latest',$web) | kubectl apply -f -
+}
+kubectl apply -f keda-worker.yaml -f keda-score-worker.yaml
+foreach ($d in 'api','web','ml','worker','score-worker') { kubectl -n codesageai rollout status deploy/$d --timeout=5m }
+```
+
+Check it:
+
+```powershell
+kubectl -n codesageai get deploy,hpa     # worker and score-worker 1/1; api and web HPAs min 1 max 2
+kubectl -n codesageai exec deploy/worker -- sh -c "java -XX:+PrintFlagsFinal -version 2>/dev/null | grep ' MaxHeapSize'"   # 805306368
+kubectl -n codesageai top pods
+```
+
+Then test in the app:
+
+1. A scan leaves "Queued" within about a second.
+2. Two or three scans started together add worker pods within about 30 seconds
+   (`kubectl -n codesageai get pods -w`).
+3. After 15 idle minutes, `worker` and `score-worker` are still 1/1.
+
+If a worker pod ever stays `Terminating` while idle (a pod started before the
+tini image ships can miss SIGTERM), confirm it is idle and ask Celery to stop it:
+
+```powershell
+kubectl -n codesageai exec deploy/api -- celery -A codesage_api.worker inspect active -d scan-worker@<pod-name> -t 5   # - empty -
+kubectl -n codesageai exec deploy/api -- celery -A codesage_api.worker control shutdown -d scan-worker@<pod-name>
+```
+
+Running Celery commands inside the `api` pod raises its CPU for a moment, so the
+api HPA may briefly add a second pod. It goes back to one after five minutes.
 
 ---
 

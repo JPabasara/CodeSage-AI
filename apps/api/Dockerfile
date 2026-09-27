@@ -3,7 +3,7 @@
 #
 # One image, two entrypoints:
 #   API container    → uvicorn codesage_api.main:app        (default CMD below)
-#   Worker container → celery -A codesage_api.worker worker (command override)
+#   Worker container → celery -A codesage_api.worker worker (CMD override)
 #
 # They share db/, schemas/ and the domain model, so shipping two images would mean
 # maintaining the same contract on both sides of a network boundary.
@@ -20,8 +20,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 # git      — the clone stage and PyDriller's history walk
 # default-jre-headless — runs the CK jar (v1.0 analyses Java only)
+# tini     — PID 1 (see ENTRYPOINT below)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git default-jre-headless \
+    && apt-get install -y --no-install-recommends git default-jre-headless tini \
     && rm -rf /var/lib/apt/lists/*
 
 # ── CK ──────────────────────────────────────────────────────────────────────
@@ -76,5 +77,15 @@ ENV CODESAGE_CLONE_DIR=/var/tmp/codesage-clones
 RUN mkdir -p ${CODESAGE_CLONE_DIR}
 
 EXPOSE 8000
+
+# tini runs as PID 1 and forwards signals to the app. The kernel ignores any
+# signal PID 1 has no handler for, so without it a worker told to stop while
+# Celery is still starting ignores SIGTERM, keeps taking scans from the queue,
+# and is killed mid-scan when the grace period runs out. tini also reaps the
+# zombie processes left by git and CK.
+#
+# Kubernetes `command:` replaces this ENTRYPOINT, so the k3s workers set only
+# `args:`; docker-compose `command:` replaces CMD alone and keeps it.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
 CMD ["uvicorn", "codesage_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

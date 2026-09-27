@@ -10,6 +10,11 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: codesage-ai
@@ -24,7 +29,7 @@ spec:
       containers:
         - name: ml
           image: ghcr.io/jpabasara/codesage-ai/ml:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8001
@@ -52,7 +57,7 @@ spec:
               cpu: 250m
               memory: 512Mi
             limits:
-              cpu: "1"
+              cpu: "2"
               memory: 1536Mi
 ---
 apiVersion: v1

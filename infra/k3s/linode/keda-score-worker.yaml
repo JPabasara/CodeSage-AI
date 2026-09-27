@@ -31,18 +31,20 @@ metadata:
 spec:
   scaleTargetRef:
     name: score-worker
-  pollingInterval: 30
-  cooldownPeriod: 300
-  idleReplicaCount: 0
-  minReplicaCount: 0
+  minReplicaCount: 1
   maxReplicaCount: 2
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600
   triggers:
     - type: redis
       metadata:
         listName: scoring
         listLength: "1"
         activationListLength: "0"
-        enableTLS: "true"
+        enableTLS: "false"
         databaseIndex: "0"
       authenticationRef:
         name: keda-score-worker-redis-auth

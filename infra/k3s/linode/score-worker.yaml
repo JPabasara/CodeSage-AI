@@ -8,8 +8,13 @@ metadata:
     app.kubernetes.io/component: score-worker
     app.kubernetes.io/part-of: codesage-ai
 spec:
-  replicas: 1
+  # No `replicas`: KEDA owns the pod count (keda-*.yaml).
   revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: codesage-ai
@@ -25,9 +30,10 @@ spec:
       containers:
         - name: score-worker
           image: ghcr.io/jpabasara/codesage-ai/api:latest
-          imagePullPolicy: Always
-          command: ["celery"]
+          imagePullPolicy: IfNotPresent
+          # `args` only: `command` would replace the image's tini ENTRYPOINT.
           args:
+            - "celery"
             - "-A"
             - "codesage_api.worker"
             - "worker"
@@ -73,5 +79,5 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
-              cpu: 500m
+              cpu: "1"
               memory: 768Mi
