@@ -31,18 +31,22 @@ metadata:
 spec:
   scaleTargetRef:
     name: worker
-  pollingInterval: 30
-  cooldownPeriod: 300
-  idleReplicaCount: 0
-  minReplicaCount: 0
+  # One worker stays warm so a scan starts at once. No idleReplicaCount:
+  # with it set to 0, KEDA would still scale to zero when the queue is empty.
+  minReplicaCount: 1
   maxReplicaCount: 3
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600
   triggers:
     - type: redis
       metadata:
         listName: scans
         listLength: "1"
         activationListLength: "0"
-        enableTLS: "true"
+        enableTLS: "false"
         databaseIndex: "0"
       authenticationRef:
         name: keda-worker-redis-auth

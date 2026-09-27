@@ -141,3 +141,41 @@ spec:
       ports:
         - protocol: TCP
           port: 8089
+---
+# Only the app workloads that use the Celery queues, and the KEDA operator that
+# reads queue lengths, can reach the in-cluster Redis.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-and-keda-to-redis
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [codesage-ai]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [api, worker, score-worker]
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keda
+          podSelector:
+            matchLabels:
+              app: keda-operator
+      ports:
+        - protocol: TCP
+          port: 6379

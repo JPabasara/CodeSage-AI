@@ -1,0 +1,155 @@
+# In-cluster Redis for the Celery queues, scan progress and the cancel flag.
+# Nothing here needs to survive a restart, so there is no persistence and no
+# volume beyond scratch space. Queue items must never be evicted, so memory is
+# capped with `noeviction`: a full Redis refuses new writes instead of silently
+# dropping a queued scan.
+#
+# The password comes from the `redis-auth` Secret (key `password`), created by
+# hand and never committed. It is written to a file at startup so it does not
+# appear in the process arguments.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/part-of: codesage-ai
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    port 6379
+    protected-mode yes
+    maxmemory 96mb
+    maxmemory-policy noeviction
+    appendonly no
+    save ""
+    tcp-keepalive 60
+    include /run/redis/auth.conf
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  # A single instance: never run two side by side.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: codesage-ai
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: codesage-ai
+        app.kubernetes.io/component: redis
+        app.kubernetes.io/part-of: codesage-ai
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              umask 077
+              printf 'requirepass %s\n' "$REDIS_PASSWORD" > /run/redis/auth.conf
+              exec redis-server /etc/redis/redis.conf
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping | grep -q PONG
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Requests equal limits: Guaranteed QoS, so Redis is the last pod the
+          # kernel would kill under memory pressure.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 160Mi
+            limits:
+              cpu: 100m
+              memory: 160Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+              readOnly: true
+            - name: run
+              mountPath: /run/redis
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: data
+          emptyDir:
+            sizeLimit: 256Mi
+---
+# ClusterIP only. Redis is never exposed through the ingress or a NodePort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: codesageai
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/part-of: codesage-ai
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

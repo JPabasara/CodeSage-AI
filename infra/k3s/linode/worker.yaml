@@ -8,8 +8,13 @@ metadata:
     app.kubernetes.io/component: worker
     app.kubernetes.io/part-of: codesage-ai
 spec:
-  replicas: 1
+  # No `replicas`: KEDA owns the pod count (keda-*.yaml).
   revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: codesage-ai
@@ -21,13 +26,16 @@ spec:
         app.kubernetes.io/component: worker
         app.kubernetes.io/part-of: codesage-ai
     spec:
-      terminationGracePeriodSeconds: 600
+      # Longer than the 15-minute scan time limit, so a scale-down or deploy
+      # lets Celery finish the running scan instead of killing it.
+      terminationGracePeriodSeconds: 960
       containers:
         - name: worker
           image: ghcr.io/jpabasara/codesage-ai/api:latest
-          imagePullPolicy: Always
-          command: ["celery"]
+          imagePullPolicy: IfNotPresent
+          # `args` only: `command` would replace the image's tini ENTRYPOINT.
           args:
+            - "celery"
             - "-A"
             - "codesage_api.worker"
             - "worker"
@@ -46,6 +54,10 @@ spec:
               value: /var/tmp/codesage-clones
             - name: CODESAGE_CK_JAR
               value: /opt/ck/ck.jar
+            # CK's JVM sizes its heap from the container limit. 60% of 1280Mi
+            # keeps the 768 MB heap it had under the old 3Gi limit.
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=60
           volumeMounts:
             - name: clone-scratch
               mountPath: /var/tmp/codesage-clones
@@ -79,10 +91,10 @@ spec:
           resources:
             requests:
               cpu: 500m
-              memory: 1536Mi
+              memory: 512Mi
             limits:
-              cpu: "2"
-              memory: 3Gi
+              cpu: "3"
+              memory: 1280Mi
       volumes:
         - name: clone-scratch
           emptyDir:
