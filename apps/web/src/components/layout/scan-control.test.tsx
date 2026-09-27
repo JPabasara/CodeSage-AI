@@ -139,3 +139,11 @@ test("with Stop elsewhere, the running state is a compact busy button", () => {
   expect(screen.queryByText(/40%/)).toBeNull() // the strip carries the number
   expect(screen.queryByRole("button", { name: /stop/i })).toBeNull()
 })
+
+test("after the scan, the busy button says Scoring… while the score is calculated", () => {
+  render(<ScanControl phase="running" progress={90} scoring showStop={false} />)
+  expect(screen.getByRole("button", { name: /Scoring…/ })).toBeDisabled()
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Scan finished, calculating the health score",
+  )
+})

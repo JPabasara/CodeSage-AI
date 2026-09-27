@@ -532,3 +532,34 @@ def test_a_score_already_running_or_ready_is_never_queued(monkeypatch) -> None:
 
     assert dashboard.needs_enqueue(running, created=False) is False
     assert dashboard.needs_enqueue(ready, created=False) is False
+
+
+@patch("codesage_api.services.dashboard.celery_app.send_task")
+def test_missing_scores_are_queued_newest_first(
+    send_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The single scoring worker runs jobs in queue order, so the newest snapshot
+    — the one the dashboard shows — must not wait behind every old one."""
+    oldest, scored, middle, newest = (SimpleNamespace(id=uuid.uuid4()) for _ in range(4))
+    session = MagicMock(spec=Session)
+    monkeypatch.setattr(
+        dashboard,
+        "prepare_snapshot_score",
+        lambda _session, snapshot, _profile: (SimpleNamespace(id=snapshot.id), True),
+    )
+    monkeypatch.setattr(dashboard, "needs_enqueue", lambda cached, created: True)
+    monkeypatch.setattr(dashboard, "profile_payload", lambda _profile: {})
+    workspace_id = uuid.uuid4()
+
+    # Callers pass snapshots oldest first, as they return them.
+    dashboard._enqueue_missing_scores(
+        session, workspace_id, [oldest, scored, middle, newest], _profile(), {scored.id}
+    )
+
+    session.commit.assert_called_once_with()
+    assert [call.kwargs["args"][0] for call in send_task.call_args_list] == [
+        str(newest.id),
+        str(middle.id),
+        str(oldest.id),
+    ]
+    assert all(call.args == ("codesage.score_snapshot",) for call in send_task.call_args_list)

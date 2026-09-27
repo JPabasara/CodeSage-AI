@@ -4,8 +4,8 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
-import { getHealthReport } from "@/lib/api/client"
 import {
+  acknowledgeScan,
   onScanEvent,
   resumeScans,
   startScan,
@@ -45,9 +45,14 @@ export function ScanCenter() {
       label: "Try again",
       onClick: () => void startScan(target),
     })
+    // "View dashboard" is also "Show them": the user asked for the new
+    // results, so the dashboard should not keep the previous ones pinned.
     const view = (scan: TrackedScan) => ({
-      label: "View",
-      onClick: () => router.push(dashboardHrefFor(scan.repoId, scan.branch)),
+      label: "View dashboard",
+      onClick: () => {
+        acknowledgeScan(scan.key)
+        router.push(dashboardHrefFor(scan.repoId, scan.branch))
+      },
     })
 
     return onScanEvent((event) => {
@@ -61,27 +66,29 @@ export function ScanCenter() {
           )
           return
         case "finished": {
-          const { scan } = event
-          // The score is the news. It may still be being prepared (the
-          // snapshot lands before its score); then the toast just says done.
-          getHealthReport(scan.repoId, scan.branch)
-            .then((report) =>
-              toast.success(
-                `Scan finished · health ${Math.round(report.health_score)} (${signed(report.delta)})`,
-                {
-                  description: `${nameOf(scan)} · ${scan.branch}`,
-                  action: view(scan),
-                },
-              ),
-            )
-            .catch(() =>
-              toast.success(`Scan finished · ${nameOf(scan)}`, {
-                description: `${scan.branch} · the score is being prepared`,
-                action: view(scan),
-              }),
-            )
+          // Sent once the score is ready too, so the toast has the news. A
+          // score that came too late still ends the job, and says so.
+          const { scan, report } = event
+          if (report) {
+            toast.success(`${nameOf(scan)} · ${scan.branch} is ready`, {
+              description: `Health ${Math.round(report.health_score)} (${report.grade}) · ${signed(report.delta)} since the last scan`,
+              action: view(scan),
+            })
+          } else {
+            toast.success(`Scan complete · ${nameOf(scan)} · ${scan.branch}`, {
+              description:
+                "The health score is still being calculated. It will appear on the dashboard.",
+              action: view(scan),
+            })
+          }
           return
         }
+        case "up-to-date":
+          toast(`${nameOf(event.scan)} is already up to date`, {
+            description: `No new commits on ${event.scan.branch} since the last scan.`,
+            action: view(event.scan),
+          })
+          return
         case "cancelled":
           toast(`Scan stopped · ${nameOf(event.scan)} · ${event.scan.branch}`, {
             description: "The previous results are unchanged.",

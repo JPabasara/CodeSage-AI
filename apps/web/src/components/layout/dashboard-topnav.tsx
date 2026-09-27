@@ -1,6 +1,13 @@
 "use client"
 
-import { ChevronLeft, ChevronRight, GitBranch, GitCommit } from "lucide-react"
+import Link from "next/link"
+import {
+  ChevronLeft,
+  ChevronRight,
+  GitBranch,
+  GitCommit,
+  SlidersHorizontal,
+} from "lucide-react"
 
 import {
   Select,
@@ -56,6 +63,12 @@ export type DashboardTopNavProps = {
   snapshotLoading?: boolean
   scan: ScanControlProps
   snapshotNavigation?: SnapshotNavigation
+  /**
+   * The profile these numbers were scored with. Every score — this one and
+   * every older scan's — is weighed under the profile in force now, so the
+   * page says which one that is.
+   */
+  profileName?: string
 }
 
 export function DashboardTopNav({
@@ -69,6 +82,7 @@ export function DashboardTopNav({
   snapshotLoading = false,
   scan,
   snapshotNavigation,
+  profileName,
 }: Readonly<DashboardTopNavProps>) {
   // The branch list loads on its own clock, and its Select is not rendered
   // until it has landed.
@@ -161,6 +175,17 @@ export function DashboardTopNav({
               ? "Historical snapshot"
               : "Live dashboard"}
           </span>
+          {profileName ? (
+            <Link
+              href="/profiles"
+              data-testid="scored-with"
+              title="Scores are weighed by this profile. Change it in Profiles."
+              className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-topbar-foreground/85 underline-offset-2 outline-none hover:text-topbar-foreground hover:underline focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+              Scored with {profileName}
+            </Link>
+          ) : null}
         </span>
       </TopBarPortal>
 

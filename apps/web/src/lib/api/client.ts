@@ -5,6 +5,7 @@
 // which needs the session cookie attached — see the note on credentials below.
 import type {
   AcceptedInvitation,
+  Activity,
   ApiError,
   Branch,
   ConnectRepoRequest,
@@ -94,8 +95,16 @@ async function empty(res: Response): Promise<void> {
  */
 function scoresChanged<T>(value: T): T {
   forgetScores()
+  // Scores are being recalculated: let the Activity menu say so now rather
+  // than at its next poll.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ACTIVITY_STALE_EVENT))
+  }
   return value
 }
+
+/** Fired when something just changed what `GET /api/activity` would say. */
+export const ACTIVITY_STALE_EVENT = "codesage:activity-stale"
 
 // Sign-in and sign-out are deliberately NOT here — both are navigations, not
 // fetches (see the login page's <a> and the app rail's sign-out <form>).
@@ -394,6 +403,17 @@ export function clearProjectProfile(repoId: string): Promise<ProjectProfile> {
 }
 
 // ── scan lifecycle ───────────────────────────────────────────────────────────
+
+/**
+ * Every scan queued or running in the workspace, and every project whose
+ * scores are being recalculated — whoever started them. The Activity menu
+ * polls this.
+ */
+export function getActivity(): Promise<Activity> {
+  return fetch(`${API_BASE}/api/activity`, {
+    credentials: "include",
+  }).then(json<Activity>)
+}
 
 export function startScan(repoId: string, branch: string): Promise<ScanStatus> {
   return fetch(`${API_BASE}/api/repos/${repoId}/scan`, {

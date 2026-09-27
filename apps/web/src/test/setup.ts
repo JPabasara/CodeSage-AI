@@ -6,6 +6,7 @@ import { resetMockBackend } from "@/lib/mocks/handlers"
 import { WORKSPACE_ID } from "@/lib/mocks/fixtures"
 import { SELECTED_BRANCH_KEY } from "@/hooks/use-selected-branch"
 import { resetScanCenter } from "@/hooks/use-scan-center"
+import { resetActivity } from "@/hooks/use-activity"
 import {
   noteActiveWorkspace,
   resetWorkspaceScope,
@@ -35,6 +36,8 @@ afterEach(() => {
   localStorage.removeItem(SELECTED_BRANCH_KEY)
   // Scans are followed app-wide (module state); one test's scan is not the next's.
   resetScanCenter()
+  // The Activity menu's answer is module state too.
+  resetActivity()
 })
 afterAll(() => server.close())
 

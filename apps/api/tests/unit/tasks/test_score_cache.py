@@ -80,3 +80,58 @@ def test_warming_a_new_snapshot_never_hydrates_it(monkeypatch) -> None:
 
     hydrate.assert_not_called()
     delay.assert_called_once()
+
+
+def test_a_profile_change_queues_the_newest_snapshot_first(monkeypatch) -> None:
+    """One scoring worker takes jobs in queue order, ~38 s each on a large
+    repository. Queued oldest first, the snapshot the dashboard shows waited
+    behind every old one and the dashboard gave up."""
+    from types import SimpleNamespace
+
+    session = MagicMock(spec=Session)
+    workspace_id = uuid.uuid4()
+    repository = SimpleNamespace(
+        id=uuid.uuid4(), branches=[SimpleNamespace(name="main", is_default=True)]
+    )
+    session.scalars.return_value.all.return_value = [repository]
+    # The repository layer answers oldest first.
+    oldest, middle, newest = (SimpleNamespace(id=uuid.uuid4()) for _ in range(3))
+
+    @contextmanager
+    def scoped_session():
+        yield session
+
+    monkeypatch.setattr(score_cache, "set_workspace_context", MagicMock())
+    monkeypatch.setattr(score_cache, "session_scope", scoped_session)
+    monkeypatch.setattr(score_cache.profiles, "load_pool", MagicMock())
+    monkeypatch.setattr(score_cache.profiles, "to_scoring_profile", MagicMock())
+    monkeypatch.setattr(score_cache, "profile_payload", MagicMock(return_value={}))
+    monkeypatch.setattr(
+        score_cache.dashboard_repository,
+        "list_completed_snapshot_refs",
+        MagicMock(return_value=[oldest, middle, newest]),
+    )
+    monkeypatch.setattr(
+        score_cache.dashboard,
+        "prepare_snapshot_score",
+        lambda _session, ref, _profile: (SimpleNamespace(id=ref.id), True),
+    )
+    monkeypatch.setattr(score_cache.dashboard, "needs_enqueue", lambda cached, created: True)
+
+    jobs = score_cache._warm(workspace_id, None)
+
+    assert [cache_id for cache_id, _ in jobs] == [
+        str(newest.id),
+        str(middle.id),
+        str(oldest.id),
+    ]
+
+    # And the task sends them to the worker in that same order.
+    delay = MagicMock()
+    monkeypatch.setattr(score_cache.score_snapshot, "delay", delay)
+    score_cache.warm_workspace_scores.run(str(workspace_id))
+    assert [call.args[0] for call in delay.call_args_list] == [
+        str(newest.id),
+        str(middle.id),
+        str(oldest.id),
+    ]

@@ -274,6 +274,19 @@ const knownRepo = (repoId: string) => connected.find((r) => r.id === repoId)
 const SCAN_STEP = 17 // % added per poll → ~6 polls from 0 to done
 
 /**
+ * E2E only: a slow scan (~15 s), for tests that must leave the page and come
+ * back while it is still running. Read per tick, from the page's cookies.
+ */
+const SLOW_SCAN_STEP = 4
+
+function scanStep() {
+  const slow =
+    typeof document !== "undefined" &&
+    document.cookie.includes("codesage_e2e_slow_scan=1")
+  return slow ? SLOW_SCAN_STEP : SCAN_STEP
+}
+
+/**
  * The pipeline is clone → extract → detect → finalize, and the cancel flag is
  * read only between stages — never inside finalize, because a half-written
  * snapshot reads exactly like a complete one. Past this progress Stop is
@@ -373,7 +386,7 @@ function tick(repoId: string): ScanStatus {
     // runs to `done` below. The user pressed Stop and still gets a result.
   }
 
-  const progress = Math.min(100, current.progress + SCAN_STEP)
+  const progress = Math.min(100, current.progress + scanStep())
   if (progress < 100) {
     const next: ScanStatus = withStage({ ...current, progress })
     scans.set(repoId, next)
@@ -393,6 +406,13 @@ function tick(repoId: string): ScanStatus {
   if (done.branch) {
     // The snapshot is stored the moment the scan finishes; the score is not.
     pendingScores.set(scanKey(repoId, done.branch), PENDING_ASKS_AFTER_SCAN)
+    // …and it is a NEW snapshot: the latest report now has its own id, time
+    // and commit, while the older ids still answer with their own reports.
+    newestSnapshot.set(scanKey(repoId, done.branch), {
+      snapshot_id: uuid(),
+      scanned_at: now,
+      commit_sha: done.commit_sha ?? undefined,
+    })
     if (done.commit_sha) {
       lastSuccessfulSha.set(scanKey(repoId, done.branch), done.commit_sha)
     }
@@ -400,8 +420,41 @@ function tick(repoId: string): ScanStatus {
   return done
 }
 
+/**
+ * repo@branch → the snapshot a scan in this session stored. Only the
+ * newest is kept: that is all "latest" ever answers with.
+ */
+const newestSnapshot = new Map<
+  string,
+  { snapshot_id: string; scanned_at: string; commit_sha?: string }
+>()
+
+/**
+ * A profile change re-scores the projects it affects, like the real API's
+ * background warm-up: for a moment their default branch answers
+ * SCORE_PENDING and `GET /api/activity` lists them as re-scoring. It ends on
+ * its own clock, as the real worker does — not when someone looks.
+ */
+export const PROFILE_RESCORE_MS = 1_500
+
+/** repo id → when its re-score (after a profile change) is done. */
+const rescoringUntil = new Map<string, number>()
+
+function markRescoring(repoIds: string[]) {
+  const until = Date.now() + PROFILE_RESCORE_MS
+  // A project with no scans has nothing to re-score.
+  for (const repoId of repoIds) {
+    if (repoId !== UNSCANNED_REPO_ID) rescoringUntil.set(repoId, until)
+  }
+}
+
+const isRescoring = (repoId: string) =>
+  (rescoringUntil.get(repoId) ?? 0) > Date.now()
+
 export function resetMockBackend() {
   scans.clear()
+  newestSnapshot.clear()
+  rescoringUntil.clear()
   cancelRequested.clear()
   lastSuccessfulSha.clear()
   pendingScores.clear()
@@ -1246,6 +1299,17 @@ export const handlers = [
     // not yet. Answering 200 with a zero would be the harmful version of this —
     // "scored 0" and "not scored" must never look the same.
     const stillScoring = pendingScores.get(scanKey(repoId, branch)) ?? 0
+    if (
+      isRescoring(repoId) &&
+      branchInfoFor(branch).is_default &&
+      !url.searchParams.get("snapshot_id")
+    ) {
+      return fail(
+        503,
+        "SCORE_PENDING",
+        "The dashboard score is still being prepared. Please try again shortly.",
+      )
+    }
     if (stillScoring > 0) {
       pendingScores.set(scanKey(repoId, branch), stillScoring - 1)
       return fail(
@@ -1255,14 +1319,26 @@ export const handlers = [
       )
     }
 
+    const requested = url.searchParams.get("snapshot_id") ?? undefined
+    const newest = newestSnapshot.get(scanKey(repoId, branch))
+    const asksForNewest =
+      newest && (!requested || requested === newest.snapshot_id)
+    const report = reportFor(
+      repoId,
+      branch,
+      branchInfoFor(branch).is_default,
+      effectiveFor(repoId),
+      asksForNewest ? undefined : requested,
+    )
     return HttpResponse.json(
-      reportFor(
-        repoId,
-        branch,
-        branchInfoFor(branch).is_default,
-        effectiveFor(repoId),
-        url.searchParams.get("snapshot_id") ?? undefined,
-      ),
+      asksForNewest
+        ? {
+            ...report,
+            snapshot_id: newest.snapshot_id,
+            scanned_at: newest.scanned_at,
+            commit_sha: newest.commit_sha ?? report.commit_sha,
+          }
+        : report,
     )
   }),
 
@@ -1356,8 +1432,13 @@ export const handlers = [
     // exists nowhere: whether a foreign workspace holds one is not ours to say.
     if (!target) return NOT_FOUND()
 
+    const changedDefault = defaultProfileId !== target.id
     defaultProfileId = target.id
     persistState()
+    // Only the projects that inherit the default are re-scored.
+    if (changedDefault) {
+      markRescoring(connected.map((r) => r.id).filter((id) => !assignments[id]))
+    }
     // Idempotent: the second PUT of the same id changes nothing, and neither
     // writes a snapshot or starts a scan.
     return HttpResponse.json(out(target))
@@ -1442,8 +1523,10 @@ export const handlers = [
 
     // One override per project — the repository is the key — so this replaces
     // any previous choice rather than adding to it.
+    const changedAssignment = assignments[repoId] !== body.profile_id
     assignments = { ...assignments, [repoId]: body.profile_id }
     persistState()
+    if (changedAssignment) markRescoring([repoId])
     return HttpResponse.json(projectProfileOut(repoId))
   }),
 
@@ -1458,6 +1541,47 @@ export const handlers = [
     )
     persistState()
     return HttpResponse.json(projectProfileOut(repoId))
+  }),
+
+  // ── activity ──────────────────────────────────────────────────────────────
+  // Everything running in the workspace, whoever started it: the scans still
+  // queued or running, and the projects whose scores are still pending.
+  http.get("*/api/activity", () => {
+    const nameOf = (repoId: string) => {
+      const repo = knownRepo(repoId)
+      return repo ? `${repo.owner}/${repo.name}` : repoId
+    }
+    const running = [...scans.entries()]
+      .filter(
+        ([repoId, scan]) =>
+          knownRepo(repoId) &&
+          (scan.phase === "queued" || scan.phase === "running"),
+      )
+      .map(([repoId, status]) => ({
+        repo_id: repoId,
+        repo_name: nameOf(repoId),
+        status,
+      }))
+    // Scores still pending: a finished scan's (counted in asks) and a
+    // profile change's (on its own clock).
+    const left = new Map<string, number>()
+    for (const [key, asks] of pendingScores) {
+      const repoId = key.split("@")[0] ?? ""
+      if (asks > 0 && knownRepo(repoId)) {
+        left.set(repoId, (left.get(repoId) ?? 0) + 1)
+      }
+    }
+    for (const repoId of rescoringUntil.keys()) {
+      if (isRescoring(repoId) && knownRepo(repoId) && !left.has(repoId)) {
+        left.set(repoId, 1)
+      }
+    }
+    const rescoring = [...left.entries()].map(([repoId, snapshotsLeft]) => ({
+      repo_id: repoId,
+      repo_name: nameOf(repoId),
+      snapshots_left: snapshotsLeft,
+    }))
+    return HttpResponse.json({ scans: running, rescoring })
   }),
 
   // ── scan lifecycle ────────────────────────────────────────────────────────

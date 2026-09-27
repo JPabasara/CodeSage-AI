@@ -34,6 +34,42 @@ class ScanStatusOut(ApiModel):
     typical_seconds: int | None = Field(default=None, ge=0)
 
 
+class ActiveScanOut(ApiModel):
+    """One queued or running scan, with the project it belongs to.
+
+    `status` is exactly what `GET …/scan/{scan_id}` answers, so a client that
+    finds a scan here can keep polling that endpoint without translating.
+    """
+
+    repo_id: str
+    # `owner/name`, as the projects list shows it.
+    repo_name: str
+    status: ScanStatusOut
+
+
+class RescoringOut(ApiModel):
+    """One project whose scores are still being calculated.
+
+    `snapshots_left` counts its stored scans not yet scored under the current
+    profile; a project with nothing left is simply absent, hence at least 1.
+    """
+
+    repo_id: str
+    repo_name: str
+    snapshots_left: int = Field(ge=1)
+
+
+class ActivityOut(ApiModel):
+    """Work in progress in the active workspace (`GET /api/activity`).
+
+    Both lists are always present, empty when nothing runs, so the client never
+    has to tell "nothing running" from "field missing".
+    """
+
+    scans: list[ActiveScanOut]
+    rescoring: list[RescoringOut]
+
+
 class ScanSummaryOut(ApiModel):
     """One row in the Scan-History view (FR-19).
 

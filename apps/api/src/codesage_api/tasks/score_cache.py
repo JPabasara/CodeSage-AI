@@ -83,7 +83,11 @@ def _warm(workspace_uuid: uuid.UUID, only: set[uuid.UUID] | None) -> list[tuple[
             refs = dashboard_repository.list_completed_snapshot_refs(
                 session, workspace_uuid, repository.id, branch.name
             )
-            for ref in refs:
+            # Newest first. One scoring worker takes jobs in the order they were
+            # queued, and a large repository takes ~38 s per snapshot: queued
+            # oldest first, the snapshot the dashboard is waiting for came last
+            # and the dashboard gave up before it was scored.
+            for ref in reversed(refs):
                 cached, created = dashboard.prepare_snapshot_score(session, ref, profile)
                 if dashboard.needs_enqueue(cached, created):
                     jobs.append((str(cached.id), profile_payload(profile)))

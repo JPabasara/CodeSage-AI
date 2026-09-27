@@ -30,17 +30,19 @@ import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
 import {
+  acknowledgeScan,
   discoverScan,
-  isActivePhase,
+  isJobActive,
   onScanEvent,
+  pinScanResults,
   useScanFor,
 } from "@/hooks/use-scan-center"
 import { useSession } from "@/hooks/use-session"
 import { ScanStatusStrip } from "@/components/layout/scan-status-strip"
 import { ScanProgressPanel } from "@/components/dashboard/scan-progress-panel"
-import { useSmoothProgress } from "@/hooks/use-smooth-progress"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { Finding, TreeNode } from "@/lib/types"
+import { SCAN_SHARE, toBar } from "@/lib/scan-progress"
 import { healthColor } from "@/lib/utils"
 
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
@@ -116,24 +118,40 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     { enabled: readsEnabled },
   )
 
+  // The job on this branch lives in the app-wide scan store, not in this
+  // page: leaving the dashboard mid-scan and coming back shows it exactly where
+  // it was — same stage, same bar, same line — with Stop.
+  const {
+    scan: trackedScan,
+    start: startTrackedScan,
+    stop: stopTrackedScan,
+  } = useScanFor(repoId, activeBranch, repo?.name)
+  const jobActive = Boolean(trackedScan && isJobActive(trackedScan))
+
+  // Once the scan is done, "latest" is the new snapshot. Until the user
+  // chooses "Show them", the results that were on screen stay on screen, read
+  // by their own snapshot id (the store keeps a copy in the cache, so the
+  // switch is instant). A URL snapshot always wins: that is an explicit ask.
+  const pinnedSnapshotId =
+    trackedScan && trackedScan.job !== "scanning"
+      ? trackedScan.pinnedSnapshotId
+      : undefined
+  const readSnapshotId = snapshotId ?? pinnedSnapshotId
+
   const {
     data: report,
     loading,
     pending: scorePending,
     pendingSlow: scorePendingSlow,
-    refreshing: reportRefreshing,
     error,
     refetch,
-    reload: reloadReport,
-  } = useHealthReport(repoId, activeBranch, snapshotId, {
+  } = useHealthReport(repoId, activeBranch, readSnapshotId, {
     enabled: readsEnabled,
   })
   // A report already on screen at the first render came from the cache: the
   // charts were drawn before, so they appear drawn rather than animate again.
   const [animateCharts] = useState(() => report === undefined)
 
-  // The scan lives in the app-wide scan store, not in this page: leaving the
-  // dashboard mid-scan and coming back shows it still running, with Stop.
   const { data: session } = useSession()
   const permissions = session?.permissions ?? []
   // Until the session answers, assume the button is usable rather than flash
@@ -143,35 +161,17 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     !session ||
     permissions.includes("scan:cancel_own") ||
     permissions.includes("scan:cancel_any")
-  const {
-    scan: trackedScan,
-    start: startTrackedScan,
-    stop: stopTrackedScan,
-  } = useScanFor(repoId, activeBranch, repo?.name)
-  const scanActive = Boolean(
-    trackedScan && isActivePhase(trackedScan.status.phase),
-  )
 
-  // After a scan, its score is calculated before the new report exists. That
-  // wait is the last section of the same bar (13H.4), so remember the scan
-  // that just finished (for its clock and name) and when the wait began.
-  const calculating = scorePending || reportRefreshing
-  const [finishedScan, setFinishedScan] = useState<{
-    startedAt: number
-    repoName?: string
-    branch: string
-  }>()
-  // The wait ended: forget the scan, so a later wait (a profile change, say)
-  // does not borrow its clock. Adjusted during render, not in an effect.
-  const [wasCalculating, setWasCalculating] = useState(calculating)
-  if (calculating !== wasCalculating) {
-    setWasCalculating(calculating)
-    if (!calculating) setFinishedScan(undefined)
-  }
-
-  // One smoothed number for every bar on the page, so the top bar and the
-  // panel never disagree; it carries on through the score's wait.
-  const smoothProgress = useSmoothProgress(trackedScan?.status, calculating)
+  // The results on screen while this branch is being scanned are the ones to
+  // keep until "Show them" — tell the store, so they survive even if the
+  // cached copy is dropped meanwhile.
+  const trackedKey = trackedScan?.key
+  const trackedJob = trackedScan?.job
+  useEffect(() => {
+    if (trackedKey && trackedJob === "scanning" && report && !snapshotId) {
+      pinScanResults(trackedKey, report)
+    }
+  }, [trackedKey, trackedJob, report, snapshotId])
 
   // A scan this tab never started — a teammate's, another tab's, one from
   // before a refresh on a cleared tab — is found and followed.
@@ -185,8 +185,23 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     })
   }, [workspaceId, repoId, activeBranch, repo?.name])
 
-  // When this branch's scan finishes, refresh the numbers in place — quietly,
-  // with no skeleton; a score still being prepared shows as exactly that.
+  const showJobCard = Boolean(
+    trackedScan &&
+    (trackedScan.job === "ready" || (jobActive && (loading || report))),
+  )
+  const showNewResults = () => {
+    if (!trackedScan) return
+    acknowledgeScan(trackedScan.key)
+    // Viewing an older snapshot? The new results are the latest one.
+    if (snapshotId) {
+      router.push(dashboardHref({ snapshot_id: null, finding: null }), {
+        scroll: false,
+      })
+    }
+  }
+
+  // The new report is fetched by the scan store itself; only the history list
+  // (for the older/newer arrows) needs a quiet refresh when the job ends.
   useEffect(
     () =>
       onScanEvent((event) => {
@@ -195,16 +210,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           event.scan.repoId === repoId &&
           event.scan.branch === activeBranch
         ) {
-          setFinishedScan({
-            startedAt: event.scan.startedAt,
-            repoName: event.scan.repoName,
-            branch: event.scan.branch,
-          })
-          reloadReport()
           reloadHistory()
         }
       }),
-    [repoId, activeBranch, reloadReport, reloadHistory],
+    [repoId, activeBranch, reloadHistory],
   )
 
   // The selected finding lives in the URL, not in state, so a refresh restores
@@ -339,43 +348,22 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
-    // A scan of this branch is queued or running: the middle of the page is
-    // about that, with a stage, a bar and a friendly line (13H.4). The numbers
-    // underneath are about to change anyway.
-    if (scanActive && trackedScan) {
-      return (
-        <ScanProgressPanel
-          kind="scan"
-          status={trackedScan.status}
-          progress={smoothProgress}
-          startedAt={trackedScan.startedAt}
-          repoName={trackedScan.repoName ?? repo?.name}
-          branch={trackedScan.branch}
-          stopping={trackedScan.stopping}
-        />
-      )
+    // A job on this branch with no results to keep on screen (a first scan,
+    // or a report that is not there): the middle of the page is about the
+    // job, with its stage, bar and friendly line. When it ends, the new
+    // results simply appear — there is nothing to lose.
+    if (jobActive && trackedScan && !loading && !report) {
+      return <ScanProgressPanel kind="job" scan={trackedScan} size="full" />
     }
 
-    // The scan finished: its new report is on the way, or the API is still
-    // scoring it (503 SCORE_PENDING). Both only ever follow a scan, so they
-    // get the same panel — straight from the scan's, with no flash of the old
-    // numbers in between. The hook keeps asking; nothing here has to.
-    if (scorePending || reportRefreshing) {
-      return (
-        <ScanProgressPanel
-          kind="calculating"
-          progress={smoothProgress}
-          startedAt={finishedScan?.startedAt}
-          repoName={finishedScan?.repoName ?? repo?.name}
-          branch={finishedScan?.branch ?? activeBranch}
-          slow={scorePendingSlow}
-        />
-      )
+    // A score being recalculated with no scan behind it — after a profile
+    // change. The hook keeps asking; nothing here has to.
+    if (scorePending && !report) {
+      return <ScanProgressPanel kind="calculating" slow={scorePendingSlow} />
     }
 
     // `loading` is "the request is in flight" — or held until the project and
-    // branch are known. A quiet reload after a scan keeps the report on
-    // screen, so this does not show then.
+    // branch are known.
     if (!reposLoaded || loading) {
       return <DashboardSkeleton />
     }
@@ -492,12 +480,24 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         scannedAt={report?.scanned_at}
         snapshotLoading={!report && !error}
         snapshotNavigation={snapshotNavigation}
+        profileName={report?.profile}
         scan={{
-          phase: trackedScan?.status.phase ?? "idle",
-          progress:
-            smoothProgress !== undefined
-              ? Math.floor(smoothProgress)
-              : (trackedScan?.status.progress ?? 0),
+          // The job, not just the worker: "Scoring…" while the health score
+          // is calculated, and a free Scan button once the job is ready.
+          phase:
+            trackedScan && jobActive
+              ? trackedScan.job === "scoring"
+                ? "running"
+                : trackedScan.status.phase
+              : "idle",
+          scoring: trackedScan?.job === "scoring",
+          // Only the screen-reader summary reads this, in quarters: the bar
+          // itself lives in the panel.
+          progress: trackedScan
+            ? trackedScan.job === "scoring"
+              ? SCAN_SHARE
+              : Math.floor(toBar(trackedScan.status.progress))
+            : 0,
           stopping: trackedScan?.stopping ?? false,
           // Only once there is a branch to scan.
           onScan: activeBranch ? startTrackedScan : undefined,
@@ -509,10 +509,22 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
       <ScanStatusStrip
         scan={trackedScan}
-        progress={smoothProgress}
         canStop={canStopScan}
         onStop={stopTrackedScan}
       />
+
+      {/* A job on this branch while results are on screen: a compact card
+          above them, which the results stay usable under. When the job is
+          ready it offers "Show them" — the page never swaps on its own, so
+          nobody loses their place. */}
+      {trackedScan && showJobCard ? (
+        <ScanProgressPanel
+          kind="job"
+          scan={trackedScan}
+          size="compact"
+          onShow={showNewResults}
+        />
+      ) : null}
 
       {body()}
     </div>

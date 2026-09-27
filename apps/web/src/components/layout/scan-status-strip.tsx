@@ -1,17 +1,13 @@
 "use client"
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
 import { Square } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { dashboardHrefFor } from "@/components/layout/scan-center"
 import {
   isActivePhase,
-  useActiveScans,
+  useScanLive,
   type TrackedScan,
 } from "@/hooks/use-scan-center"
-import { cn } from "@/lib/utils"
 
 /** "1m 12s" — minutes and seconds, the way a person reads a wait. */
 export function formatElapsed(ms: number) {
@@ -33,19 +29,20 @@ export function ScanStatusStrip({
   scan,
   canStop,
   onStop,
-  progress: smoothed,
 }: Readonly<{
   scan: TrackedScan | undefined
   canStop: boolean
   onStop: () => void
-  /** The dashboard's smoothed percentage (13H.4); the raw one when absent. */
-  progress?: number
 }>) {
-  const active = Boolean(scan && isActivePhase(scan.status.phase))
+  // The same bar as the panel, from the app-wide store: it never restarts.
+  const live = useScanLive(scan?.key)
+  const active = Boolean(
+    scan && scan.job === "scanning" && isActivePhase(scan.status.phase),
+  )
   if (!scan || !active) return null
 
   const queued = scan.status.phase === "queued"
-  const progress = Math.floor(smoothed ?? scan.status.progress)
+  const progress = Math.floor(live?.bar ?? 0)
   const determinate = !queued && progress > 0
   const what = `${scan.repoName ?? "this project"} on ${scan.branch}`
   const label = scan.stopping
@@ -93,43 +90,5 @@ export function ScanStatusStrip({
         )}
       </div>
     </div>
-  )
-}
-
-/**
- * On every other page, a small "Scanning ‹project›" in the app bar that leads
- * back to it. Hidden on the dashboard that already shows the strip.
- */
-export function ScanPill() {
-  const pathname = usePathname()
-  const scans = useActiveScans().filter((scan) =>
-    isActivePhase(scan.status.phase),
-  )
-  const shown = scans.filter(
-    (scan) =>
-      !pathname.startsWith(`/dashboard/${scan.repoId}`) ||
-      pathname.endsWith("/history"),
-  )
-  if (shown.length === 0) return null
-  const first = shown[0]
-  const text =
-    shown.length === 1
-      ? `Scanning ${first.repoName ?? "a project"}`
-      : `${shown.length} scans running`
-
-  return (
-    <Link
-      href={dashboardHrefFor(first.repoId, first.branch)}
-      data-testid="scan-pill"
-      className={cn(
-        "inline-flex h-8 max-w-48 items-center gap-2 rounded-md border border-white/25 px-3 text-xs font-medium text-topbar-foreground outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70",
-      )}
-    >
-      <span
-        className="size-1.5 shrink-0 rounded-full bg-white motion-safe:animate-pulse"
-        aria-hidden="true"
-      />
-      <span className="truncate">{text}</span>
-    </Link>
   )
 }

@@ -40,6 +40,7 @@ celery_app.conf.update(
         "codesage.score_snapshot": {"queue": "scoring"},
         "codesage.warm_snapshot_score": {"queue": "scoring"},
         "codesage.warm_workspace_scores": {"queue": "scoring"},
+        "codesage.warm_profile_scores": {"queue": "scoring"},
     },
 )
 

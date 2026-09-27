@@ -151,6 +151,34 @@ def find_active_for_repository(
     )
 
 
+def list_active_in_workspace(
+    session: Session,
+    workspace_id: uuid.UUID,
+) -> list[AnalysisAttempt]:
+    """Every queued or running attempt in the workspace, oldest first.
+
+    Branch and repository come loaded, because the activity list names the
+    project and branch of each one and would otherwise lazy-load them per row.
+
+    An attempt records no creation time and its id is random, so "oldest" is
+    the start time: running scans in the order they started, then the queued
+    ones (not started yet), with the id only to keep the order stable.
+    """
+    return list(
+        session.scalars(
+            select(AnalysisAttempt)
+            .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+            .join(Repository, Branch.repository_id == Repository.id)
+            .where(
+                Repository.workspace_id == workspace_id,
+                AnalysisAttempt.status.in_(_ACTIVE),
+            )
+            .order_by(AnalysisAttempt.start_time.asc().nulls_last(), AnalysisAttempt.id.asc())
+            .options(joinedload(AnalysisAttempt.branch).joinedload(Branch.repository))
+        ).all()
+    )
+
+
 def find_latest_completed(session: Session, branch_id: uuid.UUID) -> AnalysisAttempt | None:
     return session.scalar(
         select(AnalysisAttempt)

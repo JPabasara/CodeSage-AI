@@ -2,9 +2,8 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, test, vi } from "vitest"
 
-import { formatElapsed, ScanPill, ScanStatusStrip } from "./scan-status-strip"
+import { formatElapsed, ScanStatusStrip } from "./scan-status-strip"
 import type { TrackedScan } from "@/hooks/use-scan-center"
-import { startScan } from "@/hooks/use-scan-center"
 import { DEMO_REPO_ID, WORKSPACE_ID } from "@/lib/mocks/fixtures"
 
 const nav = vi.hoisted(() => ({ pathname: "/projects" }))
@@ -24,6 +23,7 @@ const scan = (patch: Partial<TrackedScan> = {}): TrackedScan => ({
   branch: "develop",
   repoName: "acme-payments",
   status: { scan_id: "s1", phase: "running", progress: 40, branch: "develop" },
+  job: "scanning",
   stopping: false,
   startedAt: Date.now() - 72_000,
   ...patch,
@@ -88,29 +88,17 @@ test("nothing running, no strip", () => {
   expect(screen.queryByTestId("scan-status-strip")).toBeNull()
 })
 
-test("on another page, the app bar pill leads back to the running scan", async () => {
-  render(<ScanPill />)
-  expect(screen.queryByTestId("scan-pill")).toBeNull()
-
-  await startScan({
-    workspaceId: WORKSPACE_ID,
-    repoId: DEMO_REPO_ID,
-    branch: "main",
-    repoName: "acme-payments",
-  })
-
-  const pill = await screen.findByTestId("scan-pill")
-  expect(pill).toHaveTextContent("Scanning acme-payments")
-  expect(pill).toHaveAttribute("href", `/dashboard/${DEMO_REPO_ID}?branch=main`)
-})
-
-test("the pill hides on the dashboard that already shows the strip", async () => {
-  nav.pathname = `/dashboard/${DEMO_REPO_ID}`
-  render(<ScanPill />)
-  await startScan({
-    workspaceId: WORKSPACE_ID,
-    repoId: DEMO_REPO_ID,
-    branch: "main",
-  })
-  expect(screen.queryByTestId("scan-pill")).toBeNull()
+test("once the scan is done and its score is being calculated, the strip steps aside", () => {
+  // Nothing left to stop: the panel carries the score's wait.
+  render(
+    <ScanStatusStrip
+      scan={scan({
+        job: "scoring",
+        status: { scan_id: "s1", phase: "done", progress: 100 },
+      })}
+      canStop
+      onStop={() => {}}
+    />,
+  )
+  expect(screen.queryByTestId("scan-status-strip")).not.toBeInTheDocument()
 })

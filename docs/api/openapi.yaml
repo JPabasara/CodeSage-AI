@@ -852,6 +852,30 @@ paths:
                     detail: GitHub's request limit has been reached. Please try again later.
                     code: RATE_LIMITED
 
+  /api/activity:
+    get:
+      tags: [scans]
+      operationId: get_activity
+      summary: What is running in this workspace right now
+      description: |
+        Every scan queued or running in the active workspace, and every project
+        whose health scores are being recalculated — after a profile change, or
+        while a finished scan is scored. The top bar's Activity menu polls this,
+        so everyone in the workspace sees the same work in progress, whoever
+        started it.
+
+        Re-scoring lists only score records still pending or running that were
+        created or started in the last 15 minutes, so a record whose job was
+        lost can never show as work in progress forever.
+      responses:
+        '200':
+          description: Work in progress. Both lists are empty when nothing is running.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Activity' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /api/repos/{repo_id}/scan/active:
     parameters:
       - $ref: '#/components/parameters/RepoId'
@@ -2049,6 +2073,47 @@ components:
           description: |
             Median duration of this repository's last few finished scans, for
             "Usually about 2 min". Null before its first finished scan.
+
+    Activity:
+      type: object
+      description: Work in progress in the active workspace (`GET /api/activity`).
+      required: [scans, rescoring]
+      additionalProperties: false
+      properties:
+        scans:
+          type: array
+          description: Queued and running scans, oldest first.
+          items: { $ref: '#/components/schemas/ActiveScan' }
+        rescoring:
+          type: array
+          description: Projects whose scores are being recalculated.
+          items: { $ref: '#/components/schemas/Rescoring' }
+
+    ActiveScan:
+      type: object
+      description: One queued or running scan, with the project it belongs to.
+      required: [repo_id, repo_name, status]
+      additionalProperties: false
+      properties:
+        repo_id: { type: string, format: uuid }
+        repo_name:
+          type: string
+          description: '`owner/name`, as the projects list shows it.'
+        status: { $ref: '#/components/schemas/ScanStatus' }
+
+    Rescoring:
+      type: object
+      description: |
+        One project with scores still being calculated. `snapshots_left` counts
+        its stored scans not yet scored under the current profile.
+      required: [repo_id, repo_name, snapshots_left]
+      additionalProperties: false
+      properties:
+        repo_id: { type: string, format: uuid }
+        repo_name:
+          type: string
+          description: '`owner/name`, as the projects list shows it.'
+        snapshots_left: { type: integer, minimum: 1 }
 
     ScanSummary:
       type: object

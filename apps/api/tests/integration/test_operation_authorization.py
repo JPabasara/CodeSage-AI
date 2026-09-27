@@ -52,6 +52,7 @@ INVENTORY = {
     ("POST", "/api/repos/{repo_id}/scan/{scan_id}/stop"): "scan:cancel_own|scan:cancel_any",
     ("GET", "/api/repos/{repo_id}/scans"): "history:read",
     ("GET", "/api/repos/{repo_id}/health"): "result:read",
+    ("GET", "/api/activity"): "result:read",
     ("GET", "/api/profiles"): "profile:read",
     ("POST", "/api/profiles"): "profile:update",
     ("GET", "/api/profiles/active"): "profile:read",
@@ -220,7 +221,10 @@ def test_every_operation_checks_role_before_business_service(
 
     for module, names in [
         (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
-        (analysis, ["start", "get_status", "get_active", "cancel", "get_history"]),
+        (
+            analysis,
+            ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
+        ),
         (
             profiles,
             [
@@ -459,7 +463,10 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
 
     for module, names in [
         (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
-        (analysis, ["start", "get_status", "get_active", "cancel", "get_history"]),
+        (
+            analysis,
+            ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
+        ),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
         (
