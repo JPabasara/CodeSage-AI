@@ -57,6 +57,9 @@ test("shows the workspace, the caller's role, and its derived counts", async () 
   ).toBeVisible()
   // Derived on read by the API, never stored: three seeded repositories.
   expect(screen.getByTestId("workspace-project-count")).toHaveTextContent("3")
+  expect(
+    screen.getByRole("heading", { name: "Danger zone" }),
+  ).toBeInTheDocument()
 })
 
 test("an org-admin edits the metadata, and only what changed is sent", async () => {
@@ -125,6 +128,7 @@ test("a role without workspace:update reads the settings and cannot change them"
   expect(
     screen.queryByRole("button", { name: /new workspace/i }),
   ).not.toBeInTheDocument()
+  expect(screen.queryByRole("heading", { name: "Danger zone" })).toBeNull()
 })
 
 test("creating another workspace switches to it, and it starts empty", async () => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { X } from "lucide-react"
+import { CheckCircle2, Loader2, RotateCcw, X } from "lucide-react"
 
 import {
   CategoryTag,
@@ -8,28 +8,41 @@ import {
   SourceTag,
 } from "@/components/dashboard/finding-tag"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import type { Finding } from "@/lib/types"
+import type { Finding, FindingStatus } from "@/lib/types"
 
 export type FindingDetailPanelProps = {
   finding: Finding | null
   onClose: () => void
+  canTriage?: boolean
+  statusBusy?: boolean
+  onStatusChange?: (finding: Finding, status: FindingStatus) => void
 }
 
 export function FindingDetailPanel({
   finding,
   onClose,
+  canTriage = false,
+  statusBusy = false,
+  onStatusChange,
 }: Readonly<FindingDetailPanelProps>) {
   if (!finding) return null
 
   return (
-    <Card aria-label="Finding detail" className="shrink-0 gap-0 border ring-0">
+    <Card
+      aria-label="Finding detail"
+      className="h-full min-h-0 gap-0 border ring-0"
+    >
       <CardHeader className="gap-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
             <SeverityTag severity={finding.severity} />
             <CategoryTag category={finding.category} />
             {finding.source ? <SourceTag source={finding.source} /> : null}
+            <Badge variant="outline">
+              {finding.status === "done" ? "Done" : "Open"}
+            </Badge>
           </div>
           <Button
             variant="ghost"
@@ -48,7 +61,7 @@ export function FindingDetailPanel({
         ) : null}
       </CardHeader>
 
-      <CardContent className="space-y-4 pt-4 text-sm">
+      <CardContent className="min-h-0 flex-1 space-y-4 overflow-y-auto pt-4 text-sm">
         <section>
           <h3 className="mb-1 text-xs font-medium text-muted-foreground">
             Why this matters
@@ -81,6 +94,32 @@ export function FindingDetailPanel({
               ) : null}
             </p>
           </section>
+        ) : null}
+
+        {canTriage ? (
+          <div className="border-t pt-4">
+            <Button
+              type="button"
+              variant={finding.status === "done" ? "outline" : "default"}
+              size="sm"
+              disabled={statusBusy}
+              onClick={() =>
+                onStatusChange?.(
+                  finding,
+                  finding.status === "done" ? "open" : "done",
+                )
+              }
+            >
+              {statusBusy ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : finding.status === "done" ? (
+                <RotateCcw aria-hidden="true" />
+              ) : (
+                <CheckCircle2 aria-hidden="true" />
+              )}
+              {finding.status === "done" ? "Reopen" : "Mark as done"}
+            </Button>
+          </div>
         ) : null}
       </CardContent>
     </Card>

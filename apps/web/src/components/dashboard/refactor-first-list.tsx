@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   FileCode2,
   FilterX,
+  Loader2,
+  RotateCcw,
 } from "lucide-react"
 
 import {
@@ -24,7 +26,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { Category, Finding, Severity, Source } from "@/lib/types"
+import type {
+  Category,
+  Finding,
+  FindingStatus,
+  Severity,
+  Source,
+} from "@/lib/types"
 import { cn, severityColor } from "@/lib/utils"
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -83,6 +91,9 @@ export type RefactorFirstListProps = {
   findings: Finding[]
   onSelect?: (finding: Finding) => void
   selectedFingerprint?: string
+  canTriage?: boolean
+  statusBusyFingerprint?: string
+  onStatusChange?: (finding: Finding, status: FindingStatus) => void
 }
 
 const PAGE_SIZE = 10
@@ -129,6 +140,7 @@ function ListPanel({
 const TOOLBAR_ITEM = "data-toolbar-item"
 // Toolbar order: the source toggle, the severity chips, then the category menu.
 const CATEGORY_FILTER_INDEX = SOURCE_OPTIONS.length + SEVERITIES.length
+const DONE_FILTER_INDEX = CATEGORY_FILTER_INDEX + 1
 
 function onToolbarKeyDown(event: KeyboardEvent<HTMLDivElement>) {
   // The category menu renders in a portal. Its key presses still bubble up the
@@ -166,6 +178,9 @@ export function RefactorFirstList({
   findings,
   onSelect,
   selectedFingerprint,
+  canTriage = false,
+  statusBusyFingerprint,
+  onStatusChange,
 }: Readonly<RefactorFirstListProps>) {
   const [source, setSource] = useState<SourceFilter>("all")
   const [severities, setSeverities] = useState<ReadonlySet<Severity>>(
@@ -173,6 +188,7 @@ export function RefactorFirstList({
   )
   const [category, setCategory] = useState<Category | "all">("all")
   const [showAll, setShowAll] = useState(false)
+  const [showDone, setShowDone] = useState(false)
   // The toolbar control that holds the single Tab stop (roving tabindex). It
   // starts on the debt-type filter — the one filter this list has always had,
   // so Tab still lands where it used to — and then follows the arrow keys.
@@ -189,6 +205,7 @@ export function RefactorFirstList({
   const rows = useMemo(() => {
     const filtered = findings.filter(
       (finding) =>
+        (showDone || finding.status !== "done") &&
         (source === "all" || finding.source === source) &&
         severities.has(finding.severity) &&
         (category === "all" || finding.category === category),
@@ -198,7 +215,12 @@ export function RefactorFirstList({
         sortKey(b) - sortKey(a) ||
         SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
     )
-  }, [findings, source, severities, category])
+  }, [findings, showDone, source, severities, category])
+
+  const doneCount = findings.filter(
+    (finding) => finding.status === "done",
+  ).length
+  const openCount = findings.length - doneCount
 
   const visibleRows = useMemo(
     () => (showAll ? rows : rows.slice(0, PAGE_SIZE)),
@@ -323,6 +345,27 @@ export function RefactorFirstList({
           ))}
         </SelectContent>
       </Select>
+
+      <button
+        type="button"
+        aria-pressed={showDone}
+        onClick={() => setShowDone((current) => !current)}
+        className={cn(
+          segment,
+          "h-7 gap-1.5 border",
+          showDone
+            ? "border-border bg-accent text-accent-foreground"
+            : "border-dashed text-muted-foreground hover:text-foreground",
+        )}
+        {...toolbarItem(DONE_FILTER_INDEX)}
+      >
+        <CheckCircle2 className="size-3.5" aria-hidden="true" />
+        Show done ({doneCount})
+      </button>
+
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {openCount} open / {doneCount} done
+      </span>
     </div>
   ) : null
 
@@ -367,9 +410,27 @@ export function RefactorFirstList({
         ? `No findings match the ${quotedList(activeFilters)} filter.`
         : `No findings match the ${quotedList(activeFilters)} filters.`
 
+  const onlyDoneAreHidden =
+    rows.length === 0 && doneCount > 0 && !showDone && openCount === 0
+
   return (
     <ListPanel toolbar={toolbar} count={rows.length} total={findings.length}>
-      {rows.length === 0 ? (
+      {onlyDoneAreHidden ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center space-y-3 p-6 text-center">
+          <div className="mx-auto flex size-9 items-center justify-center rounded-md bg-[hsl(var(--health-good)/0.12)] text-[hsl(var(--health-good))]">
+            <CheckCircle2 className="size-5" aria-hidden="true" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">All findings are marked done</p>
+            <p className="text-xs text-muted-foreground">
+              Done findings are hidden from this snapshot by default.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowDone(true)}>
+            Show done findings
+          </Button>
+        </div>
+      ) : rows.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center space-y-3 p-6 text-center">
           <div className="mx-auto flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
             <FilterX className="size-5" aria-hidden="true" />
@@ -396,17 +457,22 @@ export function RefactorFirstList({
               )
 
               return (
-                <li key={finding.fingerprint}>
+                <li
+                  key={finding.fingerprint}
+                  className={cn(
+                    "overflow-hidden rounded-md border bg-card transition-colors hover:border-primary/40 hover:bg-accent/30",
+                    selected && "border-primary/70 bg-accent/40",
+                    finding.status === "done" && "opacity-75",
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => onSelect?.(finding)}
                     aria-current={selected ? "true" : undefined}
                     data-state={selected ? "selected" : undefined}
                     aria-label={`${finding.severity} priority ${priority} finding: ${finding.reason} at ${location}`}
-                    className={cn(
-                      "group w-full rounded-md border bg-card p-3 text-left transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                      selected && "border-primary/70 bg-accent/40",
-                    )}
+                    data-testid="finding-card"
+                    className="group w-full p-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="min-w-6 font-mono text-[11px] font-medium text-muted-foreground tabular-nums">
@@ -416,6 +482,9 @@ export function RefactorFirstList({
                       <CategoryTag category={finding.category} />
                       {finding.source ? (
                         <SourceTag source={finding.source} />
+                      ) : null}
+                      {finding.status === "done" ? (
+                        <Badge variant="outline">Done</Badge>
                       ) : null}
                       <span
                         className="ml-auto font-mono text-[11px] text-muted-foreground tabular-nums"
@@ -446,6 +515,34 @@ export function RefactorFirstList({
                       </div>
                     </div>
                   </button>
+                  {canTriage ? (
+                    <div className="flex justify-end border-t px-3 py-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={statusBusyFingerprint === finding.fingerprint}
+                        onClick={() =>
+                          onStatusChange?.(
+                            finding,
+                            finding.status === "done" ? "open" : "done",
+                          )
+                        }
+                      >
+                        {statusBusyFingerprint === finding.fingerprint ? (
+                          <Loader2
+                            className="animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : finding.status === "done" ? (
+                          <RotateCcw aria-hidden="true" />
+                        ) : (
+                          <CheckCircle2 aria-hidden="true" />
+                        )}
+                        {finding.status === "done" ? "Reopen" : "Mark as done"}
+                      </Button>
+                    </div>
+                  ) : null}
                 </li>
               )
             })}

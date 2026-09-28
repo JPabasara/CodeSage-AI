@@ -242,6 +242,66 @@ test("the selected card says so to a screen reader, not only in colour", () => {
   ).not.toHaveAttribute("aria-current")
 })
 
+test("done findings are hidden by default and can be shown", async () => {
+  const user = userEvent.setup()
+  const withDone: Finding[] = [
+    ...findings,
+    {
+      ...findings[0],
+      fingerprint: "done",
+      reason: "finished item",
+      status: "done",
+    },
+  ]
+  render(<RefactorFirstList findings={withDone} />)
+
+  expect(screen.queryByText("finished item")).not.toBeInTheDocument()
+  expect(screen.getByText(/3 open.*1 done/i)).toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: /show done \(1\)/i }))
+
+  expect(screen.getByText("finished item")).toBeInTheDocument()
+  expect(
+    screen.getByRole("button", { name: /show done \(1\)/i }),
+  ).toHaveAttribute("aria-pressed", "true")
+})
+
+test("mark as done is a separate action from opening the finding", async () => {
+  const onSelect = vi.fn()
+  const onStatusChange = vi.fn()
+  render(
+    <RefactorFirstList
+      findings={findings}
+      canTriage
+      onSelect={onSelect}
+      onStatusChange={onStatusChange}
+    />,
+  )
+
+  const criticalCard = screen.getByRole("button", { name: /critical one/i })
+  await userEvent.click(
+    within(criticalCard.closest("li")!).getByRole("button", {
+      name: "Mark as done",
+    }),
+  )
+
+  expect(onStatusChange).toHaveBeenCalledWith(findings[1], "done")
+  expect(onSelect).not.toHaveBeenCalled()
+})
+
+test("all-done snapshots explain why the list is empty", async () => {
+  const done = findings.map((finding) => ({
+    ...finding,
+    status: "done" as const,
+  }))
+  render(<RefactorFirstList findings={done} />)
+
+  expect(screen.getByText("All findings are marked done")).toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Show done findings" }),
+  )
+  expect(screen.getByText("critical one")).toBeInTheDocument()
+})
+
 // ── source and severity filters (13F) ──────────────────────────────────────
 
 const mixed: Finding[] = [

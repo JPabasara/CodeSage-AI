@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import { getWorkspaces, switchWorkspace } from "@/lib/api/client"
 import type { Workspace } from "@/lib/types"
 import { useQuery, type MutableQueryState } from "./use-query"
+import { clearSelectedProjectId } from "./use-selected-project"
 import {
   invalidateWorkspaceScope,
   noteActiveWorkspace,
@@ -97,5 +98,16 @@ export function useWorkspaceSwitch() {
  */
 export function adoptWorkspace(workspace: Workspace) {
   noteActiveWorkspace(workspace.workspace_id)
+  invalidateWorkspaceScope()
+}
+
+/**
+ * Forget every browser-side reference to a workspace the API just deleted.
+ * The session query re-runs under the new epoch and learns the server's chosen
+ * fallback workspace, or confirms that the user now has none.
+ */
+export function leaveDeletedWorkspace(workspaceId: string) {
+  clearSelectedProjectId(workspaceId)
+  noteActiveWorkspace(null)
   invalidateWorkspaceScope()
 }

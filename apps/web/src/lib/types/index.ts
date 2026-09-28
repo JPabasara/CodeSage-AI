@@ -42,10 +42,10 @@ export type Category =
   | "security" // rule engine (security patterns: secrets, SQL concat, eval/exec)
 
 /**
- * v1.0 is view-only: every finding is `open`. The other values exist now because
- * scoring sums *open* priorities, so the filter needs something to filter on.
+ * A snapshot-local workflow label. Marking a finding done only changes its
+ * dashboard visibility; it never changes the stored severity, priority or score.
  */
-export type FindingStatus = "open" | "accepted" | "resolved" | "false-positive"
+export type FindingStatus = "open" | "done"
 
 // A is best, E is worst.
 export type Grade = "A" | "B" | "C" | "D" | "E"
@@ -110,7 +110,7 @@ export interface Finding {
   symbol?: string | null // the function/class it sits on; null for file-scoped rules
   reason: string // one-line templated explanation of why this fired
 
-  status: FindingStatus // read-only in v1; backend-set, defaults to "open"
+  status: FindingStatus // snapshot-local dashboard workflow; defaults to "open"
 
   /** Derived on this request under the active profile; the list arrives sorted by it. */
   priority: number
@@ -423,6 +423,10 @@ export type CreateWorkspaceRequest =
  */
 export type UpdateWorkspaceRequest =
   components["schemas"]["UpdateWorkspaceRequest"]
+
+/** Exact-name confirmation sent before permanently deleting a workspace. */
+export type DeleteWorkspaceRequest =
+  components["schemas"]["DeleteWorkspaceRequest"]
 
 /** An existing member. `status` distinguishes active from deactivated. */
 export type Member = components["schemas"]["Member"]

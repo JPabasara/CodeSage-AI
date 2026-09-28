@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Plus } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -16,9 +17,11 @@ import {
 } from "@/components/workspace/workspace-form"
 import { TeamPanel, TeamPanelSkeleton } from "@/components/workspace/team-panel"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
+import { DeleteWorkspaceSection } from "@/components/workspace/delete-workspace-section"
 import { ApiRequestError, updateWorkspace } from "@/lib/api/client"
 import {
   publishWorkspacesChanged,
+  leaveDeletedWorkspace,
   useActiveWorkspace,
   useWorkspaces,
 } from "@/hooks/use-workspace"
@@ -67,6 +70,7 @@ const LAYOUT = {
  * the first column, so there is nothing left to switch to.
  */
 export default function WorkspacePage() {
+  const router = useRouter()
   const members = useMembers()
   const { data: session } = useSession()
   const { data: workspaces, loading, error, refetch, reload } = useWorkspaces()
@@ -81,6 +85,7 @@ export default function WorkspacePage() {
   const canEdit = session?.permissions?.includes("workspace:update") ?? false
   const canManageMembers =
     session?.permissions?.includes("member:manage") ?? false
+  const canDelete = session?.permissions?.includes("workspace:delete") ?? false
 
   const values = draft ?? (active ? fieldsOf(active) : undefined)
 
@@ -156,6 +161,7 @@ export default function WorkspacePage() {
             query={members}
             canManage={canManageMembers}
             currentUserId={session?.user_id}
+            workspaceName={active.name}
           />
         </div>
 
@@ -231,6 +237,17 @@ export default function WorkspacePage() {
             onOpenChange={setCreatingNew}
             description={`Creating it also switches you to it. Nothing from ${active.name} comes with you.`}
           />
+
+          {canDelete ? (
+            <DeleteWorkspaceSection
+              workspaceId={active.workspace_id}
+              workspaceName={active.name}
+              onDeleted={() => {
+                leaveDeletedWorkspace(active.workspace_id)
+                router.replace("/workspace")
+              }}
+            />
+          ) : null}
         </div>
       </div>
     </div>

@@ -13,7 +13,9 @@ import type {
   CreateInvitationRequest,
   CreateProfileRequest,
   CreateWorkspaceRequest,
+  DeleteWorkspaceRequest,
   ErrorCode,
+  FindingStatus,
   HealthReport,
   Member,
   MemberList,
@@ -178,6 +180,23 @@ export function updateWorkspace(
 }
 
 /**
+ * Permanently delete the active workspace and everything it owns. The API
+ * validates the exact name and rebinds the session; global users and their
+ * memberships in other workspaces are never deleted.
+ */
+export function deleteWorkspace(
+  workspaceId: string,
+  body: DeleteWorkspaceRequest,
+): Promise<void> {
+  return fetch(`${API_BASE}/api/auth/workspaces/${workspaceId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(empty)
+}
+
+/**
  * Point this session at another workspace. A membership that is missing,
  * inactive, invited or someone else's all answer the same 404.
  */
@@ -238,6 +257,26 @@ export function getHealthReport(
   return fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
     credentials: "include",
   }).then(json<HealthReport>)
+}
+
+/**
+ * Change only the workflow state of one finding in one immutable snapshot.
+ * Scoring facts are not recalculated by this endpoint.
+ */
+export function setFindingStatus(
+  snapshotId: string,
+  fingerprint: string,
+  status: FindingStatus,
+): Promise<void> {
+  return fetch(
+    `${API_BASE}/api/snapshots/${encodeURIComponent(snapshotId)}/findings/${encodeURIComponent(fingerprint)}/status`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+  ).then(empty)
 }
 
 export function getScanHistory(
@@ -523,8 +562,8 @@ export function changeMemberRole(
   }).then(json<Member>)
 }
 
-/** Deactivating the last active org-admin is a 409 `CONFLICT`. */
-export function deactivateMember(membershipId: string): Promise<void> {
+/** Remove only this workspace membership; the global user remains. */
+export function removeMemberFromWorkspace(membershipId: string): Promise<void> {
   return fetch(`${API_BASE}/api/members/${membershipId}`, {
     method: "DELETE",
     credentials: "include",

@@ -28,7 +28,7 @@ import {
   ApiRequestError,
   changeMemberRole,
   createInvitation,
-  deactivateMember,
+  removeMemberFromWorkspace,
   revokeInvitation,
 } from "@/lib/api/client"
 import { publishWorkspacesChanged } from "@/hooks/use-workspace"
@@ -60,7 +60,7 @@ const initials = (label: string) =>
 
 const STATUS_LABEL: Record<Member["status"], string> = {
   active: "Active",
-  inactive: "Deactivated",
+  inactive: "Removed",
   invited: "Invited",
 }
 
@@ -122,7 +122,7 @@ function inviteError(caught: unknown): { message: string; delivery: boolean } {
  * Who is in the workspace, and — for an org-admin — the controls to change it.
  *
  * Everyone can read the list. Only `member:manage` renders the invite form, the
- * role pickers, Deactivate and Revoke; the API refuses them anyway, so hiding
+ * role pickers, Remove and Revoke; the API refuses them anyway, so hiding
  * them is about not offering what cannot work.
  *
  * Your own row is always read-only. The API would let one of two org-admins
@@ -133,10 +133,12 @@ export function TeamPanel({
   query,
   canManage,
   currentUserId,
+  workspaceName,
 }: Readonly<{
   query: MutableQueryState<MemberList>
   canManage: boolean
   currentUserId?: string
+  workspaceName: string
 }>) {
   const { data, loading, error, reload, refetch } = query
   const [busyId, setBusyId] = useState<string>()
@@ -163,11 +165,11 @@ export function TeamPanel({
     }
   }
 
-  async function onDeactivate(member: Member) {
+  async function onRemove(member: Member) {
     setBusyId(member.membership_id)
     try {
-      await deactivateMember(member.membership_id)
-      toast.success(`${displayName(member)} was deactivated`)
+      await removeMemberFromWorkspace(member.membership_id)
+      toast.success(`${displayName(member)} was removed from ${workspaceName}`)
       setConfirming(undefined)
       afterWrite()
     } catch (caught) {
@@ -230,7 +232,7 @@ export function TeamPanel({
           </h2>
           <p className="text-sm text-muted-foreground">
             {canManage
-              ? "Change a role or deactivate someone. Another org-admin manages your own row."
+              ? "Change a role or remove someone from this workspace. Another org-admin manages your own row."
               : "Only org-admins can change members."}
           </p>
         </div>
@@ -314,10 +316,10 @@ export function TeamPanel({
                           size="sm"
                           onClick={() => setConfirming(member)}
                           disabled={busyId === member.membership_id}
-                          aria-label={`Deactivate ${label}`}
+                          aria-label={`Remove ${label} from workspace`}
                         >
                           <UserMinus aria-hidden="true" />
-                          Deactivate
+                          Remove
                         </Button>
                       </div>
                     </>
@@ -381,10 +383,13 @@ export function TeamPanel({
           {confirming ? (
             <>
               <DialogHeader>
-                <DialogTitle>Deactivate {displayName(confirming)}?</DialogTitle>
+                <DialogTitle>
+                  Remove {displayName(confirming)} from {workspaceName}?
+                </DialogTitle>
                 <DialogDescription>
-                  They lose access to this workspace straight away. Their past
-                  scans stay. An org-admin can invite them again later.
+                  They lose access only to {workspaceName}. Their account and
+                  access to other workspaces are unchanged. Their past scan
+                  activity stays, and an org-admin can invite them again later.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -396,10 +401,10 @@ export function TeamPanel({
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => onDeactivate(confirming)}
+                  onClick={() => onRemove(confirming)}
                   disabled={busyId === confirming.membership_id}
                 >
-                  Deactivate {displayName(confirming)}
+                  Remove from workspace
                 </Button>
               </DialogFooter>
             </>

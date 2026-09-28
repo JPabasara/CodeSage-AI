@@ -31,6 +31,7 @@ function Harness({
       query={useMembers()}
       canManage={canManage}
       currentUserId={userId}
+      workspaceName="Acme Engineering"
     />
   )
 }
@@ -53,11 +54,13 @@ test("a read-only role sees every member and invitation, and no controls", async
   // No name and no email from the provider still gives the row a label.
   const unnamed = await rowFor(/Unnamed member/)
   expect(within(unnamed).getByText("No email shared")).toBeVisible()
-  expect(within(unnamed).getByText("Deactivated")).toBeVisible()
+  expect(within(unnamed).getByText("Removed")).toBeVisible()
 
   expect(screen.queryByRole("heading", { name: /invite/i })).toBeNull()
   expect(screen.queryByRole("combobox")).toBeNull()
-  expect(screen.queryByRole("button", { name: /deactivate/i })).toBeNull()
+  expect(
+    screen.queryByRole("button", { name: /remove .* from workspace/i }),
+  ).toBeNull()
   expect(screen.queryByRole("button", { name: /revoke/i })).toBeNull()
 })
 
@@ -72,7 +75,9 @@ test("an org-admin manages others, but their own row stays read-only", async () 
     screen.getByRole("combobox", { name: "Role for Priya Fernando" }),
   ).toBeInTheDocument()
   expect(
-    screen.getByRole("button", { name: "Deactivate Priya Fernando" }),
+    screen.getByRole("button", {
+      name: "Remove Priya Fernando from workspace",
+    }),
   ).toBeInTheDocument()
   // A deactivated member has nothing left to change.
   expect(
@@ -176,22 +181,27 @@ test("changing a role sends it and confirms by name", async () => {
   change.mockRestore()
 })
 
-test("deactivation names the member and needs a confirm", async () => {
+test("removal names the member and workspace and needs a confirm", async () => {
   asAdmin()
   await userEvent.click(
-    await screen.findByRole("button", { name: "Deactivate Sam Perera" }),
+    await screen.findByRole("button", {
+      name: "Remove Sam Perera from workspace",
+    }),
   )
   const dialog = await screen.findByRole("dialog", {
-    name: "Deactivate Sam Perera?",
+    name: "Remove Sam Perera from Acme Engineering?",
   })
+  expect(dialog).toHaveTextContent(/account and access to other workspaces/i)
   await userEvent.click(
-    within(dialog).getByRole("button", { name: "Deactivate Sam Perera" }),
+    within(dialog).getByRole("button", { name: "Remove from workspace" }),
   )
 
   await waitFor(() =>
-    expect(within(rowForSync(/Sam Perera/)).getByText("Deactivated")),
+    expect(within(rowForSync(/Sam Perera/)).getByText("Removed")),
   )
-  expect(toastSuccess).toHaveBeenCalledWith("Sam Perera was deactivated")
+  expect(toastSuccess).toHaveBeenCalledWith(
+    "Sam Perera was removed from Acme Engineering",
+  )
 })
 
 test("the last-org-admin conflict is explained, not shown as a 409", async () => {
@@ -227,11 +237,13 @@ test("a 403 reads as a permission message", async () => {
   )
   asAdmin()
   await userEvent.click(
-    await screen.findByRole("button", { name: "Deactivate Sam Perera" }),
+    await screen.findByRole("button", {
+      name: "Remove Sam Perera from workspace",
+    }),
   )
   await userEvent.click(
     within(await screen.findByRole("dialog")).getByRole("button", {
-      name: "Deactivate Sam Perera",
+      name: "Remove from workspace",
     }),
   )
   await waitFor(() =>

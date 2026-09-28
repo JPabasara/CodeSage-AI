@@ -21,6 +21,9 @@ import type {
   CreateInvitationRequest,
   CreateProfileRequest,
   CreateWorkspaceRequest,
+  DeleteWorkspaceRequest,
+  FindingStatus,
+  HealthReport,
   Invitation,
   Member,
   ProjectProfile,
@@ -59,7 +62,7 @@ import {
   UNSCANNED_REPO_ID,
   WORKSPACE_ID,
 } from "./fixtures"
-import { scanHistoryFor } from "./scoring"
+import { FINDING_FACTS, SNAPSHOTS, scanHistoryFor } from "./scoring"
 import { STAGE_BANDS, stageOf } from "@/lib/scan-progress"
 
 // ── error helper ────────────────────────────────────────────────────────────
@@ -102,6 +105,31 @@ function restore<T>(key: string, fallback: T): T {
 
 const WORKSPACES_KEY = "codesage.mock.workspaces"
 const ACTIVE_WORKSPACE_KEY = "codesage.mock.active-workspace"
+const FINDING_STATUSES_KEY = "codesage.mock.finding-statuses"
+
+let findingStatuses: Record<string, FindingStatus> = restore(
+  FINDING_STATUSES_KEY,
+  {},
+)
+
+function findingStatusKey(snapshotId: string, fingerprint: string) {
+  return `${activeWorkspaceId ?? "no-workspace"}:${snapshotId}:${fingerprint}`
+}
+
+function withFindingStatuses(report: HealthReport): HealthReport {
+  return {
+    ...report,
+    // This is deliberately an overlay after scoring. Done is a dashboard
+    // workflow state, so none of the report's scores or counts are recomputed.
+    findings: report.findings.map((finding) => ({
+      ...finding,
+      status:
+        findingStatuses[
+          findingStatusKey(report.snapshot_id, finding.fingerprint)
+        ] ?? finding.status,
+    })),
+  }
+}
 
 /**
  * Everything one workspace owns.
@@ -458,6 +486,7 @@ export function resetMockBackend() {
   cancelRequested.clear()
   lastSuccessfulSha.clear()
   pendingScores.clear()
+  findingStatuses = {}
   // Cleared first: `loadWorkspace` folds the current state back into its record
   // on the way out, which would copy the finished test's projects and profiles
   // straight into the freshly seeded ones.
@@ -466,6 +495,7 @@ export function resetMockBackend() {
   loadWorkspace(WORKSPACE_ID)
   storage()?.removeItem(WORKSPACES_KEY)
   storage()?.removeItem(ACTIVE_WORKSPACE_KEY)
+  storage()?.removeItem(FINDING_STATUSES_KEY)
 }
 
 // ── the workspace profile pool ──────────────────────────────────────────────
@@ -968,6 +998,67 @@ export const handlers = [
   ),
 
   // ── members & invitations ─────────────────────────────────────────────────
+  http.delete(
+    "*/api/auth/workspaces/:workspaceId",
+    async ({ params, request }) => {
+      const workspaceId = params.workspaceId as string
+      if (workspaceId !== activeWorkspaceId) return NOT_FOUND()
+      const record = workspaceRecords[workspaceId]
+      if (record.role !== "org-admin") {
+        return fail(
+          403,
+          "FORBIDDEN",
+          "Only an org-admin can delete a workspace.",
+        )
+      }
+
+      const body = (await request
+        .json()
+        .catch(() => null)) as Partial<DeleteWorkspaceRequest> | null
+      if (body?.confirmation_name !== record.name) {
+        return invalid([
+          {
+            field: "confirmation_name",
+            detail: "Enter the exact workspace name.",
+          },
+        ])
+      }
+
+      const repoIds = new Set(record.repos.map((repo) => repo.id))
+      const hasActiveScan = [...scans.entries()].some(
+        ([repoId, scan]) =>
+          repoIds.has(repoId) &&
+          (scan.phase === "queued" || scan.phase === "running"),
+      )
+      if (hasActiveScan) {
+        return fail(
+          409,
+          "WORKSPACE_SCAN_RUNNING",
+          "Stop or wait for workspace scans before deleting it.",
+        )
+      }
+
+      delete workspaceRecords[workspaceId]
+      for (const repoId of repoIds) {
+        scans.delete(repoId)
+        rescoringUntil.delete(repoId)
+        cancelRequested.delete(repoId)
+        for (const key of [...newestSnapshot.keys()]) {
+          if (key.startsWith(`${repoId}@`)) newestSnapshot.delete(key)
+        }
+        for (const key of [...lastSuccessfulSha.keys()]) {
+          if (key.startsWith(`${repoId}@`)) lastSuccessfulSha.delete(key)
+        }
+        for (const key of [...pendingScores.keys()]) {
+          if (key.startsWith(`${repoId}@`)) pendingScores.delete(key)
+        }
+      }
+      loadWorkspace(workspaceIds()[0] ?? null)
+      persistState()
+      return new HttpResponse(null, { status: 204 })
+    },
+  ),
+
   http.get("*/api/members", () => {
     const record = workspaceRecords[activeWorkspaceId as string]
     return HttpResponse.json({
@@ -1330,17 +1421,60 @@ export const handlers = [
       effectiveFor(repoId),
       asksForNewest ? undefined : requested,
     )
-    return HttpResponse.json(
-      asksForNewest
-        ? {
-            ...report,
-            snapshot_id: newest.snapshot_id,
-            scanned_at: newest.scanned_at,
-            commit_sha: newest.commit_sha ?? report.commit_sha,
-          }
-        : report,
-    )
+    const selectedReport = asksForNewest
+      ? {
+          ...report,
+          snapshot_id: newest.snapshot_id,
+          scanned_at: newest.scanned_at,
+          commit_sha: newest.commit_sha ?? report.commit_sha,
+        }
+      : report
+    return HttpResponse.json(withFindingStatuses(selectedReport))
   }),
+
+  http.put(
+    "*/api/snapshots/:snapshotId/findings/:fingerprint/status",
+    async ({ params, request, cookies }) => {
+      const role =
+        cookies["codesage_e2e_role"] === "viewer"
+          ? "viewer"
+          : activeWorkspaceId
+            ? workspaceRecords[activeWorkspaceId]?.role
+            : undefined
+      if (!role || !PERMISSIONS_BY_ROLE[role].includes("finding:triage")) {
+        return fail(
+          403,
+          "FORBIDDEN",
+          "You do not have permission to update finding status.",
+        )
+      }
+
+      const body = (await request.json().catch(() => null)) as {
+        status?: unknown
+      } | null
+      if (body?.status !== "open" && body?.status !== "done") {
+        return fail(422, "VALIDATION_FAILED", "Status must be open or done.")
+      }
+
+      const snapshotId = String(params.snapshotId)
+      const fingerprint = String(params.fingerprint)
+      const snapshotExists =
+        SNAPSHOTS.some((snapshot) => snapshot.snapshot_id === snapshotId) ||
+        Array.from(newestSnapshot.values()).some(
+          (snapshot) => snapshot.snapshot_id === snapshotId,
+        )
+      if (
+        !snapshotExists ||
+        !FINDING_FACTS.some((finding) => finding.fingerprint === fingerprint)
+      ) {
+        return NOT_FOUND()
+      }
+      const key = findingStatusKey(snapshotId, fingerprint)
+      findingStatuses = { ...findingStatuses, [key]: body.status }
+      persist(FINDING_STATUSES_KEY, findingStatuses)
+      return new HttpResponse(null, { status: 204 })
+    },
+  ),
 
   // Scan history, derived under the same effective profile — which is why
   // switching profiles redraws this list as well as the dashboard.

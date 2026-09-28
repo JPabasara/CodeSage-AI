@@ -160,7 +160,23 @@ export interface paths {
         get: operations["get_workspace"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Permanently delete the active workspace
+         * @description Requires `workspace:delete`, granted only to an org-admin. The supplied
+         *     confirmation name must exactly match the active workspace name.
+         *
+         *     Permanently deletes the workspace and everything it owns, including its
+         *     memberships, invitations, projects, profiles, scans, snapshots and
+         *     findings. It never deletes a global user account or that user's
+         *     memberships in other workspaces. The server moves affected sessions to
+         *     another active membership when one exists, otherwise to the authenticated
+         *     no-workspace state.
+         *
+         *     A queued or running scan refuses the operation with
+         *     `WORKSPACE_SCAN_RUNNING`; no partial deletion occurs. Missing and foreign
+         *     workspace identifiers both return `404`.
+         */
+        delete: operations["delete_workspace"];
         options?: never;
         head?: never;
         /**
@@ -293,7 +309,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Deactivate a workspace membership */
+        /**
+         * Remove a member from the active workspace
+         * @description Requires org-admin access and deactivates only this workspace membership.
+         *     The person's global CodeSage/Asgardeo account and memberships in other
+         *     workspaces are unchanged. The last active org-admin cannot be removed.
+         */
         delete: operations["deactivate_member"];
         options?: never;
         head?: never;
@@ -988,7 +1009,7 @@ export interface components {
          *     apart from nonsense ones.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "SCAN_QUEUE_FULL" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "SCAN_QUEUE_FULL" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "WORKSPACE_SCAN_RUNNING" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -1201,6 +1222,13 @@ export interface components {
             description?: string | null;
             /** Format: uri */
             website_url?: string | null;
+        };
+        /**
+         * @description Deliberate confirmation for an irreversible operation. The API trims
+         *     neither side: this value must exactly equal the stored workspace name.
+         */
+        DeleteWorkspaceRequest: {
+            confirmation_name: string;
         };
         /** @enum {string} */
         Role: "org-admin" | "manager" | "developer" | "viewer";
@@ -2061,6 +2089,49 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    delete_workspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteWorkspaceRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace and all workspace-owned data permanently deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description A queued or running scan prevents deletion. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "detail": "Stop or wait for workspace scans before deleting it.",
+                     *       "code": "WORKSPACE_SCAN_RUNNING"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     update_workspace: {
         parameters: {
             query?: never;
@@ -2256,7 +2327,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Membership deactivated. */
+            /** @description Member removed from this workspace. */
             204: {
                 headers: {
                     [name: string]: unknown;
