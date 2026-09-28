@@ -36,7 +36,7 @@ openapi: 3.1.0
 
 info:
   title: Code Sage AI API
-  version: 1.0.1
+  version: 1.0.2
   summary: Technical-debt analytics for a connected Git repository.
   description: |
     The REST surface behind the Code Sage AI dashboard.
@@ -334,6 +334,46 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+    delete:
+      tags: [auth]
+      operationId: delete_workspace
+      summary: Permanently delete the active workspace
+      description: |
+        Requires `workspace:delete`, granted only to an org-admin. The supplied
+        confirmation name must exactly match the active workspace name.
+
+        Permanently deletes the workspace and everything it owns, including its
+        memberships, invitations, projects, profiles, scans, snapshots and
+        findings. It never deletes a global user account or that user's
+        memberships in other workspaces. The server moves affected sessions to
+        another active membership when one exists, otherwise to the authenticated
+        no-workspace state.
+
+        A queued or running scan refuses the operation with
+        `WORKSPACE_SCAN_RUNNING`; no partial deletion occurs. Missing and foreign
+        workspace identifiers both return `404`.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteWorkspaceRequest' }
+      responses:
+        '204': { description: Workspace and all workspace-owned data permanently deleted. }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A queued or running scan prevents deletion.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                detail: Stop or wait for workspace scans before deleting it.
+                code: WORKSPACE_SCAN_RUNNING
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
   /api/auth/workspaces/active:
     put:
       tags: [auth]
@@ -460,14 +500,18 @@ paths:
     delete:
       tags: [members]
       operationId: deactivate_member
-      summary: Deactivate a workspace membership
+      summary: Remove a member from the active workspace
+      description: |
+        Requires org-admin access and deactivates only this workspace membership.
+        The person's global CodeSage/Asgardeo account and memberships in other
+        workspaces are unchanged. The last active org-admin cannot be removed.
       parameters:
         - name: membership_id
           in: path
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '204': { description: Membership deactivated. }
+        '204': { description: Member removed from this workspace. }
         '401': { $ref: '#/components/responses/NotAuthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1607,6 +1651,7 @@ components:
         - PROFILE_IN_USE          # 409
         - PROFILE_NAME_CONFLICT   # 409
         - WORKSPACE_REQUIRED      # 409
+        - WORKSPACE_SCAN_RUNNING  # 409
         - VALIDATION_FAILED       # 422
         - RATE_LIMITED            # 429
         - UPSTREAM_UNAVAILABLE    # 503
@@ -1860,6 +1905,19 @@ components:
           type: [string, 'null']
           format: uri
           maxLength: 1000
+
+    DeleteWorkspaceRequest:
+      type: object
+      description: |
+        Deliberate confirmation for an irreversible operation. The API trims
+        neither side: this value must exactly equal the stored workspace name.
+      required: [confirmation_name]
+      additionalProperties: false
+      properties:
+        confirmation_name:
+          type: string
+          minLength: 1
+          maxLength: 255
 
     Role:
       type: string
