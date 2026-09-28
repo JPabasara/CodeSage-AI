@@ -28,6 +28,7 @@ class FakeUser:
     display_name: str | None
     avatar_url: str | None
     identity_provider: str | None
+    product_tour_completed_at: object | None = None
 
 
 class FakeDb:
@@ -87,6 +88,7 @@ def test_returns_the_signed_in_user() -> None:
         "user_id": str(USER_ID),
         "workspace_id": str(WORKSPACE_ID),
         "needs_workspace_setup": False,
+        "product_tour_required": True,
         "role": "org-admin",
         "permissions": ["project:read"],
         "email": "dev@codesageai.dev",

@@ -22,6 +22,7 @@ EXPECTED_PRODUCT_PATHS = {
     "/api/auth/login": {"get"},
     "/api/auth/callback": {"get"},
     "/api/auth/session": {"get"},
+    "/api/auth/tour": {"put"},
     "/api/auth/workspaces": {"get", "post"},
     "/api/auth/workspaces/{workspace_id}": {"patch"},
     "/api/auth/workspaces/active": {"put"},
@@ -137,6 +138,7 @@ def test_wire_names_are_snake_case() -> None:
         "avatar_url",
         "workspace_id",
         "needs_workspace_setup",
+        "product_tour_required",
         "role",
         "permissions",
         "identity_provider",
@@ -330,9 +332,7 @@ def test_scan_error_codes_match_the_contract() -> None:
 
 def test_the_connect_guardrail_codes_and_languages_are_in_the_contract() -> None:
     contract = _contract()["components"]["schemas"]
-    assert {"REPOSITORY_TOO_LARGE", "REPOSITORY_HAS_NO_JAVA"} <= set(
-        contract["ErrorCode"]["enum"]
-    )
+    assert {"REPOSITORY_TOO_LARGE", "REPOSITORY_HAS_NO_JAVA"} <= set(contract["ErrorCode"]["enum"])
     # `additionalProperties: false` on Error: without this property a client
     # validating the envelope would reject the no-Java refusal.
     assert contract["Error"]["properties"]["languages"]["items"] == {"type": "string"}

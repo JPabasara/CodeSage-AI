@@ -20,8 +20,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.enums import MembershipStatus
-from codesage_api.db.models import Membership, Repository, User, UserSession, Workspace
+from codesage_api.db.enums import (
+    MembershipStatus,
+    RepositoryConnectionStatus,
+    RepositoryPlatform,
+    RepositoryVisibility,
+)
+from codesage_api.db.models import Branch, Membership, Repository, User, UserSession, Workspace
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import (
     NotAuthenticated,
@@ -169,18 +174,21 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
         last_used_at=now,
         expires_at=now + timedelta(minutes=settings.session_idle_minutes),
     )
+    # Request-local hint used only by the OIDC callback to choose its landing
+    # page. It is not persisted on the session row; the durable state belongs
+    # to the user.
+    session.product_tour_required = user.product_tour_completed_at is None  # type: ignore[attr-defined]
     db.add(session)
     db.flush()
     return session
 
 
 def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """First sign-in: create the person, and nothing else.
+    """First sign-in: create a ready-to-explore starter workspace.
 
-    No workspace and no repository. Naming a workspace is the first thing the
-    product asks the user to do, and a "My Workspace" invented here would be a
-    name nobody chose, sitting in the switcher next to the real one they create a
-    moment later.
+    The fixed public PetClinic repository makes the guided trial usable without
+    asking a new user to find a suitable Java project first. Workspaces created
+    later through the normal endpoint remain empty.
     """
     user = User(
         asgardeo_sub=claims.sub,
@@ -192,7 +200,39 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     db.add(user)
     db.flush()
+    workspace_id = _create_workspace_records(db, user.id, name="My Workspace")
+    _seed_trial_repository(db, workspace_id)
     return user
+
+
+def _seed_trial_repository(db: DbSession, workspace_id: uuid.UUID) -> None:
+    """Add the public Spring PetClinic project without an external API call.
+
+    Starting a scan refreshes the branch SHA from GitHub before queueing work,
+    so the placeholder is never used as a scan revision.
+    """
+    repository = Repository(
+        workspace_id=workspace_id,
+        source_platform=RepositoryPlatform.GITHUB,
+        # GitHub's immutable repository id. Using the same id as the normal
+        # connect flow prevents PetClinic from being connected twice.
+        external_repository_id="7517918",
+        name="spring-petclinic",
+        owner="spring-projects",
+        url="https://github.com/spring-projects/spring-petclinic",
+        visibility=RepositoryVisibility.PUBLIC,
+        connection_status=RepositoryConnectionStatus.CONNECTED,
+    )
+    repository.branches.append(Branch(name="main", head_commit_sha="0" * 40, is_default=True))
+    db.add(repository)
+    db.flush()
+
+
+def complete_product_tour(db: DbSession, user_id: uuid.UUID) -> None:
+    """Prevent automatic relaunch after either Finish or Skip."""
+    user = db.get_one(User, user_id)
+    user.product_tour_completed_at = datetime.now(timezone.utc)
+    db.flush()
 
 
 def _create_workspace_records(
@@ -306,9 +346,7 @@ def list_active_workspaces(
     return workspaces
 
 
-def describe_workspace(
-    db: DbSession, workspace: Workspace, role_id: str
-) -> ActiveWorkspace:
+def describe_workspace(db: DbSession, workspace: Workspace, role_id: str) -> ActiveWorkspace:
     """One workspace plus the two counts the switcher and settings screen show.
 
     Counted here rather than stored on the row: both change whenever a project or
@@ -317,12 +355,12 @@ def describe_workspace(
     what keeps the counts to it.
     """
     project_count = db.scalar(
-        select(func.count()).select_from(Repository).where(
-            Repository.workspace_id == workspace.id
-        )
+        select(func.count()).select_from(Repository).where(Repository.workspace_id == workspace.id)
     )
     member_count = db.scalar(
-        select(func.count()).select_from(Membership).where(
+        select(func.count())
+        .select_from(Membership)
+        .where(
             Membership.workspace_id == workspace.id,
             Membership.status == MembershipStatus.ACTIVE,
         )

@@ -85,6 +85,7 @@ def test_route_inventory_has_no_unclassified_operations():
         ("GET", "/api/auth/callback"),
         ("POST", "/api/auth/logout"),
         ("GET", "/api/auth/session"),
+        ("PUT", "/api/auth/tour"),
         ("GET", "/api/auth/workspaces"),
         ("POST", "/api/auth/workspaces"),
         ("GET", "/api/auth/workspaces/{workspace_id}"),
@@ -369,9 +370,7 @@ def test_foreign_and_missing_profile_ids_are_both_not_found(
 
     for profile_id in (foreign_id, uuid.uuid4()):
         assert client.get(f"/api/profiles/{profile_id}").status_code == 404
-        assert (
-            client.patch(f"/api/profiles/{profile_id}", json={"name": "x"}).status_code == 404
-        )
+        assert client.patch(f"/api/profiles/{profile_id}", json={"name": "x"}).status_code == 404
         assert client.delete(f"/api/profiles/{profile_id}").status_code == 404
 
     for repo_id in (resources["foreign_repo"], uuid.uuid4()):
