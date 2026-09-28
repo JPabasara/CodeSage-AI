@@ -215,7 +215,10 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
   const profileName = projectProfile?.effective.name
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6">
+    <div
+      className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6"
+      data-tour="scan-history"
+    >
       <PageHeader
         title="Scan History"
         context={<ProjectContext repoId={repoId} />}

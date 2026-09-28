@@ -647,20 +647,25 @@ function ProfilesView() {
         </div>
       </div>
 
-      <ScopeRail
-        className={RAIL_AREA}
-        repos={repos}
-        reposError={reposError}
-        onRetryRepos={refetchRepos}
-        workspaceDefault={workspaceDefault}
-        selectedProjectId={projectId}
-        current={projectProfile}
-        version={railVersion}
-        onSelect={selectScope}
-      />
+      <div className={RAIL_AREA} data-tour="profile-scope">
+        <ScopeRail
+          repos={repos}
+          reposError={reposError}
+          onRetryRepos={refetchRepos}
+          workspaceDefault={workspaceDefault}
+          selectedProjectId={projectId}
+          current={projectProfile}
+          version={railVersion}
+          onSelect={selectScope}
+        />
+      </div>
 
       <div className={MAIN_AREA}>
-        <section aria-labelledby="pool-heading" className="space-y-3">
+        <section
+          aria-labelledby="pool-heading"
+          className="space-y-3"
+          data-tour="profile-pool"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
               <h2 id="pool-heading" className="text-[15px] font-semibold">
@@ -798,13 +803,15 @@ function ProfilesView() {
               </>
             ) : null}
 
-            {canManage ? (
-              scopeAction
-            ) : (
-              <LockedAction reason={ROLE_LOCKED_REASON}>
-                {scopeAction}
-              </LockedAction>
-            )}
+            <div data-tour="profile-action">
+              {canManage ? (
+                scopeAction
+              ) : (
+                <LockedAction reason={ROLE_LOCKED_REASON}>
+                  {scopeAction}
+                </LockedAction>
+              )}
+            </div>
           </div>
         </section>
       </div>

@@ -3,6 +3,8 @@ import { expect, test } from "vitest"
 import { ApiRequestError } from "@/lib/api/client"
 import {
   connectFailureMessage,
+  INVALID_REPOSITORY_URL_MESSAGE,
+  isGitHubRepositoryUrl,
   NO_JAVA_MESSAGE,
   scanFailureMessage,
 } from "@/lib/guardrail-messages"
@@ -66,10 +68,23 @@ test("too large without a usable sentence falls back to the code's own", () => {
 
 test("every other code is chosen by code, not copied from detail", () => {
   expect(connectFailureMessage(refused("REPOSITORY_NOT_PUBLIC"))).toMatch(
-    /only public repositories/i,
+    /private repositories cannot be connected yet/i,
   )
   expect(connectFailureMessage(refused("ALREADY_CONNECTED"))).toMatch(
     /already connected/i,
+  )
+})
+
+test("repository links are validated before calling the API", () => {
+  expect(isGitHubRepositoryUrl("https://github.com/acme/payments")).toBe(true)
+  expect(isGitHubRepositoryUrl("https://github.com/acme/payments.git")).toBe(
+    true,
+  )
+  expect(isGitHubRepositoryUrl("random text")).toBe(false)
+  expect(isGitHubRepositoryUrl("https://gitlab.com/acme/payments")).toBe(false)
+  expect(isGitHubRepositoryUrl("https://github.com/acme")).toBe(false)
+  expect(INVALID_REPOSITORY_URL_MESSAGE).toMatch(
+    /valid GitHub repository link/i,
   )
 })
 

@@ -81,6 +81,15 @@ signedOut(
   },
 )
 
+signedOut("the product guide is public without a session", async ({ page }) => {
+  await page.goto("/guide")
+
+  await expect(page).toHaveURL(/\/guide$/)
+  await expect(
+    page.getByRole("heading", { name: "Understand CodeSage AI" }),
+  ).toBeVisible()
+})
+
 signedOut(
   "the sign-in button hands the browser to the API, not to a fetch",
   async ({ page }) => {

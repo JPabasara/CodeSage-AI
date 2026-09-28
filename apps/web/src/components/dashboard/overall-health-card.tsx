@@ -255,7 +255,7 @@ export function OverallHealthCard({
   }
 
   return (
-    <Card className="h-full gap-3 border ring-0">
+    <Card data-tour="dashboard-health" className="h-full gap-3 border ring-0">
       <CardHeader>
         <CardTitle className="text-[15px] font-semibold">Code Health</CardTitle>
         <CardDescription className="tabular-nums">

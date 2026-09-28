@@ -32,11 +32,24 @@ test("the close button asks the container to leave detail mode", async () => {
   expect(onClose).toHaveBeenCalledOnce()
 })
 
-test("renders nothing when there is no finding", () => {
-  const { container } = render(
-    <FindingDetailPanel finding={null} onClose={vi.fn()} />,
-  )
-  expect(container).toBeEmptyDOMElement()
+test("an empty snapshot keeps detail view open with a useful message", () => {
+  render(<FindingDetailPanel finding={null} onClose={vi.fn()} />)
+
+  const detail = screen.getByLabelText("Finding detail")
+  expect(detail).toHaveTextContent("No findings to show")
+  expect(detail).toHaveTextContent(/no findings in this snapshot/i)
+  expect(
+    screen.getByRole("button", { name: /close finding detail/i }),
+  ).toBeInTheDocument()
+})
+
+test("an unselected detail asks the user to choose an available finding", () => {
+  render(<FindingDetailPanel finding={null} hasFindings onClose={vi.fn()} />)
+
+  expect(screen.getByText("Select a finding")).toBeInTheDocument()
+  expect(
+    screen.getByText(/choose a finding from the list/i),
+  ).toBeInTheDocument()
 })
 
 test("an allowed user can mark an open finding done", async () => {

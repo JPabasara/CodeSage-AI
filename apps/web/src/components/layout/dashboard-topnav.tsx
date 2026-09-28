@@ -117,7 +117,10 @@ export function DashboardTopNav({
         >
           /
         </span>
-        <div className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-topbar-foreground transition-colors hover:bg-white/10 md:flex-none">
+        <div
+          data-tour="branch-selector"
+          className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-topbar-foreground transition-colors hover:bg-white/10 md:flex-none"
+        >
           <GitBranch
             className="size-3.5 shrink-0 opacity-70"
             aria-hidden="true"
@@ -242,7 +245,9 @@ export function DashboardTopNav({
             ) : null}
           </div>
         ) : null}
-        <ScanControl {...scan} onBar />
+        <div data-tour="scan-action">
+          <ScanControl {...scan} onBar />
+        </div>
       </TopBarPortal>
     </>
   )

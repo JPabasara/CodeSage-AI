@@ -69,22 +69,20 @@ const MODES: {
 export function DashboardViewModeBar({
   value,
   onChange,
-  canShowDetail = true,
 }: Readonly<{
   value: DashboardViewMode
   onChange: (mode: DashboardViewMode) => void
-  canShowDetail?: boolean
 }>) {
   return (
     <TooltipProvider>
       <div
         role="toolbar"
+        data-tour="dashboard-views"
         aria-label="Dashboard view"
         className="flex h-10 shrink-0 items-center justify-center gap-1 border-t bg-card/95 px-2 backdrop-blur"
       >
         {MODES.map((mode) => {
           const selected = value === mode.value
-          const disabled = mode.value === "findings-detail" && !canShowDetail
           const Icon = mode.icon
           return (
             <Tooltip key={mode.value}>
@@ -95,7 +93,6 @@ export function DashboardViewModeBar({
                   variant="ghost"
                   aria-label={mode.label}
                   aria-pressed={selected}
-                  disabled={disabled}
                   onClick={() => onChange(mode.value)}
                   className={cn(
                     "h-7 gap-1.5 px-2 text-xs",

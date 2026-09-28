@@ -275,7 +275,9 @@ test("a private repository explains itself instead of failing generically", asyn
 
   // REPOSITORY_NOT_PUBLIC. Someone pasting their own repository has done nothing
   // wrong and needs to know why it was refused.
-  expect(await failureMessage()).toMatch(/only public repositories/i)
+  expect(await failureMessage()).toMatch(
+    /private repositories cannot be connected yet/i,
+  )
   expect(screen.queryByText("octocat/private-thing")).not.toBeInTheDocument()
 })
 
@@ -294,7 +296,10 @@ test("a malformed URL is rejected with a useful message", async () => {
 
   await connect("not-a-url")
 
-  expect(await failureMessage()).toMatch(/does not look like/i) // INVALID_REPOSITORY_URL
+  expect(await failureMessage()).toMatch(/valid GitHub repository link/i)
+  expect(await within(connectForm()).findByRole("alert")).toHaveTextContent(
+    /https:\/\/github\.com\/owner\/repository/i,
+  )
 })
 
 test("connecting the same repository twice is refused", async () => {
@@ -370,7 +375,7 @@ test("the message is chosen by CODE, not copied from the server's detail", async
   await connect("https://github.com/octocat/anything")
 
   const message = await failureMessage()
-  expect(message).toMatch(/only public repositories/i)
+  expect(message).toMatch(/private repositories cannot be connected yet/i)
   expect(message).not.toBe("x")
 })
 
