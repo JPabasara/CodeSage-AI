@@ -22,6 +22,8 @@ import type {
   CreateProfileRequest,
   CreateWorkspaceRequest,
   DeleteWorkspaceRequest,
+  FindingStatus,
+  HealthReport,
   Invitation,
   Member,
   ProjectProfile,
@@ -60,7 +62,7 @@ import {
   UNSCANNED_REPO_ID,
   WORKSPACE_ID,
 } from "./fixtures"
-import { scanHistoryFor } from "./scoring"
+import { FINDING_FACTS, SNAPSHOTS, scanHistoryFor } from "./scoring"
 import { STAGE_BANDS, stageOf } from "@/lib/scan-progress"
 
 // ── error helper ────────────────────────────────────────────────────────────
@@ -103,6 +105,31 @@ function restore<T>(key: string, fallback: T): T {
 
 const WORKSPACES_KEY = "codesage.mock.workspaces"
 const ACTIVE_WORKSPACE_KEY = "codesage.mock.active-workspace"
+const FINDING_STATUSES_KEY = "codesage.mock.finding-statuses"
+
+let findingStatuses: Record<string, FindingStatus> = restore(
+  FINDING_STATUSES_KEY,
+  {},
+)
+
+function findingStatusKey(snapshotId: string, fingerprint: string) {
+  return `${activeWorkspaceId ?? "no-workspace"}:${snapshotId}:${fingerprint}`
+}
+
+function withFindingStatuses(report: HealthReport): HealthReport {
+  return {
+    ...report,
+    // This is deliberately an overlay after scoring. Done is a dashboard
+    // workflow state, so none of the report's scores or counts are recomputed.
+    findings: report.findings.map((finding) => ({
+      ...finding,
+      status:
+        findingStatuses[
+          findingStatusKey(report.snapshot_id, finding.fingerprint)
+        ] ?? finding.status,
+    })),
+  }
+}
 
 /**
  * Everything one workspace owns.
@@ -459,6 +486,7 @@ export function resetMockBackend() {
   cancelRequested.clear()
   lastSuccessfulSha.clear()
   pendingScores.clear()
+  findingStatuses = {}
   // Cleared first: `loadWorkspace` folds the current state back into its record
   // on the way out, which would copy the finished test's projects and profiles
   // straight into the freshly seeded ones.
@@ -467,6 +495,7 @@ export function resetMockBackend() {
   loadWorkspace(WORKSPACE_ID)
   storage()?.removeItem(WORKSPACES_KEY)
   storage()?.removeItem(ACTIVE_WORKSPACE_KEY)
+  storage()?.removeItem(FINDING_STATUSES_KEY)
 }
 
 // ── the workspace profile pool ──────────────────────────────────────────────
@@ -1392,17 +1421,60 @@ export const handlers = [
       effectiveFor(repoId),
       asksForNewest ? undefined : requested,
     )
-    return HttpResponse.json(
-      asksForNewest
-        ? {
-            ...report,
-            snapshot_id: newest.snapshot_id,
-            scanned_at: newest.scanned_at,
-            commit_sha: newest.commit_sha ?? report.commit_sha,
-          }
-        : report,
-    )
+    const selectedReport = asksForNewest
+      ? {
+          ...report,
+          snapshot_id: newest.snapshot_id,
+          scanned_at: newest.scanned_at,
+          commit_sha: newest.commit_sha ?? report.commit_sha,
+        }
+      : report
+    return HttpResponse.json(withFindingStatuses(selectedReport))
   }),
+
+  http.put(
+    "*/api/snapshots/:snapshotId/findings/:fingerprint/status",
+    async ({ params, request, cookies }) => {
+      const role =
+        cookies["codesage_e2e_role"] === "viewer"
+          ? "viewer"
+          : activeWorkspaceId
+            ? workspaceRecords[activeWorkspaceId]?.role
+            : undefined
+      if (!role || !PERMISSIONS_BY_ROLE[role].includes("finding:triage")) {
+        return fail(
+          403,
+          "FORBIDDEN",
+          "You do not have permission to update finding status.",
+        )
+      }
+
+      const body = (await request.json().catch(() => null)) as {
+        status?: unknown
+      } | null
+      if (body?.status !== "open" && body?.status !== "done") {
+        return fail(422, "VALIDATION_FAILED", "Status must be open or done.")
+      }
+
+      const snapshotId = String(params.snapshotId)
+      const fingerprint = String(params.fingerprint)
+      const snapshotExists =
+        SNAPSHOTS.some((snapshot) => snapshot.snapshot_id === snapshotId) ||
+        Array.from(newestSnapshot.values()).some(
+          (snapshot) => snapshot.snapshot_id === snapshotId,
+        )
+      if (
+        !snapshotExists ||
+        !FINDING_FACTS.some((finding) => finding.fingerprint === fingerprint)
+      ) {
+        return NOT_FOUND()
+      }
+      const key = findingStatusKey(snapshotId, fingerprint)
+      findingStatuses = { ...findingStatuses, [key]: body.status }
+      persist(FINDING_STATUSES_KEY, findingStatuses)
+      return new HttpResponse(null, { status: 204 })
+    },
+  ),
 
   // Scan history, derived under the same effective profile — which is why
   // switching profiles redraws this list as well as the dashboard.

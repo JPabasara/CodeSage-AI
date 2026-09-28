@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { FolderX, GitBranch, ScanSearch } from "lucide-react"
@@ -11,6 +11,12 @@ import { OverallHealthCard } from "@/components/dashboard/overall-health-card"
 import { HealthGraphCard } from "@/components/dashboard/health-graph-card"
 import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
+import {
+  DashboardViewModeBar,
+  dashboardViewPreferenceKey,
+  isDashboardViewMode,
+  type DashboardViewMode,
+} from "@/components/dashboard/dashboard-view-mode-bar"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import {
   DASHBOARD_GRID,
@@ -23,7 +29,7 @@ import {
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { Button } from "@/components/ui/button"
-import { ApiRequestError } from "@/lib/api/client"
+import { ApiRequestError, setFindingStatus } from "@/lib/api/client"
 import { useBranches } from "@/hooks/use-branches"
 import { useSelectedBranch } from "@/hooks/use-selected-branch"
 import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
@@ -41,7 +47,7 @@ import { useSession } from "@/hooks/use-session"
 import { ScanStatusStrip } from "@/components/layout/scan-status-strip"
 import { ScanProgressPanel } from "@/components/dashboard/scan-progress-panel"
 import { useScanHistory } from "@/hooks/use-scan-history"
-import type { Finding, TreeNode } from "@/lib/types"
+import type { Finding, FindingStatus, TreeNode } from "@/lib/types"
 import { SCAN_SHARE, toBar } from "@/lib/scan-progress"
 import { healthColor } from "@/lib/utils"
 
@@ -161,6 +167,41 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     !session ||
     permissions.includes("scan:cancel_own") ||
     permissions.includes("scan:cancel_any")
+  // Role fallback for the rollout window: the existing API may not expose the
+  // new grant yet, but its role still describes the agreed RBAC matrix. The
+  // status endpoint performs the final authorization check.
+  const canTriage =
+    permissions.includes("finding:triage") ||
+    session?.role === "org-admin" ||
+    session?.role === "manager" ||
+    session?.role === "developer"
+  const [findingStatusOverrides, setFindingStatusOverrides] = useState<
+    Record<string, FindingStatus>
+  >({})
+  const [statusBusyFingerprint, setStatusBusyFingerprint] = useState<string>()
+  const viewPreferenceKey =
+    session?.user_id && workspaceId
+      ? dashboardViewPreferenceKey(session.user_id, workspaceId)
+      : undefined
+  const [chosenView, setChosenView] = useState<{
+    key: string | undefined
+    mode: DashboardViewMode
+  }>(() => ({
+    key: undefined,
+    mode: searchParams.get("finding") ? "findings-detail" : "overview",
+  }))
+  const storedView =
+    viewPreferenceKey && typeof window !== "undefined"
+      ? window.localStorage.getItem(viewPreferenceKey)
+      : null
+  const viewMode =
+    chosenView.key === viewPreferenceKey
+      ? chosenView.mode
+      : searchParams.get("finding")
+        ? "findings-detail"
+        : isDashboardViewMode(storedView)
+          ? storedView
+          : "overview"
 
   // The results on screen while this branch is being scanned are the ones to
   // keep until "Show them" — tell the store, so they survive even if the
@@ -219,10 +260,20 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   // The selected finding lives in the URL, not in state, so a refresh restores
   // detail mode and Back closes it. Fingerprints are stable across scans, which
   // is what a shareable link needs.
+  const displayedFindings = useMemo(
+    () =>
+      report?.findings.map((finding) => ({
+        ...finding,
+        status:
+          findingStatusOverrides[
+            `${report.snapshot_id}:${finding.fingerprint}`
+          ] ?? finding.status,
+      })) ?? [],
+    [report, findingStatusOverrides],
+  )
   const selectedFingerprint = searchParams.get("finding") ?? undefined
   const selectedFinding: Finding | null =
-    report?.findings.find((f) => f.fingerprint === selectedFingerprint) ?? null
-  const detailMode = selectedFinding !== null
+    displayedFindings.find((f) => f.fingerprint === selectedFingerprint) ?? null
   // The file tree writes the hovered node here. Card B always shows repo health
   // today, so only the setter is used and the value is deliberately discarded.
   // Wiring it up later means keeping the value, passing it to Card B, and adding
@@ -247,10 +298,16 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     return query ? `${pathname}?${query}` : pathname
   }
 
+  const rememberViewMode = (next: DashboardViewMode) => {
+    setChosenView({ key: viewPreferenceKey, mode: next })
+    if (viewPreferenceKey) window.localStorage.setItem(viewPreferenceKey, next)
+  }
+
   // push, not replace: Back should leave detail mode, the way it does in a mail
   // client. scroll: false keeps the dashboard where it is as the region swaps.
   const openFinding = (finding: Finding) => {
     setTreeSelectionNotice(null)
+    rememberViewMode("findings-detail")
     router.push(dashboardHref({ finding: finding.fingerprint }), {
       scroll: false,
     })
@@ -258,7 +315,53 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
   const closeFinding = () => {
     setTreeSelectionNotice(null)
+    rememberViewMode("findings")
     router.push(dashboardHref({ finding: null }), { scroll: false })
+  }
+
+  const chooseViewMode = (next: DashboardViewMode) => {
+    if (
+      next === "findings-detail" &&
+      !selectedFinding &&
+      displayedFindings[0]
+    ) {
+      openFinding(displayedFindings[0])
+      return
+    }
+    rememberViewMode(next)
+  }
+
+  const changeFindingStatus = async (
+    finding: Finding,
+    status: FindingStatus,
+  ) => {
+    if (!report || !canTriage) return
+    const snapshotIdForWrite = report.snapshot_id
+    const overrideKey = `${snapshotIdForWrite}:${finding.fingerprint}`
+    const previousStatus = finding.status
+    setStatusBusyFingerprint(finding.fingerprint)
+    setFindingStatusOverrides((current) => ({
+      ...current,
+      [overrideKey]: status,
+    }))
+    try {
+      await setFindingStatus(snapshotIdForWrite, finding.fingerprint, status)
+      toast.success(
+        status === "done" ? "Finding marked as done." : "Finding reopened.",
+      )
+    } catch (thrown: unknown) {
+      setFindingStatusOverrides((current) => ({
+        ...current,
+        [overrideKey]: previousStatus,
+      }))
+      toast.error(
+        thrown instanceof Error
+          ? thrown.message
+          : "Could not update the finding. Try again.",
+      )
+    } finally {
+      setStatusBusyFingerprint(undefined)
+    }
   }
 
   const openSnapshot = (snapshot_id: string | null) => {
@@ -398,18 +501,96 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
 
     if (!report) return null
-    const findingFiles = new Set(report.findings.map((finding) => finding.file))
+    const findingFiles = new Set(
+      displayedFindings.map((finding) => finding.file),
+    )
+    const findingPanel = () => (
+      <RefactorFirstList
+        findings={displayedFindings}
+        onSelect={openFinding}
+        selectedFingerprint={selectedFinding?.fingerprint}
+        canTriage={canTriage}
+        statusBusyFingerprint={statusBusyFingerprint}
+        onStatusChange={changeFindingStatus}
+      />
+    )
+    const treePanel = () => (
+      <FileTree
+        nodes={report.tree}
+        colorFor={(node) => healthColor(node.health_score)}
+        hasFinding={(node) => findingFiles.has(node.path)}
+        onHoverNode={setHoveredNode}
+        onSelectNodeWithoutFinding={(node) => {
+          const message = `${node.name} has no findings in this snapshot.`
+          setTreeSelectionNotice(message)
+          toast(message)
+        }}
+        selectionNotice={treeSelectionNotice}
+        selectedPath={selectedFinding?.file}
+        onSelectNode={(node) => {
+          const match = displayedFindings.find((f) => f.file === node.path)
+          if (match) openFinding(match)
+        }}
+      />
+    )
+    const viewBar = (
+      <DashboardViewModeBar
+        value={viewMode}
+        onChange={chooseViewMode}
+        canShowDetail={displayedFindings.length > 0}
+      />
+    )
+
+    if (viewMode === "findings") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:overflow-hidden">
+            {findingPanel()}
+          </div>
+          {viewBar}
+        </div>
+      )
+    }
+
+    if (viewMode === "findings-tree") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
+          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,0.65fr)] lg:overflow-hidden">
+            <div className="min-h-0">{findingPanel()}</div>
+            <div className="h-[32rem] min-h-0 lg:h-auto">{treePanel()}</div>
+          </div>
+          {viewBar}
+        </div>
+      )
+    }
+
+    if (viewMode === "findings-detail") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
+          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:overflow-hidden">
+            <div className="min-h-0">{findingPanel()}</div>
+            <div className="min-h-64">
+              <FindingDetailPanel
+                finding={selectedFinding}
+                onClose={closeFinding}
+                canTriage={canTriage}
+                statusBusy={
+                  statusBusyFingerprint === selectedFinding?.fingerprint
+                }
+                onStatusChange={changeFindingStatus}
+              />
+            </div>
+          </div>
+          {viewBar}
+        </div>
+      )
+    }
 
     return (
-      <div className={DASHBOARD_GRID}>
-        <div className={DASHBOARD_MAIN_COLUMN}>
-          {/* The one region that swaps, so the tree and the list stay usable. */}
-          {detailMode ? (
-            <FindingDetailPanel
-              finding={selectedFinding}
-              onClose={closeFinding}
-            />
-          ) : (
+      <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
+        <div className={DASHBOARD_GRID}>
+          <div className={DASHBOARD_MAIN_COLUMN}>
+            {/* Overview keeps the health summary above the ranked list. */}
             <div className={DASHBOARD_TOP_ROW}>
               <OverallHealthCard
                 score={report.health_score}
@@ -421,38 +602,13 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               />
               <HealthGraphCard history={report.history} />
             </div>
-          )}
 
-          {/* Shrunk, not hidden, in detail mode — moving to the next finding is
-              one click, with no close-and-reopen. */}
-          <div className={DASHBOARD_LIST_SLOT}>
-            <RefactorFirstList
-              findings={report.findings}
-              onSelect={openFinding}
-              selectedFingerprint={selectedFinding?.fingerprint}
-            />
+            <div className={DASHBOARD_LIST_SLOT}>{findingPanel()}</div>
           </div>
-        </div>
 
-        <div className={DASHBOARD_TREE_SLOT}>
-          <FileTree
-            nodes={report.tree}
-            colorFor={(node) => healthColor(node.health_score)}
-            hasFinding={(node) => findingFiles.has(node.path)}
-            onHoverNode={setHoveredNode}
-            onSelectNodeWithoutFinding={(node) => {
-              const message = `${node.name} has no findings in this snapshot.`
-              setTreeSelectionNotice(message)
-              toast(message)
-            }}
-            selectionNotice={treeSelectionNotice}
-            selectedPath={selectedFinding?.file}
-            onSelectNode={(node) => {
-              const match = report.findings.find((f) => f.file === node.path)
-              if (match) openFinding(match)
-            }}
-          />
+          <div className={DASHBOARD_TREE_SLOT}>{treePanel()}</div>
         </div>
+        {viewBar}
       </div>
     )
   }

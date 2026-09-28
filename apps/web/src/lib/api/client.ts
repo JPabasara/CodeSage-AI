@@ -15,6 +15,7 @@ import type {
   CreateWorkspaceRequest,
   DeleteWorkspaceRequest,
   ErrorCode,
+  FindingStatus,
   HealthReport,
   Member,
   MemberList,
@@ -256,6 +257,26 @@ export function getHealthReport(
   return fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
     credentials: "include",
   }).then(json<HealthReport>)
+}
+
+/**
+ * Change only the workflow state of one finding in one immutable snapshot.
+ * Scoring facts are not recalculated by this endpoint.
+ */
+export function setFindingStatus(
+  snapshotId: string,
+  fingerprint: string,
+  status: FindingStatus,
+): Promise<void> {
+  return fetch(
+    `${API_BASE}/api/snapshots/${encodeURIComponent(snapshotId)}/findings/${encodeURIComponent(fingerprint)}/status`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+  ).then(empty)
 }
 
 export function getScanHistory(
