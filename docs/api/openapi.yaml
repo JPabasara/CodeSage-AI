@@ -160,10 +160,10 @@ paths:
         code, and establishes a **server-side session**, returning its identifier
         in an httpOnly cookie. The browser never receives a token.
 
-        On first sign-in this also creates the user's Workspace, its Membership,
-        and seeds the **Balanced** profile with `is_active = true` — so a workspace
-        always has exactly one active profile and the read path never needs a
-        fallback.
+        On first sign-in this also creates **My Workspace**, its org-admin
+        Membership, the built-in profile pool, and a Spring PetClinic starter
+        project. The browser lands on Workspace so the guided trial starts with
+        the container those later screens belong to.
 
         A `SecurityAuditRecord` is written for both success and failure (SEC-14).
         A failed sign-in has no established actor, which is exactly the event most
@@ -189,7 +189,8 @@ paths:
 
             - **Session established.** Redirects to the `return_to` given at
               `/api/auth/login` (checked against the allowlist again), otherwise
-              to the Projects page. Sets the session cookie with `HttpOnly`,
+              to Workspace for a new user or Projects for a returning user. Sets
+              the session cookie with `HttpOnly`,
               `Secure`, `SameSite=Lax`.
             - **Handshake missing, expired or mismatched** (typically: the user
               verified their email in another tab, or took longer than ten
@@ -229,6 +230,24 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+
+  /api/auth/tour:
+    put:
+      tags: [auth]
+      operationId: finish_product_tour
+      summary: Finish or skip the first-run product tour
+      description: |
+        Records a terminal choice for the signed-in user. Both choices stop the
+        automatic first-login tour; the Support page can still start any lesson
+        again without changing this value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductTourUpdate' }
+      responses:
+        '204': { description: Tour preference saved. }
         '401': { $ref: '#/components/responses/NotAuthenticated' }
 
   /api/auth/workspaces:
@@ -1794,6 +1813,12 @@ components:
             application is usable. Exactly the inverse of `workspace_id` being
             present, stated plainly so the client branches on an intention rather
             than on a null.
+        product_tour_required:
+          type: boolean
+          default: false
+          description: |
+            True until the user finishes or explicitly skips the first-run tour.
+            Manual lessons remain available from Support afterwards.
         role:
           type: [string, 'null']
           enum: [org-admin, manager, developer, viewer, null]
@@ -1815,6 +1840,16 @@ components:
             `google` or `local`. Display only; the application's identity is the
             Asgardeo subject, not this.
           examples: [github]
+
+    ProductTourUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [completed, skipped]
+          description: The terminal choice made in the tour.
 
     WorkspaceSummary:
       type: object
