@@ -51,14 +51,16 @@ test("an org-admin invites, revokes, and changes a role on the Workspace page", 
   ).toHaveText("Viewer")
 })
 
-test("an old ?tab=team link works, and deactivation needs a named confirm", async ({
+test("an old ?tab=team link works, and removal names the workspace", async ({
   page,
 }) => {
   await page.goto("/workspace?tab=team")
-  await page.getByRole("button", { name: "Deactivate Priya Fernando" }).focus()
+  await page
+    .getByRole("button", { name: "Remove Priya Fernando from workspace" })
+    .focus()
   await page.keyboard.press("Enter")
   const dialog = page.getByRole("dialog", {
-    name: "Deactivate Priya Fernando?",
+    name: "Remove Priya Fernando from Acme Engineering?",
   })
   await expect(dialog).toBeVisible()
   await page.keyboard.press("Escape")
@@ -73,9 +75,9 @@ asViewer(
     await expect(page.getByRole("button", { name: "Send invite" })).toHaveCount(
       0,
     )
-    await expect(page.getByRole("button", { name: /deactivate/i })).toHaveCount(
-      0,
-    )
+    await expect(
+      page.getByRole("button", { name: /remove .* from workspace/i }),
+    ).toHaveCount(0)
   },
 )
 

@@ -173,6 +173,34 @@ test("an org-admin edits the workspace, and the new name is used everywhere", as
 
 // ── switching ───────────────────────────────────────────────────────────────
 
+test("an org-admin permanently deletes a named workspace", async ({ page }) => {
+  await page.goto("/workspace")
+  await page.getByRole("button", { name: "Delete workspace" }).click()
+  const dialog = page.getByRole("dialog", {
+    name: "Delete Acme Engineering permanently?",
+  })
+  const submit = dialog.getByRole("button", {
+    name: "Delete workspace permanently",
+  })
+  await expect(submit).toBeDisabled()
+  await dialog
+    .getByLabel("Type Acme Engineering to confirm")
+    .fill("Acme Engineering")
+  await submit.click()
+
+  // The mock API rebinds the session to the remaining membership. Acme and its
+  // workspace-owned data are gone; the global signed-in user remains.
+  await expect(page).toHaveURL(/\/workspace$/)
+  await expect(
+    main(page).getByRole("heading", { name: "Nimbus Labs" }),
+  ).toBeVisible()
+  await expect(topBar(page).getByText("Nimbus Labs")).toBeVisible()
+  await switcher(page).click()
+  await expect(
+    page.getByRole("option", { name: /Acme Engineering/ }),
+  ).toHaveCount(0)
+})
+
 test("switching workspace replaces the projects and leaves nothing behind", async ({
   page,
 }) => {
