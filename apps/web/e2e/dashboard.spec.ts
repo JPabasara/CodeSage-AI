@@ -13,6 +13,23 @@ const findingCards = (page: import("@playwright/test").Page) =>
     .getByRole("list", { name: /ranked refactor findings/i })
     .getByRole("button")
 
+/**
+ * Switch the dashboard to the Findings view. At 1280x720 the Overview gives the
+ * health card and trend chart most of the height, so the ranked list has no
+ * room for a card to be clicked — a user on a laptop does the same.
+ */
+const showFindings = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("toolbar", { name: "Dashboard view" })
+    .getByRole("button", { name: "Findings", exact: true })
+    .click()
+
+const showOverview = (page: import("@playwright/test").Page) =>
+  page
+    .getByRole("toolbar", { name: "Dashboard view" })
+    .getByRole("button", { name: "Overview", exact: true })
+    .click()
+
 test.beforeEach(async ({ page }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
@@ -54,9 +71,10 @@ test("the file tree is a heat map, not a uniform block of green", async ({
   ).toBeVisible()
 })
 
-test("selecting a finding swaps the health card for the detail, in place", async ({
+test("selecting a finding opens the detail beside the list", async ({
   page,
 }) => {
+  await showFindings(page)
   await findingCards(page).filter({ hasText: "hardcoded" }).click()
 
   const detail = detailPanel(page)
@@ -65,14 +83,14 @@ test("selecting a finding swaps the health card for the detail, in place", async
     detail.getByText("src/payments/payment_service.ts:42"),
   ).toBeVisible()
 
-  // The region was replaced, not covered. No dialog, no blurred page.
+  // The detail sits in the page, not over it. No dialog, no blurred page.
   await expect(page.getByText("Code Health")).toBeHidden()
   await expect(page.getByRole("dialog")).toHaveCount(0)
-
-  // The tree stays usable and reveals the finding's file.
   await expect(
-    page.getByLabel("File health tree").locator('[aria-current="true"]'),
-  ).toContainText("payment_service.ts")
+    page
+      .getByRole("toolbar", { name: "Dashboard view" })
+      .getByRole("button", { name: "Findings + detail" }),
+  ).toHaveAttribute("aria-pressed", "true")
 
   // The list stays visible, so the next finding is one click away — no
   // close-and-reopen, which is the whole reason the slide-over went.
@@ -82,6 +100,7 @@ test("selecting a finding swaps the health card for the detail, in place", async
 })
 
 test("moving between findings never closes the detail", async ({ page }) => {
+  await showFindings(page)
   await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(detailPanel(page)).toBeVisible()
 
@@ -89,15 +108,13 @@ test("moving between findings never closes the detail", async ({ page }) => {
 
   const detail = detailPanel(page)
   await expect(detail.getByText(/cyclomatic complexity 18/i)).toBeVisible()
-  // The tree highlight followed the selection.
-  await expect(
-    page.getByLabel("File health tree").locator('[aria-current="true"]'),
-  ).toContainText("payment_service.ts")
+  await expect(page).toHaveURL(/\?finding=/)
 })
 
 test("the selection lives in the URL, so refresh and Back both work", async ({
   page,
 }) => {
+  await showFindings(page)
   await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(page).toHaveURL(/\?finding=f-secret-1/)
 
@@ -105,22 +122,29 @@ test("the selection lives in the URL, so refresh and Back both work", async ({
   await expect(detailPanel(page)).toBeVisible()
   await expect(page.getByText("Code Health")).toBeHidden()
 
-  // Back leaves detail mode, the way it does in a mail client.
+  // Back deselects the finding, the way it does in a mail client.
   await page.goBack()
-  await expect(page.getByText("Code Health")).toBeVisible()
+  await expect(page).not.toHaveURL(/finding=/)
+  await expect(detailPanel(page)).toHaveCount(0)
+  await expect(findingCards(page).first()).toBeVisible()
 })
 
-test("closing restores the health card and the trend chart", async ({
+test("closing returns to the list, and Overview restores the health card", async ({
   page,
 }) => {
+  await showFindings(page)
   await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(detailPanel(page)).toBeVisible()
 
   await page.getByRole("button", { name: /close finding detail/i }).click()
 
-  await expect(page.getByText("Code Health")).toBeVisible()
   await expect(detailPanel(page)).toHaveCount(0)
   await expect(page).not.toHaveURL(/finding=/)
+  await expect(findingCards(page).first()).toBeVisible()
+
+  await showOverview(page)
+  await expect(page.getByText("Code Health")).toBeVisible()
+  await expect(page.getByText("Health trend")).toBeVisible()
 })
 
 test("clicking a file in the tree opens that file's finding", async ({
@@ -139,6 +163,7 @@ test("clicking a file in the tree opens that file's finding", async ({
 test("the detail shows a rule finding's evidence: measured value versus limit", async ({
   page,
 }) => {
+  await showFindings(page)
   await findingCards(page).filter({ hasText: "cyclomatic complexity" }).click()
 
   const detail = detailPanel(page)
@@ -151,6 +176,7 @@ test("the detail shows a rule finding's evidence: measured value versus limit", 
 test("a SATD finding shows its source and category, with no rule evidence", async ({
   page,
 }) => {
+  await showFindings(page)
   await findingCards(page)
     .filter({ hasText: /knowingly untested/i })
     .click()

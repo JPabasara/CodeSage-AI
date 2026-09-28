@@ -76,6 +76,12 @@ jobs:
       - name: Tests
         run: pnpm test:run
 
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: pnpm test:e2e
+
   # ── Backend ────────────────────────────────────────────────────────────────
   api:
     name: api — tests, layer check

@@ -791,7 +791,11 @@ test("when it is done, 'Show them' — the page never swaps by itself", async ()
   await ready()
   const analyzed = () =>
     screen.getByTitle(/^Last analyzed/).getAttribute("title")
-  const before = analyzed()
+  // The report card and its top-bar metadata render through separate paths.
+  // Wait for both instead of assuming the title has committed with the card.
+  const before = (await screen.findByTitle(/^Last analyzed/)).getAttribute(
+    "title",
+  )
   await user.click(screen.getByRole("button", { name: /^scan$/i }))
 
   // Scan and score done: the card says so, and the OLD results are still up.

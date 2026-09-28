@@ -100,6 +100,11 @@ signedIn(
     await page.goto(`/dashboard/${DEMO_REPO_ID}`)
     await expect(page.getByText("Code Health")).toBeVisible()
 
+    // The Overview leaves the ranked list no room at 1280x720.
+    await page
+      .getByRole("toolbar", { name: "Dashboard view" })
+      .getByRole("button", { name: "Findings", exact: true })
+      .click()
     await findingCards(page)
       .filter({ hasText: /hardcoded/i })
       .first()
