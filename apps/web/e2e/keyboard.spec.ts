@@ -125,7 +125,8 @@ test("the file tree is reachable and shows where the focus is", async ({
     .getByLabel("File health tree")
     .getByRole("button")
     .first()
-  await tabTo(page, firstNode)
+  // The ranked list and its "Mark as done" buttons come before the tree.
+  await tabTo(page, firstNode, 80)
   await expect(firstNode).toBeFocused()
 
   // Already a real <button>, so it always activated — but with no focus style
