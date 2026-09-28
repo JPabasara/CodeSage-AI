@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
+import { dashboardViewPreferenceKey } from "@/components/dashboard/dashboard-view-mode-bar"
 import {
   TopBarSlot,
   TopBarSlotProvider,
@@ -15,6 +16,8 @@ import {
   WORKSPACE_ID,
   mockFindings,
   mockHealthReport,
+  mockSession,
+  mockSessionViewer,
   mockScanHistory,
 } from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
@@ -74,6 +77,12 @@ const ONE_BEFORE_LATEST_POSITION = `${mockScanHistory.length - 1}/${mockScanHist
 beforeEach(() => {
   nav.reset()
   server.resetHandlers()
+  server.use(
+    http.get("*/api/auth/session", () => HttpResponse.json(mockSession)),
+  )
+  localStorage.removeItem(
+    dashboardViewPreferenceKey(mockSession.user_id, WORKSPACE_ID),
+  )
 })
 
 /** Wait for the (mock) health report to land. */
@@ -81,7 +90,7 @@ async function ready() {
   expect(await screen.findByText("Code Health")).toBeInTheDocument()
 }
 
-test("selecting a finding swaps the health card for the detail, in place", async () => {
+test("selecting a finding opens the findings and detail view", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
@@ -92,7 +101,7 @@ test("selecting a finding swaps the health card for the detail, in place", async
 
   const detail = await screen.findByLabelText("Finding detail")
   expect(within(detail).getByText(CRITICAL.reason)).toBeInTheDocument()
-  // the region was replaced, not covered
+  // The detail is beside the still-usable list, not a modal over the dashboard.
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   // …and the list is still there, so the next finding is one click away
@@ -109,17 +118,21 @@ test("detail mode is driven by ?finding=, so a refresh restores it", async () =>
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
 })
 
-test("the tree highlights the selected finding's file", async () => {
+test("switching to findings and files keeps the selected file highlighted", async () => {
   nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await screen.findByLabelText("Finding detail")
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Findings + files" }),
+  )
 
   const tree = screen.getByLabelText("File health tree")
   const highlighted = within(tree).getByRole("button", { current: true })
   expect(highlighted).toHaveTextContent("payment_service.ts")
 })
 
-test("closing restores the health card and the trend chart", async () => {
+test("closing detail expands the findings panel", async () => {
   nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await screen.findByLabelText("Finding detail")
@@ -129,9 +142,13 @@ test("closing restores the health card and the trend chart", async () => {
   )
 
   await waitFor(() =>
-    expect(screen.getByText("Code Health")).toBeInTheDocument(),
+    expect(screen.getByRole("button", { name: "Findings" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    ),
   )
   expect(screen.queryByLabelText("Finding detail")).not.toBeInTheDocument()
+  expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
 })
 
 test("clicking a file in the tree opens that file's finding", async () => {
@@ -147,6 +164,162 @@ test("clicking a file in the tree opens that file's finding", async () => {
   expect(
     within(detail).getByText(/order_controller\.ts:\d+/),
   ).toBeInTheDocument()
+})
+
+test("the bottom bar switches among all four dashboard layouts", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const toolbar = screen.getByRole("toolbar", { name: "Dashboard view" })
+  expect(
+    within(toolbar).getByRole("button", { name: "Overview" }),
+  ).toHaveAttribute("aria-pressed", "true")
+
+  await user.click(within(toolbar).getByRole("button", { name: "Findings" }))
+  expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("File health tree")).not.toBeInTheDocument()
+
+  await user.click(
+    within(toolbar).getByRole("button", { name: "Findings + files" }),
+  )
+  expect(screen.getByLabelText("File health tree")).toBeInTheDocument()
+
+  await user.click(
+    within(toolbar).getByRole("button", { name: "Findings + detail" }),
+  )
+  expect(await screen.findByLabelText("Finding detail")).toBeInTheDocument()
+
+  await user.click(within(toolbar).getByRole("button", { name: "Overview" }))
+  expect(screen.getByText("Code Health")).toBeInTheDocument()
+  // Switching panels does not discard the selected finding from the URL.
+  expect(nav.read().get("finding")).toBeTruthy()
+})
+
+test("the selected view is remembered per user and workspace", async () => {
+  const user = userEvent.setup()
+  const first = render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+  await screen.findAllByRole("button", { name: "Mark as done" })
+
+  await user.click(screen.getByRole("button", { name: "Findings + files" }))
+  await waitFor(() =>
+    expect(
+      localStorage.getItem(
+        dashboardViewPreferenceKey(mockSession.user_id, WORKSPACE_ID),
+      ),
+    ).toBe("findings-tree"),
+  )
+  first.unmount()
+
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  expect(
+    await screen.findByRole("button", { name: "Findings + files" }),
+  ).toHaveAttribute("aria-pressed", "true")
+  expect(screen.getByLabelText("File health tree")).toBeInTheDocument()
+})
+
+test("marking a finding done hides only that snapshot and does not change health", async () => {
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const scoreBefore = screen.getByTestId("health-score").textContent
+  const findingCard = screen.getByRole("button", {
+    name: /hardcoded stripe api key/i,
+  })
+  const row = findingCard.closest("li")
+  expect(row).not.toBeNull()
+  await user.click(
+    await within(row as HTMLLIElement).findByRole("button", {
+      name: "Mark as done",
+    }),
+  )
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: /hardcoded stripe api key/i }),
+    ).not.toBeInTheDocument(),
+  )
+  expect(screen.getByTestId("health-score")).toHaveTextContent(
+    scoreBefore ?? "",
+  )
+  expect(toast.success).toHaveBeenCalledWith("Finding marked as done.")
+
+  await user.click(screen.getByRole("button", { name: /show done \(1\)/i }))
+  const doneCard = screen.getByRole("button", {
+    name: /hardcoded stripe api key/i,
+  })
+  expect(doneCard.closest("li")).toHaveTextContent("Done")
+
+  // The same fingerprint in an older immutable snapshot is independent.
+  await user.click(screen.getByRole("button", { name: /older scan/i }))
+  await waitFor(() =>
+    expect(nav.read().get("snapshot_id")).toBe(mockScanHistory[1].snapshot_id),
+  )
+  expect(
+    await screen.findByRole("button", { name: /hardcoded stripe api key/i }),
+  ).toBeInTheDocument()
+})
+
+test("a failed mark-done write restores the finding and explains the error", async () => {
+  server.use(
+    http.put("*/api/snapshots/:snapshotId/findings/:fingerprint/status", () =>
+      HttpResponse.json(
+        { detail: "Status service is unavailable.", code: "INTERNAL_ERROR" },
+        { status: 500 },
+      ),
+    ),
+  )
+  const user = userEvent.setup()
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  const findingCard = screen.getByRole("button", {
+    name: /hardcoded stripe api key/i,
+  })
+  await user.click(
+    await within(findingCard.closest("li")!).findByRole("button", {
+      name: "Mark as done",
+    }),
+  )
+
+  expect(
+    await screen.findByRole("button", { name: /hardcoded stripe api key/i }),
+  ).toBeInTheDocument()
+  expect(toast.error).toHaveBeenCalledWith("Status service is unavailable.")
+})
+
+test("a viewer can see statuses but has no finding action", async () => {
+  server.use(
+    http.get("*/api/auth/session", () => HttpResponse.json(mockSessionViewer)),
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(
+    screen.queryByRole("button", { name: "Mark as done" }),
+  ).not.toBeInTheDocument()
+})
+
+test("agreed triage roles see the action before the API adds its new grant", async () => {
+  server.use(
+    http.get("*/api/auth/session", () =>
+      HttpResponse.json({
+        ...mockSession,
+        role: "developer",
+        permissions: mockSession.permissions?.filter(
+          (permission) => permission !== "finding:triage",
+        ),
+      }),
+    ),
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+
+  expect(
+    await screen.findAllByRole("button", { name: "Mark as done" }),
+  ).not.toHaveLength(0)
 })
 
 // ── the never-scanned repository ────────────────────────────────────────────

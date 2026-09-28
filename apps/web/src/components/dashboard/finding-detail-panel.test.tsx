@@ -38,3 +38,34 @@ test("renders nothing when there is no finding", () => {
   )
   expect(container).toBeEmptyDOMElement()
 })
+
+test("an allowed user can mark an open finding done", async () => {
+  const onStatusChange = vi.fn()
+  render(
+    <FindingDetailPanel
+      finding={mockFindings[0]}
+      onClose={vi.fn()}
+      canTriage
+      onStatusChange={onStatusChange}
+    />,
+  )
+
+  await userEvent.click(screen.getByRole("button", { name: "Mark as done" }))
+  expect(onStatusChange).toHaveBeenCalledWith(mockFindings[0], "done")
+})
+
+test("a done finding can be reopened, while read-only users get no action", () => {
+  const done = { ...mockFindings[0], status: "done" as const }
+  const editable = render(
+    <FindingDetailPanel finding={done} onClose={vi.fn()} canTriage />,
+  )
+  expect(screen.getByText("Done")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument()
+
+  editable.unmount()
+  render(<FindingDetailPanel finding={done} onClose={vi.fn()} />)
+  expect(screen.getByText("Done")).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "Reopen" }),
+  ).not.toBeInTheDocument()
+})
