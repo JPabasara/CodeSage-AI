@@ -97,6 +97,7 @@ export const PERMISSIONS_BY_ROLE: Record<Role, string[]> = {
     "member:read",
     "member:manage",
     "workspace:update",
+    "workspace:delete",
   ],
   manager: [
     "project:read",

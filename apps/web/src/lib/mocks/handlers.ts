@@ -21,6 +21,7 @@ import type {
   CreateInvitationRequest,
   CreateProfileRequest,
   CreateWorkspaceRequest,
+  DeleteWorkspaceRequest,
   Invitation,
   Member,
   ProjectProfile,
@@ -968,6 +969,67 @@ export const handlers = [
   ),
 
   // ── members & invitations ─────────────────────────────────────────────────
+  http.delete(
+    "*/api/auth/workspaces/:workspaceId",
+    async ({ params, request }) => {
+      const workspaceId = params.workspaceId as string
+      if (workspaceId !== activeWorkspaceId) return NOT_FOUND()
+      const record = workspaceRecords[workspaceId]
+      if (record.role !== "org-admin") {
+        return fail(
+          403,
+          "FORBIDDEN",
+          "Only an org-admin can delete a workspace.",
+        )
+      }
+
+      const body = (await request
+        .json()
+        .catch(() => null)) as Partial<DeleteWorkspaceRequest> | null
+      if (body?.confirmation_name !== record.name) {
+        return invalid([
+          {
+            field: "confirmation_name",
+            detail: "Enter the exact workspace name.",
+          },
+        ])
+      }
+
+      const repoIds = new Set(record.repos.map((repo) => repo.id))
+      const hasActiveScan = [...scans.entries()].some(
+        ([repoId, scan]) =>
+          repoIds.has(repoId) &&
+          (scan.phase === "queued" || scan.phase === "running"),
+      )
+      if (hasActiveScan) {
+        return fail(
+          409,
+          "WORKSPACE_SCAN_RUNNING",
+          "Stop or wait for workspace scans before deleting it.",
+        )
+      }
+
+      delete workspaceRecords[workspaceId]
+      for (const repoId of repoIds) {
+        scans.delete(repoId)
+        rescoringUntil.delete(repoId)
+        cancelRequested.delete(repoId)
+        for (const key of [...newestSnapshot.keys()]) {
+          if (key.startsWith(`${repoId}@`)) newestSnapshot.delete(key)
+        }
+        for (const key of [...lastSuccessfulSha.keys()]) {
+          if (key.startsWith(`${repoId}@`)) lastSuccessfulSha.delete(key)
+        }
+        for (const key of [...pendingScores.keys()]) {
+          if (key.startsWith(`${repoId}@`)) pendingScores.delete(key)
+        }
+      }
+      loadWorkspace(workspaceIds()[0] ?? null)
+      persistState()
+      return new HttpResponse(null, { status: 204 })
+    },
+  ),
+
   http.get("*/api/members", () => {
     const record = workspaceRecords[activeWorkspaceId as string]
     return HttpResponse.json({

@@ -424,6 +424,10 @@ export type CreateWorkspaceRequest =
 export type UpdateWorkspaceRequest =
   components["schemas"]["UpdateWorkspaceRequest"]
 
+/** Exact-name confirmation sent before permanently deleting a workspace. */
+export type DeleteWorkspaceRequest =
+  components["schemas"]["DeleteWorkspaceRequest"]
+
 /** An existing member. `status` distinguishes active from deactivated. */
 export type Member = components["schemas"]["Member"]
 

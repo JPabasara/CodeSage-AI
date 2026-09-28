@@ -13,6 +13,7 @@ import type {
   CreateInvitationRequest,
   CreateProfileRequest,
   CreateWorkspaceRequest,
+  DeleteWorkspaceRequest,
   ErrorCode,
   HealthReport,
   Member,
@@ -175,6 +176,23 @@ export function updateWorkspace(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then(json<Workspace>)
+}
+
+/**
+ * Permanently delete the active workspace and everything it owns. The API
+ * validates the exact name and rebinds the session; global users and their
+ * memberships in other workspaces are never deleted.
+ */
+export function deleteWorkspace(
+  workspaceId: string,
+  body: DeleteWorkspaceRequest,
+): Promise<void> {
+  return fetch(`${API_BASE}/api/auth/workspaces/${workspaceId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(empty)
 }
 
 /**
@@ -523,8 +541,8 @@ export function changeMemberRole(
   }).then(json<Member>)
 }
 
-/** Deactivating the last active org-admin is a 409 `CONFLICT`. */
-export function deactivateMember(membershipId: string): Promise<void> {
+/** Remove only this workspace membership; the global user remains. */
+export function removeMemberFromWorkspace(membershipId: string): Promise<void> {
   return fetch(`${API_BASE}/api/members/${membershipId}`, {
     method: "DELETE",
     credentials: "include",
