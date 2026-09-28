@@ -76,6 +76,12 @@ jobs:
       - name: Tests
         run: pnpm test:run
 
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E dashboard smoke
+        run: pnpm exec playwright test e2e/dashboard.spec.ts --grep "health card shows"
+
   # ── Backend ────────────────────────────────────────────────────────────────
   api:
     name: api — tests, layer check
