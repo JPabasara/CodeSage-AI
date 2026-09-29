@@ -1640,6 +1640,11 @@ export interface components {
             /** @description Critical + high, for the health-card summary. */
             red_issue_count: number;
             /**
+             * @description Findings present in the previous snapshot but absent from this one.
+             * @default 0
+             */
+            resolved_finding_count: number;
+            /**
              * @description The active profile's name, shown on the trend chart. Without the label,
              *     the chart changing shape after a profile switch reads as a defect
              *     (FR-14).

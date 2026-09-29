@@ -2435,6 +2435,11 @@ components:
           type: integer
           minimum: 0
           description: Critical + high, for the health-card summary.
+        resolved_finding_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Findings present in the previous snapshot but absent from this one.
         profile:
           type: string
           description: |

@@ -9,7 +9,8 @@
   DEFINER account-deletion function can now rewrite actor identities, which it
   silently could not while FORCE applied the tenant filter to it (DBR-28).
 * Invitation acceptance writes `outcome` separately, like every other event.
-* ANALYSIS_ATTEMPT gains a stable machine-readable `failure_code` (DBR-22).
+* ANALYSIS_ATTEMPT `failure_code` (added by 0018) widens to 64 characters and
+  legacy errors are backfilled with a stable code (DBR-22).
 """
 
 from collections.abc import Sequence
@@ -155,7 +156,13 @@ def upgrade() -> None:
     )
     op.execute("ALTER TABLE security_audit_record NO FORCE ROW LEVEL SECURITY")
     op.execute(ACCEPT_INVITATION)
-    op.add_column("analysis_attempt", sa.Column("failure_code", sa.String(64)))
+    op.alter_column(
+        "analysis_attempt",
+        "failure_code",
+        type_=sa.String(64),
+        existing_type=sa.String(40),
+        existing_nullable=True,
+    )
     op.execute(
         "UPDATE analysis_attempt SET failure_code = 'SCAN_FAILED' "
         "WHERE status = 'error' AND failure_code IS NULL"
@@ -163,7 +170,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("analysis_attempt", "failure_code")
+    op.alter_column(
+        "analysis_attempt",
+        "failure_code",
+        type_=sa.String(40),
+        existing_type=sa.String(64),
+        existing_nullable=True,
+    )
     op.execute(ACCEPT_INVITATION_0013)
     op.execute("ALTER TABLE security_audit_record FORCE ROW LEVEL SECURITY")
     op.execute("DROP POLICY tenant_isolation ON security_audit_record")

@@ -82,8 +82,10 @@ LATER_COLUMNS = {
         "updated_at",
     ),
     "membership": ("role_id",),  # 0010
-    "app_user": ("email_verified",),  # 0013
-    "analysis_attempt": (  # 0011; failure_code 0021
+    "repository": ("test_path_patterns", "production_path_overrides"),  # 0024
+    "source_file": ("source_scope",),  # 0024
+    "app_user": ("email_verified", "product_tour_completed_at"),  # 0013, 0019
+    "analysis_attempt": (  # 0011; failure_code 0018
         "initiated_by_user_id",
         "initiating_workspace_id",
         "failure_code",
@@ -96,6 +98,7 @@ LATER_COLUMNS = {
         "preset_key",
         "created_by_user_id",
         "updated_by_user_id",
+        "include_test_findings",  # 0024
     ),
 }
 
