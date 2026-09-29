@@ -415,3 +415,17 @@ test("Clear filter resets source, severity and type together", async () => {
   }
   expect(within(countBadge()).getByText("5")).toBeInTheDocument()
 })
+
+
+test("hides test-code findings by default and allows a temporary override", async () => {
+  const user = userEvent.setup()
+  const scoped = [
+    { ...findings[0], fingerprint: "production", reason: "production finding", source_scope: "production" as const },
+    { ...findings[1], fingerprint: "test", reason: "test finding", source_scope: "test" as const },
+  ]
+  render(<RefactorFirstList findings={scoped} />)
+  expect(screen.getByText("production finding")).toBeInTheDocument()
+  expect(screen.queryByText("test finding")).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "Test code" }))
+  expect(screen.getByText("test finding")).toBeInTheDocument()
+})
