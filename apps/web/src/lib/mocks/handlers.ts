@@ -1053,7 +1053,9 @@ export const handlers = [
           if (key.startsWith(`${repoId}@`)) pendingScores.delete(key)
         }
       }
-      loadWorkspace(workspaceIds()[0] ?? null)
+      // Like the API: the session drops to no workspace, even when another
+      // one is available. Choosing it is left to the user.
+      loadWorkspace(null)
       persistState()
       return new HttpResponse(null, { status: 204 })
     },
