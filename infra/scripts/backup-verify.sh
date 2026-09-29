@@ -18,7 +18,7 @@ trap cleanup EXIT
 
 manifest_sql="SELECT table_name, (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I', table_name), false, true, '')))[1]::text::bigint AS rows FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name"
 
-pg_dump --format=custom --no-owner --no-acl "$CODESAGE_DATABASE_URL" >"$dump_file"
+pg_dump --format=custom --no-owner "$CODESAGE_DATABASE_URL" >"$dump_file"
 psql "$CODESAGE_DATABASE_URL" --no-align --tuples-only --command "$manifest_sql" >"$source_manifest"
 pg_dump --data-only --column-inserts --no-owner --no-acl "$CODESAGE_DATABASE_URL" >"$source_data"
 
@@ -27,7 +27,8 @@ until docker exec "$container" pg_isready --username postgres --dbname codesage 
   sleep 1
 done
 docker cp "$dump_file" "$container:/tmp/backup.dump"
-docker exec "$container" pg_restore --username postgres --dbname codesage --no-owner --no-acl /tmp/backup.dump
+docker exec "$container" psql --username postgres --dbname codesage --command "CREATE ROLE codesage_app NOSUPERUSER NOCREATEDB NOCREATEROLE"
+docker exec "$container" pg_restore --username postgres --dbname codesage --no-owner /tmp/backup.dump
 docker exec "$container" psql --username postgres --dbname codesage --no-align --tuples-only --command "$manifest_sql" >"$restored_manifest"
 
 diff --unified "$source_manifest" "$restored_manifest"
