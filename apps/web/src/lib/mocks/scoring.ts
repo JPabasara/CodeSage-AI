@@ -395,6 +395,7 @@ export function priorityOf(fact: FindingFact, profile: ScoreProfile): number {
 export function scoreFindings(profile: ScoreProfile, debtScale = 1): Finding[] {
   return FINDING_FACTS.map((fact) => ({
     ...fact,
+    source_scope: fact.source_scope ?? "production",
     priority: round1(priorityOf(fact, profile) * debtScale),
   })).sort((a, b) => b.priority - a.priority)
 }
@@ -598,7 +599,9 @@ export function buildHealthReport(input: ReportInput): HealthReport {
     red_issue_count: findings.filter(
       (f) => f.severity === "critical" || f.severity === "high",
     ).length,
+    resolved_finding_count: 0,
     profile: profile.name,
+    include_test_findings: profile.include_test_findings ?? false,
     model_version: "satd-distilbert-1.2.0",
     history: trend.slice(0, at + 1),
     tree: buildTree(fileScores),
