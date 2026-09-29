@@ -100,6 +100,9 @@ function patchFor(
   if (Math.abs(values.trust_s - profile.trust_s) > 1e-9) {
     patch.trust_s = values.trust_s
   }
+  if (Boolean(values.include_test_findings) !== Boolean(profile.include_test_findings)) {
+    patch.include_test_findings = values.include_test_findings
+  }
   const weights: Partial<CategoryWeights> = {}
   for (const { key } of WEIGHT_ROWS) {
     if (Math.abs(values.weights[key] - profile.weights[key]) > 1e-9) {
@@ -459,6 +462,7 @@ function ProfilesView() {
         name: newName,
         weights: newValues.weights,
         trust_s: newValues.trust_s,
+        include_test_findings: newValues.include_test_findings,
       })
       updatePool((current) => [...(current ?? []), created])
       reloadPool()
@@ -508,7 +512,7 @@ function ProfilesView() {
       name: seed ? `${seed.name} copy` : "",
       values: seed
         ? valuesOf(seed)
-        : (values ?? { weights: DEFAULT_WEIGHTS, trust_s: 0.5 }),
+        : (values ?? { weights: DEFAULT_WEIGHTS, trust_s: 0.5, include_test_findings: false }),
     })
   }
 
@@ -647,25 +651,20 @@ function ProfilesView() {
         </div>
       </div>
 
-      <div className={RAIL_AREA} data-tour="profile-scope">
-        <ScopeRail
-          repos={repos}
-          reposError={reposError}
-          onRetryRepos={refetchRepos}
-          workspaceDefault={workspaceDefault}
-          selectedProjectId={projectId}
-          current={projectProfile}
-          version={railVersion}
-          onSelect={selectScope}
-        />
-      </div>
+      <ScopeRail
+        className={RAIL_AREA}
+        repos={repos}
+        reposError={reposError}
+        onRetryRepos={refetchRepos}
+        workspaceDefault={workspaceDefault}
+        selectedProjectId={projectId}
+        current={projectProfile}
+        version={railVersion}
+        onSelect={selectScope}
+      />
 
       <div className={MAIN_AREA}>
-        <section
-          aria-labelledby="pool-heading"
-          className="space-y-3"
-          data-tour="profile-pool"
-        >
+        <section aria-labelledby="pool-heading" className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
               <h2 id="pool-heading" className="text-[15px] font-semibold">
@@ -803,15 +802,13 @@ function ProfilesView() {
               </>
             ) : null}
 
-            <div data-tour="profile-action">
-              {canManage ? (
-                scopeAction
-              ) : (
-                <LockedAction reason={ROLE_LOCKED_REASON}>
-                  {scopeAction}
-                </LockedAction>
-              )}
-            </div>
+            {canManage ? (
+              scopeAction
+            ) : (
+              <LockedAction reason={ROLE_LOCKED_REASON}>
+                {scopeAction}
+              </LockedAction>
+            )}
           </div>
         </section>
       </div>

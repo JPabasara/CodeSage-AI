@@ -45,7 +45,13 @@ export type Category =
  * A snapshot-local workflow label. Marking a finding done only changes its
  * dashboard visibility; it never changes the stored severity, priority or score.
  */
-export type FindingStatus = "open" | "done"
+export type FindingStatus =
+  | "open"
+  | "done"
+  | "accepted"
+  | "resolved"
+  | "false-positive"
+export type FindingChangeStatus = "new" | "unchanged"
 
 // A is best, E is worst.
 export type Grade = "A" | "B" | "C" | "D" | "E"
@@ -108,11 +114,13 @@ export interface Finding {
   category: Category
   severity: Severity
   file: string
+  source_scope?: "production" | "test" | "generated" | "example" | "unknown"
   line: number
   symbol?: string | null // the function/class it sits on; null for file-scoped rules
   reason: string // one-line templated explanation of why this fired
 
   status: FindingStatus // snapshot-local dashboard workflow; defaults to "open"
+  change_status?: FindingChangeStatus // absent only in legacy/demo fixtures
 
   /** Derived on this request under the active profile; the list arrives sorted by it. */
   priority: number
@@ -306,6 +314,7 @@ export interface ScoreProfile {
    * Security is fixed at 1.0, so no position of this slider de-weights it.
    */
   trust_s: number
+  include_test_findings?: boolean
   is_preset: boolean // built-ins are read-only templates that seed the sliders
   /**
    * Whether this is the **workspace default** — what every project without an
@@ -362,6 +371,12 @@ export interface ProjectProfile {
   override: ScoreProfile | null // null exactly when `inherited` is true
 }
 
+// Repository-persisted source classification rules.
+export interface SourceScopeConfig {
+  test_path_patterns: string[]
+  production_path_overrides: string[]
+}
+
 // ── HealthReport: the full dashboard payload for one branch snapshot ─────────
 
 export interface HealthReport {
@@ -374,7 +389,9 @@ export interface HealthReport {
   grade: Grade
   delta: number // vs the previous snapshot
   red_issue_count: number // critical/high count for the health-card summary
+  resolved_finding_count?: number // findings present previously but absent now
   profile: string // active scoring profile name, labelled on the trend chart
+  include_test_findings?: boolean
   model_version?: string | null // which ML model produced this; null in degraded mode
   history: HealthPoint[] // trend chart (repo scope)
   tree: TreeNode[] // heat-map file tree

@@ -512,6 +512,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         canTriage={canTriage}
         statusBusyFingerprint={statusBusyFingerprint}
         onStatusChange={changeFindingStatus}
+        includeTestFindingsByDefault={report.include_test_findings ?? false}
+        repoId={repoId}
+        treeNodes={report.tree}
       />
     )
     const treePanel = () => (
