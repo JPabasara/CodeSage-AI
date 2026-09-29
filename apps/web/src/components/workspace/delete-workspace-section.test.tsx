@@ -65,9 +65,10 @@ test("requires the exact workspace name and permanently deletes", async () => {
   expect(toastSuccess).toHaveBeenCalledWith(
     "Acme Engineering was permanently deleted",
   )
-  expect((await getWorkspaces()).map((item) => item.name)).not.toContain(
-    "Acme Engineering",
-  )
+  const remaining = await getWorkspaces()
+  expect(remaining.map((item) => item.name)).not.toContain("Acme Engineering")
+  // The session drops to no workspace; it is not moved into another one.
+  expect(remaining.filter((item) => item.is_active)).toEqual([])
   request.mockRestore()
 })
 
