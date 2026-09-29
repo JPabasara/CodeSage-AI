@@ -100,6 +100,21 @@ jobs:
           # to `uses:` steps, so this path is from the repository root.
           cache-dependency-path: apps/api/pyproject.toml
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install PMD 7.27.0
+        run: |
+          mkdir -p ../../.tmp/pmd-smoke
+          curl --fail --location --retry 3 \
+            --output /tmp/pmd-dist-7.27.0-bin.zip \
+            https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.27.0/pmd-dist-7.27.0-bin.zip
+          echo "4ae396ffaf2b0d3ef0b73a10b2925e77066f73d57a4ce9078c60e7302bcddec9  /tmp/pmd-dist-7.27.0-bin.zip" | sha256sum --check
+          unzip -q /tmp/pmd-dist-7.27.0-bin.zip -d ../../.tmp/pmd-smoke
+          ../../.tmp/pmd-smoke/pmd-bin-7.27.0/bin/pmd --version
+
       - name: Install
         run: pip install -e ".[dev]"
 

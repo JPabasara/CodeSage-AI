@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -83,6 +84,8 @@ def test_priority_category_location_metadata_and_fingerprint_are_preserved() -> 
 def test_real_pmd_727_detects_required_fixture_without_duplicates(tmp_path: Path) -> None:
     binary = _pmd_binary()
     if binary is None:
+        if os.getenv("CI"):
+            pytest.fail("PMD 7.27.0 must be installed in CI")
         pytest.skip("PMD 7.27.0 is not installed in this test environment")
     repository = tmp_path / "repository"
     shutil.copytree(FIXTURE_DIR, repository)
