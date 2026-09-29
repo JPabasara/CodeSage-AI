@@ -20,8 +20,10 @@ from codesage_api.db.models import (
     AnalysisAttempt,
     BugRiskPrediction,
     ClassRiskPrediction,
+    Branch,
     Finding,
     MLModelVersion,
+    Repository,
     SATDPrediction,
     SourceFile,
 )
@@ -72,7 +74,7 @@ def test_finalize_records_trained_risk_provenance(
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(repository=Repository(test_path_patterns=[], production_path_overrides=[])),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
@@ -135,7 +137,7 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(repository=Repository(test_path_patterns=[], production_path_overrides=[])),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
@@ -230,7 +232,7 @@ def test_finalize_persists_satd_when_ck_omits_source_file(
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(repository=Repository(test_path_patterns=[], production_path_overrides=[])),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
