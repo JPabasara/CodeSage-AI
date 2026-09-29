@@ -82,7 +82,7 @@ LATER_COLUMNS = {
         "updated_at",
     ),
     "membership": ("role_id",),  # 0010
-    "app_user": ("email_verified",),  # 0013
+    "app_user": ("email_verified", "product_tour_completed_at"),  # 0013, 0019
     "analysis_attempt": (  # 0011; failure_code 0018
         "initiated_by_user_id",
         "initiating_workspace_id",

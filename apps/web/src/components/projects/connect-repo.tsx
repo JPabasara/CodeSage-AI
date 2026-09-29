@@ -64,6 +64,7 @@ export function ConnectRepo({
   return (
     <section
       aria-labelledby="connect-repo-heading"
+      data-tour="project-connect"
       className={cn("rounded-lg border bg-card p-5", className)}
     >
       <div className="flex items-start gap-3">

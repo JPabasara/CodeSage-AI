@@ -6,16 +6,21 @@ import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
 import {
   Building2,
+  BookOpen,
+  ChevronDown,
+  ExternalLink,
   FolderGit2,
   LayoutDashboard,
   History,
   Lock,
+  LifeBuoy,
   LogOut,
   Moon,
   SlidersHorizontal,
   Sun,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   type LucideIcon,
 } from "lucide-react"
 // shadcn/ui components are already Client Components.
@@ -28,6 +33,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar"
 import {
@@ -50,6 +58,8 @@ type NavItem = {
   label: string
   icon: LucideIcon
   isActive: (pathname: string) => boolean
+  requiresWorkspace?: boolean
+  tourTarget?: string
 }
 
 const MOCKING_MODE = process.env.NEXT_PUBLIC_API_MOCKING
@@ -66,12 +76,14 @@ function navItems(repoId: string | undefined): NavItem[] {
       label: "Workspace",
       icon: Building2,
       isActive: (p) => p.startsWith("/workspace"),
+      tourTarget: "workspace-nav",
     },
     {
       href: "/projects",
       label: "Projects",
       icon: FolderGit2,
       isActive: (p) => p.startsWith("/projects"),
+      tourTarget: "projects-nav",
     },
     {
       // With no project to name, the index says how to get one.
@@ -91,6 +103,7 @@ function navItems(repoId: string | undefined): NavItem[] {
       label: "Profiles",
       icon: SlidersHorizontal,
       isActive: (p) => p.startsWith("/profiles"),
+      tourTarget: "profiles-nav",
     },
   ]
 }
@@ -114,6 +127,7 @@ export function AppRail() {
   const sidebarCollapsed = state === "collapsed"
   const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
   const [signingOut, setSigningOut] = useState(false)
+  const [supportOpen, setSupportOpen] = useState(false)
   const { resolvedTheme } = useTheme()
   // The icon follows what is on screen, so "System default" shows sun or moon.
   const ThemeIcon = resolvedTheme === "dark" ? Moon : Sun
@@ -135,6 +149,7 @@ export function AppRail() {
               <SidebarMenu>
                 {nav.map((item) => {
                   const Icon = item.icon
+                  const itemLocked = locked && item.requiresWorkspace !== false
                   return (
                     <SidebarMenuItem key={item.label}>
                       <SidebarMenuButton
@@ -145,16 +160,17 @@ export function AppRail() {
                       >
                         <Link
                           href={item.href}
+                          data-tour={item.tourTarget}
                           onClick={() => setOpenMobile(false)}
                           title={
-                            locked ? "Create a workspace first" : undefined
+                            itemLocked ? "Create a workspace first" : undefined
                           }
                         >
                           <Icon />
                           <span className="group-data-[collapsible=icon]:hidden">
                             {item.label}
                           </span>
-                          {locked ? (
+                          {itemLocked ? (
                             <>
                               <Lock
                                 className="ml-auto size-3.5! text-muted-foreground group-data-[collapsible=icon]:hidden"
@@ -170,6 +186,71 @@ export function AppRail() {
                     </SidebarMenuItem>
                   )
                 })}
+                <SidebarMenuItem
+                  onMouseEnter={() => setSupportOpen(true)}
+                  onMouseLeave={() => setSupportOpen(false)}
+                  onFocusCapture={() => setSupportOpen(true)}
+                  onBlurCapture={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+                      setSupportOpen(false)
+                    }
+                  }}
+                >
+                  <SidebarMenuButton
+                    type="button"
+                    isActive={pathname.startsWith("/support")}
+                    tooltip="Support"
+                    className="h-9 text-sm"
+                    data-tour="support-nav"
+                    aria-expanded={supportOpen}
+                    aria-controls="support-navigation"
+                    onClick={() => setSupportOpen((open) => !open)}
+                  >
+                    <LifeBuoy />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      Support
+                    </span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={`ml-auto transition-transform group-data-[collapsible=icon]:hidden ${supportOpen ? "rotate-180" : ""}`}
+                    />
+                  </SidebarMenuButton>
+                  {supportOpen ? (
+                    <SidebarMenuSub id="support-navigation">
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton asChild>
+                          <Link
+                            href="/guide"
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={() => setOpenMobile(false)}
+                          >
+                            <BookOpen aria-hidden="true" />
+                            <span>Product Guide</span>
+                            <ExternalLink
+                              className="ml-auto"
+                              aria-hidden="true"
+                            />
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname.startsWith("/support")}
+                        >
+                          <Link
+                            href="/support"
+                            onClick={() => setOpenMobile(false)}
+                          >
+                            <Play aria-hidden="true" />
+                            <span>New User Trial</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  ) : null}
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

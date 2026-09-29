@@ -140,6 +140,7 @@ export function WorkspaceGate({
 }: Readonly<{ children: React.ReactNode }>) {
   const gate = useWorkspaceGate()
   const pathname = usePathname()
+  if (pathname.startsWith("/support")) return children
   if (gate === "none")
     return <NoWorkspaceState page={lockedPageFor(pathname)} />
   return children

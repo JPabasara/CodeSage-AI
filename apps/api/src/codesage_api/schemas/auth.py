@@ -6,6 +6,7 @@ Carries no token and no password. Those never leave this server (SEC-09).
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import AnyHttpUrl, Field, TypeAdapter, field_validator
 
@@ -107,6 +108,12 @@ class SwitchWorkspaceIn(ApiModel):
     workspace_id: str
 
 
+class ProductTourUpdateIn(ApiModel):
+    """The two terminal choices offered by the first-run tour."""
+
+    status: Literal["completed", "skipped"]
+
+
 class SessionOut(ApiModel):
     """The signed-in user, and where they are allowed to act.
 
@@ -126,6 +133,7 @@ class SessionOut(ApiModel):
     user_id: str
     workspace_id: str | None = None
     needs_workspace_setup: bool = False
+    product_tour_required: bool = False
 
     # The caller's standing in the active workspace. Sent so the web can hide
     # controls it would be refused anyway — a convenience, never the boundary.

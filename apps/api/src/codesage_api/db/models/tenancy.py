@@ -46,6 +46,12 @@ class User(UUIDPrimaryKey, Base):
         nullable=False,
         default=Theme.SYSTEM,
     )
+    # Null only until the first-run product tour is finished or explicitly
+    # skipped. Existing users are backfilled by the migration so a release does
+    # not unexpectedly launch onboarding for every established account.
+    product_tour_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     memberships: Mapped[list[Membership]] = relationship(
         back_populates="user", passive_deletes=True
     )

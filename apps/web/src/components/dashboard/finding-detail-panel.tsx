@@ -14,6 +14,7 @@ import type { Finding, FindingStatus } from "@/lib/types"
 
 export type FindingDetailPanelProps = {
   finding: Finding | null
+  hasFindings?: boolean
   onClose: () => void
   canTriage?: boolean
   statusBusy?: boolean
@@ -22,12 +23,41 @@ export type FindingDetailPanelProps = {
 
 export function FindingDetailPanel({
   finding,
+  hasFindings = false,
   onClose,
   canTriage = false,
   statusBusy = false,
   onStatusChange,
 }: Readonly<FindingDetailPanelProps>) {
-  if (!finding) return null
+  if (!finding) {
+    return (
+      <Card
+        aria-label="Finding detail"
+        className="h-full min-h-0 gap-0 border ring-0"
+      >
+        <CardHeader className="flex-row items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold">
+              {hasFindings ? "Select a finding" : "No findings to show"}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {hasFindings
+                ? "Choose a finding from the list to open its details here."
+                : "There are no findings in this snapshot. Try another scan or choose a different branch."}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close finding detail"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </CardHeader>
+      </Card>
+    )
+  }
 
   return (
     <Card

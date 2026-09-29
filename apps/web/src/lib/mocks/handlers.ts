@@ -1883,4 +1883,11 @@ export const authHandlers = [
       permissions: PERMISSIONS_BY_ROLE[role],
     } satisfies Session)
   }),
+  http.put("*/api/auth/tour", async ({ request }) => {
+    const body = (await request.json()) as { status?: string }
+    if (body.status !== "completed" && body.status !== "skipped") {
+      return fail(422, "VALIDATION_FAILED", "Choose completed or skipped.")
+    }
+    return new HttpResponse(null, { status: 204 })
+  }),
 ]

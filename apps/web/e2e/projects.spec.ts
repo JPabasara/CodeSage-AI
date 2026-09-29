@@ -116,8 +116,11 @@ test("each connect failure explains itself in its own words", async ({
   page,
 }) => {
   const cases: [string, RegExp][] = [
-    ["not-a-url", /does not look like a repository URL/i],
-    ["https://github.com/octocat/private-x", /only public repositories/i],
+    ["not-a-url", /valid GitHub repository link/i],
+    [
+      "https://github.com/octocat/private-x",
+      /private repositories cannot be connected yet/i,
+    ],
     ["https://github.com/octocat/missing-x", /could not be reached/i],
     ["https://github.com/acme/acme-payments", /already connected/i],
   ]

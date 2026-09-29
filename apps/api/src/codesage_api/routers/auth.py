@@ -28,6 +28,7 @@ from codesage_api.deps import (
 from codesage_api.errors import Forbidden, MisconfiguredSignIn, NotFound, SignInFailed
 from codesage_api.schemas.auth import (
     CreateWorkspaceIn,
+    ProductTourUpdateIn,
     SessionOut,
     SwitchWorkspaceIn,
     UpdateWorkspaceIn,
@@ -182,6 +183,7 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     try:
         session = auth_service.establish_session(db, claims)
         session_id = str(session.id)
+        new_user_tour = getattr(session, "product_tour_required", False)
         db.commit()
     except Exception:
         db.rollback()
@@ -189,11 +191,12 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
-    # Everyone lands in the app: on `return_to` when sign-in began with one (an
-    # invitation, say), otherwise on /projects. A user with no workspace yet is
-    # still signed in, and the web shows each page's "create a workspace" state
-    # instead of a separate onboarding screen.
-    destination = safe_return_to(issued.get("return_to")) or "/projects"
+    # An explicit safe return path (an invitation, for example) always wins.
+    # Otherwise a new user starts at Workspace with the tour; returning users
+    # resume at Projects.
+    destination = safe_return_to(issued.get("return_to")) or (
+        "/workspace" if new_user_tour else "/projects"
+    )
     response = RedirectResponse(
         f"{settings.frontend_base_url.rstrip('/')}{destination}",
         status_code=status.HTTP_302_FOUND,
@@ -259,6 +262,7 @@ def current_user(
             user_id=str(user_id),
             workspace_id=None if workspace_id is None else str(workspace_id),
             needs_workspace_setup=workspace_id is None,
+            product_tour_required=user.product_tour_completed_at is None,
             role=role,
             permissions=permissions,
             email=user.email,
@@ -266,6 +270,24 @@ def current_user(
             avatar_url=user.avatar_url,
             identity_provider=user.identity_provider,
         )
+    finally:
+        db.close()
+
+
+@router.put("/tour", status_code=status.HTTP_204_NO_CONTENT)
+def finish_product_tour(
+    body: ProductTourUpdateIn,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> None:
+    """Remember Finish and Skip so onboarding does not relaunch next sign-in."""
+    del body  # both accepted outcomes intentionally have the same persistence
+    db = SessionLocal()
+    try:
+        auth_service.complete_product_tour(db, user_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -346,9 +368,7 @@ def get_workspace(
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
         raise NotFound
-    return _summary(
-        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
-    )
+    return _summary(auth_service.describe_workspace(db, workspace, context.role_id), is_active=True)
 
 
 @router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
@@ -378,9 +398,7 @@ def update_workspace(
     if "website_url" in fields:
         workspace.website_url = fields["website_url"]
     db.flush()
-    return _summary(
-        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
-    )
+    return _summary(auth_service.describe_workspace(db, workspace, context.role_id), is_active=True)
 
 
 @router.put("/workspaces/active", response_model=WorkspaceSummaryOut)

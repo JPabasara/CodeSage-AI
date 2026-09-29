@@ -640,6 +640,15 @@ test("a report with zero findings displays the celebratory empty state in place 
     ),
   ).toBeInTheDocument()
   expect(screen.queryByRole("table")).not.toBeInTheDocument()
+
+  const detailView = screen.getByRole("button", {
+    name: "Findings + detail",
+  })
+  expect(detailView).toBeEnabled()
+  await userEvent.click(detailView)
+  expect(screen.getByLabelText("Finding detail")).toHaveTextContent(
+    /no findings in this snapshot/i,
+  )
 })
 
 test("filtering to nothing inside the dashboard displays the filter empty state and clear button (U-14)", async () => {

@@ -125,7 +125,7 @@ test("the selection lives in the URL, so refresh and Back both work", async ({
   // Back deselects the finding, the way it does in a mail client.
   await page.goBack()
   await expect(page).not.toHaveURL(/finding=/)
-  await expect(detailPanel(page)).toHaveCount(0)
+  await expect(detailPanel(page).getByText("Select a finding")).toBeVisible()
   await expect(findingCards(page).first()).toBeVisible()
 })
 

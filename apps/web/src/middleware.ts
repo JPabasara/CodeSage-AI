@@ -9,7 +9,7 @@ const SESSION_COOKIE =
 
 // The invitation page is public so a signed-out visitor can land on it and have
 // the token kept before sign-in; it asks for sign-in itself.
-const PUBLIC_PATHS = new Set(["/login", "/invitations/accept"])
+const PUBLIC_PATHS = new Set(["/login", "/guide", "/invitations/accept"])
 
 export function middleware(request: NextRequest) {
   const signedIn = request.cookies.has(SESSION_COOKIE)

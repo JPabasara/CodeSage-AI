@@ -85,6 +85,8 @@ export interface Session {
   workspace_id?: string | null
   /** True when the user must create or join a workspace before the app is usable. */
   needs_workspace_setup?: boolean
+  /** True until the first-run tour is finished or explicitly skipped. */
+  product_tour_required?: boolean
   role?: Role | null
   /**
    * What this caller may do in the active workspace, so the UI can hide controls

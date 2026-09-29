@@ -53,10 +53,10 @@ export interface paths {
          *     code, and establishes a **server-side session**, returning its identifier
          *     in an httpOnly cookie. The browser never receives a token.
          *
-         *     On first sign-in this also creates the user's Workspace, its Membership,
-         *     and seeds the **Balanced** profile with `is_active = true` — so a workspace
-         *     always has exactly one active profile and the read path never needs a
-         *     fallback.
+         *     On first sign-in this also creates **My Workspace**, its org-admin
+         *     Membership, the built-in profile pool, and a Spring PetClinic starter
+         *     project. The browser lands on Workspace so the guided trial starts with
+         *     the container those later screens belong to.
          *
          *     A `SecurityAuditRecord` is written for both success and failure (SEC-14).
          *     A failed sign-in has no established actor, which is exactly the event most
@@ -92,6 +92,28 @@ export interface paths {
          */
         get: operations["get_session"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/tour": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Finish or skip the first-run product tour
+         * @description Records a terminal choice for the signed-in user. Both choices stop the
+         *     automatic first-login tour; the Support page can still start any lesson
+         *     again without changing this value.
+         */
+        put: operations["finish_product_tour"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1133,6 +1155,12 @@ export interface components {
              */
             needs_workspace_setup: boolean;
             /**
+             * @description True until the user finishes or explicitly skips the first-run tour.
+             *     Manual lessons remain available from Support afterwards.
+             * @default false
+             */
+            product_tour_required: boolean;
+            /**
              * @description The caller's role in the active workspace; null during onboarding.
              * @enum {string|null}
              */
@@ -1156,6 +1184,13 @@ export interface components {
              * @example github
              */
             identity_provider?: string | null;
+        };
+        ProductTourUpdate: {
+            /**
+             * @description The terminal choice made in the tour.
+             * @enum {string}
+             */
+            status: "completed" | "skipped";
         };
         /**
          * @description One workspace as the switcher and the Workspace settings screen need it.
@@ -1972,7 +2007,8 @@ export interface operations {
              *
              *     - **Session established.** Redirects to the `return_to` given at
              *       `/api/auth/login` (checked against the allowlist again), otherwise
-             *       to the Projects page. Sets the session cookie with `HttpOnly`,
+             *       to Workspace for a new user or Projects for a returning user. Sets
+             *       the session cookie with `HttpOnly`,
              *       `Secure`, `SameSite=Lax`.
              *     - **Handshake missing, expired or mismatched** (typically: the user
              *       verified their email in another tab, or took longer than ten
@@ -2013,6 +2049,29 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Session"];
                 };
+            };
+            401: components["responses"]["NotAuthenticated"];
+        };
+    };
+    finish_product_tour: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductTourUpdate"];
+            };
+        };
+        responses: {
+            /** @description Tour preference saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["NotAuthenticated"];
         };

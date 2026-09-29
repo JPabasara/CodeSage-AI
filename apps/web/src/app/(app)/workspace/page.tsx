@@ -168,6 +168,7 @@ export default function WorkspacePage() {
         <div className={LAYOUT.settings}>
           <section
             aria-labelledby="workspace-settings-heading"
+            data-tour="workspace-settings"
             className="space-y-3"
           >
             <div className="space-y-0.5">

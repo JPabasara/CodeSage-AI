@@ -94,6 +94,7 @@ export function WorkspaceSwitcher({
   return (
     <>
       <TopBarPicker
+        tourTarget="workspace-switcher"
         label="Workspace"
         icon={<Building2 className="size-4" />}
         className="min-w-0 flex-1 md:w-auto md:max-w-52 md:flex-none"

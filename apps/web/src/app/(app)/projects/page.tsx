@@ -4,7 +4,11 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { ApiRequestError, connectRepo, removeProject } from "@/lib/api/client"
-import { connectFailureMessage } from "@/lib/guardrail-messages"
+import {
+  connectFailureMessage,
+  INVALID_REPOSITORY_URL_MESSAGE,
+  isGitHubRepositoryUrl,
+} from "@/lib/guardrail-messages"
 import type { Repo } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
 import { ErrorState } from "@/components/error-state"
@@ -66,6 +70,11 @@ export default function ProjectsPage() {
 
   /** Resolves false when refused, so the form keeps the URL under its message. */
   async function onConnect(url: string): Promise<boolean> {
+    if (!isGitHubRepositoryUrl(url)) {
+      setConnectError(INVALID_REPOSITORY_URL_MESSAGE)
+      toast.error(INVALID_REPOSITORY_URL_MESSAGE)
+      return false
+    }
     setConnecting(true)
     setConnectError(undefined)
     try {
@@ -174,7 +183,7 @@ export default function ProjectsPage() {
         lockedReason={canConnect ? undefined : CONNECT_LOCKED_REASON}
       />
 
-      <section className="space-y-3">
+      <section className="space-y-3" data-tour="project-list">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 className="text-[15px] font-semibold">Connected repositories</h2>
           {/* Hidden only once the list is known to be empty — the empty state

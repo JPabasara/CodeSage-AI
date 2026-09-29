@@ -45,6 +45,12 @@ describe("middleware", () => {
     expect(response.headers.get("location")).toBeNull()
   })
 
+  test("the product guide is public", () => {
+    const response = middleware(requestFor("/guide"))
+
+    expect(response.headers.get("location")).toBeNull()
+  })
+
   test("redirects to /login when the session cookie is missing", () => {
     const response = middleware(requestFor("/projects"))
 

@@ -71,16 +71,20 @@ export class ApiRequestError extends Error {
  */
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let body: Partial<ApiError> = {}
+    let body: Partial<ApiError> & { detail?: unknown } = {}
     try {
-      body = (await res.json()) as Partial<ApiError>
+      body = (await res.json()) as Partial<ApiError> & { detail?: unknown }
     } catch {
       // A proxy or gateway can fail with a non-JSON body; fall back to the status.
     }
+    const detail =
+      typeof body.detail === "string"
+        ? body.detail
+        : `${res.status} ${res.statusText}`.trim()
     throw new ApiRequestError(
       res.status,
       body.code,
-      body.detail ?? `${res.status} ${res.statusText}`,
+      detail,
       Array.isArray(body.languages) ? body.languages : undefined,
     )
   }
@@ -120,6 +124,18 @@ export function getSession(): Promise<Session> {
   return fetch(`${API_BASE}/api/auth/session`, {
     credentials: "include",
   }).then(json<Session>)
+}
+
+/** Stop automatic first-run onboarding; lessons remain available from Support. */
+export function finishProductTour(
+  status: "completed" | "skipped",
+): Promise<void> {
+  return fetch(`${API_BASE}/api/auth/tour`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  }).then(empty)
 }
 
 // ── workspaces ───────────────────────────────────────────────────────────────

@@ -48,6 +48,7 @@ export function TopBarPicker({
   emptyMessage,
   footer,
   className,
+  tourTarget,
 }: Readonly<{
   /** What is being picked — "Workspace", "Project". Names the control. */
   label: string
@@ -65,6 +66,8 @@ export function TopBarPicker({
    */
   footer?: (close: () => void) => React.ReactNode
   className?: string
+  /** Stable anchor used by the optional guided product tour. */
+  tourTarget?: string
 }>) {
   const [open, setOpen] = useState(false)
   const commandRef = useRef<HTMLDivElement>(null)
@@ -74,6 +77,7 @@ export function TopBarPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        data-tour={tourTarget}
         role="combobox"
         aria-label={`${label}: ${activeLabel}`}
         aria-haspopup="listbox"

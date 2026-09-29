@@ -8,13 +8,40 @@ import type { ErrorCode, ScanErrorCode, ScanStatus } from "@/lib/types"
 export const NO_JAVA_MESSAGE =
   "We couldn't find any Java in this repository. CodeSage reads Java for now; more languages are coming soon."
 
+export const INVALID_REPOSITORY_URL_MESSAGE =
+  "Please enter a valid GitHub repository link, for example https://github.com/owner/repository."
+
+/** A complete GitHub owner/repository URL, before the API is asked to connect it. */
+export function isGitHubRepositoryUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    if (
+      url.protocol !== "https:" ||
+      url.hostname.toLowerCase() !== "github.com"
+    ) {
+      return false
+    }
+    if (url.username || url.password || url.search || url.hash) return false
+    const segments = url.pathname
+      .replace(/\.git\/?$/, "")
+      .split("/")
+      .filter(Boolean)
+    return (
+      segments.length === 2 && segments.every((segment) => segment.length > 0)
+    )
+  } catch {
+    return false
+  }
+}
+
 // Each code is a different thing for the user to do about it, which is why they
 // are separate rather than one 400; a bare "400 Bad Request" leaves someone who
 // pasted a repository with no idea what went wrong.
 const CONNECT_MESSAGE: Partial<Record<ErrorCode, string>> = {
-  INVALID_REPOSITORY_URL: "That does not look like a repository URL.",
+  INVALID_REPOSITORY_URL: INVALID_REPOSITORY_URL_MESSAGE,
+  VALIDATION_FAILED: INVALID_REPOSITORY_URL_MESSAGE,
   REPOSITORY_NOT_PUBLIC:
-    "Only public repositories can be connected in this release.",
+    "Private repositories cannot be connected yet. Please use a public GitHub repository.",
   REPOSITORY_UNREACHABLE:
     "That repository could not be reached. Check the URL and try again.",
   ALREADY_CONNECTED: "That repository is already connected.",

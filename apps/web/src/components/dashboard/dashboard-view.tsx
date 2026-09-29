@@ -534,11 +534,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       />
     )
     const viewBar = (
-      <DashboardViewModeBar
-        value={viewMode}
-        onChange={chooseViewMode}
-        canShowDetail={displayedFindings.length > 0}
-      />
+      <DashboardViewModeBar value={viewMode} onChange={chooseViewMode} />
     )
 
     if (viewMode === "findings") {
@@ -572,6 +568,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
             <div className="min-h-64">
               <FindingDetailPanel
                 finding={selectedFinding}
+                hasFindings={displayedFindings.length > 0}
                 onClose={closeFinding}
                 canTriage={canTriage}
                 statusBusy={
@@ -682,7 +679,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         />
       ) : null}
 
-      {body()}
+      <div className="flex min-h-0 flex-1" data-tour="dashboard-results">
+        {body()}
+      </div>
     </div>
   )
 }
