@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
@@ -367,7 +367,10 @@ def delete_workspace(
     actor_user_id: uuid.UUID,
     confirmation_name: str,
 ) -> None:
-    """Delete one tenant atomically after an exact-name and active-scan check."""
+    """Delete one tenant atomically after an exact-name and active-scan check.
+
+    Sessions bound to it move to the no-workspace state in the same transaction.
+    """
     workspace = db.scalar(
         select(Workspace).where(Workspace.id == workspace_id).with_for_update()
     )
@@ -398,6 +401,17 @@ def delete_workspace(
         actor_user_id=actor_user_id,
         resource_type="workspace",
         resource_id=str(workspace_id),
+    )
+    # Every session bound here, the caller's included, drops to the
+    # no-workspace state rather than being deleted with the tenant. Nobody is
+    # signed out: they land where onboarding starts, and any other workspace
+    # they belong to is one switch away. SESSION is not tenant-scoped, so this
+    # reaches other members' sessions as well.
+    db.execute(
+        update(UserSession)
+        .where(UserSession.workspace_id == workspace_id)
+        .values(workspace_id=None)
+        .execution_options(synchronize_session=False)
     )
     db.flush()
     # A Core DELETE, not `db.delete(workspace)`: the ORM would load each child

@@ -32,7 +32,9 @@ import type {
   FindingStatus,
   Severity,
   Source,
+  TreeNode,
 } from "@/lib/types"
+import { SourceScopeSettings } from "@/components/dashboard/source-scope-settings"
 import { cn, severityColor } from "@/lib/utils"
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -94,6 +96,9 @@ export type RefactorFirstListProps = {
   canTriage?: boolean
   statusBusyFingerprint?: string
   onStatusChange?: (finding: Finding, status: FindingStatus) => void
+  includeTestFindingsByDefault?: boolean
+  repoId?: string
+  treeNodes?: TreeNode[]
 }
 
 const PAGE_SIZE = 10
@@ -141,6 +146,7 @@ const TOOLBAR_ITEM = "data-toolbar-item"
 // Toolbar order: the source toggle, the severity chips, then the category menu.
 const CATEGORY_FILTER_INDEX = SOURCE_OPTIONS.length + SEVERITIES.length
 const DONE_FILTER_INDEX = CATEGORY_FILTER_INDEX + 1
+const TEST_FILTER_INDEX = DONE_FILTER_INDEX + 1
 
 function onToolbarKeyDown(event: KeyboardEvent<HTMLDivElement>) {
   // The category menu renders in a portal. Its key presses still bubble up the
@@ -181,6 +187,9 @@ export function RefactorFirstList({
   canTriage = false,
   statusBusyFingerprint,
   onStatusChange,
+  includeTestFindingsByDefault = false,
+  repoId,
+  treeNodes = [],
 }: Readonly<RefactorFirstListProps>) {
   const [source, setSource] = useState<SourceFilter>("all")
   const [severities, setSeverities] = useState<ReadonlySet<Severity>>(
@@ -189,6 +198,7 @@ export function RefactorFirstList({
   const [category, setCategory] = useState<Category | "all">("all")
   const [showAll, setShowAll] = useState(false)
   const [showDone, setShowDone] = useState(false)
+  const [showTestFindings, setShowTestFindings] = useState(includeTestFindingsByDefault)
   // The toolbar control that holds the single Tab stop (roving tabindex). It
   // starts on the debt-type filter — the one filter this list has always had,
   // so Tab still lands where it used to — and then follows the arrow keys.
@@ -206,6 +216,7 @@ export function RefactorFirstList({
     const filtered = findings.filter(
       (finding) =>
         (showDone || finding.status !== "done") &&
+        (showTestFindings || finding.source_scope !== "test") &&
         (source === "all" || finding.source === source) &&
         severities.has(finding.severity) &&
         (category === "all" || finding.category === category),
@@ -215,7 +226,7 @@ export function RefactorFirstList({
         sortKey(b) - sortKey(a) ||
         SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
     )
-  }, [findings, showDone, source, severities, category])
+  }, [findings, showDone, showTestFindings, source, severities, category])
 
   const doneCount = findings.filter(
     (finding) => finding.status === "done",
@@ -239,6 +250,7 @@ export function RefactorFirstList({
     setSource("all")
     setSeverities(new Set(SEVERITIES))
     setCategory("all")
+    setShowTestFindings(includeTestFindingsByDefault)
   }
 
   // Props every toolbar control shares: one of them is tabbable at a time.
@@ -362,6 +374,18 @@ export function RefactorFirstList({
         <CheckCircle2 className="size-3.5" aria-hidden="true" />
         Show done ({doneCount})
       </button>
+
+      <button
+        type="button"
+        aria-pressed={showTestFindings}
+        onClick={() => setShowTestFindings((current) => !current)}
+        className={cn(segment, "h-7 gap-1.5 border", showTestFindings ? "border-border bg-accent text-accent-foreground" : "border-dashed text-muted-foreground hover:text-foreground")}
+        {...toolbarItem(TEST_FILTER_INDEX)}
+      >
+        <FileCode2 className="size-3.5" aria-hidden="true" />
+        Test code
+      </button>
+      {repoId ? <SourceScopeSettings repoId={repoId} nodes={treeNodes} /> : null}
 
       <span className="text-xs text-muted-foreground tabular-nums">
         {openCount} open / {doneCount} done

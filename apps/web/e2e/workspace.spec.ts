@@ -188,9 +188,16 @@ test("an org-admin permanently deletes a named workspace", async ({ page }) => {
     .fill("Acme Engineering")
   await submit.click()
 
-  // The mock API rebinds the session to the remaining membership. Acme and its
-  // workspace-owned data are gone; the global signed-in user remains.
+  // Acme and its workspace-owned data are gone; the global signed-in user
+  // remains and can explicitly select a surviving membership.
   await expect(page).toHaveURL(/\/workspace$/)
+  await expect(
+    main(page).getByRole("heading", { name: "Create your workspace" }),
+  ).toBeVisible()
+  await expect(
+    main(page).getByRole("heading", { name: "Select an existing workspace" }),
+  ).toBeVisible()
+  await main(page).getByRole("button", { name: /Nimbus Labs/ }).click()
   await expect(
     main(page).getByRole("heading", { name: "Nimbus Labs" }),
   ).toBeVisible()

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { WorkspaceGate, lockedPageFor } from "./no-workspace-state"
-import { getWorkspaces } from "@/lib/api/client"
+import { deleteWorkspace, getWorkspaces } from "@/lib/api/client"
 import {
   noteActiveWorkspace,
   resetWorkspaceScope,
@@ -103,4 +103,31 @@ test("the Workspace page offers the form inline", async () => {
   )
 
   await waitFor(() => expect(screen.getByText("the real page")).toBeVisible())
+})
+
+test("after deletion the Workspace page selects another workspace without signing in", async () => {
+  const current = (await getWorkspaces()).find(
+    (workspace) => workspace.is_active,
+  )!
+  await deleteWorkspace(current.workspace_id, {
+    confirmation_name: current.name,
+  })
+  nav.pathname = "/workspace"
+  noteActiveWorkspace(null)
+  render(<WorkspaceGate>{page}</WorkspaceGate>)
+
+  expect(
+    await screen.findByRole("heading", {
+      name: "Select an existing workspace",
+    }),
+  ).toBeVisible()
+  const remaining = (await getWorkspaces())[0]
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp(remaining.name, "i") }),
+  )
+
+  expect(await screen.findByText("the real page")).toBeVisible()
+  expect(
+    (await getWorkspaces()).find((workspace) => workspace.is_active),
+  ).toMatchObject({ workspace_id: remaining.workspace_id })
 })

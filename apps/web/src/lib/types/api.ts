@@ -189,14 +189,17 @@ export interface paths {
          *
          *     Permanently deletes the workspace and everything it owns, including its
          *     memberships, invitations, projects, profiles, scans, snapshots and
-         *     findings. It never deletes a global user account or that user's
-         *     memberships in other workspaces. The server moves affected sessions to
-         *     another active membership when one exists, otherwise to the authenticated
-         *     no-workspace state.
+         *     findings, in one transaction (DBR-28). It never deletes a global user
+         *     account or that user's memberships in other workspaces.
          *
-         *     A queued or running scan refuses the operation with
-         *     `WORKSPACE_SCAN_RUNNING`; no partial deletion occurs. Missing and foreign
-         *     workspace identifiers both return `404`.
+         *     Nobody is signed out. Every session bound to the workspace, the caller's
+         *     included, moves to the authenticated no-workspace state, where
+         *     `GET /api/auth/session` answers `needs_workspace_setup: true`. The server
+         *     never picks another workspace; a member who has one switches to it.
+         *
+         *     Audit records are kept: their workspace link becomes null and the
+         *     workspace name is retained, with a `workspace_deleted` entry recording who
+         *     deleted it. Missing and foreign workspace identifiers both return `404`.
          */
         delete: operations["delete_workspace"];
         options?: never;
@@ -2179,7 +2182,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Workspace and all workspace-owned data permanently deleted. */
+            /**
+             * @description Workspace and all workspace-owned data permanently deleted. The
+             *     session cookie is kept; the session now has no workspace.
+             */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -2189,7 +2195,11 @@ export interface operations {
             401: components["responses"]["NotAuthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description A queued or running scan prevents deletion. */
+            /**
+             * @description `WORKSPACE_CONFIRMATION_MISMATCH` when the typed name differs,
+             *     `WORKSPACE_SCAN_RUNNING` while a scan is queued or running. No
+             *     partial deletion occurs.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2197,7 +2207,7 @@ export interface operations {
                 content: {
                     /**
                      * @example {
-                     *       "detail": "Stop or wait for workspace scans before deleting it.",
+                     *       "detail": "Stop or wait for active scans before deleting this workspace.",
                      *       "code": "WORKSPACE_SCAN_RUNNING"
                      *     }
                      */

@@ -103,8 +103,9 @@ export function adoptWorkspace(workspace: Workspace) {
 
 /**
  * Forget every browser-side reference to a workspace the API just deleted.
- * The session query re-runs under the new epoch and learns the server's chosen
- * fallback workspace, or confirms that the user now has none.
+ * The API leaves the session with no workspace, so the screens lock to the
+ * create-a-workspace state at once; any other workspace the user belongs to
+ * stays in the switcher for them to pick.
  */
 export function leaveDeletedWorkspace(workspaceId: string) {
   clearSelectedProjectId(workspaceId)

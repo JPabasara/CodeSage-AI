@@ -27,6 +27,7 @@ import type {
   ScoreProfile,
   SelectProfileRequest,
   Session,
+  SourceScopeConfig,
   UpdateProfileRequest,
   UpdateWorkspaceRequest,
   Workspace,
@@ -197,8 +198,9 @@ export function updateWorkspace(
 
 /**
  * Permanently delete the active workspace and everything it owns. The API
- * validates the exact name and rebinds the session; global users and their
- * memberships in other workspaces are never deleted.
+ * validates the exact name and leaves every session bound to it signed in with
+ * no workspace; global users and their memberships in other workspaces are
+ * never deleted.
  */
 export function deleteWorkspace(
   workspaceId: string,
@@ -255,6 +257,16 @@ export function getProjects(): Promise<Repo[]> {
   return fetch(`${API_BASE}/api/projects`, {
     credentials: "include",
   }).then(json<Repo[]>)
+}
+
+export function getSourceScopeConfig(repoId: string): Promise<SourceScopeConfig> {
+  return fetch(`${API_BASE}/api/projects/${repoId}/source-scope`, { credentials: "include" }).then(json<SourceScopeConfig>)
+}
+
+export function updateSourceScopeConfig(repoId: string, body: SourceScopeConfig): Promise<SourceScopeConfig> {
+  return fetch(`${API_BASE}/api/projects/${repoId}/source-scope`, {
+    method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }).then(json<SourceScopeConfig>)
 }
 
 export function getBranches(repoId: string): Promise<Branch[]> {
