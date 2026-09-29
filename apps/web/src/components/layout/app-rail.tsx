@@ -1,6 +1,6 @@
 "use client" // uses usePathname → must be a Client Component
 
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
@@ -68,6 +68,10 @@ const DEMO_FALLBACK_ID =
     ? DEMO_REPO_ID
     : undefined
 
+const subscribeToHydration = () => () => {}
+const clientHydrationSnapshot = () => true
+const serverHydrationSnapshot = () => false
+
 // Workspace first: it is the container everything below it belongs to.
 function navItems(repoId: string | undefined): NavItem[] {
   return [
@@ -128,9 +132,14 @@ export function AppRail() {
   const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
   const [signingOut, setSigningOut] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
+  const themeMounted = useSyncExternalStore(
+    subscribeToHydration,
+    clientHydrationSnapshot,
+    serverHydrationSnapshot,
+  )
   const { resolvedTheme } = useTheme()
-  // The icon follows what is on screen, so "System default" shows sun or moon.
-  const ThemeIcon = resolvedTheme === "dark" ? Moon : Sun
+  // Keep the server and first browser render identical until next-themes resolves.
+  const ThemeIcon = themeMounted && resolvedTheme === "dark" ? Moon : Sun
   const sidebarStateLabel = sidebarCollapsed
     ? "Expand sidebar"
     : "Collapse sidebar"
