@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.repositories import dashboard
@@ -25,6 +25,13 @@ RESULT_TABLES = [
     "analysis_attempt", "snapshot", "source_file", "source_location",
     "static_metric", "finding",
 ]
+
+
+def _postgres_cli_url(value: str | URL) -> str:
+    """Render a SQLAlchemy URL without its Python driver for PostgreSQL CLI tools."""
+    return make_url(value).set(drivername="postgresql").render_as_string(
+        hide_password=False
+    )
 
 
 def _cli(name: str) -> str:
@@ -68,7 +75,7 @@ def test_dump_restore_preserves_data_security_and_dashboard_reads(
     dump = tmp_path / "codesage.dump"
     subprocess.run(
         [_cli("pg_dump"), "--format=custom", "--no-owner",
-         source.url.render_as_string(hide_password=False), "--file", str(dump)],
+         _postgres_cli_url(source.url), "--file", str(dump)],
         check=True,
     )
 
@@ -81,7 +88,7 @@ def test_dump_restore_preserves_data_security_and_dashboard_reads(
     try:
         subprocess.run(
             [_cli("pg_restore"), "--no-owner", "--exit-on-error",
-             "--dbname", restored_url.render_as_string(hide_password=False), str(dump)],
+             "--dbname", _postgres_cli_url(restored_url), str(dump)],
             check=True,
         )
         with restored.connect() as db:

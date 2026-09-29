@@ -230,7 +230,7 @@ def test_schema_catalogues_are_extensible_data(tenant) -> None:
                 "INSERT INTO ml_model_version "
                 "(id,model_type,version_identifier,training_date,deployment_status,"
                 "evaluation_dataset_reference,evaluation_metrics) "
-                "VALUES (gen_random_uuid(),'bug-risk','extensible-v1',now(),'evaluating',"
+                "VALUES (gen_random_uuid(),'bug_risk','extensible-v1',now(),'evaluating',"
                 "'test','{}')"
             )
         )
