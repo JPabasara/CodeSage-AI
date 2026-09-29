@@ -2,7 +2,7 @@ import uuid
 from unittest.mock import Mock, patch
 
 from codesage_api.db.enums import AnalysisStatus, AnalysisTriggerType, Severity
-from codesage_api.db.models import AnalysisAttempt, Finding, Snapshot, SourceFile
+from codesage_api.db.models import AnalysisAttempt, Branch, Finding, Repository, Snapshot, SourceFile
 from codesage_api.detection.rules.engine import DetectedFinding
 from codesage_api.extractors.pipeline import ExtractionResult
 from codesage_api.scoring.enums import Category
@@ -19,7 +19,12 @@ def test_detector_finding_survives_when_ck_omits_its_source_file(
 ) -> None:
     get_attempt.return_value = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(
+            repository=Repository(
+                test_path_patterns=[],
+                production_path_overrides=[],
+            ),
+        ),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
