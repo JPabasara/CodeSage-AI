@@ -2412,7 +2412,7 @@ components:
         The client renders; it computes nothing.
       required:
         [snapshot_id, repo_id, branch, commit_sha, scanned_at, health_score, grade,
-         delta, red_issue_count, profile, include_test_findings, history, tree, file_scores, findings,
+         delta, red_issue_count, resolved_finding_count, profile, include_test_findings, history, tree, file_scores, findings,
          category_breakdown]
       additionalProperties: false
       properties:
