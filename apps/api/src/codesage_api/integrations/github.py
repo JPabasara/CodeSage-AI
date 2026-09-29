@@ -34,7 +34,7 @@ class GitHubRepository:
     # GitHub's own `size`, in KB, for the whole repository history.
     size_kb: int = 0
     # GitHub's language names, most bytes first ("Java", "Kotlin", …).
-    languages: tuple[str, ...] = ()
+    languages: tuple[str, ...] = ("Java",)
 
 
 def parse_github_url(url: str) -> tuple[str, str]:

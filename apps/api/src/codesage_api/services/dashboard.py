@@ -475,6 +475,7 @@ def build_health_report(
         grade=Grade(str(payload["grade"])),
         delta=delta,
         red_issue_count=int(payload["red_issue_count"]),
+        resolved_finding_count=int(payload.get("resolved_finding_count", 0)),
         profile=profile.name,
         include_test_findings=profile.include_test_findings,
         model_version=(
