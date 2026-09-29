@@ -811,7 +811,9 @@ test("when it is done, 'Show them' — the page never swaps by itself", async ()
   expect(
     await screen.findByText("New results are ready", {}, { timeout: 15_000 }),
   ).toBeInTheDocument()
-  expect(analyzed()).toBe(before)
+  expect(
+    (await screen.findByTitle(/^Last analyzed/)).getAttribute("title"),
+  ).toBe(before)
 
   await user.click(screen.getByRole("button", { name: "Show them" }))
   await waitFor(() => expect(analyzed()).not.toBe(before))
