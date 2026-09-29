@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="CodeSage core profile" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0">
+ <description>Safe source-only rules plus non-overlapping metrics.</description>
+ <rule ref="codesage-core.xml" />
+ <rule ref="codesage-metrics.xml" />
+</ruleset>

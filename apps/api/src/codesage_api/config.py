@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     # CK is a Java jar run as a subprocess, so this is a filesystem path, not a
     # package name. The image installs it; see the Dockerfile.
     ck_jar: str = "/opt/ck/ck.jar"
+    # Import-path boundary for a replaceable optional detector.
+    detector_provider: str = "codesage_api.detection.pmd:scan"
+    # PMD is optional: unavailable tooling degrades only this detector stage.
+    pmd_enabled: bool = False
+    pmd_bin: str = "/opt/pmd/bin/pmd"
+    pmd_timeout_seconds: float = 120.0
     # v1.0 analyses Java only, because CK is a Java-only extractor (SRS §2.4).
     # Widening this list needs a Tree-sitter grammar, a per-language rule pack and
     # a recalibration of k — it is not just a config change.

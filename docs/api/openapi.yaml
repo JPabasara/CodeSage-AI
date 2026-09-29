@@ -1671,6 +1671,8 @@ components:
         - PROFILE_NAME_CONFLICT   # 409
         - WORKSPACE_REQUIRED      # 409
         - WORKSPACE_SCAN_RUNNING  # 409
+        - WORKSPACE_CONFIRMATION_MISMATCH # 409
+        - LAST_WORKSPACE_ADMIN    # 409
         - VALIDATION_FAILED       # 422
         - RATE_LIMITED            # 429
         - UPSTREAM_UNAVAILABLE    # 503
@@ -2250,7 +2252,7 @@ components:
         `priority` is **derived** on this request under the active profile — it is
         included as the sort key the list is already ordered by, so the client never
         re-sorts and the badge can never disagree with the ranking.
-      required: [fingerprint, source, category, severity, file, line, reason, status, priority, pinned_by_floor]
+      required: [fingerprint, source, category, severity, file, source_scope, line, reason, status, priority, pinned_by_floor]
       additionalProperties: false
       properties:
         fingerprint:
@@ -2262,6 +2264,10 @@ components:
         category: { $ref: '#/components/schemas/Category' }
         severity: { $ref: '#/components/schemas/Severity' }
         file: { type: string, example: src/main/java/com/acme/Billing.java }
+        source_scope:
+          type: string
+          enum: [production, test, generated, example, unknown]
+          default: unknown
         line: { type: integer, minimum: 1 }
         symbol:
           type: [string, 'null']
@@ -2406,7 +2412,7 @@ components:
         The client renders; it computes nothing.
       required:
         [snapshot_id, repo_id, branch, commit_sha, scanned_at, health_score, grade,
-         delta, red_issue_count, profile, history, tree, file_scores, findings,
+         delta, red_issue_count, resolved_finding_count, profile, include_test_findings, history, tree, file_scores, findings,
          category_breakdown]
       additionalProperties: false
       properties:
@@ -2429,6 +2435,11 @@ components:
           type: integer
           minimum: 0
           description: Critical + high, for the health-card summary.
+        resolved_finding_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Findings present in the previous snapshot but absent from this one.
         profile:
           type: string
           description: |
@@ -2436,6 +2447,7 @@ components:
             the chart changing shape after a profile switch reads as a defect
             (FR-14).
           example: Balanced
+        include_test_findings: { type: boolean, default: false }
         model_version:
           type: [string, 'null']
           description: |
@@ -2534,6 +2546,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 200, example: Release gate }
         weights: { $ref: '#/components/schemas/CategoryWeights' }
         trust_s: { type: number, minimum: 0, maximum: 1, default: 0.5 }
+        include_test_findings: { type: boolean }
 
     UpdateProfileRequest:
       type: object
@@ -2546,6 +2559,7 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         weights: { $ref: '#/components/schemas/CategoryWeightsPatch' }
         trust_s: { type: number, minimum: 0, maximum: 1 }
+        include_test_findings: { type: boolean }
 
     SelectProfileRequest:
       type: object
@@ -2584,13 +2598,14 @@ components:
     ScoreProfile:
       type: object
       description: A stored profile, as returned after clamping.
-      required: [id, name, weights, trust_s, is_preset, is_active, usage_count, editable]
+      required: [id, name, weights, trust_s, include_test_findings, is_preset, is_active, usage_count, editable]
       additionalProperties: false
       properties:
         id: { type: string, format: uuid }
         name: { type: string, example: Balanced }
         weights: { $ref: '#/components/schemas/CategoryWeights' }
         trust_s: { type: number, minimum: 0, maximum: 1 }
+        include_test_findings: { type: boolean, default: false }
         is_preset:
           type: boolean
           description: Presets are read-only templates that seed the sliders.

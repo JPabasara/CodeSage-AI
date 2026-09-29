@@ -22,7 +22,7 @@ ENV PYTHONUNBUFFERED=1 \
 # default-jre-headless — runs the CK jar (v1.0 analyses Java only)
 # tini     — PID 1 (see ENTRYPOINT below)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git default-jre-headless tini \
+    && apt-get install -y --no-install-recommends git default-jre-headless tini unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # ── CK ──────────────────────────────────────────────────────────────────────
@@ -61,6 +61,16 @@ ADD --chmod=0644 --checksum=sha256:2ddfdc275b6b59c2033e03253c4fec511c338fe494a10
 # the assertion — grep's is, and grep only succeeds on the real usage line.
 RUN java -jar "$CODESAGE_CK_JAR" 2>&1 | grep -q "^Usage java -jar ck.jar"
 
+# PMD 7.27.0 is pinned and checksummed for the optional worker detector stage.
+ENV CODESAGE_PMD_BIN=/opt/pmd/bin/pmd
+ADD --checksum=sha256:4ae396ffaf2b0d3ef0b73a10b2925e77066f73d57a4ce9078c60e7302bcddec9 \
+    https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.27.0/pmd-dist-7.27.0-bin.zip \
+    /tmp/pmd.zip
+RUN unzip -q /tmp/pmd.zip -d /opt \
+    && mv /opt/pmd-bin-7.27.0 /opt/pmd \
+    && rm /tmp/pmd.zip \
+    && "$CODESAGE_PMD_BIN" --version | grep -q "PMD 7.27.0"
+
 WORKDIR /app
 
 COPY pyproject.toml ./
@@ -69,6 +79,7 @@ RUN pip install --no-cache-dir .
 
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
+COPY THIRD_PARTY_LICENSES/ /app/THIRD_PARTY_LICENSES/
 
 # Worker scratch space. ~2 GB per concurrent scan, released when the scan ends,
 # fails or is cancelled — mount a volume here rather than growing the container's

@@ -112,8 +112,19 @@ def seed_member(engine, status="active", workspace=None):
     return membership, workspace
 
 
-def assert_policy(engine):
+# Permissions a later revision adds. A database stopped at REVISION predates them.
+LATER_PERMISSIONS = {"workspace:delete"}  # 0020
+
+
+def assert_policy(engine, *, at_head=True):
     policy = json.loads((API_ROOT / "src/codesage_api/authorization/policy.json").read_text())
+    if not at_head:
+        for permission in LATER_PERMISSIONS:
+            policy["permissions"].pop(permission)
+        policy["roles"] = {
+            role: [item for item in grants if item not in LATER_PERMISSIONS]
+            for role, grants in policy["roles"].items()
+        }
     with engine.connect() as db:
         assert set(db.scalars(text('SELECT id FROM "role"'))) == set(policy["roles"])
         assert (
@@ -215,14 +226,18 @@ def test_downgrade_and_reupgrade_preserve_memberships(database):
             == 1
         )
     command.upgrade(config, REVISION)
-    assert_policy(engine)
+    assert_policy(engine, at_head=False)
 
 
 def test_new_workspace_creator_is_admin_using_application_role(database):
     from sqlalchemy.orm import Session
 
     from codesage_api.db.models import Membership
-    from codesage_api.services.auth import IdentityClaims, establish_session
+    from codesage_api.services.auth import (
+        IdentityClaims,
+        create_workspace,
+        establish_session,
+    )
 
     config, _, super_engine = database
     command.upgrade(config, "head")
@@ -236,14 +251,19 @@ def test_new_workspace_creator_is_admin_using_application_role(database):
     with Session(super_engine) as session:
         session.execute(text("SET LOCAL ROLE codesage_app"))
         record = establish_session(session, claims)
-        # First sign-in provisions the starter workspace and its org-admin.
-        assert record.workspace_id is not None
+        # Sign-in provisions the person only; the workspace is the user's own
+        # first act, and org-admin is assigned by creating it.
+        assert record.workspace_id is None
+        created = create_workspace(
+            session, session_id=record.id, user_id=record.user_id, name="Acme"
+        )
+        assert created is not None
         from sqlalchemy import select
 
         membership = session.scalar(
             select(Membership).where(
                 Membership.user_id == record.user_id,
-                Membership.workspace_id == record.workspace_id,
+                Membership.workspace_id == created.workspace_id,
             )
         )
         assert membership is not None

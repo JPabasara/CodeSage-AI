@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="CodeSage core" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+ <description>High-signal rules that work reliably from repository source alone.</description>
+ <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/AvoidUsingHardCodedIP"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/DoubleBraceInitialization"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/NonExhaustiveSwitch"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/PreserveStackTrace"><priority>2</priority></rule>
+ <rule ref="category/java/bestpractices.xml/UnusedAssignment"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/UnusedPrivateField"><priority>4</priority></rule>
+ <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"><priority>4</priority></rule>
+ <rule ref="category/java/design.xml/ExceptionAsFlowControl"><priority>3</priority></rule>
+ <rule ref="category/java/design.xml/UselessOverridingMethod"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/AssignmentInOperand"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/AvoidDecimalLiteralsInBigDecimalConstructor"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/BrokenNullCheck"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/DoNotThrowExceptionInFinally"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/EmptyCatchBlock"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/EqualsNull"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/IdenticalConditionalBranches"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/ImplicitSwitchFallThrough"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/JumbledIncrementer"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/MisplacedNullCheck"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/OverrideBothEqualsAndHashcode"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/UnconditionalIfStatement"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/UnusedNullCheckInEquals"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/UseEqualsToCompareStrings"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/UseLocaleWithCaseConversions"><priority>3</priority></rule>
+ <rule ref="category/java/multithreading.xml/DontCallThreadRun"><priority>2</priority></rule>
+ <rule ref="category/java/multithreading.xml/DoubleCheckedLocking"><priority>2</priority></rule>
+ <rule ref="category/java/multithreading.xml/UseNotifyAllInsteadOfNotify"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/AssertStatementInTest"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/UnitTestShouldIncludeAssert"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/JUnitJupiterTestNoPrivateModifier"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/WrongTestAnnotation"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/TestClassWithoutTestCases"><priority>3</priority></rule>
+ <rule ref="category/java/security.xml/HardCodedCryptoKey"><priority>2</priority></rule>
+ <rule ref="category/java/security.xml/InsecureCryptoIv"><priority>2</priority></rule>
+</ruleset>

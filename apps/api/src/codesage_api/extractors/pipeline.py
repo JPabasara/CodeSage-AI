@@ -58,6 +58,7 @@ def extract(
     commit_sha: str,
     committer_date: datetime,
     on_file: FileProgress | None = None,
+    progress_callback: Callable[[int], None] | None = None,
 ) -> ExtractionResult:
     """Extract stored numeric facts plus transient SATD comment inputs.
 
@@ -65,8 +66,14 @@ def extract(
     of extraction that walks files itself, so the one that can report them.
     """
     ck_metrics = extract_ck_analysis(repository_path)
+    if progress_callback is not None:
+        progress_callback(37)
     process = extract_process_metrics(repository_path, commit_sha, committer_date)
+    if progress_callback is not None:
+        progress_callback(52)
     comments = _extract_repository_comments(repository_path, on_file)
+    if progress_callback is not None:
+        progress_callback(60)
 
     return ExtractionResult(
         static_metrics=ck_metrics.files,

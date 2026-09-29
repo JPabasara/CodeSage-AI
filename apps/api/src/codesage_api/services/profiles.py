@@ -131,7 +131,8 @@ def load_pool(session: Session, workspace_id: uuid.UUID) -> Pool:
 def to_scoring_profile(stored: ScoringProfile) -> Profile:
     """The pure scoring input the engine and the cache fingerprint are built from."""
     return Profile(
-        weights=_stored_weights(stored), s=stored.trust_slider, name=stored.name
+        weights=_stored_weights(stored), s=stored.trust_slider, name=stored.name,
+        include_test_findings=bool(stored.include_test_findings),
     )
 
 
@@ -181,6 +182,7 @@ def _stored_output(
         name=stored.name,
         weights=_wire_weights(_stored_weights(stored)),
         trust_s=stored.trust_slider,
+        include_test_findings=bool(stored.include_test_findings),
         is_preset=built_in,
         is_active=stored.id == default_id,
         usage_count=pool.usage_count(stored.id) if pool is not None else 0,
@@ -233,6 +235,7 @@ def get_active(session: Session, workspace_id: uuid.UUID) -> Profile:
         weights=_stored_weights(stored),
         s=stored.trust_slider,
         name=stored.name,
+        include_test_findings=bool(stored.include_test_findings),
     )
 
 
@@ -290,6 +293,7 @@ def create(
     weights: dict[str, float],
     trust_s: float,
     actor_user_id: uuid.UUID | None,
+    include_test_findings: bool = False,
 ) -> ScoreProfileOut:
     """Add one custom profile to the pool. It does not become the default."""
     pool = _load_pool(session, workspace_id)
@@ -306,6 +310,7 @@ def create(
         name=name.strip(),
         created_by_user_id=actor_user_id,
         updated_by_user_id=actor_user_id,
+        include_test_findings=include_test_findings,
     )
     _write_weights(created, clamped_weights, clamped_s)
     session.add(created)
@@ -331,6 +336,7 @@ def update(
     weights: CategoryWeightsPatch | None,
     trust_s: float | None,
     actor_user_id: uuid.UUID | None,
+    include_test_findings: bool | None = None,
 ) -> ScoreProfileOut:
     """Partially update a custom profile. Omitted fields keep their stored value."""
     pool = _load_pool(session, workspace_id)
@@ -350,6 +356,8 @@ def update(
     )
     if name is not None:
         stored.name = name.strip()
+    if include_test_findings is not None:
+        stored.include_test_findings = include_test_findings
     _write_weights(stored, clamped_weights, clamped_s)
     stored.updated_by_user_id = actor_user_id
     session.flush()

@@ -1,39 +1,47 @@
 """Sign-in, sessions and sign-out (FR-1, SEC-01, SEC-10, SEC-17).
 
-The session lives in the database. The browser gets a cookie holding nothing but
-a random id. Two things follow from that, and both are the point:
+The session lives in the database. The browser gets an opaque random token while
+the database stores only its SHA-256 digest. Two things follow from that:
 
-  * a script that steals the cookie has stolen a number, not a credential — it
-    cannot be replayed against Asgardeo or GitHub;
+  * a database reader cannot turn the session table into live browser sessions;
   * signing out works immediately, because we delete the row.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.enums import (
-    MembershipStatus,
-    RepositoryConnectionStatus,
-    RepositoryPlatform,
-    RepositoryVisibility,
+from codesage_api.db.enums import AnalysisStatus, MembershipStatus
+from codesage_api.db.models import (
+    AnalysisAttempt,
+    Branch,
+    Membership,
+    Repository,
+    User,
+    UserSession,
+    Workspace,
 )
-from codesage_api.db.models import Branch, Membership, Repository, User, UserSession, Workspace
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import (
+    LastWorkspaceAdmin,
     NotAuthenticated,
+    NotFound,
     SignInFailed,
     UpstreamUnavailable,
+    WorkspaceConfirmationMismatch,
+    WorkspaceScanRunning,
 )
-from codesage_api.services import profiles
+from codesage_api.services import audit, profiles
 from codesage_api.services.memberships import get_active_membership
 
 logger = logging.getLogger(__name__)
@@ -167,28 +175,32 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
 
     now = datetime.now(timezone.utc)
     settings = get_settings()
+    raw_token = secrets.token_urlsafe(32)
     session = UserSession(
+        token_hash=_token_hash(raw_token),
         user_id=user.id,
         workspace_id=workspace_id,
         created_at=now,
         last_used_at=now,
         expires_at=now + timedelta(minutes=settings.session_idle_minutes),
     )
-    # Request-local hint used only by the OIDC callback to choose its landing
-    # page. It is not persisted on the session row; the durable state belongs
-    # to the user.
-    session.product_tour_required = user.product_tour_completed_at is None  # type: ignore[attr-defined]
     db.add(session)
     db.flush()
+    session.raw_token = raw_token  # type: ignore[attr-defined]
     return session
 
 
-def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """First sign-in: create a ready-to-explore starter workspace.
+def _token_hash(raw_token: str) -> bytes:
+    return hashlib.sha256(raw_token.encode("utf-8")).digest()
 
-    The fixed public PetClinic repository makes the guided trial usable without
-    asking a new user to find a suitable Java project first. Workspaces created
-    later through the normal endpoint remain empty.
+
+def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
+    """First sign-in: create the person, and nothing else.
+
+    No workspace and no repository. Naming a workspace is the first thing the
+    product asks the user to do, and a "My Workspace" invented here would be a
+    name nobody chose, sitting in the switcher next to the real one they create a
+    moment later.
     """
     user = User(
         asgardeo_sub=claims.sub,
@@ -200,39 +212,7 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     db.add(user)
     db.flush()
-    workspace_id = _create_workspace_records(db, user.id, name="My Workspace")
-    _seed_trial_repository(db, workspace_id)
     return user
-
-
-def _seed_trial_repository(db: DbSession, workspace_id: uuid.UUID) -> None:
-    """Add the public Spring PetClinic project without an external API call.
-
-    Starting a scan refreshes the branch SHA from GitHub before queueing work,
-    so the placeholder is never used as a scan revision.
-    """
-    repository = Repository(
-        workspace_id=workspace_id,
-        source_platform=RepositoryPlatform.GITHUB,
-        # GitHub's immutable repository id. Using the same id as the normal
-        # connect flow prevents PetClinic from being connected twice.
-        external_repository_id="7517918",
-        name="spring-petclinic",
-        owner="spring-projects",
-        url="https://github.com/spring-projects/spring-petclinic",
-        visibility=RepositoryVisibility.PUBLIC,
-        connection_status=RepositoryConnectionStatus.CONNECTED,
-    )
-    repository.branches.append(Branch(name="main", head_commit_sha="0" * 40, is_default=True))
-    db.add(repository)
-    db.flush()
-
-
-def complete_product_tour(db: DbSession, user_id: uuid.UUID) -> None:
-    """Prevent automatic relaunch after either Finish or Skip."""
-    user = db.get_one(User, user_id)
-    user.product_tour_completed_at = datetime.now(timezone.utc)
-    db.flush()
 
 
 def _create_workspace_records(
@@ -346,7 +326,9 @@ def list_active_workspaces(
     return workspaces
 
 
-def describe_workspace(db: DbSession, workspace: Workspace, role_id: str) -> ActiveWorkspace:
+def describe_workspace(
+    db: DbSession, workspace: Workspace, role_id: str
+) -> ActiveWorkspace:
     """One workspace plus the two counts the switcher and settings screen show.
 
     Counted here rather than stored on the row: both change whenever a project or
@@ -355,12 +337,12 @@ def describe_workspace(db: DbSession, workspace: Workspace, role_id: str) -> Act
     what keeps the counts to it.
     """
     project_count = db.scalar(
-        select(func.count()).select_from(Repository).where(Repository.workspace_id == workspace.id)
+        select(func.count()).select_from(Repository).where(
+            Repository.workspace_id == workspace.id
+        )
     )
     member_count = db.scalar(
-        select(func.count())
-        .select_from(Membership)
-        .where(
+        select(func.count()).select_from(Membership).where(
             Membership.workspace_id == workspace.id,
             Membership.status == MembershipStatus.ACTIVE,
         )
@@ -375,6 +357,70 @@ def describe_workspace(db: DbSession, workspace: Workspace, role_id: str) -> Act
         updated_at=workspace.updated_at,
         project_count=project_count or 0,
         member_count=member_count or 0,
+    )
+
+
+def delete_workspace(
+    db: DbSession,
+    *,
+    workspace_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    confirmation_name: str,
+) -> None:
+    """Delete one tenant atomically after an exact-name and active-scan check."""
+    workspace = db.scalar(
+        select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+    )
+    if workspace is None:
+        raise NotFound
+    if not secrets.compare_digest(
+        workspace.name.encode("utf-8"), confirmation_name.encode("utf-8")
+    ):
+        raise WorkspaceConfirmationMismatch
+    active = db.scalar(
+        select(AnalysisAttempt.id)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(
+            Repository.workspace_id == workspace_id,
+            AnalysisAttempt.status.in_((AnalysisStatus.QUEUED, AnalysisStatus.RUNNING)),
+        )
+        .limit(1)
+    )
+    if active is not None:
+        raise WorkspaceScanRunning
+    audit.record(
+        db,
+        event_type="workspace_deleted",
+        outcome="success",
+        workspace_id=workspace_id,
+        workspace_name=workspace.name,
+        actor_user_id=actor_user_id,
+        resource_type="workspace",
+        resource_id=str(workspace_id),
+    )
+    db.flush()
+    # A Core DELETE, not `db.delete(workspace)`: the ORM would load each child
+    # collection and try to NULL the audit rows itself, and the application role
+    # may not UPDATE the append-only audit table. The foreign keys do the work:
+    # tenant data cascades, audit rows keep `workspace_name` with a NULL id.
+    db.execute(delete(Workspace).where(Workspace.id == workspace_id))
+    db.expunge(workspace)
+
+
+def anonymize_user(
+    db: DbSession, *, session_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
+    """Remove access and personal fields while retaining shared workspace facts."""
+    changed = db.scalar(select(func.app_anonymize_user(session_id, user_id)))
+    if not changed:
+        raise LastWorkspaceAdmin
+    audit.record(
+        db,
+        event_type="account_deleted",
+        outcome="success",
+        resource_type="app_user",
+        resource_id=str(user_id),
     )
 
 
@@ -410,12 +456,9 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
     """
     if not raw_cookie:
         return None
-    try:
-        session_id = uuid.UUID(raw_cookie)
-    except ValueError:
-        return None
-
-    session = db.get(UserSession, session_id)
+    session = db.scalar(
+        select(UserSession).where(UserSession.token_hash == _token_hash(raw_cookie))
+    )
     now = datetime.now(timezone.utc)
     if session is None:
         return None
@@ -446,14 +489,16 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
     return session
 
 
-def end_session(db: DbSession, raw_cookie: str | None) -> None:
-    """Delete the row. After this the cookie is a meaningless number"""
+def end_session(db: DbSession, raw_cookie: str | None) -> UserSession | None:
+    """Delete the row. After this the cookie is a meaningless random string.
+
+    Returns the ended session so the caller can audit whose it was.
+    """
     if not raw_cookie:
-        return
-    try:
-        session_id = uuid.UUID(raw_cookie)
-    except ValueError:
-        return
-    session = db.get(UserSession, session_id)
+        return None
+    session = db.scalar(
+        select(UserSession).where(UserSession.token_hash == _token_hash(raw_cookie))
+    )
     if session is not None:
         db.delete(session)
+    return session

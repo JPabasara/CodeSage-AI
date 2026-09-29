@@ -1031,7 +1031,7 @@ export interface components {
          *     apart from nonsense ones.
          * @enum {string}
          */
-        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "SCAN_QUEUE_FULL" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "WORKSPACE_SCAN_RUNNING" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
+        ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "SCAN_QUEUE_FULL" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "WORKSPACE_SCAN_RUNNING" | "WORKSPACE_CONFIRMATION_MISMATCH" | "LAST_WORKSPACE_ADMIN" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
          * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
          *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
@@ -1492,6 +1492,11 @@ export interface components {
             severity: components["schemas"]["Severity"];
             /** @example src/main/java/com/acme/Billing.java */
             file: string;
+            /**
+             * @default unknown
+             * @enum {string}
+             */
+            source_scope: "production" | "test" | "generated" | "example" | "unknown";
             line: number;
             /**
              * @description The method or class the finding sits on. Null for file-scoped rules.
@@ -1635,12 +1640,19 @@ export interface components {
             /** @description Critical + high, for the health-card summary. */
             red_issue_count: number;
             /**
+             * @description Findings present in the previous snapshot but absent from this one.
+             * @default 0
+             */
+            resolved_finding_count: number;
+            /**
              * @description The active profile's name, shown on the trend chart. Without the label,
              *     the chart changing shape after a profile switch reads as a defect
              *     (FR-14).
              * @example Balanced
              */
             profile: string;
+            /** @default false */
+            include_test_findings: boolean;
             /**
              * @description The ML model version that produced this snapshot (AI-03, DBR-18). Null
              *     when the snapshot was taken in degraded mode with no ML available.
@@ -1722,6 +1734,7 @@ export interface components {
             weights: components["schemas"]["CategoryWeights"];
             /** @default 0.5 */
             trust_s: number;
+            include_test_findings?: boolean;
         };
         /**
          * @description A partial update. Every field is optional and an omitted one is left
@@ -1732,6 +1745,7 @@ export interface components {
             name?: string;
             weights?: components["schemas"]["CategoryWeightsPatch"];
             trust_s?: number;
+            include_test_findings?: boolean;
         };
         /**
          * @description Carries the whole selection rather than a delta, so re-sending it is
@@ -1766,6 +1780,8 @@ export interface components {
             name: string;
             weights: components["schemas"]["CategoryWeights"];
             trust_s: number;
+            /** @default false */
+            include_test_findings: boolean;
             /** @description Presets are read-only templates that seed the sliders. */
             is_preset: boolean;
             /**

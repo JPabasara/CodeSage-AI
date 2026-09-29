@@ -4,6 +4,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -36,6 +37,8 @@ class Repository(UUIDPrimaryKey, TimestampMixin, Base):
     url: Mapped[str] = mapped_column(String(1000), nullable=False)
     visibility: Mapped[RepositoryVisibility] = mapped_column(Enum(RepositoryVisibility, name="repository_visibility", values_callable=values))
     connection_status: Mapped[RepositoryConnectionStatus] = mapped_column(Enum(RepositoryConnectionStatus, name="repository_connection_status", values_callable=values))
+    test_path_patterns: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'"))
+    production_path_overrides: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'"))
     workspace: Mapped[Workspace] = relationship(back_populates="repositories")
     branches: Mapped[list[Branch]] = relationship(back_populates="repository", passive_deletes=True)
     # passive_deletes leaves the removal to the database cascade, which is the

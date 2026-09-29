@@ -16,6 +16,7 @@ def profile_fingerprint(profile: Profile) -> str:
     payload = profile_payload(profile)
     # A display-name change does not alter the scoring inputs.
     payload.pop("name", None)
+    payload.pop("include_test_findings", None)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -28,6 +29,7 @@ def profile_payload(profile: Profile) -> dict[str, object]:
         },
         "trust": profile.s,
         "name": profile.name,
+        "include_test_findings": profile.include_test_findings,
     }
 
 
@@ -43,4 +45,5 @@ def profile_from_payload(payload: dict[str, object]) -> Profile:
         },
         s=float(str(payload["trust"])),
         name=str(payload.get("name", "custom")),
+        include_test_findings=bool(payload.get("include_test_findings", False)),
     )

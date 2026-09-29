@@ -51,6 +51,7 @@ def signs_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Asgardeo accepts the code and a session is created."""
 
     class _Db:
+        def add(self, _record: object) -> None: ...
         def commit(self) -> None: ...
         def rollback(self) -> None: ...
         def close(self) -> None: ...
@@ -62,7 +63,9 @@ def signs_in(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         auth_router.auth_service,
         "establish_session",
-        lambda db, claims: SimpleNamespace(id=uuid.uuid4(), workspace_id=None),
+        lambda db, claims: SimpleNamespace(
+            id=uuid.uuid4(), workspace_id=None, user_id=uuid.uuid4(), raw_token="opaque-session"
+        ),
     )
 
 

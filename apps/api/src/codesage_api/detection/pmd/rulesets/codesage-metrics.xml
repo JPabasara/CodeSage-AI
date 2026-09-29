@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="CodeSage gap metrics" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+ <description>Metric findings not already emitted by CodeSage CK/custom detectors.</description>
+ <rule ref="category/java/design.xml/CognitiveComplexity"><priority>3</priority></rule>
+ <rule ref="category/java/design.xml/ExcessiveParameterList"><priority>3</priority></rule>
+ <rule ref="category/java/design.xml/GodClass"><priority>3</priority></rule>
+ <rule ref="category/java/design.xml/NPathComplexity"><priority>3</priority></rule>
+</ruleset>

@@ -71,7 +71,7 @@ def create_profile(
 ) -> ScoreProfileOut:
     """Add one custom profile. The sixth is refused with PROFILE_LIMIT_REACHED."""
     return profiles.create(
-        db, workspace_id, body.name, body.weights.model_dump(), body.trust_s, user_id
+        db, workspace_id, body.name, body.weights.model_dump(), body.trust_s, user_id, body.include_test_findings
     )
 
 
@@ -167,7 +167,7 @@ def update_profile(
 ) -> ScoreProfileOut:
     """Partial update of a custom profile. Built-ins are refused."""
     result = profiles.update(
-        db, workspace_id, profile_id, body.name, body.weights, body.trust_s, user_id
+        db, workspace_id, profile_id, body.name, body.weights, body.trust_s, user_id, body.include_test_findings
     )
     db.commit()
     _rescore(db, workspace_id, result.id)

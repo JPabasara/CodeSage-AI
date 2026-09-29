@@ -9,13 +9,17 @@ from contextlib import contextmanager
 
 _scan_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("scan_id", default=None)
 
-_OBSERVABILITY_FIELDS = (
-    "event",
-    "stage",
-    "duration_ms",
-    "commits_inspected",
-    "files_measured",
-)
+_STANDARD_LOG_RECORD_FIELDS = frozenset(
+    logging.LogRecord(
+        name="",
+        level=0,
+        pathname="",
+        lineno=0,
+        msg="",
+        args=(),
+        exc_info=None,
+    ).__dict__
+) | {"message", "asctime"}
 
 
 @contextmanager
@@ -38,12 +42,14 @@ class _JsonFormatter(logging.Formatter):
         }
         if (scan_id := _scan_id.get()) is not None:
             payload["scan_id"] = scan_id
-        for field in _OBSERVABILITY_FIELDS:
-            if hasattr(record, field):
-                payload[field] = getattr(record, field)
+        payload.update(
+            (field, value)
+            for field, value in record.__dict__.items()
+            if field not in _STANDARD_LOG_RECORD_FIELDS and field not in payload
+        )
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
-        return json.dumps(payload)
+        return json.dumps(payload, default=str)
 
 
 def configure_logging(level: str = "INFO") -> None:

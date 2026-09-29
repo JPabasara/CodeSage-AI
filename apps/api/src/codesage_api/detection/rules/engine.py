@@ -32,6 +32,9 @@ class DetectedFinding:
     # Structural context used by downstream risk resolution.
     class_name: str | None = None
     method_name: str | None = None
+    end_line: int | None = None
+    begin_column: int = 0
+    end_column: int = 0
 
 
 _FILE_RULE_ACCESSORS: dict[str, Callable[[FileMetrics], float]] = {

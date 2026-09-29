@@ -7,7 +7,7 @@ import uuid
 from typing import Annotated
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
@@ -28,12 +28,13 @@ from codesage_api.deps import (
 from codesage_api.errors import Forbidden, MisconfiguredSignIn, NotFound, SignInFailed
 from codesage_api.schemas.auth import (
     CreateWorkspaceIn,
-    ProductTourUpdateIn,
+    DeleteWorkspaceIn,
     SessionOut,
     SwitchWorkspaceIn,
     UpdateWorkspaceIn,
     WorkspaceSummaryOut,
 )
+from codesage_api.services import audit
 from codesage_api.services import auth as auth_service
 from codesage_api.services.memberships import (
     resolve_authorization_context,
@@ -56,6 +57,20 @@ RETURN_TO_SECONDS = 3600
 #: all, where a cookie-based guard would itself be lost and the retry would loop.
 RETRY_STATE_SUFFIX = ".retry"
 WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
+WorkspaceDeleter = Annotated[
+    AuthorizationContext, Depends(require_permission("workspace:delete"))
+]
+
+
+def _record_sign_in_failure(reason: str) -> None:
+    db = SessionLocal()
+    try:
+        audit.record(db, event_type="sign_in", outcome="failure", resource_type="session", detail={"reason": reason})
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _summary(workspace: auth_service.ActiveWorkspace, *, is_active: bool) -> WorkspaceSummaryOut:
@@ -164,26 +179,31 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     # and a retry that fails again goes to the login page, so it cannot loop.
     handshake = request.cookies.get(HANDSHAKE_COOKIE)
     if not handshake:
+        _record_sign_in_failure("expired_handshake")
         return _retry_or_back_to_login(state, "expired")
     try:
         issued = _signer().loads(handshake, max_age=HANDSHAKE_SECONDS)
     except SignatureExpired:
+        _record_sign_in_failure("expired_handshake")
         return _retry_or_back_to_login(state, "expired")
     except BadSignature:
+        _record_sign_in_failure("invalid_handshake")
         return _retry_or_back_to_login(state, "invalid")
     if not secrets.compare_digest(issued["state"], state):
+        _record_sign_in_failure("state_mismatch")
         return _retry_or_back_to_login(state, "invalid")
 
     try:
         claims = auth_service.exchange_code_for_identity(code, issued["verifier"])
     except SignInFailed:
+        _record_sign_in_failure("identity_rejected")
         return _back_to_login("failed")
 
     db = SessionLocal()
     try:
         session = auth_service.establish_session(db, claims)
-        session_id = str(session.id)
-        new_user_tour = getattr(session, "product_tour_required", False)
+        session_token = session.raw_token
+        audit.record(db, event_type="sign_in", outcome="success", workspace_id=session.workspace_id, actor_user_id=session.user_id, resource_type="session", resource_id=str(session.id))
         db.commit()
     except Exception:
         db.rollback()
@@ -191,19 +211,18 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
-    # An explicit safe return path (an invitation, for example) always wins.
-    # Otherwise a new user starts at Workspace with the tour; returning users
-    # resume at Projects.
-    destination = safe_return_to(issued.get("return_to")) or (
-        "/workspace" if new_user_tour else "/projects"
-    )
+    # Everyone lands in the app: on `return_to` when sign-in began with one (an
+    # invitation, say), otherwise on /projects. A user with no workspace yet is
+    # still signed in, and the web shows each page's "create a workspace" state
+    # instead of a separate onboarding screen.
+    destination = safe_return_to(issued.get("return_to")) or "/projects"
     response = RedirectResponse(
         f"{settings.frontend_base_url.rstrip('/')}{destination}",
         status_code=status.HTTP_302_FOUND,
     )
     response.set_cookie(
         key=settings.session_cookie_name,
-        value=session_id,  # a random id, never a token
+        value=session_token,  # opaque token; only its hash is stored
         httponly=True,  # JavaScript cannot read it, so XSS cannot steal it
         secure=settings.cookie_secure,
         samesite="lax",  # another website cannot make the browser send it
@@ -262,7 +281,6 @@ def current_user(
             user_id=str(user_id),
             workspace_id=None if workspace_id is None else str(workspace_id),
             needs_workspace_setup=workspace_id is None,
-            product_tour_required=user.product_tour_completed_at is None,
             role=role,
             permissions=permissions,
             email=user.email,
@@ -270,24 +288,6 @@ def current_user(
             avatar_url=user.avatar_url,
             identity_provider=user.identity_provider,
         )
-    finally:
-        db.close()
-
-
-@router.put("/tour", status_code=status.HTTP_204_NO_CONTENT)
-def finish_product_tour(
-    body: ProductTourUpdateIn,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-) -> None:
-    """Remember Finish and Skip so onboarding does not relaunch next sign-in."""
-    del body  # both accepted outcomes intentionally have the same persistence
-    db = SessionLocal()
-    try:
-        auth_service.complete_product_tour(db, user_id)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
     finally:
         db.close()
 
@@ -368,7 +368,9 @@ def get_workspace(
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
         raise NotFound
-    return _summary(auth_service.describe_workspace(db, workspace, context.role_id), is_active=True)
+    return _summary(
+        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
+    )
 
 
 @router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
@@ -398,7 +400,48 @@ def update_workspace(
     if "website_url" in fields:
         workspace.website_url = fields["website_url"]
     db.flush()
-    return _summary(auth_service.describe_workspace(db, workspace, context.role_id), is_active=True)
+    return _summary(
+        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
+    )
+
+
+@router.delete("/workspaces/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workspace(
+    workspace_id: uuid.UUID,
+    body: DeleteWorkspaceIn,
+    context: WorkspaceDeleter,
+    db: DbSession = Depends(get_db),
+) -> Response:
+    if workspace_id != context.workspace_id:
+        raise NotFound
+    auth_service.delete_workspace(
+        db,
+        workspace_id=workspace_id,
+        actor_user_id=context.user_id,
+        confirmation_name=body.confirmation_name,
+    )
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_session_cookie(response)
+    return response
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session_id: uuid.UUID = Depends(get_current_session_id),
+) -> Response:
+    db = SessionLocal()
+    try:
+        auth_service.anonymize_user(db, session_id=session_id, user_id=user_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_session_cookie(response)
+    return response
 
 
 @router.put("/workspaces/active", response_model=WorkspaceSummaryOut)
@@ -422,6 +465,8 @@ def switch_workspace(
         )
         if selected is None:
             raise NotFound
+        set_workspace_context(db, selected.workspace_id)
+        audit.record(db, event_type="workspace_switched", outcome="success", workspace_id=selected.workspace_id, actor_user_id=user_id, resource_type="workspace", resource_id=str(selected.workspace_id))
         db.commit()
         return _summary(selected, is_active=True)
     except Exception:
@@ -458,7 +503,11 @@ def sign_out(request: Request) -> RedirectResponse:
 
     db = SessionLocal()
     try:
-        auth_service.end_session(db, request.cookies.get(settings.session_cookie_name))
+        ended = auth_service.end_session(db, request.cookies.get(settings.session_cookie_name))
+        if ended is not None:
+            if ended.workspace_id is not None:
+                set_workspace_context(db, ended.workspace_id)
+            audit.record(db, event_type="sign_out", outcome="success", workspace_id=ended.workspace_id, actor_user_id=ended.user_id, resource_type="session", resource_id=str(ended.id))
         db.commit()
     except Exception:
         db.rollback()
@@ -468,6 +517,12 @@ def sign_out(request: Request) -> RedirectResponse:
 
     response = RedirectResponse(_idp_logout_url(), status_code=status.HTTP_302_FOUND)
 
+    _clear_session_cookie(response)
+    return response
+
+
+def _clear_session_cookie(response: Response) -> None:
+    settings = get_settings()
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",
@@ -476,4 +531,3 @@ def sign_out(request: Request) -> RedirectResponse:
         secure=settings.cookie_secure,
         samesite="lax",
     )
-    return response

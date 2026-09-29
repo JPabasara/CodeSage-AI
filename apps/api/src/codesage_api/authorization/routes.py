@@ -12,7 +12,7 @@ from codesage_api.authorization.context import AuthorizationContext
 from codesage_api.db.models import AnalysisAttempt, Repository, ScoringProfile, Snapshot
 from codesage_api.db.repositories import attempts
 from codesage_api.deps import get_authorization_context, get_db
-from codesage_api.errors import Forbidden, NotFound
+from codesage_api.errors import NotFound
 
 
 def repository_context(
@@ -94,7 +94,7 @@ def require_scan_cancel(
         return context
     if "scan:cancel_own" in context.permissions and attempt.initiated_by_user_id == context.user_id:
         return context
-    raise Forbidden
+    raise context.denied("scan:cancel_own|scan:cancel_any")
 
 
 def require_health_read(

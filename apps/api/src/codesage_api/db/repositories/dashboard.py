@@ -61,30 +61,6 @@ def _scoring_options():
     )
 
 
-def list_completed_snapshots(
-    session: Session,
-    workspace_id: uuid.UUID,
-    repository_id: uuid.UUID,
-    branch_name: str,
-) -> list[Snapshot]:
-    """Return immutable snapshots oldest-first, with all scoring facts loaded."""
-    statement = (
-        select(Snapshot)
-        .join(AnalysisAttempt, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
-        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
-        .join(Repository, Branch.repository_id == Repository.id)
-        .where(
-            Repository.id == repository_id,
-            Repository.workspace_id == workspace_id,
-            Branch.name == branch_name,
-            AnalysisAttempt.status == AnalysisStatus.DONE,
-        )
-        .options(*_scoring_options())
-        .order_by(Snapshot.scan_time.asc(), Snapshot.id.asc())
-    )
-    return list(session.scalars(statement).unique().all())
-
-
 def list_latest_completed_snapshot_refs(
     session: Session,
     workspace_id: uuid.UUID,

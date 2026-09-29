@@ -78,11 +78,22 @@ def seed_membership(engine, *, user_id, workspace_id, role="org-admin", status="
 def seed_session(engine, *, user_id, workspace_id, last_used: datetime) -> uuid.UUID:
     session_id = uuid.uuid4()
     with engine.begin() as db:
+        # From 0019 a session stores its token digest; earlier revisions have none.
+        hashed = bool(
+            db.scalar(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'session' AND column_name = 'token_hash'"
+                )
+            )
+        )
         db.execute(
             text(
                 "INSERT INTO session (id, user_id, workspace_id, created_at,"
-                " last_used_at, expires_at)"
-                " VALUES (:id, :user, :ws, :created, :used, :expires)"
+                " last_used_at, expires_at"
+                + (", token_hash)" if hashed else ")")
+                + " VALUES (:id, :user, :ws, :created, :used, :expires"
+                + (", sha256(convert_to(CAST(:id AS text), 'UTF8')))" if hashed else ")")
             ),
             {
                 "id": session_id,
@@ -130,7 +141,8 @@ def test_existing_sessions_keep_their_workspace_when_the_column_relaxes(database
 
     assert column(super_engine, "session", "workspace_id").is_nullable == "NO"
 
-    command.upgrade(config, "head")
+    # Stop here: 0019 deliberately signs every session out (DBR-29).
+    command.upgrade(config, REVISION)
 
     assert column(super_engine, "session", "workspace_id").is_nullable == "YES"
     with super_engine.begin() as db:
@@ -182,7 +194,8 @@ def test_sign_in_returns_the_workspace_the_user_was_last_in(database):
     )
     seed_session(super_engine, user_id=user_id, workspace_id=second, last_used=NOW)
 
-    command.upgrade(config, "head")
+    # Stop here: 0019 deliberately signs every session out (DBR-29).
+    command.upgrade(config, REVISION)
 
     assert workspace_for(super_engine, user_id) == second
 

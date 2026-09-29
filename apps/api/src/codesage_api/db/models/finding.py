@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Double, Enum, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, Double, Enum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -30,6 +30,9 @@ class DebtCategory(Base):
 
 class Finding(UUIDPrimaryKey, Base):
     __tablename__ = "finding"
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("snapshot.id", ondelete="CASCADE"), index=True
+    )
     source_location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("source_location.id", ondelete="CASCADE"), index=True)
     category_id: Mapped[str] = mapped_column(ForeignKey("debt_category.category_id", ondelete="RESTRICT"), index=True)
     rule_id: Mapped[str | None] = mapped_column(ForeignKey("rule_definition.rule_id", ondelete="SET NULL"), index=True)
@@ -49,6 +52,7 @@ class Finding(UUIDPrimaryKey, Base):
     rule_definition: Mapped[RuleDefinition | None] = relationship(back_populates="findings")
     satd_prediction: Mapped[SATDPrediction | None] = relationship(back_populates="finding")
     __table_args__ = (
+        UniqueConstraint("snapshot_id", "fingerprint", name="uq_finding_snapshot_fingerprint"),
         CheckConstraint("(source = 'rule' AND rule_id IS NOT NULL AND satd_prediction_id IS NULL) OR (source = 'satd' AND satd_prediction_id IS NOT NULL AND rule_id IS NULL)", name="provenance_consistency"),
         CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)", name="confidence_probability"),
     )

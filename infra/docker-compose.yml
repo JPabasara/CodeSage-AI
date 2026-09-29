@@ -68,6 +68,9 @@ services:
     restart: "no"
 
   api:
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     build:
       context: ../apps/api
     environment:
@@ -118,6 +121,9 @@ services:
         condition: service_healthy
 
   worker:
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     build:
       context: ../apps/api
     command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1 -Q scans
@@ -129,6 +135,9 @@ services:
       CODESAGE_ML_SERVICE_URL: http://ml:8001
       CODESAGE_CLONE_DIR: /var/tmp/codesage-clones
       CODESAGE_CK_JAR: /opt/ck/ck.jar
+      CODESAGE_PMD_ENABLED: ${CODESAGE_PMD_ENABLED:-false}
+      CODESAGE_DETECTOR_PROVIDER: ${CODESAGE_DETECTOR_PROVIDER:-codesage_api.detection.pmd:scan}
+      CODESAGE_PMD_BIN: /opt/pmd/bin/pmd
     volumes:
       # ~2 GB of scratch per concurrent scan. A named volume rather than the
       # container's writable layer, so a large clone cannot bloat the image layer.
@@ -155,6 +164,9 @@ services:
     # concurrent analyses.
 
   score-worker:
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     build:
       context: ../apps/api
     command: celery -A codesage_api.worker worker --loglevel=INFO --concurrency=1 -Q scoring
@@ -166,6 +178,9 @@ services:
       CODESAGE_ML_SERVICE_URL: http://ml:8001
       CODESAGE_CLONE_DIR: /var/tmp/codesage-clones
       CODESAGE_CK_JAR: /opt/ck/ck.jar
+      CODESAGE_PMD_ENABLED: ${CODESAGE_PMD_ENABLED:-false}
+      CODESAGE_DETECTOR_PROVIDER: ${CODESAGE_DETECTOR_PROVIDER:-codesage_api.detection.pmd:scan}
+      CODESAGE_PMD_BIN: /opt/pmd/bin/pmd
     healthcheck:
       test: ["CMD-SHELL", "celery -A codesage_api.worker inspect ping -t 10 | grep -q pong"]
       interval: 30s

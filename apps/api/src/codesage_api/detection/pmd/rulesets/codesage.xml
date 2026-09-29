@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="CodeSage PMD allowlist" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+ <description>Explicit aggregate for the CodeSage core, semantic, and gap metric rulesets.</description>
+ <rule ref="codesage-core.xml" />
+ <rule ref="codesage-semantic.xml" />
+ <rule ref="codesage-metrics.xml" />
+</ruleset>

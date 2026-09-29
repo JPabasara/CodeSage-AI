@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, LargeBinary, String, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -45,12 +46,6 @@ class User(UUIDPrimaryKey, Base):
         Enum(Theme, name="theme", values_callable=enum_values),
         nullable=False,
         default=Theme.SYSTEM,
-    )
-    # Null only until the first-run product tour is finished or explicitly
-    # skipped. Existing users are backfilled by the migration so a release does
-    # not unexpectedly launch onboarding for every established account.
-    product_tour_completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     memberships: Mapped[list[Membership]] = relationship(
         back_populates="user", passive_deletes=True
@@ -109,8 +104,8 @@ class WorkspaceInvitation(UUIDPrimaryKey, Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     role_id: Mapped[str] = mapped_column(ForeignKey("role.id", ondelete="RESTRICT"))
     token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
-    invited_by_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("app_user.id", ondelete="RESTRICT")
+    invited_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -123,8 +118,13 @@ class WorkspaceInvitation(UUIDPrimaryKey, Base):
 class SecurityAuditRecord(UUIDPrimaryKey, Base):
     __tablename__ = "security_audit_record"
 
-    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspace.id", ondelete="RESTRICT"), index=True)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspace.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    workspace_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False, server_default="success")
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     actor_identity: Mapped[str] = mapped_column(String(255), nullable=False)
     affected_resource: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -136,13 +136,19 @@ class SecurityAuditRecord(UUIDPrimaryKey, Base):
 class UserSession(UUIDPrimaryKey, Base):
     """One signed-in browser.
 
-    The cookie we give the browser holds this row's id and nothing else — a
-    random number that means nothing on its own. Everything that matters lives
-    here, on the server. That is what makes signing out actually work: we delete
-    this row, and the next request finds nothing and gets a 401.
+    The cookie we give the browser holds a random token; this row stores only
+    its SHA-256 digest (DBR-29), so reading the table does not yield live
+    sessions. The row id is internal. Everything that matters lives here, on the
+    server. That is what makes signing out actually work: we delete this row,
+    and the next request finds nothing and gets a 401.
     """
 
     __tablename__ = "session"
+
+    # The raw bearer token is returned once to the browser and never persisted.
+    token_hash: Mapped[bytes] = mapped_column(
+        LargeBinary(32), nullable=False, unique=True, index=True
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("app_user.id", ondelete="CASCADE"), index=True

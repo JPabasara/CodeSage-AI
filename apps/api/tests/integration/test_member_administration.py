@@ -24,6 +24,7 @@ from codesage_api.main import create_app
 from codesage_api.routers import auth as auth_router
 from codesage_api.routers import members as members_router
 
+from .support import session_cookie, token_hash
 from .test_account_provisioning import account as account  # noqa: PLC0414
 from .test_rbac_migration import database as database  # noqa: PLC0414
 from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414
@@ -43,7 +44,7 @@ def admin_client(account, monkeypatch):
     monkeypatch.setattr(members_router, "SessionLocal", application_session)
     monkeypatch.setattr(members_router, "send_workspace_invitation", lambda **_kwargs: None)
     with TestClient(create_app()) as client:
-        client.cookies.set(get_settings().session_cookie_name, str(session_id))
+        client.cookies.set(get_settings().session_cookie_name, session_cookie(engine, session_id))
         yield client, engine, user_id, workspace_id
 
 
@@ -69,11 +70,12 @@ def test_unregistered_verified_user_accepts_single_use_invitation(admin_client):
             Membership(user_id=invitee_id, workspace_id=personal_workspace,
                        role_id="org-admin", status=MembershipStatus.ACTIVE),
             UserSession(id=invitee_session, user_id=invitee_id, workspace_id=personal_workspace,
+                        token_hash=token_hash(str(invitee_session)),
                         expires_at=datetime.now(UTC) + timedelta(hours=1)),
         ])
         db.commit()
 
-    client.cookies.set(get_settings().session_cookie_name, str(invitee_session))
+    client.cookies.set(get_settings().session_cookie_name, session_cookie(engine, invitee_session))
     accepted = client.post("/api/invitations/accept", json={"token": token})
     assert accepted.status_code == 200
     assert accepted.json()["workspace_id"] == str(target_workspace)
@@ -85,11 +87,11 @@ def test_unregistered_verified_user_accepts_single_use_invitation(admin_client):
             Membership.user_id == invitee_id, Membership.workspace_id == target_workspace
         ))
         assert (membership.status, membership.role_id) == (MembershipStatus.ACTIVE, "developer")
-        events = db.scalars(select(SecurityAuditRecord.event_type).where(
-            SecurityAuditRecord.workspace_id == target_workspace
-        )).all()
-        assert "invitation_created:success" in events
-        assert "invitation_accepted:success" in events
+        events = db.execute(select(
+            SecurityAuditRecord.event_type, SecurityAuditRecord.outcome
+        ).where(SecurityAuditRecord.workspace_id == target_workspace)).all()
+        assert ("invitation_created", "success") in events
+        assert ("invitation_accepted", "success") in events
 
 
 def test_acceptance_requires_verified_matching_email(admin_client):

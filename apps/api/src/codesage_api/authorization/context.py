@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TypeVar
 
-from codesage_api.errors import Forbidden, NotFound
+from codesage_api.errors import NotFound, PermissionDenied
 
 Resource = TypeVar("Resource")
 
@@ -24,7 +24,12 @@ class AuthorizationContext:
     def require_permission(self, permission: str) -> None:
         """Unknown and unassigned permissions fail closed."""
         if permission not in self.permissions:
-            raise Forbidden
+            raise self.denied(permission)
+
+    def denied(self, permission: str) -> PermissionDenied:
+        return PermissionDenied(
+            user_id=self.user_id, workspace_id=self.workspace_id, permission=permission
+        )
 
     def require_resource(
         self, resource: Resource | None, *, resource_workspace_id: uuid.UUID | None

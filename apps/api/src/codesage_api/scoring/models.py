@@ -30,6 +30,7 @@ class Profile:
     weights: dict[Category, float]
     s: float  # 0.0
     name: str = "custom"
+    include_test_findings: bool = False
 
 @dataclass(frozen=True, slots=True)
 class ScoredFinding:

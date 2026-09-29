@@ -27,8 +27,16 @@ from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.integrations.github import GitHubBranch
 from codesage_api.main import create_app
-from codesage_api.services import analysis, dashboard, member_admin, profiles, repositories
+from codesage_api.services import (
+    analysis,
+    dashboard,
+    member_admin,
+    profiles,
+    repositories,
+)
+from codesage_api.services import auth as auth_service
 
+from .support import session_cookie
 from .test_account_provisioning import account as account  # noqa: PLC0414
 from .test_rbac_migration import database as database  # noqa: PLC0414
 from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414
@@ -65,11 +73,14 @@ INVENTORY = {
     ("GET", "/api/projects/{repo_id}/profile"): "profile:read",
     ("PUT", "/api/projects/{repo_id}/profile"): "profile:update",
     ("DELETE", "/api/projects/{repo_id}/profile"): "profile:update",
+    ("GET", "/api/projects/{repo_id}/source-scope"): "profile:read",
+    ("PATCH", "/api/projects/{repo_id}/source-scope"): "profile:update",
     ("GET", "/api/members"): "member:read",
     ("POST", "/api/invitations"): "member:manage",
     ("DELETE", "/api/invitations/{invitation_id}"): "member:manage",
     ("PATCH", "/api/members/{membership_id}/role"): "member:manage",
     ("DELETE", "/api/members/{membership_id}"): "member:manage",
+    ("DELETE", "/api/auth/workspaces/{workspace_id}"): "workspace:delete",
 }
 
 
@@ -85,12 +96,12 @@ def test_route_inventory_has_no_unclassified_operations():
         ("GET", "/api/auth/callback"),
         ("POST", "/api/auth/logout"),
         ("GET", "/api/auth/session"),
-        ("PUT", "/api/auth/tour"),
         ("GET", "/api/auth/workspaces"),
         ("POST", "/api/auth/workspaces"),
         ("GET", "/api/auth/workspaces/{workspace_id}"),
         ("PATCH", "/api/auth/workspaces/{workspace_id}"),
         ("PUT", "/api/auth/workspaces/active"),
+        ("DELETE", "/api/auth/me"),
         ("POST", "/api/invitations/accept"),
         ("GET", "/api/healthz"),
         ("GET", "/readyz"),
@@ -173,7 +184,7 @@ def client(account, monkeypatch):
 
     monkeypatch.setattr(deps, "SessionLocal", application_session)
     with TestClient(create_app()) as http:
-        http.cookies.set(get_settings().session_cookie_name, str(account[4]))
+        http.cookies.set(get_settings().session_cookie_name, session_cookie(account[0], account[4]))
         yield http
 
 
@@ -198,6 +209,8 @@ def request_args(method, path):
         return {"json": {"name": "Release gate", **PROFILE}}
     if method == "PATCH" and path.startswith("/api/profiles/"):
         return {"json": {"name": "Renamed"}}
+    if method == "PATCH" and path.endswith("/source-scope"):
+        return {"json": {"test_path_patterns": [], "production_path_overrides": []}}
     if method == "PUT" and (path == "/api/profiles/default" or path.endswith("/profile")):
         return {"json": SELECT_PROFILE}
     if method == "PUT":
@@ -206,6 +219,8 @@ def request_args(method, path):
         return {"json": {"email": "invitee@example.com", "role": "viewer"}}
     if method == "PATCH" and path.endswith("/role"):
         return {"json": {"role": "viewer"}}
+    if method == "DELETE" and path.startswith("/api/auth/workspaces/"):
+        return {"json": {"confirmation_name": "Acme"}}
     return {}
 
 
@@ -221,7 +236,17 @@ def test_every_operation_checks_role_before_business_service(
         raise HTTPException(418, "Reached authorized business service")
 
     for module, names in [
-        (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
+        (
+            repositories,
+            [
+                "list_projects",
+                "connect",
+                "disconnect",
+                "list_branches",
+                "get_source_scope_config",
+                "update_source_scope_config",
+            ],
+        ),
         (
             analysis,
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
@@ -243,6 +268,7 @@ def test_every_operation_checks_role_before_business_service(
             ],
         ),
         (dashboard, ["build_health_report"]),
+        (auth_service, ["delete_workspace"]),
         (
             member_admin,
             [
@@ -269,6 +295,7 @@ def test_every_operation_checks_role_before_business_service(
             profile_id=resources["profile"],
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
+            workspace_id=account[3],
         )
         before = len(entered)
         response = client.request(method, path, **request_args(method, path))
@@ -461,13 +488,24 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
         raise AssertionError("Operation without a grant reached business logic")
 
     for module, names in [
-        (repositories, ["list_projects", "connect", "disconnect", "list_branches"]),
+        (
+            repositories,
+            [
+                "list_projects",
+                "connect",
+                "disconnect",
+                "list_branches",
+                "get_source_scope_config",
+                "update_source_scope_config",
+            ],
+        ),
         (
             analysis,
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
         ),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
+        (auth_service, ["delete_workspace"]),
         (
             member_admin,
             [
@@ -488,6 +526,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
             profile_id=resources["profile"],
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
+            workspace_id=account[3],
         )
         response = client.request(method, path, **request_args(method, path))
         assert response.status_code == 403, (path, response.text)
@@ -506,14 +545,31 @@ def test_initiator_migration_preserves_unknown_legacy_ownership(database):
         # schema directly: the current Workspace model includes `name`, which
         # is not added until migration 0014.
         db.execute(text("INSERT INTO workspace (id) VALUES (:id)"), {"id": workspace})
-        _, branch = make_repo(db, workspace)
+        repository_id = uuid.uuid4()
+        branch_id = uuid.uuid4()
+        db.execute(
+            text(
+                "INSERT INTO repository (id, workspace_id, source_platform, external_repository_id, "
+                "name, owner, url, visibility, connection_status) VALUES "
+                "(:id, :workspace, 'github', :external_id, 'example', 'acme', "
+                "'https://github.com/acme/example', 'public', 'connected')"
+            ),
+            {"id": repository_id, "workspace": workspace, "external_id": str(uuid.uuid4())},
+        )
+        db.execute(
+            text(
+                "INSERT INTO branch (id, repository_id, name, head_commit_sha, is_default) "
+                "VALUES (:id, :repository, 'main', 'old', true)"
+            ),
+            {"id": branch_id, "repository": repository_id},
+        )
         version = attempts.get_or_create_engine_version(db)
         db.execute(
             text(
                 "INSERT INTO analysis_attempt (id, branch_id, analysis_engine_version_id, "
                 "commit_sha, trigger_type, status) VALUES (:id, :branch, :version, 'old', 'manual', 'queued')"
             ),
-            {"id": attempt_id, "branch": branch.id, "version": version.id},
+            {"id": attempt_id, "branch": branch_id, "version": version.id},
         )
         db.commit()
     command.upgrade(config, "head")

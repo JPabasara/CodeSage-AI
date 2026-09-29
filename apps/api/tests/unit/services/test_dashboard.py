@@ -28,6 +28,8 @@ from codesage_api.db.models import (
     SourceLocation,
     StaticMetric,
 )
+from codesage_api.detection.pmd.detector import _normalize as normalize_pmd
+from codesage_api.detection.pmd.models import PMDViolation
 from codesage_api.errors import NotFound, ScorePending
 from codesage_api.scoring.enums import Category, Grade
 from codesage_api.scoring.models import Profile
@@ -161,7 +163,7 @@ def _snapshot(
     return snapshot
 
 
-def test_snapshot_scoring_resolves_class_risk_with_file_fallback() -> None:
+def test_snapshot_scoring_resolves_persisted_pmd_fqcn_with_file_fallback() -> None:
     snapshot = _snapshot(
         scanned_at=datetime(2026, 9, 24, tzinfo=UTC),
         commit_sha="a" * 40,
@@ -181,24 +183,40 @@ def test_snapshot_scoring_resolves_class_risk_with_file_fallback() -> None:
         ClassRiskPrediction(
             source_file_id=source_file.id,
             model_version_id=model_version_id,
-            class_name="Foo",
+            class_name="org.example.Foo",
             risk_score=0.80,
             confidence=None,
         ),
         ClassRiskPrediction(
             source_file_id=source_file.id,
             model_version_id=model_version_id,
-            class_name="Helper",
+            class_name="org.example.Helper",
             risk_score=0.25,
             confidence=None,
         ),
     ]
 
+    pmd_finding = normalize_pmd(
+        PMDViolation(
+            rule="GodClass",
+            ruleset="Design",
+            priority=2,
+            message="Finding",
+            file_path="src/A.java",
+            begin_line=1,
+            end_line=1,
+            begin_column=1,
+            end_column=2,
+            package_name="org.example",
+            class_name="Foo",
+        ),
+        Category.CODE_DESIGN,
+    )
     contexts = (
-        ("foo-finding", "Foo", 0.80),
-        ("helper-finding", "Helper", 0.25),
+        (pmd_finding.fingerprint, pmd_finding.class_name, 0.80),
+        ("helper-finding", "org.example.Helper", 0.25),
         ("file-finding", None, 0.85),
-        ("missing-finding", "MissingClass", 0.85),
+        ("missing-finding", "org.example.MissingClass", 0.85),
     )
     source_file.source_locations = []
     for line, (fingerprint, class_name, _expected) in enumerate(contexts, start=1):

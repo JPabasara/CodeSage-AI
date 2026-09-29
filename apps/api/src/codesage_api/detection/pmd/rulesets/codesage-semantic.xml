@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="CodeSage semantic" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+ <description>Rules whose best results depend on Java type resolution or library context.</description>
+ <rule ref="category/java/bestpractices.xml/ArrayIsStoredDirectly"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/AvoidMessageDigestField"><priority>2</priority></rule>
+ <rule ref="category/java/bestpractices.xml/CheckResultSet"><priority>2</priority></rule>
+ <rule ref="category/java/bestpractices.xml/MethodReturnsInternalArray"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/RelianceOnDefaultCharset"><priority>3</priority></rule>
+ <rule ref="category/java/bestpractices.xml/UseTryWithResources"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/AssignmentToNonFinalStatic"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/ClassCastExceptionWithToArray"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/CloseResource"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/CollectionTypeMismatch"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/ComparisonWithNaN"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/ConstructorCallsOverridableMethod"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/InvalidLogMessageFormat"><priority>2</priority></rule>
+ <rule ref="category/java/errorprone.xml/ReturnEmptyCollectionRatherThanNull"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/UnusedReturnValue"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/UseCorrectExceptionLogging"><priority>3</priority></rule>
+ <rule ref="category/java/errorprone.xml/UnsupportedJdkApiUsage"><priority>3</priority></rule>
+ <rule ref="category/java/multithreading.xml/NonThreadSafeSingleton"><priority>2</priority></rule>
+ <rule ref="category/java/multithreading.xml/UnsynchronizedStaticFormatter"><priority>2</priority></rule>
+</ruleset>

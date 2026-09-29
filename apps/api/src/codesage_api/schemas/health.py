@@ -70,11 +70,13 @@ class HealthReportOut(ApiModel):
     grade: Grade
     delta: float  # vs the previous snapshot, both scored under the active profile
     red_issue_count: int  # critical + high, for the health-card summary
+    resolved_finding_count: int = 0
 
     # The active profile's name, shown on the trend chart. Always truthful because
     # there is exactly one active profile per workspace to name; "custom" when the
     # user has adjusted away from a preset.
     profile: str
+    include_test_findings: bool = False
 
     # Which ML model produced this snapshot (AI-03, DBR-18). Null when the scan
     # ran in degraded mode with no ML available — which is a real state, not an

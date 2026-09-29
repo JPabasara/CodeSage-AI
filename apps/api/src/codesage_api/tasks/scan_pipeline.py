@@ -53,6 +53,7 @@ from codesage_api.detection.fingerprint import (
     satd_fingerprint,
     unique_in_file_order,
 )
+from codesage_api.detection.provider import ScanContext, run_optional_detector
 from codesage_api.detection.reasons import render_satd_reason
 from codesage_api.detection.risk import client as risk_client
 from codesage_api.detection.risk.client import RiskClientResult
@@ -72,9 +73,11 @@ from codesage_api.guardrails import (
 )
 from codesage_api.logging import get_logger, scan_context
 from codesage_api.scoring.enums import ScanErrorCode, ScanStage
+from codesage_api.source_scope import classify_source_scope
 from codesage_api.tasks import cancel, progress
 from codesage_api.tasks.app import celery_app
 from codesage_api.tasks.repository_clone import (
+    CloneError,
     CloneTimedOut,
     clone_at_commit,
     clone_path,
@@ -224,6 +227,7 @@ def _run_claimed(
             cloned.commit_sha,
             cloned.committer_date,
             on_file=_file_reporter(attempt_id),
+            progress_callback=lambda percent: progress.publish_progress(attempt_id, percent),
         )
         progress.publish_stage(attempt_id, ScanStage.FINDING_DEBT, 60)
         cancel.check(attempt_id)
@@ -243,15 +247,27 @@ def _run_claimed(
             cloned.path,
             extracted.method_metrics,
         )
+        optional_detection = run_optional_detector(
+            cloned.path,
+            ScanContext(attempt_id=attempt_id),
+        )
+        findings.extend(optional_detection.findings)
+        logger.info(
+            "Optional detector completed",
+            extra={
+                "detector_status": optional_detection.status.value,
+                "detector_findings": len(optional_detection.findings),
+                "detector_diagnostics": [item.code for item in optional_detection.diagnostics],
+                **optional_detection.metadata,
+            },
+        )
+        cancel.check(attempt_id)
 
         # ML-2 Risk Model prediction with graceful degradation
         progress.publish_stage(attempt_id, ScanStage.PREDICTING_RISK, 70)
         risk_result: RiskClientResult | None = None
         try:
-            process_by_path = {
-                p.path: p
-                for p in extracted.process_metrics
-            }
+            process_by_path = {p.path: p for p in extracted.process_metrics}
 
             risk_result = risk_client.predict(
                 extracted.class_metrics,
@@ -272,9 +288,7 @@ def _run_claimed(
                 extra={"comment_count": len(extracted.comments), "kept": len(comments)},
             )
         try:
-            satd_predictions = [
-                result for result in classify(comments) if result.is_debt
-            ]
+            satd_predictions = [result for result in classify(comments) if result.is_debt]
         except MLServiceUnavailable as exc:
             _reraise_time_limit(exc)
             logger.warning(
@@ -335,6 +349,14 @@ def _run_claimed(
             git_timed_out_message(),
             ScanErrorCode.SCAN_TIMED_OUT,
         )
+    except CloneError:
+        logger.exception("Repository clone failed")
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            "The repository could not be analysed.",
+        )
     except Exception:
         logger.exception("Scan pipeline failed")
         _set_terminal(
@@ -342,6 +364,7 @@ def _run_claimed(
             workspace_uuid,
             AnalysisStatus.ERROR,
             "The repository could not be analysed.",
+            failure_code="SCAN_FAILED",
         )
     finally:
         cancel.cleanup(attempt_id, clone_dir)
@@ -391,10 +414,7 @@ def _finalize(
         model_version_record: MLModelVersion | None = None
         if (
             results.risk_result
-            and (
-                results.risk_result.class_scores
-                or results.risk_result.file_scores
-            )
+            and (results.risk_result.class_scores or results.risk_result.file_scores)
             and results.risk_result.model_version
         ):
             v_name = results.risk_result.model_version
@@ -433,10 +453,7 @@ def _finalize(
                     )
                 )
 
-
-        process_by_path = {
-            item.path: item for item in results.extraction.process_metrics
-        }
+        process_by_path = {item.path: item for item in results.extraction.process_metrics}
 
         files_by_path: dict[str, SourceFile] = {}
         for metrics in results.extraction.static_metrics:
@@ -444,6 +461,11 @@ def _finalize(
                 snapshot=snapshot,
                 relative_path=metrics.path,
                 language="java",
+                source_scope=classify_source_scope(
+                    metrics.path,
+                    attempt.branch.repository.test_path_patterns,
+                    attempt.branch.repository.production_path_overrides,
+                ),
             )
             session.add(source_file)
             session.flush()
@@ -470,12 +492,8 @@ def _finalize(
                     ProcessMetric(
                         source_file=source_file,
                         commits_90d=process_metrics.commits_90d,
-                        number_of_versions_until=(
-                            process_metrics.number_of_versions_until
-                        ),
-                        number_of_authors_until=(
-                            process_metrics.number_of_authors_until
-                        ),
+                        number_of_versions_until=(process_metrics.number_of_versions_until),
+                        number_of_authors_until=(process_metrics.number_of_authors_until),
                         lines_added_until=process_metrics.lines_added_until,
                         max_lines_added_until=process_metrics.max_lines_added_until,
                         avg_lines_added_until=process_metrics.avg_lines_added_until,
@@ -486,9 +504,7 @@ def _finalize(
                         max_code_churn_until=process_metrics.max_code_churn_until,
                         avg_code_churn_until=process_metrics.avg_code_churn_until,
                         age_with_respect_to=process_metrics.age_with_respect_to,
-                        weighted_age_with_respect_to=(
-                            process_metrics.weighted_age_with_respect_to
-                        ),
+                        weighted_age_with_respect_to=(process_metrics.weighted_age_with_respect_to),
                     )
                 )
 
@@ -512,14 +528,11 @@ def _finalize(
                 )
 
         if results.risk_result and model_version_record:
-            for (file_path, class_name), score in sorted(
-                results.risk_result.class_scores.items()
-            ):
+            for (file_path, class_name), score in sorted(results.risk_result.class_scores.items()):
                 predicted_source_file = files_by_path.get(file_path)
                 if predicted_source_file is None:
                     raise RuntimeError(
-                        "A class risk prediction references "
-                        f"an unknown source file: {file_path}"
+                        f"A class risk prediction references an unknown source file: {file_path}"
                     )
                 session.add(
                     ClassRiskPrediction(
@@ -531,10 +544,25 @@ def _finalize(
                     )
                 )
 
-        # Comment extraction intentionally scans every Java source file, while
-        # CK may omit files it cannot analyse. Preserve valid SATD predictions
-        # for those files by creating the source-file fact without inventing
-        # static or process metrics.
+        # Optional detectors and comment extraction may inspect valid Java files
+        # that CK cannot analyse. Preserve their findings without inventing
+        # static or process metrics for those files.
+        for detected in results.findings:
+            if detected.file_path not in files_by_path:
+                source_file = SourceFile(
+                    snapshot=snapshot,
+                    relative_path=detected.file_path,
+                    language="java",
+                    source_scope=classify_source_scope(
+                        detected.file_path,
+                        attempt.branch.repository.test_path_patterns,
+                        attempt.branch.repository.production_path_overrides,
+                    ),
+                )
+                session.add(source_file)
+                session.flush()
+                files_by_path[detected.file_path] = source_file
+
         for result in results.satd_predictions:
             path = result.comment.file_path
             if path not in files_by_path:
@@ -542,27 +570,34 @@ def _finalize(
                     snapshot=snapshot,
                     relative_path=path,
                     language="java",
+                    source_scope=classify_source_scope(
+                        path,
+                        attempt.branch.repository.test_path_patterns,
+                        attempt.branch.repository.production_path_overrides,
+                    ),
                 )
                 session.add(source_file)
                 session.flush()
                 files_by_path[path] = source_file
 
-        for detected in results.findings:
-            finding_file = files_by_path.get(detected.file_path)
-            if finding_file is None:
-                raise RuntimeError("A finding references an unknown source file.")
+        rule_fingerprints = unique_in_file_order(
+            [(item.fingerprint, item.file_path, item.line) for item in results.findings]
+        )
+        for detected, fingerprint in zip(results.findings, rule_fingerprints, strict=True):
+            finding_file = files_by_path[detected.file_path]
             location = SourceLocation(
                 source_file=finding_file,
                 code_symbol=None,
                 start_line=detected.line,
-                end_line=detected.line,
-                start_column=0,
-                end_column=0,
+                end_line=detected.end_line or detected.line,
+                start_column=detected.begin_column,
+                end_column=detected.end_column,
             )
             session.add(location)
             session.flush()
             session.add(
                 Finding(
+                    snapshot_id=snapshot.id,
                     source_location=location,
                     category_id=detected.category.value,
                     rule_id=detected.rule_id,
@@ -574,7 +609,7 @@ def _finalize(
                     measured_value=detected.measured_value,
                     threshold=detected.threshold,
                     confidence=None,
-                    fingerprint=detected.fingerprint,
+                    fingerprint=fingerprint,
                     class_name=detected.class_name,
                     method_name=detected.method_name,
                 )
@@ -593,9 +628,7 @@ def _finalize(
                 for result in results.satd_predictions
             ]
         )
-        for result, fingerprint in zip(
-            results.satd_predictions, satd_fingerprints, strict=True
-        ):
+        for result, fingerprint in zip(results.satd_predictions, satd_fingerprints, strict=True):
             if result.category is None:
                 raise RuntimeError("A debt prediction is missing its category.")
             finding_file = files_by_path.get(result.comment.file_path)
@@ -671,6 +704,7 @@ def _finalize(
             session.flush()
             session.add(
                 Finding(
+                    snapshot_id=snapshot.id,
                     source_location=location,
                     category_id=result.category.value,
                     rule_id=None,
@@ -691,6 +725,7 @@ def _finalize(
         attempt.status = AnalysisStatus.DONE
         attempt.completion_time = datetime.now(UTC)
         attempt.failure_information = None
+        attempt.failure_code = None
         return snapshot.id
 
 
@@ -699,7 +734,7 @@ def _set_terminal(
     workspace_id: uuid.UUID,
     status: AnalysisStatus,
     failure_information: str | None,
-    failure_code: ScanErrorCode | None = None,
+    failure_code: ScanErrorCode | str | None = None,
 ) -> None:
     with session_scope() as session:
         set_workspace_context(session, workspace_id)
@@ -709,4 +744,6 @@ def _set_terminal(
         attempt.status = status
         attempt.completion_time = datetime.now(UTC)
         attempt.failure_information = failure_information
-        attempt.failure_code = failure_code.value if failure_code else None
+        attempt.failure_code = (
+            failure_code.value if isinstance(failure_code, ScanErrorCode) else failure_code
+        )

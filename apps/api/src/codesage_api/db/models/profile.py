@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Double,
@@ -73,6 +74,9 @@ class ScoringProfile(UUIDPrimaryKey, Base):
     documentation_weight: Mapped[float] = mapped_column(Double)
     test_weight: Mapped[float] = mapped_column(Double)
     trust_slider: Mapped[float] = mapped_column(Double)
+    include_test_findings: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
     )

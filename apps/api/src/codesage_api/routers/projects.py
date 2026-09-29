@@ -12,7 +12,10 @@ from codesage_api.authorization.routes import require_repository_permission
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.deps import get_current_user_id, get_db, get_workspace_id, require_permission
 from codesage_api.logging import get_logger
-from codesage_api.schemas import ConnectRepoIn, ProjectProfileOut, RepoOut, SelectProfileIn
+from codesage_api.schemas import (
+    ConnectRepoIn, ProjectProfileOut, RepoOut, SelectProfileIn,
+    SourceScopeConfigOut, UpdateSourceScopeConfigIn,
+)
 from codesage_api.services import profiles, repositories
 from codesage_api.tasks.app import celery_app
 
@@ -77,6 +80,16 @@ def disconnect_repository(
     repositories.disconnect(db, workspace_id, repo_id, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+
+@router.get("/{repo_id}/source-scope", response_model=SourceScopeConfigOut, dependencies=[Depends(require_repository_permission("profile:read"))])
+def get_source_scope_config(repo_id: uuid.UUID, db: Annotated[Session, Depends(get_db)], workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)]) -> SourceScopeConfigOut:
+    return repositories.get_source_scope_config(db, workspace_id, repo_id)
+
+@router.patch("/{repo_id}/source-scope", response_model=SourceScopeConfigOut, dependencies=[Depends(require_repository_permission("profile:update"))])
+def update_source_scope_config(repo_id: uuid.UUID, body: UpdateSourceScopeConfigIn, db: Annotated[Session, Depends(get_db)], workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)]) -> SourceScopeConfigOut:
+    result = repositories.update_source_scope_config(db, workspace_id, repo_id, body.test_path_patterns, body.production_path_overrides)
+    db.commit()
+    return result
 
 # ── the project's effective scoring profile ─────────────────────────────────
 # All three resolve the repository before the operation permission, so a project

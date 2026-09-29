@@ -49,6 +49,7 @@ from codesage_api.errors import NotFound, RepositoryScanRunning
 from codesage_api.integrations.github import GitHubBranch
 from codesage_api.services import analysis, repositories
 
+from .support import assert_no_orphans
 from .test_account_provisioning import account as account  # noqa: PLC0414
 from .test_rbac_migration import database as database  # noqa: PLC0414
 from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414
@@ -211,6 +212,7 @@ def _seed_complete_graph(
     db.add_all([satd, bug, score])
     db.flush()
     finding = Finding(
+        snapshot_id=snapshot.id,
         source_location_id=location.id,
         category_id="code-design",
         rule_id=None,
@@ -270,11 +272,13 @@ def test_removal_cascades_through_every_repository_owned_record(account) -> None
         audit = db.scalar(
             select(SecurityAuditRecord).where(
                 SecurityAuditRecord.workspace_id == workspace_id,
-                SecurityAuditRecord.event_type == "repository_disconnected:success",
+                SecurityAuditRecord.event_type == "repository_disconnected",
+                SecurityAuditRecord.outcome == "success",
             )
         )
         assert audit is not None
         assert str(repository_id) in audit.affected_resource
+        assert_no_orphans(db.connection())
 
 
 def test_both_queued_and_running_attempts_block_removal(account) -> None:

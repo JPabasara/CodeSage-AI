@@ -36,6 +36,7 @@ class SourceFile(UUIDPrimaryKey, Base):
     snapshot_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("snapshot.id", ondelete="CASCADE"), index=True)
     relative_path: Mapped[str] = mapped_column(String(1000))
     language: Mapped[str] = mapped_column(String(100))
+    source_scope: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown", server_default="unknown")
     snapshot: Mapped[Snapshot] = relationship(back_populates="source_files")
     code_symbols: Mapped[list[CodeSymbol]] = relationship(back_populates="source_file", passive_deletes=True)
     source_locations: Mapped[list[SourceLocation]] = relationship(back_populates="source_file", passive_deletes=True)

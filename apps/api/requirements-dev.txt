@@ -8,3 +8,4 @@ mypy>=1.13
 # enforces the SAD layering contracts declared in pyproject.toml — run `lint-imports`
 import-linter>=2.1
 testcontainers[postgres]>=4.8
+httpx2>=2.13

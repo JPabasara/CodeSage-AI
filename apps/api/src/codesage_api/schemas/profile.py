@@ -57,6 +57,7 @@ class ScoreProfileOut(ApiModel):
     name: str
     weights: CategoryWeights
     trust_s: float
+    include_test_findings: bool = False
     is_preset: bool
     is_active: bool
     usage_count: int = Field(
@@ -99,6 +100,7 @@ class CreateProfileIn(ApiModel):
     trust_s: float = Field(
         description="Trust slider: 0 = trust the model, 1 = trust the rules"
     )
+    include_test_findings: bool = False
 
 
 class UpdateProfileIn(ApiModel):
@@ -111,6 +113,7 @@ class UpdateProfileIn(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     weights: CategoryWeightsPatch | None = None
     trust_s: float | None = None
+    include_test_findings: bool | None = None
 
 
 class SelectProfileIn(ApiModel):

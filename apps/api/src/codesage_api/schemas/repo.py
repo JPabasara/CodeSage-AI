@@ -22,6 +22,16 @@ class LatestHealthOut(ApiModel):
     delta: float
 
 
+class SourceScopeConfigOut(ApiModel):
+    test_path_patterns: list[str]
+    production_path_overrides: list[str]
+
+
+class UpdateSourceScopeConfigIn(ApiModel):
+    test_path_patterns: list[str]
+    production_path_overrides: list[str]
+
+
 class RepoOut(ApiModel):
     id: str
     name: str

@@ -19,6 +19,7 @@ from codesage_api.db.enums import MembershipStatus
 from codesage_api.db.models import Membership, RolePermission, UserSession, Workspace
 from codesage_api.main import create_app
 
+from .support import session_cookie
 from .test_account_provisioning import account as account  # noqa: PLC0414 -- pytest fixture
 from .test_rbac_migration import database as database  # noqa: PLC0414 -- pytest fixture
 from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414 -- pytest fixture
@@ -81,7 +82,7 @@ def client(account, monkeypatch):
         return {"ok": True}
 
     with TestClient(app) as http:
-        http.cookies.set(get_settings().session_cookie_name, str(session_id))
+        http.cookies.set(get_settings().session_cookie_name, session_cookie(engine, session_id))
         yield http
 
 
@@ -148,7 +149,7 @@ def test_invalid_authentication_is_401(account, client, cookie):
             record = db.get(UserSession, account[4])
             record.expires_at = datetime.now(UTC) - timedelta(seconds=1)
             db.commit()
-        cookie = str(account[4])
+        cookie = session_cookie(account[0], account[4])
     if cookie is not None:
         client.cookies.set(get_settings().session_cookie_name, cookie)
     response = client.post("/test/permission/scan:start")

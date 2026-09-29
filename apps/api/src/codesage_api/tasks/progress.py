@@ -54,7 +54,7 @@ def _client() -> Redis:
 
 
 def publish_progress(attempt_id: str, percent: int) -> None:
-    """Publish 0–100 for the polling client. Called at each stage boundary."""
+    """Publish 0–100 for the polling client. Called at pipeline stage and sub-stage milestones."""
     bounded = max(0, min(100, int(percent)))
     try:
         _client().set(

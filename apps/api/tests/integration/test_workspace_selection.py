@@ -15,6 +15,7 @@ from codesage_api.db.models import Membership, User, UserSession, Workspace
 from codesage_api.main import create_app
 from codesage_api.routers import auth as auth_router
 
+from .support import session_cookie, token_hash
 from .test_account_provisioning import account as account  # noqa: PLC0414 -- fixture
 from .test_rbac_migration import database as database  # noqa: PLC0414 -- fixture
 from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414 -- fixture
@@ -95,7 +96,10 @@ def client(workspace_set, monkeypatch):
     monkeypatch.setattr(deps, "SessionLocal", application_session)
     monkeypatch.setattr(auth_router, "SessionLocal", application_session)
     with TestClient(create_app()) as http:
-        http.cookies.set(get_settings().session_cookie_name, str(workspace_set["session"]))
+        http.cookies.set(
+            get_settings().session_cookie_name,
+            session_cookie(engine, workspace_set["session"]),
+        )
         yield http
 
 
@@ -198,6 +202,7 @@ def test_admin_cannot_rename_a_different_workspace(workspace_set, client):
 def test_switch_updates_only_current_server_side_session(workspace_set, client):
     engine = workspace_set["engine"]
     second_session = UserSession(
+        token_hash=token_hash(str(uuid.uuid4())),
         user_id=workspace_set["user"],
         workspace_id=workspace_set["personal"],
         expires_at=_future_expiry(engine, workspace_set["session"]),

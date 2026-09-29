@@ -20,8 +20,10 @@ from codesage_api.db.models import (
     AnalysisAttempt,
     BugRiskPrediction,
     ClassRiskPrediction,
+    Branch,
     Finding,
     MLModelVersion,
+    Repository,
     SATDPrediction,
     SourceFile,
 )
@@ -72,7 +74,7 @@ def test_finalize_records_trained_risk_provenance(
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(repository=Repository(test_path_patterns=[], production_path_overrides=[])),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
@@ -135,7 +137,7 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(repository=Repository(test_path_patterns=[], production_path_overrides=[])),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
@@ -207,18 +209,15 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
     )
 
     added = [call.args[0] for call in session.add.call_args_list]
-    file_prediction = next(
-        item for item in added if isinstance(item, BugRiskPrediction)
-    )
-    class_predictions = [
-        item for item in added if isinstance(item, ClassRiskPrediction)
-    ]
+    file_prediction = next(item for item in added if isinstance(item, BugRiskPrediction))
+    class_predictions = [item for item in added if isinstance(item, ClassRiskPrediction)]
     stored_finding = next(item for item in added if isinstance(item, Finding))
 
     assert file_prediction.risk_score == 0.85
-    assert {
-        item.class_name: item.risk_score for item in class_predictions
-    } == {"Foo": 0.8, "Helper": 0.25}
+    assert {item.class_name: item.risk_score for item in class_predictions} == {
+        "Foo": 0.8,
+        "Helper": 0.25,
+    }
     assert stored_finding.class_name == "Foo"
     assert stored_finding.method_name == "work"
 
@@ -233,7 +232,7 @@ def test_finalize_persists_satd_when_ck_omits_source_file(
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
-        branch_id=uuid.uuid4(),
+        branch=Branch(repository=Repository(test_path_patterns=[], production_path_overrides=[])),
         analysis_engine_version_id=uuid.uuid4(),
         commit_sha="a" * 40,
         trigger_type=AnalysisTriggerType.MANUAL,
@@ -360,6 +359,7 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
 
     clone.assert_called_once()
     extract.assert_called_once()
+    assert callable(extract.call_args.kwargs["progress_callback"])
     detect.assert_called_once()
     predict.assert_called_once()
     classify.assert_called_once_with([comment])
@@ -464,6 +464,7 @@ def test_task_records_a_durable_error_when_a_stage_fails(
         workspace_id,
         AnalysisStatus.ERROR,
         "The repository could not be analysed.",
+        failure_code="SCAN_FAILED",
     )
     cleanup.assert_called_once_with(str(attempt_id), str(tmp_path))
 
