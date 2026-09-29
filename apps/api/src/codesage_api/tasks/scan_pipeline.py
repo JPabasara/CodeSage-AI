@@ -72,8 +72,8 @@ from codesage_api.guardrails import (
     timed_out_message,
 )
 from codesage_api.logging import get_logger, scan_context
-from codesage_api.source_scope import classify_source_scope
 from codesage_api.scoring.enums import ScanErrorCode, ScanStage
+from codesage_api.source_scope import classify_source_scope
 from codesage_api.tasks import cancel, progress
 from codesage_api.tasks.app import celery_app
 from codesage_api.tasks.repository_clone import (
@@ -257,9 +257,7 @@ def _run_claimed(
             extra={
                 "detector_status": optional_detection.status.value,
                 "detector_findings": len(optional_detection.findings),
-                "detector_diagnostics": [
-                    item.code for item in optional_detection.diagnostics
-                ],
+                "detector_diagnostics": [item.code for item in optional_detection.diagnostics],
                 **optional_detection.metadata,
             },
         )
@@ -269,10 +267,7 @@ def _run_claimed(
         progress.publish_stage(attempt_id, ScanStage.PREDICTING_RISK, 70)
         risk_result: RiskClientResult | None = None
         try:
-            process_by_path = {
-                p.path: p
-                for p in extracted.process_metrics
-            }
+            process_by_path = {p.path: p for p in extracted.process_metrics}
 
             risk_result = risk_client.predict(
                 extracted.class_metrics,
@@ -293,9 +288,7 @@ def _run_claimed(
                 extra={"comment_count": len(extracted.comments), "kept": len(comments)},
             )
         try:
-            satd_predictions = [
-                result for result in classify(comments) if result.is_debt
-            ]
+            satd_predictions = [result for result in classify(comments) if result.is_debt]
         except MLServiceUnavailable as exc:
             _reraise_time_limit(exc)
             logger.warning(
@@ -421,10 +414,7 @@ def _finalize(
         model_version_record: MLModelVersion | None = None
         if (
             results.risk_result
-            and (
-                results.risk_result.class_scores
-                or results.risk_result.file_scores
-            )
+            and (results.risk_result.class_scores or results.risk_result.file_scores)
             and results.risk_result.model_version
         ):
             v_name = results.risk_result.model_version
@@ -463,10 +453,7 @@ def _finalize(
                     )
                 )
 
-
-        process_by_path = {
-            item.path: item for item in results.extraction.process_metrics
-        }
+        process_by_path = {item.path: item for item in results.extraction.process_metrics}
 
         files_by_path: dict[str, SourceFile] = {}
         for metrics in results.extraction.static_metrics:
@@ -505,12 +492,8 @@ def _finalize(
                     ProcessMetric(
                         source_file=source_file,
                         commits_90d=process_metrics.commits_90d,
-                        number_of_versions_until=(
-                            process_metrics.number_of_versions_until
-                        ),
-                        number_of_authors_until=(
-                            process_metrics.number_of_authors_until
-                        ),
+                        number_of_versions_until=(process_metrics.number_of_versions_until),
+                        number_of_authors_until=(process_metrics.number_of_authors_until),
                         lines_added_until=process_metrics.lines_added_until,
                         max_lines_added_until=process_metrics.max_lines_added_until,
                         avg_lines_added_until=process_metrics.avg_lines_added_until,
@@ -521,9 +504,7 @@ def _finalize(
                         max_code_churn_until=process_metrics.max_code_churn_until,
                         avg_code_churn_until=process_metrics.avg_code_churn_until,
                         age_with_respect_to=process_metrics.age_with_respect_to,
-                        weighted_age_with_respect_to=(
-                            process_metrics.weighted_age_with_respect_to
-                        ),
+                        weighted_age_with_respect_to=(process_metrics.weighted_age_with_respect_to),
                     )
                 )
 
@@ -547,14 +528,11 @@ def _finalize(
                 )
 
         if results.risk_result and model_version_record:
-            for (file_path, class_name), score in sorted(
-                results.risk_result.class_scores.items()
-            ):
+            for (file_path, class_name), score in sorted(results.risk_result.class_scores.items()):
                 predicted_source_file = files_by_path.get(file_path)
                 if predicted_source_file is None:
                     raise RuntimeError(
-                        "A class risk prediction references "
-                        f"an unknown source file: {file_path}"
+                        f"A class risk prediction references an unknown source file: {file_path}"
                     )
                 session.add(
                     ClassRiskPrediction(
@@ -575,7 +553,11 @@ def _finalize(
                     snapshot=snapshot,
                     relative_path=detected.file_path,
                     language="java",
-                    source_scope=classify_source_scope(detected.file_path, attempt.branch.repository.test_path_patterns, attempt.branch.repository.production_path_overrides),
+                    source_scope=classify_source_scope(
+                        detected.file_path,
+                        attempt.branch.repository.test_path_patterns,
+                        attempt.branch.repository.production_path_overrides,
+                    ),
                 )
                 session.add(source_file)
                 session.flush()
@@ -588,13 +570,20 @@ def _finalize(
                     snapshot=snapshot,
                     relative_path=path,
                     language="java",
-                    source_scope=classify_source_scope(path, attempt.branch.repository.test_path_patterns, attempt.branch.repository.production_path_overrides),
+                    source_scope=classify_source_scope(
+                        path,
+                        attempt.branch.repository.test_path_patterns,
+                        attempt.branch.repository.production_path_overrides,
+                    ),
                 )
                 session.add(source_file)
                 session.flush()
                 files_by_path[path] = source_file
 
-        for detected in results.findings:
+        rule_fingerprints = unique_in_file_order(
+            [(item.fingerprint, item.file_path, item.line) for item in results.findings]
+        )
+        for detected, fingerprint in zip(results.findings, rule_fingerprints, strict=True):
             finding_file = files_by_path[detected.file_path]
             location = SourceLocation(
                 source_file=finding_file,
@@ -620,7 +609,7 @@ def _finalize(
                     measured_value=detected.measured_value,
                     threshold=detected.threshold,
                     confidence=None,
-                    fingerprint=detected.fingerprint,
+                    fingerprint=fingerprint,
                     class_name=detected.class_name,
                     method_name=detected.method_name,
                 )
@@ -639,9 +628,7 @@ def _finalize(
                 for result in results.satd_predictions
             ]
         )
-        for result, fingerprint in zip(
-            results.satd_predictions, satd_fingerprints, strict=True
-        ):
+        for result, fingerprint in zip(results.satd_predictions, satd_fingerprints, strict=True):
             if result.category is None:
                 raise RuntimeError("A debt prediction is missing its category.")
             finding_file = files_by_path.get(result.comment.file_path)
@@ -738,6 +725,7 @@ def _finalize(
         attempt.status = AnalysisStatus.DONE
         attempt.completion_time = datetime.now(UTC)
         attempt.failure_information = None
+        attempt.failure_code = None
         return snapshot.id
 
 

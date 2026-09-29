@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import uuid
@@ -31,6 +30,7 @@ from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
 from codesage_api.services import profiles
+from codesage_api.services.finding_diff import diff_snapshots
 from codesage_api.tasks import progress
 from codesage_api.tasks.app import celery_app
 
@@ -101,7 +101,21 @@ def calculate_snapshot_score(
     cached.grade = scored.result.grade
     cached.debt_score = sum(item.debt_score for item in scored.result.files)
     cached.kloc = sum(item.loc for item in scored.file_facts.values()) / 1000.0
-    cached.result_payload = _result_payload(scored)
+    refs = dashboard_repository.list_completed_snapshot_refs(
+        session,
+        workspace_id,
+        hydrated.analysis_attempt.branch.repository_id,
+        hydrated.analysis_attempt.branch.name,
+    )
+    current_index = next((index for index, item in enumerate(refs) if item.id == hydrated.id), -1)
+    previous = (
+        dashboard_repository.get_snapshot_for_scoring(
+            session, workspace_id, refs[current_index - 1].id
+        )
+        if current_index > 0
+        else None
+    )
+    cached.result_payload = _result_payload(scored, previous)
 
 
 def build_latest_health_hint(
@@ -129,9 +143,7 @@ def build_latest_health_hint(
     previous = prepared[1] if len(prepared) > 1 else None
     delta = (
         latest.health_score - previous.health_score
-        if previous is not None
-        and previous.status == "ready"
-        and previous.health_score is not None
+        if previous is not None and previous.status == "ready" and previous.health_score is not None
         else 0.0
     )
     return (latest, delta), pending
@@ -171,9 +183,7 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         for location in source_file.source_locations:
             for stored in location.findings:
                 finding_risk = (
-                    class_risks.get(stored.class_name)
-                    if stored.class_name is not None
-                    else None
+                    class_risks.get(stored.class_name) if stored.class_name is not None else None
                 )
                 collected.append(
                     (
@@ -184,11 +194,7 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
                             category=Category(stored.category_id),
                             severity=Severity(stored.severity.value),
                             file=source_file.relative_path,
-                            risk_score=(
-                                finding_risk
-                                if finding_risk is not None
-                                else file_risk
-                            ),
+                            risk_score=(finding_risk if finding_risk is not None else file_risk),
                         ),
                     )
                 )
@@ -215,8 +221,9 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
     return _ScoredSnapshot(snapshot, result, file_facts, findings_by_fingerprint)
 
 
-def _finding_outputs(scored: _ScoredSnapshot) -> list[FindingOut]:
+def _finding_outputs(scored: _ScoredSnapshot, previous: Snapshot | None = None) -> list[FindingOut]:
     output: list[FindingOut] = []
+    trace = diff_snapshots(scored.snapshot, previous)
     for item in scored.result.findings:
         stored = scored.findings_by_fingerprint[item.finding.fingerprint]
         location = stored.source_location
@@ -233,6 +240,9 @@ def _finding_outputs(scored: _ScoredSnapshot) -> list[FindingOut]:
                 symbol=location.code_symbol.name if location.code_symbol else None,
                 reason=stored.description,
                 status=FindingStatus.OPEN,
+                change_status=(
+                    "unchanged" if item.finding.fingerprint in trace.unchanged else "new"
+                ),
                 priority=item.priority,
                 pinned_by_floor=item.pinned_by_floor,
                 rule_id=stored.rule_id,
@@ -320,9 +330,10 @@ def _model_version(snapshot: Snapshot) -> str | None:
     return ", ".join(sorted(versions)) or None
 
 
-def _result_payload(scored: _ScoredSnapshot) -> dict[str, object]:
+def _result_payload(scored: _ScoredSnapshot, previous: Snapshot | None = None) -> dict[str, object]:
     """Serialize every profile-dependent dashboard value in the worker."""
-    findings = _finding_outputs(scored)
+    findings = _finding_outputs(scored, previous)
+    trace = diff_snapshots(scored.snapshot, previous)
     return {
         "health_score": scored.result.health_score,
         "grade": scored.result.grade,
@@ -331,6 +342,7 @@ def _result_payload(scored: _ScoredSnapshot) -> dict[str, object]:
         ),
         "model_version": _model_version(scored.snapshot),
         "findings": [item.model_dump(mode="json") for item in findings],
+        "resolved_finding_count": len(trace.resolved),
         "tree": [item.model_dump(mode="json") for item in _tree(scored)],
         "file_scores": [
             FileScoreOut(
@@ -448,11 +460,7 @@ def build_health_report(
         raise ScorePending
 
     payload = selected_cache.result_payload
-    previous = (
-        cached_by_snapshot.get(refs[selected_index - 1].id)
-        if selected_index > 0
-        else None
-    )
+    previous = cached_by_snapshot.get(refs[selected_index - 1].id) if selected_index > 0 else None
     previous_score = previous.health_score if previous is not None else None
     health_score = float(payload["health_score"])
     delta = health_score - previous_score if previous_score is not None else 0.0
@@ -470,9 +478,7 @@ def build_health_report(
         profile=profile.name,
         include_test_findings=profile.include_test_findings,
         model_version=(
-            str(payload["model_version"])
-            if payload.get("model_version") is not None
-            else None
+            str(payload["model_version"]) if payload.get("model_version") is not None else None
         ),
         history=[
             HealthPointOut(
@@ -487,16 +493,14 @@ def build_health_report(
             for ref in refs
             if ref.id == selected_ref.id
             or (
-                ref.id in cached_by_snapshot
-                and cached_by_snapshot[ref.id].health_score is not None
+                ref.id in cached_by_snapshot and cached_by_snapshot[ref.id].health_score is not None
             )
         ],
         tree=[TreeNodeOut.model_validate(item) for item in payload["tree"]],
         file_scores=[FileScoreOut.model_validate(item) for item in payload["file_scores"]],
         findings=[FindingOut.model_validate(item) for item in payload["findings"]],
         category_breakdown=[
-            CategoryBreakdownItemOut.model_validate(item)
-            for item in payload["category_breakdown"]
+            CategoryBreakdownItemOut.model_validate(item) for item in payload["category_breakdown"]
         ],
     )
 
