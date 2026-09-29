@@ -141,18 +141,27 @@ def test_workspace_deletion_removes_every_tenant_row(tenant, client, monkeypatch
                   "membership", "repository_profile_assignment", "security_audit_record"):
         assert doomed[table], table
 
+    with Session(tenant.engine) as db:
+        bound = set(db.scalars(
+            select(UserSession.id).where(UserSession.workspace_id == tenant.workspace_id)
+        ))
+    assert len(bound) == 2  # the deleter's and the other member's
+
     response = _delete(client, tenant.workspace_id)
 
     assert response.status_code == 204, response.text
-    assert "Max-Age=0" in response.headers["set-cookie"]
+    assert "set-cookie" not in response.headers
     assert surviving(tenant.engine, doomed) == {}
     assert tenant_rows(tenant.engine, other.workspace_id) == kept
     with Session(tenant.engine) as db:
         assert_no_orphans(db.connection())
         assert db.get(Workspace, tenant.workspace_id) is None
-        assert db.scalar(
-            select(UserSession.id).where(UserSession.workspace_id == tenant.workspace_id)
-        ) is None
+        # Nobody is signed out: every bound session drops to no workspace.
+        kept_sessions = db.execute(
+            select(UserSession.id, UserSession.workspace_id).where(UserSession.id.in_(bound))
+        ).all()
+        assert {row.id for row in kept_sessions} == bound
+        assert {row.workspace_id for row in kept_sessions} == {None}
         # Audit history survives the tenant, detached but still attributable.
         kept_audit = db.scalars(
             select(SecurityAuditRecord).where(SecurityAuditRecord.workspace_name == "Acme")
@@ -164,8 +173,12 @@ def test_workspace_deletion_removes_every_tenant_row(tenant, client, monkeypatch
             text("SELECT count(*) FROM security_audit_record WHERE workspace_id IS NULL")
         )
         assert orphaned >= len(doomed["security_audit_record"])
-    # The deleted workspace's session no longer works.
-    assert client.get("/api/auth/session").status_code == 401
+    # The deleter is still signed in, now in the no-workspace state.
+    session = client.get("/api/auth/session")
+    assert session.status_code == 200, session.text
+    assert session.json()["workspace_id"] is None
+    assert session.json()["needs_workspace_setup"] is True
+    assert client.get("/api/projects").json()["code"] == "WORKSPACE_REQUIRED"
 
 
 def test_workspace_deletion_blocked_while_scan_active(tenant, client) -> None:
@@ -324,3 +337,4 @@ def test_inactive_admin_membership_does_not_count_as_another_admin(tenant, clien
                           status=MembershipStatus.INACTIVE, role_id="org-admin"))
         db.commit()
     assert client.delete("/api/auth/me").status_code == 409
+
