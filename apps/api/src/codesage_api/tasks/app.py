@@ -24,6 +24,8 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+    # Preserve CodeSage structured logging instead of letting Celery replace it.
+    worker_hijack_root_logger=False,
     # A scan is minutes long; prefetching several would leave jobs queued behind a
     # busy worker while another sits idle.
     worker_prefetch_multiplier=1,

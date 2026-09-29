@@ -82,13 +82,15 @@ LATER_COLUMNS = {
         "updated_at",
     ),
     "membership": ("role_id",),  # 0010
-    "app_user": ("email_verified", "product_tour_completed_at"),  # 0013, 0019
-    "analysis_attempt": (  # 0011; failure_code 0018
+    "app_user": ("email_verified",),  # 0013
+    "analysis_attempt": (  # 0011; failure_code 0021
         "initiated_by_user_id",
         "initiating_workspace_id",
         "failure_code",
     ),
-    "finding": ("class_name", "method_name"),  # 0017
+    "finding": ("class_name", "method_name", "snapshot_id"),  # 0017; snapshot_id 0020
+    "session": ("token_hash",),  # 0019
+    "security_audit_record": ("outcome", "detail", "workspace_name"),  # 0019
     "scoring_profile": (  # 0015
         "kind",
         "preset_key",
@@ -107,9 +109,12 @@ LATER_CONSTRAINTS = {
         "uq_scoring_profile_workspace_id_preset_key",
     },
     "repository": {"uq_repository_workspace_id_id"},  # 0015
+    "finding": {"uq_finding_snapshot_fingerprint"},  # 0020
 }
 LATER_INDEXES = {
     "scoring_profile": {"uq_scoring_profile_workspace_name_normalized"},  # 0015
+    "session": {"ix_session_token_hash"},  # 0019
+    "finding": {"ix_finding_snapshot_id"},  # 0020
 }
 
 
@@ -162,6 +167,11 @@ def _baseline_metadata() -> MetaData:
     _restore_scoring_profile_active_flag(metadata.tables["scoring_profile"])
     # A session always had a workspace until 0016 made onboarding possible.
     metadata.tables["session"].c.workspace_id.nullable = False
+    # Audit rows required a workspace, and blocked its deletion, until 0019.
+    audit_workspace = metadata.tables["security_audit_record"].c.workspace_id
+    audit_workspace.nullable = False
+    for fk in audit_workspace.foreign_keys:
+        fk.ondelete = fk.constraint.ondelete = "RESTRICT"
     return metadata
 
 

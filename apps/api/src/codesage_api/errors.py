@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
@@ -30,6 +32,26 @@ class Forbidden(CodeSageError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "FORBIDDEN"
     message = "You do not have permission to perform this operation."
+
+
+class PermissionDenied(Forbidden):
+    """A 403 that knows who was refused what, so the refusal can be audited.
+
+    The response body is identical to `Forbidden`: the caller learns nothing
+    extra. The identifiers exist only for the security audit record (DBR-30).
+    """
+
+    def __init__(
+        self,
+        *,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        permission: str,
+    ) -> None:
+        super().__init__(permission)
+        self.user_id = user_id
+        self.workspace_id = workspace_id
+        self.permission = permission
 
 
 class Conflict(CodeSageError):
@@ -112,6 +134,21 @@ class WorkspaceRequired(CodeSageError):
     status_code = status.HTTP_409_CONFLICT
     code = "WORKSPACE_REQUIRED"
     message = "Create a workspace before using this part of the application."
+
+
+class WorkspaceScanRunning(Conflict):
+    code = "WORKSPACE_SCAN_RUNNING"
+    message = "Stop or wait for active scans before deleting this workspace."
+
+
+class WorkspaceConfirmationMismatch(Conflict):
+    code = "WORKSPACE_CONFIRMATION_MISMATCH"
+    message = "Type the workspace name exactly to confirm deletion."
+
+
+class LastWorkspaceAdmin(Conflict):
+    code = "LAST_WORKSPACE_ADMIN"
+    message = "Transfer administration before deleting the last administrator account."
 
 
 class ProfileLimitReached(CodeSageError):

@@ -1,0 +1,65 @@
+# Every enabled PMD rule must appear exactly once. PMD never emits requirement
+# or documentation debt in this version.
+code-design:
+  - AvoidPrintStackTrace
+  - AvoidUsingHardCodedIP
+  - DoubleBraceInitialization
+  - NonExhaustiveSwitch
+  - PreserveStackTrace
+  - UnusedAssignment
+  - UnusedLocalVariable
+  - UnusedPrivateField
+  - UnusedPrivateMethod
+  - ExceptionAsFlowControl
+  - UselessOverridingMethod
+  - AssignmentInOperand
+  - AvoidDecimalLiteralsInBigDecimalConstructor
+  - BrokenNullCheck
+  - DoNotThrowExceptionInFinally
+  - EmptyCatchBlock
+  - EqualsNull
+  - IdenticalConditionalBranches
+  - ImplicitSwitchFallThrough
+  - JumbledIncrementer
+  - MisplacedNullCheck
+  - OverrideBothEqualsAndHashcode
+  - ReturnFromFinallyBlock
+  - UnconditionalIfStatement
+  - UnusedNullCheckInEquals
+  - UseEqualsToCompareStrings
+  - UseLocaleWithCaseConversions
+  - DontCallThreadRun
+  - DoubleCheckedLocking
+  - UseNotifyAllInsteadOfNotify
+  - ArrayIsStoredDirectly
+  - AvoidMessageDigestField
+  - CheckResultSet
+  - MethodReturnsInternalArray
+  - RelianceOnDefaultCharset
+  - UseTryWithResources
+  - AssignmentToNonFinalStatic
+  - ClassCastExceptionWithToArray
+  - CloseResource
+  - CollectionTypeMismatch
+  - ComparisonWithNaN
+  - ConstructorCallsOverridableMethod
+  - InvalidLogMessageFormat
+  - ReturnEmptyCollectionRatherThanNull
+  - UnusedReturnValue
+  - UseCorrectExceptionLogging
+  - UnsupportedJdkApiUsage
+  - NonThreadSafeSingleton
+  - UnsynchronizedStaticFormatter
+  - CognitiveComplexity
+  - ExcessiveParameterList
+  - GodClass
+  - NPathComplexity
+test:
+  - AssertStatementInTest
+  - UnitTestShouldIncludeAssert
+  - JUnitJupiterTestNoPrivateModifier
+  - WrongTestAnnotation
+  - TestClassWithoutTestCases
+security:
+  - HardCodedCryptoKey
+  - InsecureCryptoIv

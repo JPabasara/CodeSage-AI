@@ -30,11 +30,12 @@ from codesage_api.integrations.github import (
     fetch_repository,
 )
 from codesage_api.logging import get_logger
-from codesage_api.schemas import BranchOut, LatestHealthOut, RepoOut
+from codesage_api.schemas import BranchOut, LatestHealthOut, RepoOut, SourceScopeConfigOut
 from codesage_api.scoring.cache import profile_payload
 from codesage_api.scoring.enums import Grade
 from codesage_api.scoring.models import Profile
 from codesage_api.services import audit, dashboard, profiles
+from codesage_api.source_scope import DEFAULT_TEST_PATHS
 from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
@@ -275,6 +276,21 @@ def list_branches(
             session.delete(stale)
     return output
 
+
+def get_source_scope_config(session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID) -> SourceScopeConfigOut:
+    repository = session.scalar(select(Repository).where(Repository.id == repository_id, Repository.workspace_id == workspace_id))
+    if repository is None:
+        raise NotFound
+    return SourceScopeConfigOut(test_path_patterns=repository.test_path_patterns or list(DEFAULT_TEST_PATHS), production_path_overrides=repository.production_path_overrides)
+
+def update_source_scope_config(session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, test_path_patterns: list[str], production_path_overrides: list[str]) -> SourceScopeConfigOut:
+    repository = session.scalar(select(Repository).where(Repository.id == repository_id, Repository.workspace_id == workspace_id).with_for_update())
+    if repository is None:
+        raise NotFound
+    repository.test_path_patterns = list(dict.fromkeys(item.strip() for item in test_path_patterns if item.strip()))
+    repository.production_path_overrides = list(dict.fromkeys(item.strip() for item in production_path_overrides if item.strip()))
+    session.flush()
+    return SourceScopeConfigOut(test_path_patterns=repository.test_path_patterns or list(DEFAULT_TEST_PATHS), production_path_overrides=repository.production_path_overrides)
 
 def _to_output(
     repository: Repository,

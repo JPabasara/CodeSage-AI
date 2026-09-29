@@ -27,8 +27,16 @@ from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.integrations.github import GitHubBranch
 from codesage_api.main import create_app
-from codesage_api.services import analysis, dashboard, member_admin, profiles, repositories
+from codesage_api.services import (
+    analysis,
+    dashboard,
+    member_admin,
+    profiles,
+    repositories,
+)
+from codesage_api.services import auth as auth_service
 
+from .support import session_cookie
 from .test_account_provisioning import account as account  # noqa: PLC0414
 from .test_rbac_migration import database as database  # noqa: PLC0414
 from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414
@@ -70,6 +78,7 @@ INVENTORY = {
     ("DELETE", "/api/invitations/{invitation_id}"): "member:manage",
     ("PATCH", "/api/members/{membership_id}/role"): "member:manage",
     ("DELETE", "/api/members/{membership_id}"): "member:manage",
+    ("DELETE", "/api/auth/workspaces/{workspace_id}"): "workspace:delete",
 }
 
 
@@ -85,12 +94,12 @@ def test_route_inventory_has_no_unclassified_operations():
         ("GET", "/api/auth/callback"),
         ("POST", "/api/auth/logout"),
         ("GET", "/api/auth/session"),
-        ("PUT", "/api/auth/tour"),
         ("GET", "/api/auth/workspaces"),
         ("POST", "/api/auth/workspaces"),
         ("GET", "/api/auth/workspaces/{workspace_id}"),
         ("PATCH", "/api/auth/workspaces/{workspace_id}"),
         ("PUT", "/api/auth/workspaces/active"),
+        ("DELETE", "/api/auth/me"),
         ("POST", "/api/invitations/accept"),
         ("GET", "/api/healthz"),
         ("GET", "/readyz"),
@@ -173,7 +182,7 @@ def client(account, monkeypatch):
 
     monkeypatch.setattr(deps, "SessionLocal", application_session)
     with TestClient(create_app()) as http:
-        http.cookies.set(get_settings().session_cookie_name, str(account[4]))
+        http.cookies.set(get_settings().session_cookie_name, session_cookie(account[0], account[4]))
         yield http
 
 
@@ -206,6 +215,8 @@ def request_args(method, path):
         return {"json": {"email": "invitee@example.com", "role": "viewer"}}
     if method == "PATCH" and path.endswith("/role"):
         return {"json": {"role": "viewer"}}
+    if method == "DELETE" and path.startswith("/api/auth/workspaces/"):
+        return {"json": {"confirmation_name": "Acme"}}
     return {}
 
 
@@ -243,6 +254,7 @@ def test_every_operation_checks_role_before_business_service(
             ],
         ),
         (dashboard, ["build_health_report"]),
+        (auth_service, ["delete_workspace"]),
         (
             member_admin,
             [
@@ -269,6 +281,7 @@ def test_every_operation_checks_role_before_business_service(
             profile_id=resources["profile"],
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
+            workspace_id=account[3],
         )
         before = len(entered)
         response = client.request(method, path, **request_args(method, path))
@@ -370,7 +383,9 @@ def test_foreign_and_missing_profile_ids_are_both_not_found(
 
     for profile_id in (foreign_id, uuid.uuid4()):
         assert client.get(f"/api/profiles/{profile_id}").status_code == 404
-        assert client.patch(f"/api/profiles/{profile_id}", json={"name": "x"}).status_code == 404
+        assert (
+            client.patch(f"/api/profiles/{profile_id}", json={"name": "x"}).status_code == 404
+        )
         assert client.delete(f"/api/profiles/{profile_id}").status_code == 404
 
     for repo_id in (resources["foreign_repo"], uuid.uuid4()):
@@ -468,6 +483,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
         ),
         (profiles, ["list_available", "get_active_output", "apply"]),
         (dashboard, ["build_health_report"]),
+        (auth_service, ["delete_workspace"]),
         (
             member_admin,
             [
@@ -488,6 +504,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
             profile_id=resources["profile"],
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
+            workspace_id=account[3],
         )
         response = client.request(method, path, **request_args(method, path))
         assert response.status_code == 403, (path, response.text)

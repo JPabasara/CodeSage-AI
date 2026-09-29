@@ -153,22 +153,91 @@ def test_repo_health_is_bounded_at_zero() -> None:
     assert formula.repo_health(total_debt=0.0, kloc=10.0) == 100.0
 
 
-@pytest.mark.xfail(reason="engine.score not implemented yet", strict=True)
-def test_worked_example() -> None:
-    """TEAM TODO: transcribe a worked example and assert the exact priorities.
+def _finding(
+    fingerprint: str,
+    source: Source,
+    category: Category,
+    severity: Severity,
+    file: str,
+    risk: float,
+) -> ScoringFinding:
+    return ScoringFinding(fingerprint, source, category, severity, file, risk)
 
-    This is the fixture the whole "scoring is a pure function" argument is for —
-    hand-computed numbers, no database, exact equality. Write it once `k` has been
-    calibrated, since repo_health depends on it.
+
+def test_worked_example(balanced: Profile) -> None:
+    """Hand-computed under Balanced (s = 0.5, so both trusts are 1.0) and k = 25.
+
+        A.java: 10 commits -> churn 1.5; B.java: 0 commits -> churn 1.0; 1 KLOC each.
+
+        f1 rule code-design high,  A, risk 0.2: 5 x 1.5 x (1 + 0.2) = 9.0
+        f3 rule security  medium,  B, risk 0.5: 3 x 1.0 x (1 + 0.5) = 4.5
+        f2 satd documentation low, B, risk 0.0: 1 x 1.0 x 1.0       = 1.0
+
+        debt A = 9.0 -> health 100 x (1 - 9.0 / 25)  = 64.0
+        debt B = 5.5 -> health 100 x (1 - 5.5 / 25)  = 78.0
+        total 14.5 over 2 KLOC -> 100 x (1 - 14.5 / 50) = 71.0 -> grade B
     """
-    raise NotImplementedError
+    from codesage_api.scoring.engine import score
+
+    facts = {
+        "A.java": FileFacts("A.java", risk_score=0.2, commits_90d=10, loc=1000),
+        "B.java": FileFacts("B.java", risk_score=0.5, commits_90d=0, loc=1000),
+    }
+    findings = [
+        _finding("f1", Source.RULE, Category.CODE_DESIGN, Severity.HIGH, "A.java", 0.2),
+        _finding("f2", Source.SATD, Category.DOCUMENTATION, Severity.LOW, "B.java", 0.0),
+        _finding("f3", Source.RULE, Category.SECURITY, Severity.MEDIUM, "B.java", 0.5),
+    ]
+
+    result = score(findings, facts, balanced, kloc=2.0)
+
+    assert [item.finding.fingerprint for item in result.findings] == ["f1", "f3", "f2"]
+    assert [item.priority for item in result.findings] == pytest.approx([9.0, 4.5, 1.0])
+    assert {item.file: item.debt_score for item in result.files} == pytest.approx(
+        {"A.java": 9.0, "B.java": 5.5}
+    )
+    assert {item.file: item.health_score for item in result.files} == pytest.approx(
+        {"A.java": 64.0, "B.java": 78.0}
+    )
+    assert result.health_score == pytest.approx(71.0)
+    assert result.grade == "B"
+    breakdown = {item.category: (item.count, item.debt) for item in result.breakdown}
+    assert breakdown[Category.CODE_DESIGN] == (1, pytest.approx(9.0))
+    assert breakdown[Category.SECURITY] == (1, pytest.approx(4.5))
+    assert breakdown[Category.DOCUMENTATION] == (1, pytest.approx(1.0))
+    assert breakdown[Category.TEST] == (0, 0.0)
 
 
-@pytest.mark.xfail(reason="floor.apply_visibility_floor not implemented yet", strict=True)
-def test_critical_security_survives_minimum_weight() -> None:
+def test_critical_security_survives_minimum_weight(min_security_profile: Profile) -> None:
     """FR-24 mechanism 3 (SRS TC-24).
 
-    Security weight at its 0.1 floor, delivery-speed everywhere else: the critical
+    Security weight at its 0.1 floor, every other weight at 3.0: the critical
     security finding must still be at index 0 — present is not sufficient.
     """
-    raise NotImplementedError
+    from codesage_api.scoring.engine import score
+
+    facts = {
+        "Hot.java": FileFacts("Hot.java", risk_score=1.0, commits_90d=20, loc=500),
+        "Cold.java": FileFacts("Cold.java", risk_score=0.0, commits_90d=0, loc=500),
+    }
+    findings = [
+        _finding("design", Source.RULE, Category.CODE_DESIGN, Severity.HIGH, "Hot.java", 1.0),
+        _finding("docs", Source.SATD, Category.DOCUMENTATION, Severity.MEDIUM, "Hot.java", 1.0),
+        _finding("sec-high", Source.RULE, Category.SECURITY, Severity.HIGH, "Cold.java", 0.0),
+        _finding("sec-critical", Source.RULE, Category.SECURITY, Severity.CRITICAL, "Cold.java", 0.0),
+    ]
+
+    result = score(findings, facts, min_security_profile, kloc=1.0)
+    ranked = [item.finding.fingerprint for item in result.findings]
+    by_id = {item.finding.fingerprint: item for item in result.findings}
+
+    # Its own priority (8 x 0.1 = 0.8) is far below the heavily weighted
+    # design and documentation findings on the hot file...
+    assert by_id["sec-critical"].priority == pytest.approx(0.8)
+    assert by_id["sec-critical"].priority < min(by_id["design"].priority, by_id["docs"].priority)
+    # ...yet it is first, and flagged so the UI can explain why.
+    assert ranked[0] == "sec-critical"
+    assert by_id["sec-critical"].pinned_by_floor is True
+    # Only critical security is pinned; everything else keeps priority order.
+    assert ranked[1:] == ["design", "docs", "sec-high"]
+    assert not any(item.pinned_by_floor for item in result.findings[1:])

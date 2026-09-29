@@ -7,7 +7,7 @@ import uuid
 from typing import Annotated
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session as DbSession
@@ -28,7 +28,7 @@ from codesage_api.deps import (
 from codesage_api.errors import Forbidden, MisconfiguredSignIn, NotFound, SignInFailed
 from codesage_api.schemas.auth import (
     CreateWorkspaceIn,
-    ProductTourUpdateIn,
+    DeleteWorkspaceIn,
     SessionOut,
     SwitchWorkspaceIn,
     UpdateWorkspaceIn,
@@ -56,6 +56,9 @@ RETURN_TO_SECONDS = 3600
 #: all, where a cookie-based guard would itself be lost and the retry would loop.
 RETRY_STATE_SUFFIX = ".retry"
 WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
+WorkspaceDeleter = Annotated[
+    AuthorizationContext, Depends(require_permission("workspace:delete"))
+]
 
 
 def _summary(workspace: auth_service.ActiveWorkspace, *, is_active: bool) -> WorkspaceSummaryOut:
@@ -183,7 +186,6 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     try:
         session = auth_service.establish_session(db, claims)
         session_id = str(session.id)
-        new_user_tour = getattr(session, "product_tour_required", False)
         db.commit()
     except Exception:
         db.rollback()
@@ -191,12 +193,11 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
-    # An explicit safe return path (an invitation, for example) always wins.
-    # Otherwise a new user starts at Workspace with the tour; returning users
-    # resume at Projects.
-    destination = safe_return_to(issued.get("return_to")) or (
-        "/workspace" if new_user_tour else "/projects"
-    )
+    # Everyone lands in the app: on `return_to` when sign-in began with one (an
+    # invitation, say), otherwise on /projects. A user with no workspace yet is
+    # still signed in, and the web shows each page's "create a workspace" state
+    # instead of a separate onboarding screen.
+    destination = safe_return_to(issued.get("return_to")) or "/projects"
     response = RedirectResponse(
         f"{settings.frontend_base_url.rstrip('/')}{destination}",
         status_code=status.HTTP_302_FOUND,
@@ -262,7 +263,6 @@ def current_user(
             user_id=str(user_id),
             workspace_id=None if workspace_id is None else str(workspace_id),
             needs_workspace_setup=workspace_id is None,
-            product_tour_required=user.product_tour_completed_at is None,
             role=role,
             permissions=permissions,
             email=user.email,
@@ -270,24 +270,6 @@ def current_user(
             avatar_url=user.avatar_url,
             identity_provider=user.identity_provider,
         )
-    finally:
-        db.close()
-
-
-@router.put("/tour", status_code=status.HTTP_204_NO_CONTENT)
-def finish_product_tour(
-    body: ProductTourUpdateIn,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-) -> None:
-    """Remember Finish and Skip so onboarding does not relaunch next sign-in."""
-    del body  # both accepted outcomes intentionally have the same persistence
-    db = SessionLocal()
-    try:
-        auth_service.complete_product_tour(db, user_id)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
     finally:
         db.close()
 
@@ -368,7 +350,9 @@ def get_workspace(
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
         raise NotFound
-    return _summary(auth_service.describe_workspace(db, workspace, context.role_id), is_active=True)
+    return _summary(
+        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
+    )
 
 
 @router.patch("/workspaces/{workspace_id}", response_model=WorkspaceSummaryOut)
@@ -398,7 +382,48 @@ def update_workspace(
     if "website_url" in fields:
         workspace.website_url = fields["website_url"]
     db.flush()
-    return _summary(auth_service.describe_workspace(db, workspace, context.role_id), is_active=True)
+    return _summary(
+        auth_service.describe_workspace(db, workspace, context.role_id), is_active=True
+    )
+
+
+@router.delete("/workspaces/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workspace(
+    workspace_id: uuid.UUID,
+    body: DeleteWorkspaceIn,
+    context: WorkspaceDeleter,
+    db: DbSession = Depends(get_db),
+) -> Response:
+    if workspace_id != context.workspace_id:
+        raise NotFound
+    auth_service.delete_workspace(
+        db,
+        workspace_id=workspace_id,
+        actor_user_id=context.user_id,
+        confirmation_name=body.confirmation_name,
+    )
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_session_cookie(response)
+    return response
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session_id: uuid.UUID = Depends(get_current_session_id),
+) -> Response:
+    db = SessionLocal()
+    try:
+        auth_service.anonymize_user(db, session_id=session_id, user_id=user_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_session_cookie(response)
+    return response
 
 
 @router.put("/workspaces/active", response_model=WorkspaceSummaryOut)
@@ -468,6 +493,12 @@ def sign_out(request: Request) -> RedirectResponse:
 
     response = RedirectResponse(_idp_logout_url(), status_code=status.HTTP_302_FOUND)
 
+    _clear_session_cookie(response)
+    return response
+
+
+def _clear_session_cookie(response: Response) -> None:
+    settings = get_settings()
     response.delete_cookie(
         settings.session_cookie_name,
         path="/",
@@ -476,4 +507,3 @@ def sign_out(request: Request) -> RedirectResponse:
         secure=settings.cookie_secure,
         samesite="lax",
     )
-    return response

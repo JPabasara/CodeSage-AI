@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.orm import Session
 
-from codesage_api.db.models import Branch, Membership, Repository, User, Workspace
+from codesage_api.db.models import Membership, Repository, User, Workspace
 from codesage_api.services import auth
 
 CLAIMS = auth.IdentityClaims(
@@ -31,29 +31,16 @@ def _session() -> MagicMock:
     return session
 
 
-def test_first_sign_in_creates_a_ready_trial_workspace(monkeypatch) -> None:
+def test_first_sign_in_creates_the_person_and_nothing_else(monkeypatch) -> None:
+    """No workspace, no repository. Naming the workspace is the user's first act."""
     session = _session()
     monkeypatch.setattr(auth, "set_workspace_context", lambda *_args: None)
-    seeded: list[uuid.UUID] = []
-    monkeypatch.setattr(
-        auth.profiles,
-        "seed_workspace_profiles",
-        lambda _db, workspace_id, actor_user_id=None: seeded.append(workspace_id),
-    )
 
     auth._provision_new_user(session, CLAIMS)
 
     added = session.added
-    assert any(isinstance(item, User) for item in added)
-    workspace = next(item for item in added if isinstance(item, Workspace))
-    membership = next(item for item in added if isinstance(item, Membership))
-    repository = next(item for item in added if isinstance(item, Repository))
-    assert workspace.name == "My Workspace"
-    assert membership.role_id == "org-admin"
-    assert repository.url == "https://github.com/spring-projects/spring-petclinic"
-    assert repository.branches[0].name == "main"
-    assert isinstance(repository.branches[0], Branch)
-    assert seeded == [workspace.id]
+    assert [type(item) for item in added] == [User]
+    assert not any(isinstance(item, (Workspace, Membership, Repository)) for item in added)
 
 
 def test_creating_a_workspace_seeds_its_pool_but_no_repository(monkeypatch) -> None:

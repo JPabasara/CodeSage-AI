@@ -106,6 +106,7 @@ def stop_scan(
     scan_id: uuid.UUID,
     db: Annotated[Session, Depends(get_db)],
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
 ) -> ScanStatusOut:
     """Cancel a running scan.
 
@@ -123,7 +124,9 @@ def stop_scan(
     already using, because the worker writes `cancelled` to the same row the status
     endpoint reads. No separate notification path is needed.
     """
-    return analysis.cancel(db, workspace_id, repo_id, scan_id)
+    return analysis.cancel(
+        db, workspace_id, repo_id, scan_id, actor_user_id=user_id
+    )
 
 
 @router.get(

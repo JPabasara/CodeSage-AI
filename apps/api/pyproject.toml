@@ -44,6 +44,8 @@ dev = [
     "mypy>=1.13",
     "import-linter>=2.1",
     "testcontainers[postgres]>=4.8",
+    # Starlette's TestClient prefers httpx2 and warns when it falls back to httpx.
+    "httpx2>=2.13",
 ]
 
 [build-system]
@@ -57,6 +59,11 @@ packages = ["src/codesage_api"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+# Volume and timing checks run nightly (`pytest -m perf`), not on every PR.
+addopts = "-m 'not perf'"
+markers = [
+    "perf: seeded-volume query plan and latency checks (DBR-32/33); nightly only",
+]
 
 [tool.ruff]
 line-length = 100

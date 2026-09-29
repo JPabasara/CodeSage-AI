@@ -11,7 +11,6 @@ remember which side of the wire they are on.
 
 from codesage_api.schemas.auth import (
     CreateWorkspaceIn,
-    ProductTourUpdateIn,
     SessionOut,
     SwitchWorkspaceIn,
     UpdateWorkspaceIn,
@@ -37,7 +36,9 @@ from codesage_api.schemas.profile import (
     SelectProfileIn,
     UpdateProfileIn,
 )
-from codesage_api.schemas.repo import ConnectRepoIn, LatestHealthOut, RepoOut
+from codesage_api.schemas.repo import (
+    ConnectRepoIn, LatestHealthOut, RepoOut, SourceScopeConfigOut, UpdateSourceScopeConfigIn,
+)
 from codesage_api.schemas.scan import (
     ActiveScanOut,
     ActivityOut,
@@ -63,7 +64,6 @@ __all__ = [
     "HealthPointOut",
     "HealthReportOut",
     "LatestHealthOut",
-    "ProductTourUpdateIn",
     "ProjectProfileOut",
     "RepoOut",
     "RescoringOut",
@@ -74,9 +74,11 @@ __all__ = [
     "SelectProfileIn",
     "SessionOut",
     "StartScanIn",
+    "SourceScopeConfigOut",
     "SwitchWorkspaceIn",
     "TreeNodeOut",
     "UpdateProfileIn",
+    "UpdateSourceScopeConfigIn",
     "UpdateWorkspaceIn",
     "WorkspaceSummaryOut",
 ]

@@ -14,7 +14,8 @@
     "profile:update": "Apply/change the workspace scoring profile",
     "member:read": "View workspace members and their roles",
     "member:manage": "Invite/remove members and assign roles",
-    "workspace:update": "Modify workspace settings"
+    "workspace:update": "Modify workspace settings",
+    "workspace:delete": "Permanently delete a workspace and its tenant data"
   },
   "roles": {
     "org-admin": [
@@ -31,7 +32,8 @@
       "profile:update",
       "member:read",
       "member:manage",
-      "workspace:update"
+      "workspace:update",
+      "workspace:delete"
     ],
     "manager": [
       "project:read",

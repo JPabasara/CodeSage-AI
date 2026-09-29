@@ -228,6 +228,7 @@ def _finding_outputs(scored: _ScoredSnapshot) -> list[FindingOut]:
                 category=item.finding.category,
                 severity=item.finding.severity,
                 file=item.finding.file,
+                source_scope=location.source_file.source_scope or "unknown",
                 line=location.start_line,
                 symbol=location.code_symbol.name if location.code_symbol else None,
                 reason=stored.description,
@@ -467,6 +468,7 @@ def build_health_report(
         delta=delta,
         red_issue_count=int(payload["red_issue_count"]),
         profile=profile.name,
+        include_test_findings=profile.include_test_findings,
         model_version=(
             str(payload["model_version"])
             if payload.get("model_version") is not None
