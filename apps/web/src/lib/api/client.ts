@@ -197,8 +197,9 @@ export function updateWorkspace(
 
 /**
  * Permanently delete the active workspace and everything it owns. The API
- * validates the exact name and rebinds the session; global users and their
- * memberships in other workspaces are never deleted.
+ * validates the exact name and leaves every session bound to it signed in with
+ * no workspace; global users and their memberships in other workspaces are
+ * never deleted.
  */
 export function deleteWorkspace(
   workspaceId: string,
