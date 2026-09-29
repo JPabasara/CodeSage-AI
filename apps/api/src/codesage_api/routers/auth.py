@@ -421,7 +421,6 @@ def delete_workspace(
         confirmation_name=body.confirmation_name,
     )
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    _clear_session_cookie(response)
     return response
 
 
