@@ -338,3 +338,25 @@ def test_inactive_admin_membership_does_not_count_as_another_admin(tenant, clien
         db.commit()
     assert client.delete("/api/auth/me").status_code == 409
 
+
+def test_workspace_deletion_does_not_pick_another_workspace(tenant, client, monkeypatch) -> None:
+    """Deletion always ends in the no-workspace state, even for a user who has
+    another workspace to go to; choosing one is left to them."""
+    other = second_tenant(tenant, monkeypatch)
+    with Session(tenant.engine) as db:
+        db.add(Membership(user_id=tenant.user_id, workspace_id=other.workspace_id,
+                          status=MembershipStatus.ACTIVE, role_id="viewer"))
+        db.commit()
+
+    assert _delete(client, tenant.workspace_id).status_code == 204
+
+    session = client.get("/api/auth/session").json()
+    assert session["workspace_id"] is None
+    assert session["needs_workspace_setup"] is True
+    workspaces = client.get("/api/auth/workspaces").json()
+    assert [(w["workspace_id"], w["is_active"]) for w in workspaces] == [
+        (str(other.workspace_id), False)
+    ]
+    switched = client.put("/api/auth/workspaces/active",
+                          json={"workspace_id": str(other.workspace_id)})
+    assert switched.status_code == 200, switched.text
