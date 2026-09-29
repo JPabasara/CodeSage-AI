@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   Building2,
   FolderGit2,
@@ -19,7 +19,9 @@ import {
   CreateWorkspaceDialog,
   useCreateWorkspace,
 } from "@/components/workspace/create-workspace-dialog"
+import { useWorkspaces, useWorkspaceSwitch } from "@/hooks/use-workspace"
 import { useWorkspaceGate } from "@/hooks/use-workspace-scope"
+import { ROLE_LABEL } from "@/lib/roles"
 
 type LockedPage =
   "workspace" | "projects" | "dashboard" | "history" | "profiles"
@@ -94,7 +96,7 @@ export function NoWorkspaceState({ page }: Readonly<{ page: LockedPage }>) {
 
         <div className="mt-5">
           {page === "workspace" ? (
-            <InlineCreate />
+            <WorkspaceSelection />
           ) : (
             <Button onClick={() => setOpen(true)}>
               <Plus aria-hidden="true" />
@@ -110,6 +112,60 @@ export function NoWorkspaceState({ page }: Readonly<{ page: LockedPage }>) {
       </section>
 
       <CreateWorkspaceDialog open={open} onOpenChange={setOpen} />
+    </div>
+  )
+}
+
+/** Show surviving memberships after the active workspace is deleted. */
+function WorkspaceSelection() {
+  const router = useRouter()
+  const { data: workspaces, loading } = useWorkspaces()
+  const { switchTo, switchingTo } = useWorkspaceSwitch()
+
+  async function select(workspaceId: string) {
+    await switchTo(workspaceId)
+    router.replace("/workspace")
+  }
+
+  return (
+    <div className="space-y-6">
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading workspaces…</p>
+      ) : workspaces && workspaces.length > 0 ? (
+        <section aria-labelledby="existing-workspaces-heading">
+          <h2 id="existing-workspaces-heading" className="text-sm font-medium">
+            Select an existing workspace
+          </h2>
+          <div className="mt-2 space-y-2">
+            {workspaces.map((workspace) => (
+              <Button
+                key={workspace.workspace_id}
+                type="button"
+                variant="outline"
+                className="h-auto w-full justify-between px-3 py-2.5"
+                disabled={Boolean(switchingTo)}
+                onClick={() => void select(workspace.workspace_id)}
+              >
+                <span className="truncate">{workspace.name}</span>
+                <span className="ml-3 shrink-0 text-xs font-normal text-muted-foreground">
+                  {switchingTo === workspace.workspace_id
+                    ? "Selecting…"
+                    : (ROLE_LABEL[workspace.role] ?? workspace.role)}
+                </span>
+              </Button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section aria-labelledby="create-workspace-heading">
+        <h2 id="create-workspace-heading" className="mb-2 text-sm font-medium">
+          {workspaces?.length
+            ? "Or create a new workspace"
+            : "Create a workspace"}
+        </h2>
+        <InlineCreate />
+      </section>
     </div>
   )
 }
