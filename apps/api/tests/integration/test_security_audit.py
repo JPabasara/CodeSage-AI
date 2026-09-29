@@ -317,3 +317,22 @@ def test_audit_is_tenant_isolated(tenant, client) -> None:
     db.close()
     # Workspace A sees only its own rows: not B's, and not system-scope events.
     assert visible == {tenant.workspace_id}
+
+
+def test_every_timestamp_column_uses_timezone_aware_postgresql_type(account) -> None:
+    """DBR-26: instants must not silently depend on the database session timezone."""
+    with Session(account[0]) as db:
+        timestamp_columns = db.execute(
+            text(
+                "SELECT table_name, column_name, data_type "
+                "FROM information_schema.columns "
+                "WHERE table_schema='public' "
+                "AND data_type LIKE 'timestamp%' ORDER BY table_name, column_name"
+            )
+        ).all()
+    assert timestamp_columns
+    assert {
+        (table, column, data_type)
+        for table, column, data_type in timestamp_columns
+        if data_type != "timestamp with time zone"
+    } == set()
