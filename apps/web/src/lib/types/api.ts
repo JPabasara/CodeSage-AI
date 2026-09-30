@@ -419,7 +419,7 @@ export interface paths {
          *     reports, so a repository CodeSage could never scan is refused before a
          *     project exists:
          *
-         *     - GitHub's `size` over the limit (300 MB by default) →
+         *     - GitHub's `size` over the limit (500 MB by default) →
          *       `REPOSITORY_TOO_LARGE`;
          *     - no Java in GitHub's language list → `REPOSITORY_HAS_NO_JAVA`, with the
          *       languages GitHub did find in `languages`.
@@ -514,6 +514,61 @@ export interface paths {
          */
         get: operations["get_health_report"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{repo_id}/health/calibration-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        /** Export one completed scan as a calibration observation */
+        get: operations["get_calibration_export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/snapshots/{snapshot_id}/findings/{fingerprint}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The snapshot the finding belongs to (`HealthReport.snapshot_id`). */
+                snapshot_id: string;
+                /** @description The finding's `fingerprint`, unique within its snapshot. */
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark a finding done, or reopen it
+         * @description Records a collaboration status for one finding in one snapshot and
+         *     answers `204`. Requires `finding:triage`.
+         *
+         *     Status is a label, not suppression. It never changes a score, a
+         *     priority, a count or the stored finding, and it does not carry over:
+         *     the next scan's snapshot starts every finding `open`, so a finding
+         *     still detected after a fix is visible again. Repeating the current
+         *     status is accepted and changes nothing. Each change is audited.
+         *
+         *     The snapshot is resolved within the caller's workspace before the
+         *     permission is checked, so another workspace's snapshot answers `404`.
+         */
+        put: operations["set_finding_status"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1078,12 +1133,21 @@ export interface components {
          */
         Grade: "A" | "B" | "C" | "D" | "E";
         /**
-         * @description v1.0 is view-only: every finding is `open`. The later values exist now
-         *     because FR-11 sums *open* finding priorities — the filter needs something to
-         *     filter on. The v1.1 accept / resolve / false-positive actions will set them.
+         * @description Collaboration status of a finding in one snapshot. `done` is set with
+         *     `PUT /api/snapshots/{snapshot_id}/findings/{fingerprint}/status` and is
+         *     a label only: scores still count every finding. `accepted`, `resolved`
+         *     and `false-positive` are reserved for later actions and are not set by
+         *     any endpoint yet.
          * @enum {string}
          */
-        FindingStatus: "open" | "accepted" | "resolved" | "false-positive";
+        FindingStatus: "open" | "done" | "accepted" | "resolved" | "false-positive";
+        FindingStatusUpdate: {
+            /**
+             * @description `done` marks the finding done; `open` reopens it.
+             * @enum {string}
+             */
+            status: "open" | "done";
+        };
         /**
          * @description The pipeline stage of a running scan, in order. Each owns a band of the
          *     progress bar: cloning 5–25, reading_code 25–60, finding_debt 60–70,
@@ -1654,7 +1718,12 @@ export interface components {
              * @example Balanced
              */
             profile: string;
-            /** @default false */
+            /**
+             * @description Whether the scoring profile in force for this project counts test
+             *     findings and test LOC toward repository health. Stored test findings
+             *     remain available in the Refactor-First list either way.
+             * @default false
+             */
             include_test_findings: boolean;
             /**
              * @description The ML model version that produced this snapshot (AI-03, DBR-18). Null
@@ -1667,6 +1736,30 @@ export interface components {
             /** @description The Refactor-First list, already sorted by `priority` descending. */
             findings: components["schemas"]["Finding"][];
             category_breakdown: components["schemas"]["CategoryBreakdownItem"][];
+        };
+        /** @description One repository-level observation accepted by the offline calibration tool. */
+        CalibrationRecord: {
+            /** Format: uuid */
+            repository_id: string;
+            commit_sha: string;
+            /** @constant */
+            status: "ready";
+            debt_score: number;
+            kloc: number;
+            counts: {
+                severity: {
+                    [key: string]: number;
+                };
+                category: {
+                    [key: string]: number;
+                };
+                source: {
+                    [key: string]: number;
+                };
+            };
+            provenance: {
+                [key: string]: unknown;
+            };
         };
         /**
          * @description One weight per `Category` value — five, no more and no fewer. Modelled as
@@ -2638,6 +2731,83 @@ export interface operations {
                 };
             };
             503: components["responses"]["ScorePending"];
+        };
+    };
+    get_calibration_export: {
+        parameters: {
+            query: {
+                branch: string;
+                snapshot_id?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cached production debt and KLOC with scoring provenance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRecord"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ScorePending"];
+        };
+    };
+    set_finding_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The snapshot the finding belongs to (`HealthReport.snapshot_id`). */
+                snapshot_id: string;
+                /** @description The finding's `fingerprint`, unique within its snapshot. */
+                fingerprint: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "status": "done"
+                 *     }
+                 */
+                "application/json": components["schemas"]["FindingStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description The status was recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            /**
+             * @description No such completed snapshot in this workspace, or no finding with
+             *     that fingerprint in it.
+             */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     list_scan_history: {
