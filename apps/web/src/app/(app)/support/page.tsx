@@ -43,8 +43,9 @@ export default function SupportPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Follow the same short path shown to a new user: workspace, projects,
-            first scan, results, profiles, and history.
+            Start with your workspace and connecting a project. Once a project is
+            connected, the tour also covers scanning, results, profiles, and
+            history.
           </p>
           <Button onClick={() => startTour("full")}>
             <Play /> Start full trial
