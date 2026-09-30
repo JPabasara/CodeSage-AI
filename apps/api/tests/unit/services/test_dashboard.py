@@ -31,7 +31,7 @@ from codesage_api.db.models import (
 from codesage_api.detection.pmd.detector import _normalize as normalize_pmd
 from codesage_api.detection.pmd.models import PMDViolation
 from codesage_api.errors import NotFound, ScorePending
-from codesage_api.scoring.enums import Category, Grade
+from codesage_api.scoring.enums import Category, Grade, Severity, Source
 from codesage_api.scoring.models import Profile
 from codesage_api.services import dashboard
 
@@ -287,6 +287,57 @@ def test_snapshot_scoring_reuses_persisted_commits_90d() -> None:
 
     assert scored.file_facts["src/A.java"].commits_90d == 10
     assert scored.result.findings[0].priority == pytest.approx(12.0)
+
+
+def test_calibration_export_reuses_ready_cache_debt_and_kloc(monkeypatch) -> None:
+    repository_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    profile = _profile()
+    report = SimpleNamespace(
+        snapshot_id=str(snapshot_id),
+        commit_sha="d" * 40,
+        scanned_at="2026-09-01T00:00:00+00:00",
+        branch="main",
+        model_version="satd-v1, risk-v1",
+        findings=[
+            SimpleNamespace(
+                severity=Severity.HIGH,
+                category=Category.CODE_DESIGN,
+                source=Source.RULE,
+            )
+        ],
+    )
+    cached = SimpleNamespace(debt_score=17.5, kloc=3.25)
+    engine = SimpleNamespace(
+        version_identifier="engine-v1",
+        tool_versions={"pmd": "7.0"},
+        rule_set_version="rules-v1",
+        extraction_logic_version="extract-v1",
+    )
+    snapshot = SimpleNamespace(
+        analysis_attempt=SimpleNamespace(analysis_engine_version=engine)
+    )
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = cached
+    monkeypatch.setattr(dashboard, "build_health_report", MagicMock(return_value=report))
+    monkeypatch.setattr(
+        dashboard.profiles, "resolve_effective", MagicMock(return_value=profile)
+    )
+    monkeypatch.setattr(
+        dashboard.dashboard_repository,
+        "find_done_snapshot",
+        MagicMock(return_value=snapshot),
+    )
+
+    exported = dashboard.build_calibration_export(
+        session, uuid.uuid4(), repository_id, "main", snapshot_id
+    )
+
+    assert exported.debt_score == 17.5
+    assert exported.kloc == 3.25
+    assert exported.counts.severity == {"high": 1}
+    assert exported.provenance["profile_id"] == "health-scoring-profile-v1"
+    assert exported.provenance["analysis_engine"]["tool_versions"] == {"pmd": "7.0"}
 
 
 @patch(

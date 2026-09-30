@@ -804,6 +804,33 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '503': { $ref: '#/components/responses/ScorePending' }
 
+  /api/repos/{repo_id}/health/calibration-export:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [dashboard]
+      operationId: get_calibration_export
+      summary: Export one completed scan as a calibration observation
+      parameters:
+        - name: branch
+          in: query
+          required: true
+          schema: { type: string }
+        - name: snapshot_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The cached production debt and KLOC with scoring provenance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalibrationRecord' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ScorePending' }
+
   /api/repos/{repo_id}/scans:
     parameters:
       - $ref: '#/components/parameters/RepoId'
@@ -2484,6 +2511,27 @@ components:
         category_breakdown:
           type: array
           items: { $ref: '#/components/schemas/CategoryBreakdownItem' }
+
+    CalibrationRecord:
+      type: object
+      description: One repository-level observation accepted by the offline calibration tool.
+      required: [repository_id, commit_sha, status, debt_score, kloc, counts, provenance]
+      additionalProperties: false
+      properties:
+        repository_id: { type: string, format: uuid }
+        commit_sha: { type: string }
+        status: { type: string, const: ready }
+        debt_score: { type: number, minimum: 0 }
+        kloc: { type: number, exclusiveMinimum: 0 }
+        counts:
+          type: object
+          required: [severity, category, source]
+          additionalProperties: false
+          properties:
+            severity: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+            category: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+            source: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+        provenance: { type: object, additionalProperties: true }
 
     # ---- profiles -------------------------------------------------------
     CategoryWeights:

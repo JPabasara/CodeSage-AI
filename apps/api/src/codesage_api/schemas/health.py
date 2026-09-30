@@ -88,3 +88,21 @@ class HealthReportOut(ApiModel):
     file_scores: list[FileScoreOut]
     findings: list[FindingOut]
     category_breakdown: list[CategoryBreakdownItemOut]
+
+
+class CalibrationCountsOut(ApiModel):
+    severity: dict[str, int]
+    category: dict[str, int]
+    source: dict[str, int]
+
+
+class CalibrationRecordOut(ApiModel):
+    """One completed repository observation accepted by calibration.health."""
+
+    repository_id: str
+    commit_sha: str
+    status: Literal["ready"] = "ready"
+    debt_score: float
+    kloc: float
+    counts: CalibrationCountsOut
+    provenance: dict[str, object]

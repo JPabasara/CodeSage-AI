@@ -60,6 +60,7 @@ INVENTORY = {
     ("POST", "/api/repos/{repo_id}/scan/{scan_id}/stop"): "scan:cancel_own|scan:cancel_any",
     ("GET", "/api/repos/{repo_id}/scans"): "history:read",
     ("GET", "/api/repos/{repo_id}/health"): "result:read",
+    ("GET", "/api/repos/{repo_id}/health/calibration-export"): "result:read",
     ("GET", "/api/activity"): "result:read",
     ("GET", "/api/profiles"): "profile:read",
     ("POST", "/api/profiles"): "profile:update",
@@ -199,7 +200,7 @@ SELECT_PROFILE = {"profile_id": "00000000-0000-0000-0000-000000000001"}
 
 
 def request_args(method, path):
-    if path.endswith("/health"):
+    if path.endswith(("/health", "/health/calibration-export")):
         return {"params": {"branch": "main"}}
     if method == "POST" and path == "/api/projects":
         return {"json": {"url": "https://github.com/acme/example"}}

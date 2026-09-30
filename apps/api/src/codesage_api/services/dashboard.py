@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 
@@ -20,6 +21,7 @@ from codesage_api.schemas import (
     ScanSummaryOut,
     TreeNodeOut,
 )
+from codesage_api.schemas.health import CalibrationCountsOut, CalibrationRecordOut
 from codesage_api.scoring import formula
 from codesage_api.scoring.cache import (
     SCORING_ENGINE_VERSION,
@@ -29,6 +31,7 @@ from codesage_api.scoring.cache import (
 from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
+from codesage_api.scoring.provenance import health_scoring_profile
 from codesage_api.scoring.scope import contributes_to_health
 from codesage_api.services import profiles
 from codesage_api.services.finding_diff import diff_snapshots
@@ -514,6 +517,70 @@ def build_health_report(
         category_breakdown=[
             CategoryBreakdownItemOut.model_validate(item) for item in payload["category_breakdown"]
         ],
+    )
+
+
+def build_calibration_export(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    snapshot_id: uuid.UUID | None = None,
+) -> CalibrationRecordOut:
+    """Export the same finalized D and L used by the production health score."""
+    report = build_health_report(
+        session, workspace_id, repository_id, branch, snapshot_id
+    )
+    profile = profiles.resolve_effective(session, workspace_id, repository_id)
+    cached = session.scalar(
+        select(SnapshotScore).where(
+            SnapshotScore.snapshot_id == uuid.UUID(report.snapshot_id),
+            SnapshotScore.profile_fingerprint == profile_fingerprint(profile),
+            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+            SnapshotScore.status == "ready",
+        )
+    )
+    if cached is None or cached.debt_score is None or cached.kloc is None:
+        raise ScorePending
+    snapshot = dashboard_repository.find_done_snapshot(
+        session, workspace_id, uuid.UUID(report.snapshot_id)
+    )
+    if snapshot is None:
+        raise NotFound
+    engine = snapshot.analysis_attempt.analysis_engine_version
+    counts = {
+        "severity": dict(Counter(item.severity.value for item in report.findings)),
+        "category": dict(Counter(item.category.value for item in report.findings)),
+        "source": dict(Counter(item.source.value for item in report.findings)),
+    }
+    provenance = health_scoring_profile(
+        profile,
+        analysis_engine={
+            "version_identifier": engine.version_identifier,
+            "tool_versions": engine.tool_versions,
+            "rule_set_version": engine.rule_set_version,
+            "extraction_logic_version": engine.extraction_logic_version,
+        },
+        model_versions={"snapshot_models": report.model_version},
+    )
+    provenance.update(
+        {
+            "snapshot_id": report.snapshot_id,
+            "scanned_at": report.scanned_at,
+            "branch": report.branch,
+        }
+    )
+    return CalibrationRecordOut(
+        repository_id=str(repository_id),
+        commit_sha=report.commit_sha,
+        debt_score=cached.debt_score,
+        kloc=cached.kloc,
+        counts=CalibrationCountsOut(
+            severity=counts["severity"],
+            category=counts["category"],
+            source=counts["source"],
+        ),
+        provenance=provenance,
     )
 
 
