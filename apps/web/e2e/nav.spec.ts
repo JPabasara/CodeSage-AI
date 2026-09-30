@@ -28,21 +28,12 @@ test("the rail carries every destination this release has", async ({
     "Scan History",
     "Profiles",
     "Workspace",
+    "Support",
   ]) {
     await expect(railLink(page, label)).toBeVisible()
   }
 
-  const support = rail(page).getByRole("button", { name: "Support" })
-  await expect(support).toBeVisible()
-  await support.hover()
-  await expect(railLink(page, "New User Trial")).toHaveAttribute(
-    "href",
-    "/support",
-  )
-  await expect(railLink(page, "Product Guide")).toHaveAttribute(
-    "target",
-    "_blank",
-  )
+  await expect(railLink(page, "Support")).toHaveAttribute("href", "/help")
   await expect(rail(page)).toBeVisible()
 })
 
