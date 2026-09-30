@@ -696,8 +696,8 @@ def test_an_attempt_that_already_ended_is_not_restarted(scan: _Run) -> None:
 
 
 def test_the_scan_task_carries_both_time_limits() -> None:
-    assert run_scan.soft_time_limit == 14 * 60
-    assert run_scan.time_limit == 15 * 60
+    assert run_scan.soft_time_limit == 30 * 60
+    assert run_scan.time_limit == 31 * 60
 
 
 # ── 13H.4: named stages, file counts and the typical duration ──────────────

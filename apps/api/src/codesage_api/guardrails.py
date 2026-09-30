@@ -44,8 +44,10 @@ def _minutes(seconds: int) -> str:
     return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
 
 
-def timed_out_message() -> str:
-    limit = get_settings().scan_time_limit_seconds
+def timed_out_message(limit_seconds: int | None = None) -> str:
+    limit = (
+        get_settings().scan_time_limit_seconds if limit_seconds is None else limit_seconds
+    )
     return (
         f"The scan took longer than {_minutes(limit)} and was stopped. "
         "Very large repositories may not finish in time."

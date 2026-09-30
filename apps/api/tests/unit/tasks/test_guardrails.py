@@ -74,7 +74,9 @@ def test_satd_comments_are_capped_in_file_order(monkeypatch) -> None:
 
 
 def test_the_timeout_sentence_names_the_configured_limit(monkeypatch) -> None:
-    assert timed_out_message().startswith("The scan took longer than 15 minutes")
+    assert timed_out_message().startswith("The scan took longer than 31 minutes")
+
+    assert timed_out_message(1800).startswith("The scan took longer than 30 minutes")
 
     _limits(monkeypatch, scan_time_limit_seconds=600, scan_soft_time_limit_seconds=540)
     assert timed_out_message().startswith("The scan took longer than 10 minutes")
@@ -89,6 +91,6 @@ def test_the_soft_limit_must_come_before_the_hard_limit() -> None:
 def test_every_limit_has_a_code_default() -> None:
     settings = Settings()
     assert settings.max_repository_size_mb == 500
-    assert settings.scan_time_limit_seconds == 15 * 60
-    assert settings.scan_soft_time_limit_seconds == 14 * 60
+    assert settings.scan_time_limit_seconds == 31 * 60
+    assert settings.scan_soft_time_limit_seconds == 30 * 60
     assert settings.max_running_scans_per_workspace == 1
