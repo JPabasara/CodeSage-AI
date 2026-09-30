@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -17,9 +18,13 @@ from codesage_api.db.enums import AnalysisStatus
 from codesage_api.db.models import (
     AnalysisAttempt,
     Branch,
+    Finding,
     Membership,
     Repository,
     ScoringProfile,
+    Snapshot,
+    SourceFile,
+    SourceLocation,
     User,
     Workspace,
 )
@@ -30,6 +35,7 @@ from codesage_api.main import create_app
 from codesage_api.services import (
     analysis,
     dashboard,
+    finding_triage,
     member_admin,
     profiles,
     repositories,
@@ -62,6 +68,7 @@ INVENTORY = {
     ("GET", "/api/repos/{repo_id}/health"): "result:read",
     ("GET", "/api/repos/{repo_id}/health/calibration-export"): "result:read",
     ("GET", "/api/activity"): "result:read",
+    ("PUT", "/api/snapshots/{snapshot_id}/findings/{fingerprint}/status"): "finding:triage",
     ("GET", "/api/profiles"): "profile:read",
     ("POST", "/api/profiles"): "profile:update",
     ("GET", "/api/profiles/active"): "profile:read",
@@ -132,12 +139,51 @@ def make_repo(db, workspace):
     return repo, branch
 
 
+FINGERPRINT = "f" * 64
+
+
+def make_snapshot(db, branch_id, *, actor, workspace):
+    """A completed scan with one finding, the target of finding triage."""
+    attempt = attempts.create_queued(
+        db, branch_id, "e" * 40, actor_user_id=actor, workspace_id=workspace
+    )
+    attempt.status = AnalysisStatus.DONE
+    snapshot = Snapshot(
+        analysis_attempt_id=attempt.id, commit_sha="e" * 40, scan_time=datetime.now(UTC)
+    )
+    db.add(snapshot)
+    db.flush()
+    source_file = SourceFile(snapshot_id=snapshot.id, relative_path="src/App.java", language="java")
+    db.add(source_file)
+    db.flush()
+    location = SourceLocation(
+        source_file_id=source_file.id, start_line=1, end_line=1, start_column=0, end_column=0
+    )
+    db.add(location)
+    db.flush()
+    db.add(
+        Finding(
+            snapshot_id=snapshot.id,
+            source_location_id=location.id,
+            category_id="code-design",
+            rule_id="complex-function",
+            source="rule",
+            severity="medium",
+            description="run() is too complex",
+            fingerprint=FINGERPRINT,
+        )
+    )
+    db.flush()
+    return snapshot
+
+
 @pytest.fixture
 def resources(account):
     engine, _, user, workspace, _ = account
     with Session(engine) as db:
         repo, branch = make_repo(db, workspace)
-        other_repo, _ = make_repo(db, workspace)
+        other_repo, other_branch = make_repo(db, workspace)
+        snapshot = make_snapshot(db, other_branch.id, actor=user, workspace=workspace)
         foreign_workspace = Workspace()
         db.add(foreign_workspace)
         db.flush()
@@ -173,6 +219,7 @@ def resources(account):
             "other": other.id,
             "legacy": legacy.id,
             "foreign": foreign.id,
+            "snapshot": snapshot.id,
         }
         db.commit()
     return result
@@ -212,6 +259,8 @@ def request_args(method, path):
         return {"json": {"name": "Release gate", **PROFILE}}
     if method == "PATCH" and path.startswith("/api/profiles/"):
         return {"json": {"name": "Renamed"}}
+    if method == "PUT" and path.endswith("/status"):
+        return {"json": {"status": "done"}}
     if method == "PATCH" and path.endswith("/source-scope"):
         return {"json": {"test_path_patterns": [], "production_path_overrides": []}}
     if method == "PUT" and (path == "/api/profiles/default" or path.endswith("/profile")):
@@ -250,6 +299,7 @@ def test_every_operation_checks_role_before_business_service(
                 "update_source_scope_config",
             ],
         ),
+        (finding_triage, ["set_status"]),
         (
             analysis,
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
@@ -299,6 +349,8 @@ def test_every_operation_checks_role_before_business_service(
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
             workspace_id=account[3],
+            snapshot_id=resources["snapshot"],
+            fingerprint=FINGERPRINT,
         )
         before = len(entered)
         response = client.request(method, path, **request_args(method, path))
@@ -502,6 +554,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
                 "update_source_scope_config",
             ],
         ),
+        (finding_triage, ["set_status"]),
         (
             analysis,
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
@@ -530,6 +583,8 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
             invitation_id=uuid.uuid4(),
             membership_id=uuid.uuid4(),
             workspace_id=account[3],
+            snapshot_id=resources["snapshot"],
+            fingerprint=FINGERPRINT,
         )
         response = client.request(method, path, **request_args(method, path))
         assert response.status_code == 403, (path, response.text)
