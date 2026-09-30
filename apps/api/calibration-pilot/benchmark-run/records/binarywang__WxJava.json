@@ -1,0 +1,103 @@
+{
+  "branch": "develop",
+  "clone_url": "https://github.com/binarywang/WxJava.git",
+  "codesage_repository_id": "binarywang/WxJava",
+  "commit_sha": "58af116149e4d89a12828cf22f10fee77a63295d",
+  "counts": {
+    "category": {
+      "code-design": 570,
+      "documentation": 64,
+      "security": 13,
+      "test": 3347
+    },
+    "severity": {
+      "critical": 11,
+      "high": 2339,
+      "low": 55,
+      "medium": 1589
+    },
+    "source": {
+      "rule": 3874,
+      "satd": 120
+    }
+  },
+  "debt_score": 1872.7640554823147,
+  "github_size_kb": 20789,
+  "kloc": 120.151,
+  "provenance": {
+    "active_profile": {
+      "include_test_findings": false,
+      "name": "Balanced",
+      "trust": 0.5,
+      "weights": {
+        "code-design": 1.0,
+        "documentation": 1.0,
+        "requirement": 1.0,
+        "security": 1.0,
+        "test": 1.0
+      }
+    },
+    "analysis_engine": {
+      "extraction_logic_version": "v2",
+      "rule_set_version": "v1",
+      "tool_versions": {
+        "ck": "0.7.0",
+        "pydriller": "2.10"
+      },
+      "version_identifier": "codesage-v2"
+    },
+    "branch": "develop",
+    "churn": {
+      "cap_commits": 20,
+      "formula": "1 + min(commits_90d, cap) / cap",
+      "source": "persisted per-file ProcessMetric.commits_90d",
+      "window_days": 90
+    },
+    "health_formula": {
+      "current_k": 25.0,
+      "formula": "100 * (1 - min(1, (D / KLOC) / k))",
+      "k_status": "placeholder_not_calibrated",
+      "version": "linear-debt-density-v1"
+    },
+    "health_scope": {
+      "generated": "excluded from both debt and LOC",
+      "policy_version": "health-scope-v1",
+      "production": "included",
+      "test": "included only when active_profile.include_test_findings is true",
+      "unknown_and_example": "included",
+      "vendor_third_party": "included because no reliable dedicated classification exists"
+    },
+    "loc": {
+      "kloc_conversion": "LOC / 1000",
+      "method": "sum of included CK per-file loc static metrics"
+    },
+    "model_versions": {
+      "snapshot_models": "risk-2.0.0, satd-1.0.0"
+    },
+    "profile_id": "health-scoring-profile-v1",
+    "risk_multiplier": {
+      "formula": "1 + ml_trust * finding_risk_score",
+      "risk_score_range": [
+        0.0,
+        1.0
+      ]
+    },
+    "scanned_at": "2026-09-30T02:37:06.080722+00:00",
+    "scoring_engine_version": "1.1.0",
+    "severity_base_points": {
+      "critical": 8.0,
+      "high": 5.0,
+      "low": 1.0,
+      "medium": 3.0
+    },
+    "snapshot_id": "354dd436-fa3a-44bb-a2ab-a3550df01b7d",
+    "trust_multipliers": {
+      "rule": 1.0,
+      "satd_ml": 1.0,
+      "security_override": 1.0
+    }
+  },
+  "repository_id": "binarywang/WxJava",
+  "repository_type": "unclassified",
+  "status": "ready"
+}

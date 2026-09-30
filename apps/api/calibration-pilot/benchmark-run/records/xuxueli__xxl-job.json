@@ -1,0 +1,104 @@
+{
+  "branch": "master",
+  "clone_url": "https://github.com/xuxueli/xxl-job.git",
+  "codesage_repository_id": "21794b12-4732-48b6-8243-f7485d38373f",
+  "commit_sha": "e74c784f68f81fa89cb350913ef15794865d7b12",
+  "counts": {
+    "category": {
+      "code-design": 152,
+      "documentation": 61,
+      "requirement": 2,
+      "security": 5,
+      "test": 25
+    },
+    "severity": {
+      "critical": 5,
+      "high": 6,
+      "low": 5,
+      "medium": 229
+    },
+    "source": {
+      "rule": 175,
+      "satd": 70
+    }
+  },
+  "debt_score": 725.6218970859151,
+  "github_size_kb": 39073,
+  "kloc": 8.604,
+  "provenance": {
+    "active_profile": {
+      "include_test_findings": false,
+      "name": "Balanced",
+      "trust": 0.5,
+      "weights": {
+        "code-design": 1.0,
+        "documentation": 1.0,
+        "requirement": 1.0,
+        "security": 1.0,
+        "test": 1.0
+      }
+    },
+    "analysis_engine": {
+      "extraction_logic_version": "v2",
+      "rule_set_version": "v1",
+      "tool_versions": {
+        "ck": "0.7.0",
+        "pydriller": "2.10"
+      },
+      "version_identifier": "codesage-v2"
+    },
+    "branch": "master",
+    "churn": {
+      "cap_commits": 20,
+      "formula": "1 + min(commits_90d, cap) / cap",
+      "source": "persisted per-file ProcessMetric.commits_90d",
+      "window_days": 90
+    },
+    "health_formula": {
+      "current_k": 25.0,
+      "formula": "100 * (1 - min(1, (D / KLOC) / k))",
+      "k_status": "placeholder_not_calibrated",
+      "version": "linear-debt-density-v1"
+    },
+    "health_scope": {
+      "generated": "excluded from both debt and LOC",
+      "policy_version": "health-scope-v1",
+      "production": "included",
+      "test": "included only when active_profile.include_test_findings is true",
+      "unknown_and_example": "included",
+      "vendor_third_party": "included because no reliable dedicated classification exists"
+    },
+    "loc": {
+      "kloc_conversion": "LOC / 1000",
+      "method": "sum of included CK per-file loc static metrics"
+    },
+    "model_versions": {
+      "snapshot_models": "risk-2.0.0, satd-1.0.0"
+    },
+    "profile_id": "health-scoring-profile-v1",
+    "risk_multiplier": {
+      "formula": "1 + ml_trust * finding_risk_score",
+      "risk_score_range": [
+        0.0,
+        1.0
+      ]
+    },
+    "scanned_at": "2026-09-30T04:15:56.204622+00:00",
+    "scoring_engine_version": "1.1.0",
+    "severity_base_points": {
+      "critical": 8.0,
+      "high": 5.0,
+      "low": 1.0,
+      "medium": 3.0
+    },
+    "snapshot_id": "daf04b4a-f2f7-4115-bc15-cb2cba4f3990",
+    "trust_multipliers": {
+      "rule": 1.0,
+      "satd_ml": 1.0,
+      "security_override": 1.0
+    }
+  },
+  "repository_id": "xuxueli/xxl-job",
+  "repository_type": "unclassified",
+  "status": "ready"
+}

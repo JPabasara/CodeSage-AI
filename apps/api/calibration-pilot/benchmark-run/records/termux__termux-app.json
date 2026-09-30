@@ -1,0 +1,102 @@
+{
+  "branch": "master",
+  "clone_url": "https://github.com/termux/termux-app.git",
+  "codesage_repository_id": "termux/termux-app",
+  "commit_sha": "8629e632fcb95da272221be327db653fb24befe9",
+  "counts": {
+    "category": {
+      "code-design": 506,
+      "documentation": 7,
+      "requirement": 1,
+      "test": 18
+    },
+    "severity": {
+      "high": 11,
+      "low": 28,
+      "medium": 493
+    },
+    "source": {
+      "rule": 505,
+      "satd": 27
+    }
+  },
+  "debt_score": 1952.59278569801,
+  "github_size_kb": 5271,
+  "kloc": 23.762,
+  "provenance": {
+    "active_profile": {
+      "include_test_findings": false,
+      "name": "Balanced",
+      "trust": 0.5,
+      "weights": {
+        "code-design": 1.0,
+        "documentation": 1.0,
+        "requirement": 1.0,
+        "security": 1.0,
+        "test": 1.0
+      }
+    },
+    "analysis_engine": {
+      "extraction_logic_version": "v2",
+      "rule_set_version": "v1",
+      "tool_versions": {
+        "ck": "0.7.0",
+        "pydriller": "2.10"
+      },
+      "version_identifier": "codesage-v2"
+    },
+    "branch": "master",
+    "churn": {
+      "cap_commits": 20,
+      "formula": "1 + min(commits_90d, cap) / cap",
+      "source": "persisted per-file ProcessMetric.commits_90d",
+      "window_days": 90
+    },
+    "health_formula": {
+      "current_k": 25.0,
+      "formula": "100 * (1 - min(1, (D / KLOC) / k))",
+      "k_status": "placeholder_not_calibrated",
+      "version": "linear-debt-density-v1"
+    },
+    "health_scope": {
+      "generated": "excluded from both debt and LOC",
+      "policy_version": "health-scope-v1",
+      "production": "included",
+      "test": "included only when active_profile.include_test_findings is true",
+      "unknown_and_example": "included",
+      "vendor_third_party": "included because no reliable dedicated classification exists"
+    },
+    "loc": {
+      "kloc_conversion": "LOC / 1000",
+      "method": "sum of included CK per-file loc static metrics"
+    },
+    "model_versions": {
+      "snapshot_models": "risk-2.0.0, satd-1.0.0"
+    },
+    "profile_id": "health-scoring-profile-v1",
+    "risk_multiplier": {
+      "formula": "1 + ml_trust * finding_risk_score",
+      "risk_score_range": [
+        0.0,
+        1.0
+      ]
+    },
+    "scanned_at": "2026-09-30T02:09:39.164035+00:00",
+    "scoring_engine_version": "1.1.0",
+    "severity_base_points": {
+      "critical": 8.0,
+      "high": 5.0,
+      "low": 1.0,
+      "medium": 3.0
+    },
+    "snapshot_id": "616cef23-a111-461a-9e9a-8c2989a5b633",
+    "trust_multipliers": {
+      "rule": 1.0,
+      "satd_ml": 1.0,
+      "security_override": 1.0
+    }
+  },
+  "repository_id": "termux/termux-app",
+  "repository_type": "android",
+  "status": "ready"
+}
