@@ -26,9 +26,11 @@ spec:
         app.kubernetes.io/component: worker
         app.kubernetes.io/part-of: codesage-ai
     spec:
-      # Longer than the 15-minute scan time limit, so a scale-down or deploy
-      # lets Celery finish the running scan instead of killing it.
-      terminationGracePeriodSeconds: 960
+      # Longer than the scan's 31-minute hard limit
+      # (CODESAGE_SCAN_TIME_LIMIT_SECONDS=1860), so a scale-down or deploy lets
+      # Celery finish the running scan instead of killing it. Change the two
+      # together.
+      terminationGracePeriodSeconds: 1920
       containers:
         - name: worker
           image: ghcr.io/jpabasara/codesage-ai/api:latest
@@ -98,4 +100,5 @@ spec:
       volumes:
         - name: clone-scratch
           emptyDir:
-            sizeLimit: 4Gi
+            # Repositories up to 500 MB; going over this evicts the pod mid-scan.
+            sizeLimit: 6Gi
