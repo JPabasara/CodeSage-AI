@@ -190,6 +190,7 @@ def _run_claimed(
     # Known before cloning, so `finally` deletes it even when the clone itself
     # was interrupted halfway.
     clone_dir = str(clone_path(attempt_uuid))
+    stage = "cloning"
     try:
         swept = sweep_stale_clones(_settings.scan_time_limit_seconds + STALE_GRACE_SECONDS)
         if swept:
@@ -222,6 +223,7 @@ def _run_claimed(
         )
         cancel.check(attempt_id)
 
+        stage = "extraction"
         extracted = extract(
             cloned.path,
             cloned.commit_sha,
@@ -232,6 +234,7 @@ def _run_claimed(
         progress.publish_stage(attempt_id, ScanStage.FINDING_DEBT, 60)
         cancel.check(attempt_id)
 
+        stage = "detection"
         findings = detect(
             extracted.static_metrics,
             [
@@ -265,6 +268,7 @@ def _run_claimed(
 
         # ML-2 Risk Model prediction with graceful degradation
         progress.publish_stage(attempt_id, ScanStage.PREDICTING_RISK, 70)
+        stage = "risk_prediction"
         risk_result: RiskClientResult | None = None
         try:
             process_by_path = {p.path: p for p in extracted.process_metrics}
@@ -281,6 +285,7 @@ def _run_claimed(
             )
 
         # ML-1 SATD prediction, over at most `max_satd_comments` comments
+        stage = "satd_prediction"
         comments = cap_satd_comments(extracted.comments)
         if len(comments) < len(extracted.comments):
             logger.warning(
@@ -299,6 +304,7 @@ def _run_claimed(
         progress.publish_stage(attempt_id, ScanStage.SCORING, 85)
         cancel.check(attempt_id)
 
+        stage = "persistence"
         snapshot_id = _finalize(
             attempt_uuid,
             workspace_uuid,
@@ -306,6 +312,7 @@ def _run_claimed(
                 extracted, findings, risk_result=risk_result, satd_predictions=satd_predictions
             ),
         )
+        stage = "finishing"
         progress.publish_stage(attempt_id, ScanStage.FINISHING, 97)
         try:
             celery_app.send_task(
@@ -331,15 +338,8 @@ def _run_claimed(
             limit.message,
             limit.code,
         )
-    except SoftTimeLimitExceeded:
-        logger.warning("Scan reached its time limit")
-        _set_terminal(
-            attempt_uuid,
-            workspace_uuid,
-            AnalysisStatus.ERROR,
-            timed_out_message(),
-            ScanErrorCode.SCAN_TIMED_OUT,
-        )
+    except SoftTimeLimitExceeded as exc:
+        _record_timeout(attempt_uuid, workspace_uuid, stage, exc)
     except CloneTimedOut:
         logger.warning("A git command reached its time limit")
         _set_terminal(
@@ -357,28 +357,72 @@ def _run_claimed(
             AnalysisStatus.ERROR,
             "The repository could not be analysed.",
         )
-    except Exception:
-        logger.exception("Scan pipeline failed")
+    except Exception as exc:
+        # SQLAlchemy/psycopg may wrap a soft timeout in a rollback error.
+        timeout = _find_time_limit(exc)
+        if timeout is not None:
+            _record_timeout(attempt_uuid, workspace_uuid, stage, timeout)
+        else:
+            logger.exception("Scan pipeline failed", extra={"stage": stage})
+            _set_terminal(
+                attempt_uuid,
+                workspace_uuid,
+                AnalysisStatus.ERROR,
+                "The repository could not be analysed.",
+                failure_code="SCAN_FAILED",
+            )
+    finally:
+        try:
+            cancel.cleanup(attempt_id, clone_dir)
+        except Exception:
+            logger.exception("Scan cleanup failed", extra={"stage": stage})
+
+
+def _find_time_limit(exc: BaseException) -> SoftTimeLimitExceeded | None:
+    """Find timeouts even when rollback wraps them via cause or context."""
+    pending = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, SoftTimeLimitExceeded):
+            return current
+        for previous in (current.__cause__, current.__context__):
+            if previous is not None:
+                pending.append(previous)
+    return None
+
+
+def _reraise_time_limit(exc: BaseException) -> None:
+    timeout = _find_time_limit(exc)
+    if timeout is not None:
+        raise timeout
+
+
+def _record_timeout(
+    attempt_uuid: uuid.UUID,
+    workspace_uuid: uuid.UUID,
+    stage: str,
+    timeout: SoftTimeLimitExceeded,
+) -> None:
+    logger.warning(
+        "Scan reached its time limit",
+        extra={"stage": stage, "error_code": ScanErrorCode.SCAN_TIMED_OUT.value},
+        exc_info=(type(timeout), timeout, timeout.__traceback__),
+    )
+    try:
         _set_terminal(
             attempt_uuid,
             workspace_uuid,
             AnalysisStatus.ERROR,
-            "The repository could not be analysed.",
-            failure_code="SCAN_FAILED",
+            timed_out_message(_settings.scan_soft_time_limit_seconds),
+            ScanErrorCode.SCAN_TIMED_OUT,
         )
-    finally:
-        cancel.cleanup(attempt_id, clone_dir)
-
-
-def _reraise_time_limit(exc: BaseException) -> None:
-    """The ML clients wrap every exception as MLServiceUnavailable, which would
-    turn the soft time limit into degraded mode and let the scan run on into
-    the hard kill. Find it in the cause chain and let it end the scan."""
-    cause = exc.__cause__
-    while cause is not None:
-        if isinstance(cause, SoftTimeLimitExceeded):
-            raise cause
-        cause = cause.__cause__
+    except Exception as record_error:
+        logger.exception("Could not record scan timeout", extra={"stage": stage})
+        raise timeout from record_error
 
 
 def _finalize(

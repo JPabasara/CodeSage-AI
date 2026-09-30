@@ -604,7 +604,7 @@ def test_the_soft_time_limit_ends_the_scan_and_still_cleans_up(scan: _Run) -> No
 
     scan()
 
-    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT)
+    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(run_scan.soft_time_limit), ScanErrorCode.SCAN_TIMED_OUT)
     scan["_finalize"].assert_not_called()
     scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
 
@@ -621,7 +621,7 @@ def test_a_time_limit_inside_an_ml_call_is_not_mistaken_for_degraded_mode(
 
     scan()
 
-    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT)
+    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(run_scan.soft_time_limit), ScanErrorCode.SCAN_TIMED_OUT)
     scan["_finalize"].assert_not_called()
 
 
@@ -748,3 +748,36 @@ def test_a_tiny_repository_reports_every_file() -> None:
             report(done, 3)
 
     assert [c.args[1] for c in publish.call_args_list] == [1, 2, 3]
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_persistence_timeout_survives_rollback_and_cleanup_errors(
+    scan: _Run, caplog: pytest.LogCaptureFixture, wrapped: bool,
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    timeout = SoftTimeLimitExceeded()
+    if wrapped:
+        rollback = RuntimeError("another command is already in progress")
+        rollback.__context__ = timeout
+        failure = OperationalError("ROLLBACK", {}, rollback)
+        failure.__cause__ = rollback
+        scan["_finalize"].side_effect = failure
+    else:
+        scan["_finalize"].side_effect = timeout
+    scan["cancel.cleanup"].side_effect = RuntimeError("cleanup unavailable")
+
+    scan()
+
+    scan.ended_with(
+        AnalysisStatus.ERROR,
+        timed_out_message(run_scan.soft_time_limit),
+        ScanErrorCode.SCAN_TIMED_OUT,
+    )
+    timeout_record = next(
+        record for record in caplog.records if record.message == "Scan reached its time limit"
+    )
+    assert timeout_record.stage == "persistence"
+    assert timeout_record.exc_info[1] is timeout
+    assert "Scan pipeline failed" not in caplog.text
+    assert "Scan cleanup failed" in caplog.text
