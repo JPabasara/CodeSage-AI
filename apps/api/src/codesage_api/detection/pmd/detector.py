@@ -131,7 +131,8 @@ def scan(
         "files_analyzed": files_analyzed,
     }
     try:
-        violations = parse(run(repository_path, configured).report, repository_path)
+        run_output = run(repository_path, configured)
+        violations = parse(run_output.report, repository_path)
     except PMDExecutableMissing as exc:
         return DetectorResult(
             DetectorStatus.DEGRADED,
@@ -166,21 +167,30 @@ def scan(
             },
         )
     findings = [_normalize(item, mapping[item.rule]) for item in violations]
+    partial = run_output.return_code != 0
     return DetectorResult(
-        DetectorStatus.OK,
+        DetectorStatus.DEGRADED if partial else DetectorStatus.OK,
         findings=findings,
         diagnostics=[
             Diagnostic(
-                "analysis_context",
-                "Semantic context available."
-                if classpath.available
-                else "No trusted classpath; core profile used.",
+                "partial_report" if partial else "analysis_context",
+                (
+                    "PMD reported processing errors; valid findings from the "
+                    "remaining files were preserved."
+                    if partial
+                    else (
+                        "Semantic context available."
+                        if classpath.available
+                        else "No trusted classpath; core profile used."
+                    )
+                ),
             )
         ],
         metadata={
             "detector": "pmd",
             "pmd_version": "7.27.0",
-            "status": "ok",
+            "status": "degraded" if partial else "ok",
+            "return_code": run_output.return_code,
             "analysis_mode": mode,
             "java_version": java.version or "unresolved",
             "java_version_source": java.source,

@@ -4,6 +4,7 @@ from codesage_api.routers import (
     activity,
     auth,
     branches,
+    findings,
     health,
     members,
     profiles,
@@ -33,6 +34,7 @@ api_router.include_router(branches.router)
 api_router.include_router(scans.router)
 api_router.include_router(activity.router)
 api_router.include_router(health.router)
+api_router.include_router(findings.router)
 api_router.include_router(profiles.router)
 api_router.include_router(members.router)
 

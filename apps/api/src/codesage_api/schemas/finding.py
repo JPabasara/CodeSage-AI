@@ -46,3 +46,13 @@ class FindingOut(ApiModel):
     # SATD findings: the comment that produced this, and the classifier's confidence.
     comment_text: str | None = None
     confidence: float | None = None
+
+
+class FindingStatusIn(ApiModel):
+    """`PUT /api/snapshots/{snapshot_id}/findings/{fingerprint}/status`.
+
+    Kept as a plain string so an unsupported value answers the contract's
+    VALIDATION_FAILED envelope rather than FastAPI's generic 422 body.
+    """
+
+    status: str

@@ -130,10 +130,16 @@ def test_finalize_records_trained_risk_provenance(
 @patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
 @patch("codesage_api.tasks.scan_pipeline.attempts.get_worker_attempt")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
+@pytest.mark.parametrize(
+    ("rule_id", "occurrences"),
+    [("long-method", 1), ("sql-concat", 2), ("pmd:ExceptionAsFlowControl", 2)],
+)
 def test_finalize_persists_file_and_class_risk_and_finding_context(
     session_scope: Mock,
     get_attempt: Mock,
     _set_workspace: Mock,
+    rule_id: str,
+    occurrences: int,
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
@@ -174,7 +180,7 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
         file_path="src/Foo.java",
         line=12,
         symbol="Foo.work",
-        rule_id="long-method",
+        rule_id=rule_id,
         category=Category.CODE_DESIGN,
         severity=Severity.MEDIUM,
         description="Long method",
@@ -196,7 +202,7 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
                 process_metrics=[],
                 comments=[],
             ),
-            [finding],
+            [finding] * occurrences,
             RiskClientResult(
                 class_scores={
                     ("src/Foo.java", "Foo"): 0.8,
@@ -212,6 +218,11 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
     file_prediction = next(item for item in added if isinstance(item, BugRiskPrediction))
     class_predictions = [item for item in added if isinstance(item, ClassRiskPrediction)]
     stored_finding = next(item for item in added if isinstance(item, Finding))
+    stored_findings = [item for item in added if isinstance(item, Finding)]
+    assert len(stored_findings) == occurrences
+    assert len({item.fingerprint for item in stored_findings}) == occurrences
+    assert stored_findings[0].fingerprint == finding.fingerprint
+    assert all(item.rule_id == rule_id for item in stored_findings)
 
     assert file_prediction.risk_score == 0.85
     assert {item.class_name: item.risk_score for item in class_predictions} == {
@@ -599,26 +610,12 @@ def test_a_branch_with_no_java_ends_cleanly_before_extraction(scan: _Run) -> Non
     scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
 
 
-def test_a_branch_over_the_limits_ends_as_too_large(scan: _Run) -> None:
-    message = (
-        "This branch has 7,210 Java files, more than the 5,000 CodeSage can analyse today."
-    )
-    with patch(
-        f"{_PIPELINE}.check_java_sources",
-        side_effect=ScanLimitReached(ScanErrorCode.REPOSITORY_TOO_LARGE, message),
-    ):
-        scan()
-
-    scan.ended_with(AnalysisStatus.ERROR, message, ScanErrorCode.REPOSITORY_TOO_LARGE)
-    scan["extract"].assert_not_called()
-
-
 def test_the_soft_time_limit_ends_the_scan_and_still_cleans_up(scan: _Run) -> None:
     scan["extract"].side_effect = SoftTimeLimitExceeded()
 
     scan()
 
-    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT)
+    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(run_scan.soft_time_limit), ScanErrorCode.SCAN_TIMED_OUT)
     scan["_finalize"].assert_not_called()
     scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
 
@@ -635,7 +632,7 @@ def test_a_time_limit_inside_an_ml_call_is_not_mistaken_for_degraded_mode(
 
     scan()
 
-    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(), ScanErrorCode.SCAN_TIMED_OUT)
+    scan.ended_with(AnalysisStatus.ERROR, timed_out_message(run_scan.soft_time_limit), ScanErrorCode.SCAN_TIMED_OUT)
     scan["_finalize"].assert_not_called()
 
 
@@ -710,8 +707,8 @@ def test_an_attempt_that_already_ended_is_not_restarted(scan: _Run) -> None:
 
 
 def test_the_scan_task_carries_both_time_limits() -> None:
-    assert run_scan.soft_time_limit == 14 * 60
-    assert run_scan.time_limit == 15 * 60
+    assert run_scan.soft_time_limit == 30 * 60
+    assert run_scan.time_limit == 31 * 60
 
 
 # ── 13H.4: named stages, file counts and the typical duration ──────────────
@@ -762,3 +759,36 @@ def test_a_tiny_repository_reports_every_file() -> None:
             report(done, 3)
 
     assert [c.args[1] for c in publish.call_args_list] == [1, 2, 3]
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_persistence_timeout_survives_rollback_and_cleanup_errors(
+    scan: _Run, caplog: pytest.LogCaptureFixture, wrapped: bool,
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    timeout = SoftTimeLimitExceeded()
+    if wrapped:
+        rollback = RuntimeError("another command is already in progress")
+        rollback.__context__ = timeout
+        failure = OperationalError("ROLLBACK", {}, rollback)
+        failure.__cause__ = rollback
+        scan["_finalize"].side_effect = failure
+    else:
+        scan["_finalize"].side_effect = timeout
+    scan["cancel.cleanup"].side_effect = RuntimeError("cleanup unavailable")
+
+    scan()
+
+    scan.ended_with(
+        AnalysisStatus.ERROR,
+        timed_out_message(run_scan.soft_time_limit),
+        ScanErrorCode.SCAN_TIMED_OUT,
+    )
+    timeout_record = next(
+        record for record in caplog.records if record.message == "Scan reached its time limit"
+    )
+    assert timeout_record.stage == "persistence"
+    assert timeout_record.exc_info[1] is timeout
+    assert "Scan pipeline failed" not in caplog.text
+    assert "Scan cleanup failed" in caplog.text

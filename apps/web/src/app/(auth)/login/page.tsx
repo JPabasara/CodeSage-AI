@@ -1,3 +1,4 @@
+import Link from "next/link"
 import type { Metadata } from "next"
 import Image from "next/image"
 import { LockKeyhole, ScanSearch } from "lucide-react"
@@ -96,6 +97,16 @@ export default async function LoginPage({
             </div>
 
             <SignInPanel href={signInHref()} error={errorMessage} />
+            <p className="text-xs leading-5 text-muted-foreground">
+              Read how account and repository information is handled in our{" "}
+              <Link
+                className="text-primary underline underline-offset-4"
+                href="/privacy"
+              >
+                Privacy notice
+              </Link>
+              .
+            </p>
 
             <div className="rounded-lg border bg-card p-4 text-xs leading-5 text-muted-foreground">
               <div className="mb-2 flex items-center gap-2 font-medium text-foreground">

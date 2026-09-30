@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 
@@ -20,6 +21,7 @@ from codesage_api.schemas import (
     ScanSummaryOut,
     TreeNodeOut,
 )
+from codesage_api.schemas.health import CalibrationCountsOut, CalibrationRecordOut
 from codesage_api.scoring import formula
 from codesage_api.scoring.cache import (
     SCORING_ENGINE_VERSION,
@@ -29,7 +31,9 @@ from codesage_api.scoring.cache import (
 from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
-from codesage_api.services import profiles
+from codesage_api.scoring.provenance import health_scoring_profile
+from codesage_api.scoring.scope import contributes_to_health
+from codesage_api.services import finding_triage, profiles
 from codesage_api.services.finding_diff import diff_snapshots
 from codesage_api.tasks import progress
 from codesage_api.tasks.app import celery_app
@@ -41,6 +45,7 @@ class _ScoredSnapshot:
     result: ScoringResult
     file_facts: dict[str, FileFacts]
     findings_by_fingerprint: dict[str, Finding]
+    profile: Profile
 
 
 @dataclass(slots=True)
@@ -99,8 +104,8 @@ def calculate_snapshot_score(
     scored = _score_snapshot(hydrated, profile)
     cached.health_score = scored.result.health_score
     cached.grade = scored.result.grade
-    cached.debt_score = sum(item.debt_score for item in scored.result.files)
-    cached.kloc = sum(item.loc for item in scored.file_facts.values()) / 1000.0
+    cached.debt_score = scored.result.total_debt
+    cached.kloc = scored.result.health_kloc
     refs = dashboard_repository.list_completed_snapshot_refs(
         session,
         workspace_id,
@@ -175,10 +180,13 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         file_facts[source_file.relative_path] = FileFacts(
             file=source_file.relative_path,
             risk_score=file_risk,
-            # The process extractor now measures cumulative versions, not a
-            # rolling 90-day commit count. Do not substitute one for the other.
-            commits_90d=0,
+            commits_90d=(
+                source_file.process_metric.commits_90d or 0
+                if source_file.process_metric is not None
+                else 0
+            ),
             loc=int(_metric_value(source_file, "loc")),
+            source_scope=source_file.source_scope or "unknown",
         )
         for location in source_file.source_locations:
             for stored in location.findings:
@@ -216,9 +224,8 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         scoring_findings,
         file_facts,
         profile,
-        kloc=sum(item.loc for item in file_facts.values()) / 1000.0,
     )
-    return _ScoredSnapshot(snapshot, result, file_facts, findings_by_fingerprint)
+    return _ScoredSnapshot(snapshot, result, file_facts, findings_by_fingerprint, profile)
 
 
 def _finding_outputs(scored: _ScoredSnapshot, previous: Snapshot | None = None) -> list[FindingOut]:
@@ -294,7 +301,14 @@ def _tree(scored: _ScoredSnapshot) -> list[TreeNodeOut]:
             rendered.append(child_out)
             descendant_files.extend(child_files)
         debt = sum(scored_files[path].debt_score for path in descendant_files)
-        kloc = sum(scored.file_facts[path].loc for path in descendant_files) / 1000.0
+        kloc = sum(
+            scored.file_facts[path].loc
+            for path in descendant_files
+            if contributes_to_health(
+                scored.file_facts[path].source_scope,
+                include_test_findings=scored.profile.include_test_findings,
+            )
+        ) / 1000.0
         health = formula.repo_health(debt, kloc)
         risk = max((scored_files[path].risk_score for path in descendant_files), default=0.0)
         return (
@@ -464,6 +478,9 @@ def build_health_report(
     previous_score = previous.health_score if previous is not None else None
     health_score = float(payload["health_score"])
     delta = health_score - previous_score if previous_score is not None else 0.0
+    # Triage is overlaid after scoring: the cached payload, and every score and
+    # count in it, stays exactly as computed.
+    statuses = finding_triage.statuses_for_snapshot(session, selected_ref.id)
 
     return HealthReportOut(
         snapshot_id=str(selected_ref.id),
@@ -499,10 +516,79 @@ def build_health_report(
         ],
         tree=[TreeNodeOut.model_validate(item) for item in payload["tree"]],
         file_scores=[FileScoreOut.model_validate(item) for item in payload["file_scores"]],
-        findings=[FindingOut.model_validate(item) for item in payload["findings"]],
+        findings=[
+            FindingOut.model_validate(
+                {**item, "status": statuses.get(str(item["fingerprint"]), item["status"])}
+            )
+            for item in payload["findings"]
+        ],
         category_breakdown=[
             CategoryBreakdownItemOut.model_validate(item) for item in payload["category_breakdown"]
         ],
+    )
+
+
+def build_calibration_export(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    snapshot_id: uuid.UUID | None = None,
+) -> CalibrationRecordOut:
+    """Export the same finalized D and L used by the production health score."""
+    report = build_health_report(
+        session, workspace_id, repository_id, branch, snapshot_id
+    )
+    profile = profiles.resolve_effective(session, workspace_id, repository_id)
+    cached = session.scalar(
+        select(SnapshotScore).where(
+            SnapshotScore.snapshot_id == uuid.UUID(report.snapshot_id),
+            SnapshotScore.profile_fingerprint == profile_fingerprint(profile),
+            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+            SnapshotScore.status == "ready",
+        )
+    )
+    if cached is None or cached.debt_score is None or cached.kloc is None:
+        raise ScorePending
+    snapshot = dashboard_repository.find_done_snapshot(
+        session, workspace_id, uuid.UUID(report.snapshot_id)
+    )
+    if snapshot is None:
+        raise NotFound
+    engine = snapshot.analysis_attempt.analysis_engine_version
+    counts = {
+        "severity": dict(Counter(item.severity.value for item in report.findings)),
+        "category": dict(Counter(item.category.value for item in report.findings)),
+        "source": dict(Counter(item.source.value for item in report.findings)),
+    }
+    provenance = health_scoring_profile(
+        profile,
+        analysis_engine={
+            "version_identifier": engine.version_identifier,
+            "tool_versions": engine.tool_versions,
+            "rule_set_version": engine.rule_set_version,
+            "extraction_logic_version": engine.extraction_logic_version,
+        },
+        model_versions={"snapshot_models": report.model_version},
+    )
+    provenance.update(
+        {
+            "snapshot_id": report.snapshot_id,
+            "scanned_at": report.scanned_at,
+            "branch": report.branch,
+        }
+    )
+    return CalibrationRecordOut(
+        repository_id=str(repository_id),
+        commit_sha=report.commit_sha,
+        debt_score=cached.debt_score,
+        kloc=cached.kloc,
+        counts=CalibrationCountsOut(
+            severity=counts["severity"],
+            category=counts["category"],
+            source=counts["source"],
+        ),
+        provenance=provenance,
     )
 
 

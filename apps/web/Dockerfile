@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Code Sage AI — frontend image.
 #
 # Four stages: base → deps → builder → runner. Only `runner` ships; the other
@@ -67,8 +65,14 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # last package does not throw away five minutes of work. Build-time only —
 # nothing from it reaches an image layer, so a cold cache gives the identical
 # result, just slower.
+#
+# The ls is a tripwire. Next's SWC compiler is an optional dependency, and pnpm
+# reports success when an optional download fails, leaving an empty package
+# directory behind. That broken layer would then be cached, and `next build`
+# would try to fetch the binary itself, with none of the retry settings above.
 RUN --mount=type=cache,id=codesage-pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile \
+ && ls node_modules/.pnpm/@next+swc-linux-*/node_modules/@next/*/*.node >/dev/null
 
 
 # ── builder ──────────────────────────────────────────────────────────────────

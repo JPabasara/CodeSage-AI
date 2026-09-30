@@ -235,7 +235,7 @@ def test_connect_refuses_a_repository_over_the_size_limit(monkeypatch) -> None:
     session = MagicMock(spec=Session)
     session.scalar.return_value = None
     monkeypatch.setattr(
-        repositories, "fetch_repository", lambda _url: _metadata(size_kb=300 * 1024 + 1)
+        repositories, "fetch_repository", lambda _url: _metadata(size_kb=500 * 1024 + 1)
     )
     audit = MagicMock()
     monkeypatch.setattr(repositories.audit, "record", audit)
@@ -245,7 +245,7 @@ def test_connect_refuses_a_repository_over_the_size_limit(monkeypatch) -> None:
 
     assert refused.value.code == "REPOSITORY_TOO_LARGE"
     assert refused.value.message == (
-        "This repository is larger than 300 MB, the most CodeSage can analyse today."
+        "This repository is larger than 500 MB, the most CodeSage can analyse today."
     )
     # No project, and nothing recorded as connected.
     session.add.assert_not_called()
@@ -254,7 +254,7 @@ def test_connect_refuses_a_repository_over_the_size_limit(monkeypatch) -> None:
 
 
 def test_connect_accepts_a_repository_exactly_at_the_size_limit(monkeypatch) -> None:
-    session, audit = _connect(monkeypatch, _metadata(size_kb=300 * 1024))
+    session, audit = _connect(monkeypatch, _metadata(size_kb=500 * 1024))
 
     session.add.assert_called_once()
     audit.assert_called_once()

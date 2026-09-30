@@ -113,7 +113,7 @@ def seed_member(engine, status="active", workspace=None):
 
 
 # Permissions a later revision adds. A database stopped at REVISION predates them.
-LATER_PERMISSIONS = {"workspace:delete"}  # 0020
+LATER_PERMISSIONS = {"workspace:delete", "finding:triage"}  # 0022, 0025
 
 
 def assert_policy(engine, *, at_head=True):

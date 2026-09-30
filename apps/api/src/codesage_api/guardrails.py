@@ -44,8 +44,10 @@ def _minutes(seconds: int) -> str:
     return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
 
 
-def timed_out_message() -> str:
-    limit = get_settings().scan_time_limit_seconds
+def timed_out_message(limit_seconds: int | None = None) -> str:
+    limit = (
+        get_settings().scan_time_limit_seconds if limit_seconds is None else limit_seconds
+    )
     return (
         f"The scan took longer than {_minutes(limit)} and was stopped. "
         "Very large repositories may not finish in time."
@@ -86,23 +88,10 @@ def count_java(repository_path: Path) -> JavaInventory:
 
 
 def check_java_sources(repository_path: Path) -> JavaInventory:
-    """Raise ScanLimitReached unless the branch has some, but not too much, Java."""
-    settings = get_settings()
+    """Return the Java inventory, rejecting only branches with no Java."""
     inventory = count_java(repository_path)
     if inventory.files == 0:
         raise ScanLimitReached(ScanErrorCode.NO_JAVA_FILES, NO_JAVA_MESSAGE)
-    if inventory.files > settings.max_java_files:
-        raise ScanLimitReached(
-            ScanErrorCode.REPOSITORY_TOO_LARGE,
-            f"This branch has {inventory.files:,} Java files, more than the "
-            f"{settings.max_java_files:,} CodeSage can analyse today.",
-        )
-    if inventory.lines > settings.max_java_lines:
-        raise ScanLimitReached(
-            ScanErrorCode.REPOSITORY_TOO_LARGE,
-            f"This branch has {inventory.lines:,} lines of Java, more than the "
-            f"{settings.max_java_lines:,} CodeSage can analyse today.",
-        )
     return inventory
 
 

@@ -9,13 +9,15 @@ churn_cap_commits: 20
 churn_window_days: 90
 
 # ── repo_health = 100 × (1 − min(1, Σ file_debt / (k × KLOC))) ──────────────
-# ⚠️ PLACEHOLDER. FR-11 requires: "k shall be calibrated against a set of reference
-# repositories before release; the calibrated value and the calibration method
-# shall be recorded in the SAD." Neither has happened yet, so no grade produced
-# with this value is meaningful.
-# TEAM TODO: run the calibration set, replace this number, and write the method
-# into the SAD.
-k: 25.0
+# Calibrated 2026-09-30 (FR-11) as P95 of repository debt density (D/KLOC)
+# under the canonical Balanced profile (weights 1.0, trust 0.5, test findings
+# excluded), Hyndman-Fan type 7 percentile, 10,000-sample repository bootstrap,
+# seed 42. Pilot corpus: 17-19 open-source Java repositories scanned with PMD
+# enabled; P95 = 98.5-101.4, bootstrap 95% CI [78.7, 124.3]. Scans without PMD
+# and without SATD were excluded as incomparable. Pilot-sized: rerun
+# calibration-pilot/run-calibration.sh on a larger corpus before final release
+# and record the method in the SAD.
+k: 100.0
 
 # ── Profile clamps, enforced server-side on write (FR-20) ───────────────────
 # The client also clamps, but that is a usability affordance. This is the rule:

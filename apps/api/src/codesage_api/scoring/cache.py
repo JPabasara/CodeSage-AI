@@ -7,16 +7,16 @@ import json
 
 from codesage_api.scoring.models import Profile
 
-# 1.0.1: fingerprints are unique within a snapshot, so older cached
-# payloads (which could repeat one) are recomputed on the next read.
-SCORING_ENGINE_VERSION = "1.0.1"
+# 1.1.0: health scope is applied consistently to debt and LOC, and stored
+# per-file 90-day churn participates in finding priority.
+# 1.2.0: k calibrated from the 25.0 placeholder to 100.0.
+SCORING_ENGINE_VERSION = "1.2.0"
 
 
 def profile_fingerprint(profile: Profile) -> str:
     payload = profile_payload(profile)
     # A display-name change does not alter the scoring inputs.
     payload.pop("name", None)
-    payload.pop("include_test_findings", None)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

@@ -8,6 +8,7 @@ import {
   Building2,
   BookOpen,
   ChevronDown,
+  CircleHelp,
   ExternalLink,
   FolderGit2,
   LayoutDashboard,
@@ -207,7 +208,10 @@ export function AppRail() {
                 >
                   <SidebarMenuButton
                     type="button"
-                    isActive={pathname.startsWith("/support")}
+                    isActive={
+                      pathname.startsWith("/support") ||
+                      pathname.startsWith("/help")
+                    }
                     tooltip="Support"
                     className="h-9 text-sm"
                     data-tour="support-nav"
@@ -240,6 +244,20 @@ export function AppRail() {
                               className="ml-auto"
                               aria-hidden="true"
                             />
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname.startsWith("/help")}
+                        >
+                          <Link
+                            href="/help"
+                            onClick={() => setOpenMobile(false)}
+                          >
+                            <CircleHelp aria-hidden="true" />
+                            <span>Help Centre</span>
                           </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>

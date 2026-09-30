@@ -1,0 +1,46 @@
+[
+  {
+    "error": "POST /api/projects returned HTTP 409: {\"detail\":\"That repository is already connected to this workspace.\",\"code\":\"ALREADY_CONNECTED\"}",
+    "repo_id": "spring-projects/spring-boot"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 409: {\"detail\":\"That repository is already connected to this workspace.\",\"code\":\"ALREADY_CONNECTED\"}",
+    "repo_id": "NationalSecurityAgency/ghidra"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 409: {\"detail\":\"That repository is already connected to this workspace.\",\"code\":\"ALREADY_CONNECTED\"}",
+    "repo_id": "spring-projects/spring-framework"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 409: {\"detail\":\"That repository is already connected to this workspace.\",\"code\":\"ALREADY_CONNECTED\"}",
+    "repo_id": "YunaiV/ruoyi-vue-pro"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 400: {\"detail\":\"This repository is larger than 500 MB, the most CodeSage can analyse today.\",\"code\":\"REPOSITORY_TOO_LARGE\"}",
+    "repo_id": "SeleniumHQ/selenium"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 409: {\"detail\":\"That repository is already connected to this workspace.\",\"code\":\"ALREADY_CONNECTED\"}",
+    "repo_id": "alibaba/nacos"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 409: {\"detail\":\"That repository is already connected to this workspace.\",\"code\":\"ALREADY_CONNECTED\"}",
+    "repo_id": "conductor-oss/conductor"
+  },
+  {
+    "error": "scan ended as error: The repository could not be analysed.",
+    "repo_id": "floci-io/floci"
+  },
+  {
+    "error": "scan ended as error: Downloading the repository took longer than 5 minutes and was stopped.",
+    "repo_id": "apache/incubator-seata"
+  },
+  {
+    "error": "scan ended as error: Downloading the repository took longer than 5 minutes and was stopped.",
+    "repo_id": "iBotPeaches/Apktool"
+  },
+  {
+    "error": "POST /api/projects returned HTTP 400: {\"detail\":\"This repository is larger than 500 MB, the most CodeSage can analyse today.\",\"code\":\"REPOSITORY_TOO_LARGE\"}",
+    "repo_id": "libgdx/libgdx"
+  }
+]

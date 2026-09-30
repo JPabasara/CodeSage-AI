@@ -1,11 +1,24 @@
 "use client"
 
+import { LearnMore } from "@/components/support/learn-more"
+
 import { useState } from "react"
-import { ChevronDown, ChevronRight, File, Folder, Settings2 } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronRight,
+  File,
+  Folder,
+  Settings2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader,
-  DialogTitle, DialogTrigger,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog"
 import { getSourceScopeConfig, updateSourceScopeConfig } from "@/lib/api/client"
 import type { TreeNode } from "@/lib/types"
@@ -51,7 +64,9 @@ export function SourceScopeSettings({
   const [open, setOpen] = useState(false)
   const [testPatterns, setTestPatterns] = useState<string[]>([])
   const [productionOverrides, setProductionOverrides] = useState<string[]>([])
-  const [expanded, setExpanded] = useState<Set<string>>(() => folderPaths(nodes))
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    folderPaths(nodes),
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
@@ -73,7 +88,9 @@ export function SourceScopeSettings({
   }
 
   function selected(path: string) {
-    return matchesAny(path, testPatterns) && !matchesAny(path, productionOverrides)
+    return (
+      matchesAny(path, testPatterns) && !matchesAny(path, productionOverrides)
+    )
   }
 
   function nodeState(node: TreeNode) {
@@ -90,13 +107,17 @@ export function SourceScopeSettings({
     const { checked } = nodeState(node)
     if (checked) {
       if (testPatterns.includes(target)) {
-        setTestPatterns((current) => current.filter((pattern) => pattern !== target))
+        setTestPatterns((current) =>
+          current.filter((pattern) => pattern !== target),
+        )
       } else if (!productionOverrides.includes(target)) {
         setProductionOverrides((current) => [...current, target])
       }
       return
     }
-    setProductionOverrides((current) => current.filter((pattern) => pattern !== target))
+    setProductionOverrides((current) =>
+      current.filter((pattern) => pattern !== target),
+    )
     if (!testPatterns.includes(target)) {
       setTestPatterns((current) => [...current, target])
     }
@@ -149,22 +170,36 @@ export function SourceScopeSettings({
                 className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 onClick={() => toggleExpanded(node.path)}
               >
-                {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                {isOpen ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
               </button>
-            ) : <span className="w-5" />}
+            ) : (
+              <span className="w-5" />
+            )}
             <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={state.checked}
-                ref={(element) => { if (element) element.indeterminate = state.partial }}
+                ref={(element) => {
+                  if (element) element.indeterminate = state.partial
+                }}
                 onChange={() => toggle(node)}
                 className="size-4 rounded border-border accent-primary"
               />
-              {isFolder ? <Folder className="size-4 shrink-0 text-muted-foreground" /> : <File className="size-4 shrink-0 text-muted-foreground" />}
+              {isFolder ? (
+                <Folder className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <File className="size-4 shrink-0 text-muted-foreground" />
+              )}
               <span className="truncate">{node.name}</span>
             </label>
           </div>
-          {isFolder && isOpen && node.children ? <ul>{renderNodes(node.children, depth + 1)}</ul> : null}
+          {isFolder && isOpen && node.children ? (
+            <ul>{renderNodes(node.children, depth + 1)}</ul>
+          ) : null}
         </li>
       )
     })
@@ -172,7 +207,11 @@ export function SourceScopeSettings({
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="Configure test paths">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Configure test paths"
+        >
           <Settings2 className="size-3.5" />
         </Button>
       </DialogTrigger>
@@ -183,9 +222,18 @@ export function SourceScopeSettings({
             Checked files and folders are treated as test code in future scans.
             Uncheck any incorrect match to save a production override.
           </DialogDescription>
+          <LearnMore
+            article="test-exclusions"
+            about="test exclusions and path classification"
+          />
         </DialogHeader>
         {nodes.length > 0 ? (
-          <div className={cn("max-h-[50vh] overflow-y-auto rounded-md border p-2", busy && "pointer-events-none opacity-60")}>
+          <div
+            className={cn(
+              "max-h-[50vh] overflow-y-auto rounded-md border p-2",
+              busy && "pointer-events-none opacity-60",
+            )}
+          >
             <ul className="space-y-0.5">{renderNodes(nodes)}</ul>
           </div>
         ) : (
@@ -195,9 +243,15 @@ export function SourceScopeSettings({
         )}
         <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
           <span>{selectedFileCount} files selected</span>
-          {productionOverrides.length > 0 ? <span>{productionOverrides.length} production overrides</span> : null}
+          {productionOverrides.length > 0 ? (
+            <span>{productionOverrides.length} production overrides</span>
+          ) : null}
         </div>
-        {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
         <DialogFooter>
           <Button onClick={save} disabled={busy || nodes.length === 0}>
             {busy ? "Saving…" : "Save configuration"}

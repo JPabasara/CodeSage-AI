@@ -1,5 +1,7 @@
 "use client"
 
+import { LearnMore } from "@/components/support/learn-more"
+
 import { useId, useState } from "react"
 
 import { GitHubMark } from "@/components/icons/github-mark"
@@ -83,6 +85,12 @@ export function ConnectRepo({
         </div>
       </div>
 
+      <div className="mt-3">
+        <LearnMore
+          article="stored-data"
+          about="repository data stored by CodeSage"
+        />
+      </div>
       <form
         className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-start"
         onSubmit={(e) => {

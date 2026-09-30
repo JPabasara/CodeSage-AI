@@ -10,6 +10,15 @@ function requestFor(path: string, cookie?: string): NextRequest {
 }
 
 describe("middleware", () => {
+  test("privacy is available before sign-in without exposing application routes", () => {
+    expect(
+      middleware(requestFor("/privacy")).headers.get("location"),
+    ).toBeNull()
+    expect(
+      middleware(requestFor("/privacy/private")).headers.get("location"),
+    ).toBe("http://localhost:3000/login")
+  })
+
   test("signed out, the root goes straight to sign-in", () => {
     const response = middleware(requestFor("/"))
 

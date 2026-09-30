@@ -31,7 +31,7 @@ from codesage_api.db.models import (
 from codesage_api.detection.pmd.detector import _normalize as normalize_pmd
 from codesage_api.detection.pmd.models import PMDViolation
 from codesage_api.errors import NotFound, ScorePending
-from codesage_api.scoring.enums import Category, Grade
+from codesage_api.scoring.enums import Category, Grade, Severity, Source
 from codesage_api.scoring.models import Profile
 from codesage_api.services import dashboard
 
@@ -275,6 +275,71 @@ def _ready_cache(snapshot: Snapshot, profile: Profile) -> SimpleNamespace:
     )
 
 
+def test_snapshot_scoring_reuses_persisted_commits_90d() -> None:
+    snapshot = _snapshot(
+        scanned_at=datetime(2026, 9, 1, tzinfo=UTC),
+        commit_sha="c" * 40,
+        with_finding=True,
+    )
+    snapshot.source_files[0].process_metric.commits_90d = 10
+
+    scored = dashboard._score_snapshot(snapshot, _profile())
+
+    assert scored.file_facts["src/A.java"].commits_90d == 10
+    assert scored.result.findings[0].priority == pytest.approx(12.0)
+
+
+def test_calibration_export_reuses_ready_cache_debt_and_kloc(monkeypatch) -> None:
+    repository_id = uuid.uuid4()
+    snapshot_id = uuid.uuid4()
+    profile = _profile()
+    report = SimpleNamespace(
+        snapshot_id=str(snapshot_id),
+        commit_sha="d" * 40,
+        scanned_at="2026-09-01T00:00:00+00:00",
+        branch="main",
+        model_version="satd-v1, risk-v1",
+        findings=[
+            SimpleNamespace(
+                severity=Severity.HIGH,
+                category=Category.CODE_DESIGN,
+                source=Source.RULE,
+            )
+        ],
+    )
+    cached = SimpleNamespace(debt_score=17.5, kloc=3.25)
+    engine = SimpleNamespace(
+        version_identifier="engine-v1",
+        tool_versions={"pmd": "7.0"},
+        rule_set_version="rules-v1",
+        extraction_logic_version="extract-v1",
+    )
+    snapshot = SimpleNamespace(
+        analysis_attempt=SimpleNamespace(analysis_engine_version=engine)
+    )
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = cached
+    monkeypatch.setattr(dashboard, "build_health_report", MagicMock(return_value=report))
+    monkeypatch.setattr(
+        dashboard.profiles, "resolve_effective", MagicMock(return_value=profile)
+    )
+    monkeypatch.setattr(
+        dashboard.dashboard_repository,
+        "find_done_snapshot",
+        MagicMock(return_value=snapshot),
+    )
+
+    exported = dashboard.build_calibration_export(
+        session, uuid.uuid4(), repository_id, "main", snapshot_id
+    )
+
+    assert exported.debt_score == 17.5
+    assert exported.kloc == 3.25
+    assert exported.counts.severity == {"high": 1}
+    assert exported.provenance["profile_id"] == "health-scoring-profile-v1"
+    assert exported.provenance["analysis_engine"]["tool_versions"] == {"pmd": "7.0"}
+
+
 @patch(
     "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
 )
@@ -306,15 +371,46 @@ def test_health_report_reads_cached_result_without_running_scoring(
     )
 
     assert report.snapshot_id == str(current.id)
-    assert report.health_score == 68.0
-    assert report.grade is Grade.C
-    assert report.delta == -32.0
+    assert report.health_score == 92.0
+    assert report.grade is Grade.A
+    assert report.delta == -8.0
     assert report.red_issue_count == 1
     assert len(report.history) == 2
     assert report.findings[0].line == 7
     assert report.findings[0].pinned_by_floor is True
     assert report.tree[0].path == "src"
     assert report.tree[0].children is not None
+
+
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_health_report_overlays_triage_without_changing_scores(
+    list_snapshots: Mock,
+    _active_profile: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 25, tzinfo=UTC)
+    current = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
+    list_snapshots.return_value = [current]
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = [_ready_cache(current, _profile())]
+    workspace_id, repository_id = uuid.uuid4(), uuid.uuid4()
+    untriaged = dashboard.build_health_report(session, workspace_id, repository_id, "main")
+    fingerprint = untriaged.findings[0].fingerprint
+    statuses = MagicMock(return_value={fingerprint: "done"})
+    monkeypatch.setattr(dashboard.finding_triage, "statuses_for_snapshot", statuses)
+
+    report = dashboard.build_health_report(session, workspace_id, repository_id, "main")
+
+    statuses.assert_called_once_with(session, current.id)
+    assert untriaged.findings[0].status == "open"
+    assert report.findings[0].status == "done"
+    assert report.model_dump(exclude={"findings"}) == untriaged.model_dump(exclude={"findings"})
+    assert [item.priority for item in report.findings] == [
+        item.priority for item in untriaged.findings
+    ]
 
 
 @patch(
@@ -421,7 +517,7 @@ def test_scan_history_is_newest_first_and_uses_current_profile(
     )
 
     assert [item.snapshot_id for item in history] == [str(current.id), str(previous.id)]
-    assert history[0].delta == -32.0
+    assert history[0].delta == -8.0
     assert history[1].delta == 0.0
 
 
@@ -470,7 +566,7 @@ def test_repository_scan_history_keeps_deltas_independent_per_branch(
     )
 
     assert [item.branch for item in history] == ["release", "main", "release", "main"]
-    assert [item.delta for item in history] == [32.0, -32.0, 0.0, 0.0]
+    assert [item.delta for item in history] == [8.0, -8.0, 0.0, 0.0]
     list_snapshots.assert_called_once()
     assert list_snapshots.call_args.args[-1] is None
 

@@ -60,6 +60,17 @@ class Conflict(CodeSageError):
     message = "The requested change conflicts with the current workspace state."
 
 
+class ValidationFailed(CodeSageError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "VALIDATION_FAILED"
+    message = "The request is not valid."
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message)
+        if message is not None:
+            self.message = message
+
+
 class RepositoryNotPublic(CodeSageError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "REPOSITORY_NOT_PUBLIC"

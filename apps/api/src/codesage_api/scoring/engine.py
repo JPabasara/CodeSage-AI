@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from codesage_api.scoring import formula
 from codesage_api.scoring.enums import Category
 from codesage_api.scoring.floor import apply_visibility_floor
@@ -9,16 +10,20 @@ from codesage_api.scoring.models import (
     ScoredFile,
     ScoredFinding,
     ScoringFinding,
-    ScoringResult
+    ScoringResult,
 )
+from codesage_api.scoring.scope import contributes_to_health
 
 
 def score(
     findings: list[ScoringFinding],
     file_facts: dict[str, FileFacts],
     profile: Profile,
-    kloc: float,
+    kloc: float | None = None,
 ) -> ScoringResult:
+    # Compatibility for callers of the old API. Health KLOC is intentionally
+    # derived from the same scoped file facts as debt so the two cannot drift.
+    del kloc
     debt_by_file: dict[str, float] = {
         file_path: 0.0 for file_path in file_facts
     }
@@ -50,9 +55,13 @@ def score(
         )
 
 
-        debt_by_file[finding.file] += priority
-        debt_by_category[finding.category] += priority
         count_by_category[finding.category] += 1
+        if contributes_to_health(
+            facts.source_scope,
+            include_test_findings=profile.include_test_findings,
+        ):
+            debt_by_file[finding.file] += priority
+            debt_by_category[finding.category] += priority
 
 
         scored_findings.sort(
@@ -69,9 +78,14 @@ def score(
         debt_score = debt_by_file[file_path]
         file_kloc = facts.loc / 1000.0
 
-        file_health = formula.repo_health(
-            total_debt=debt_score,
-            kloc=file_kloc,
+        included = contributes_to_health(
+            facts.source_scope,
+            include_test_findings=profile.include_test_findings,
+        )
+        file_health = (
+            formula.repo_health(total_debt=debt_score, kloc=file_kloc)
+            if included
+            else 100.0
         )
 
         scored_files.append(
@@ -93,9 +107,17 @@ def score(
       ]
 
     total_debt = sum(debt_by_file.values())
+    health_kloc = sum(
+        facts.loc
+        for facts in file_facts.values()
+        if contributes_to_health(
+            facts.source_scope,
+            include_test_findings=profile.include_test_findings,
+        )
+    ) / 1000.0
     health_score = formula.repo_health(
           total_debt=total_debt,
-          kloc=kloc,
+          kloc=health_kloc,
       )
     health_grade = formula.grade(health_score)
 
@@ -105,6 +127,8 @@ def score(
           breakdown=tuple(category_breakdown),
           health_score=health_score,
           grade=health_grade.value,
+          health_kloc=health_kloc,
+          total_debt=total_debt,
       )
 
 

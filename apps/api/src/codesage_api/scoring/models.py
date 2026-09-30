@@ -23,6 +23,7 @@ class FileFacts:
     risk_score: float
     commits_90d: int
     loc: int
+    source_scope: str = "production"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,3 +63,5 @@ class ScoringResult:
     breakdown: tuple[CategoryBreakdownItem, ...]
     health_score: float
     grade: str
+    health_kloc: float
+    total_debt: float

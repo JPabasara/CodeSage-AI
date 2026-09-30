@@ -21,15 +21,16 @@ cache stamped with the complete profile fingerprint and scoring-engine version.
 Snapshots and findings remain authoritative; deleting every cache row changes
 performance only.
 
-**Not in the v1.0 schema, deliberately:** no suppression or finding-action table
-(v1.0 is view-only, FR-17b); no webhook-event table (scans are user-initiated
-only, FR-6). The v2 RBAC catalogue is now stored for DBR-5; API enforcement
+`FindingTriage` holds per-snapshot collaboration status ("mark as done"). It is
+a label over immutable facts, not suppression: it never changes scores and
+never carries over to a later scan. There is deliberately no webhook-event
+table (scans are user-initiated only, FR-6). The v2 RBAC catalogue is now stored for DBR-5; API enforcement
 is a separate implementation step.
 """
 
 from codesage_api.db.models.analysis import AnalysisAttempt, Snapshot
 from codesage_api.db.models.authorization import Permission, Role, RolePermission
-from codesage_api.db.models.finding import DebtCategory, Finding
+from codesage_api.db.models.finding import DebtCategory, Finding, FindingTriage
 from codesage_api.db.models.ml import (
     BugRiskPrediction,
     ClassRiskPrediction,
@@ -74,6 +75,7 @@ __all__ = [
     "DebtCategory",
     "FileTreeNode",
     "Finding",
+    "FindingTriage",
     "MLModelVersion",
     "Membership",
     "Permission",
