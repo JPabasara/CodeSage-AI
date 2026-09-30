@@ -229,16 +229,16 @@ def test_the_refusal_is_logged_without_leaking_the_body(
     assert "secret-456" not in logged, "the body must never be logged"
 
 
-@pytest.mark.parametrize("workspace_id", [None, "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7"])
-def test_every_sign_in_lands_in_the_app(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, workspace_id: str | None
+@pytest.mark.parametrize(
+    ("tour_required", "destination"),
+    [(True, "/workspace"), (False, "/projects")],
+)
+def test_sign_in_lands_at_the_tour_or_projects(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tour_required: bool,
+    destination: str,
 ) -> None:
-    """With or without a workspace, the browser lands on /projects.
-
-    A new user is signed in and simply has no workspace yet; the web shows each
-    page's "create a workspace" state. A separate onboarding screen before the
-    product was an extra step, not a safety measure.
-    """
     class _Db:
         def add(self, _record: object) -> None: ...
         def commit(self) -> None: ...
@@ -255,12 +255,13 @@ def test_every_sign_in_lands_in_the_app(
         lambda db, claims: SimpleNamespace(
             id=uuid.uuid4(),
             user_id=uuid.uuid4(),
-            workspace_id=workspace_id,
+            workspace_id=uuid.uuid4(),
             raw_token="raw-session-token",
+            product_tour_required=tour_required,
         ),
     )
 
     response = _callback(client)
 
     assert response.status_code == 302
-    assert response.headers["location"] == f"{FRONTEND}/projects"
+    assert response.headers["location"] == f"{FRONTEND}{destination}"

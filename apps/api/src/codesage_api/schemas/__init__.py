@@ -11,6 +11,7 @@ remember which side of the wire they are on.
 
 from codesage_api.schemas.auth import (
     CreateWorkspaceIn,
+    ProductTourUpdateIn,
     SessionOut,
     SwitchWorkspaceIn,
     UpdateWorkspaceIn,
@@ -65,6 +66,7 @@ __all__ = [
     "HealthReportOut",
     "LatestHealthOut",
     "ProjectProfileOut",
+    "ProductTourUpdateIn",
     "RepoOut",
     "RescoringOut",
     "ScanStatusOut",

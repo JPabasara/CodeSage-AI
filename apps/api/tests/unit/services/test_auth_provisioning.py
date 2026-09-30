@@ -31,16 +31,32 @@ def _session() -> MagicMock:
     return session
 
 
-def test_first_sign_in_creates_the_person_and_nothing_else(monkeypatch) -> None:
-    """No workspace, no repository. Naming the workspace is the user's first act."""
+def test_first_sign_in_creates_a_ready_to_explore_workspace(monkeypatch) -> None:
     session = _session()
     monkeypatch.setattr(auth, "set_workspace_context", lambda *_args: None)
+    seeded: list[uuid.UUID] = []
+    monkeypatch.setattr(
+        auth.profiles,
+        "seed_workspace_profiles",
+        lambda _db, workspace_id, actor_user_id=None: seeded.append(workspace_id),
+    )
 
     auth._provision_new_user(session, CLAIMS)
 
     added = session.added
-    assert [type(item) for item in added] == [User]
-    assert not any(isinstance(item, (Workspace, Membership, Repository)) for item in added)
+    user = next(item for item in added if isinstance(item, User))
+    workspace = next(item for item in added if isinstance(item, Workspace))
+    membership = next(item for item in added if isinstance(item, Membership))
+    repository = next(item for item in added if isinstance(item, Repository))
+    assert workspace.name == "My Workspace"
+    assert membership.user_id == user.id
+    assert membership.workspace_id == workspace.id
+    assert membership.role_id == "org-admin"
+    assert repository.workspace_id == workspace.id
+    assert repository.name == "spring-petclinic"
+    assert repository.owner == "spring-projects"
+    assert repository.branches[0].name == "main"
+    assert seeded == [workspace.id]
 
 
 def test_creating_a_workspace_seeds_its_pool_but_no_repository(monkeypatch) -> None:

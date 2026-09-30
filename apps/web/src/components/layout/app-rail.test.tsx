@@ -1,5 +1,4 @@
 import { render, screen, within } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import type { ImgHTMLAttributes } from "react"
 import { beforeEach, expect, test, vi } from "vitest"
 
@@ -86,33 +85,25 @@ test("with no project, Dashboard and Scan History open their no-project pages", 
   )
 })
 
-test("Workspace comes first; Support expands into the guide, help centre and trial", async () => {
-  const user = userEvent.setup()
+test("Workspace comes first and Support links directly to the Help Centre", () => {
   renderRail()
   const nav = screen.getByRole("navigation", { name: "Main navigation" })
   expect(
     within(nav)
       .getAllByRole("link")
       .map((link) => link.textContent?.trim()),
-  ).toEqual(["Workspace", "Projects", "Dashboard", "Scan History", "Profiles"])
-
-  const support = within(nav).getByRole("button", { name: "Support" })
-  expect(support).toHaveAttribute("aria-expanded", "false")
-  await user.hover(support)
-
-  expect(support).toHaveAttribute("aria-expanded", "true")
-  expect(
-    within(nav).getByRole("link", { name: /product guide/i }),
-  ).toHaveAttribute("href", "/guide")
-  expect(
-    within(nav).getByRole("link", { name: /product guide/i }),
-  ).toHaveAttribute("target", "_blank")
-  expect(
-    within(nav).getByRole("link", { name: /help centre/i }),
-  ).toHaveAttribute("href", "/help")
-  expect(
-    within(nav).getByRole("link", { name: /new user trial/i }),
-  ).toHaveAttribute("href", "/support")
+  ).toEqual([
+    "Workspace",
+    "Projects",
+    "Dashboard",
+    "Scan History",
+    "Profiles",
+    "Support",
+  ])
+  expect(within(nav).getByRole("link", { name: "Support" })).toHaveAttribute(
+    "href",
+    "/help",
+  )
 })
 
 test("the workspace switcher lives in the top bar; theme and sign out sit at the rail's foot", () => {
@@ -131,7 +122,7 @@ test("with no workspace every link stays, marked as locked", async () => {
   const projects = within(nav).getByRole("link", { name: /projects/i })
   expect(projects).toHaveAccessibleName(/create a workspace first/i)
   expect(projects).toHaveAttribute("title", "Create a workspace first")
-  expect(
-    within(nav).getByRole("button", { name: "Support" }),
-  ).not.toHaveAttribute("title")
+  expect(within(nav).getByRole("link", { name: "Support" })).not.toHaveAttribute(
+    "title",
+  )
 })
