@@ -24,9 +24,6 @@ from codesage_api.config import get_settings
 from codesage_api.db.enums import (
     AnalysisStatus,
     MembershipStatus,
-    RepositoryConnectionStatus,
-    RepositoryPlatform,
-    RepositoryVisibility,
 )
 from codesage_api.db.models import (
     AnalysisAttempt,
@@ -204,12 +201,11 @@ def _token_hash(raw_token: str) -> bytes:
 
 
 def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """Create a ready-to-explore account on the first sign-in.
+    """Create a ready-to-use account on the first sign-in.
 
-    The workspace, membership, profiles, and starter repository are created in
-    the caller's transaction. A failure therefore cannot leave a half-provisioned
-    account behind. Workspaces created later through the normal endpoint remain
-    empty.
+    The workspace, membership, and profiles are created in the caller's
+    transaction. A failure therefore cannot leave a half-provisioned account
+    behind. The workspace starts empty so the user can connect their own project.
     """
     user = User(
         asgardeo_sub=claims.sub,
@@ -221,28 +217,8 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     db.add(user)
     db.flush()
-    workspace_id = _create_workspace_records(db, user.id, name="My Workspace")
-    _seed_trial_repository(db, workspace_id)
+    _create_workspace_records(db, user.id, name="My Workspace")
     return user
-
-
-def _seed_trial_repository(db: DbSession, workspace_id: uuid.UUID) -> None:
-    """Add the public Spring PetClinic project without an external API call."""
-    repository = Repository(
-        workspace_id=workspace_id,
-        source_platform=RepositoryPlatform.GITHUB,
-        external_repository_id="7517918",
-        name="spring-petclinic",
-        owner="spring-projects",
-        url="https://github.com/spring-projects/spring-petclinic",
-        visibility=RepositoryVisibility.PUBLIC,
-        connection_status=RepositoryConnectionStatus.CONNECTED,
-    )
-    repository.branches.append(
-        Branch(name="main", head_commit_sha="0" * 40, is_default=True)
-    )
-    db.add(repository)
-    db.flush()
 
 
 def complete_product_tour(db: DbSession, user_id: uuid.UUID) -> None:
