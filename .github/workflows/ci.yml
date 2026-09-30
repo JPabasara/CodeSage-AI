@@ -7,7 +7,8 @@
 #
 # One job per folder, so a red tick names the folder immediately.
 #
-# Images are built on every pull request and pushed only on `main`. A fork's token
+# Images are built on every pull request and pushed only on `main` (a push, or a
+# manual run on main). A fork's token
 # is read-only and could not push anyway, and a registry full of images from
 # branches that were never merged helps nobody.
 
@@ -232,6 +233,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Publish exactly when a deploy job can run: a push to main, or a manual
+    # run on main. A manual run used to build without pushing while the deploy
+    # jobs still ran, so k3s asked GHCR for a `sha-` tag that did not exist and
+    # the migration Job sat in ImagePullBackOff until CI timed out.
+    env:
+      PUBLISH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
 
     strategy:
       fail-fast: false
@@ -253,7 +260,7 @@ jobs:
 
       # Only on main. A pull request neither needs nor is allowed to publish.
       - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push'
+        if: env.PUBLISH == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -288,11 +295,11 @@ jobs:
             type=raw,value=railway,enable={{is_default_branch}}
             type=raw,value=railway-sha-${{ github.sha }}
 
-      - name: Build${{ github.event_name == 'push' && ' and push' || '' }} ${{ matrix.name }}
+      - name: Build${{ env.PUBLISH == 'true' && ' and push' || '' }} ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Without this every run reinstalls from scratch. pnpm alone spends
@@ -316,12 +323,12 @@ jobs:
       # After this image is published, Railway web must use `web:railway`, not
       # `web:latest`. These defaults are the correct fallback values; repository
       # variables are available only if the fallback domains ever change.
-      - name: Build${{ github.event_name == 'push' && ' and push' || '' }} Railway fallback web
+      - name: Build${{ env.PUBLISH == 'true' && ' and push' || '' }} Railway fallback web
         if: matrix.name == 'web'
         uses: docker/build-push-action@v6
         with:
           context: apps/web
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.railway-web-meta.outputs.tags }}
           labels: ${{ steps.railway-web-meta.outputs.labels }}
           cache-from: type=gha,scope=web-railway
