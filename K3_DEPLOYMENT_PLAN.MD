@@ -1526,7 +1526,7 @@ What else changed and why:
 - KEDA's `pollingInterval` only matters when scaling from zero, so it is gone;
   the HPA checks about every 15 seconds. KEDA waits 10 minutes before scaling
   down.
-- Worker grace period 960 seconds, longer than the 15-minute scan limit, so a
+- Worker grace period 1920 seconds, longer than the 31-minute hard scan limit, so a
   scale-down or a deploy lets Celery finish the running scan.
 - `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=60` keeps CK's heap at 768 MB. The JVM
   sizes its heap from the container limit, so without it the smaller limit would
