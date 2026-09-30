@@ -94,7 +94,7 @@ def client(onboarding, monkeypatch):
 # ── first sign-in ───────────────────────────────────────────────────────────
 
 
-def test_first_sign_in_creates_the_starter_workspace(database):
+def test_first_sign_in_creates_an_empty_default_workspace(database):
     config, _owner, engine = database
     command.upgrade(config, "head")
     with Session(engine) as db:
@@ -110,9 +110,7 @@ def test_first_sign_in_creates_the_starter_workspace(database):
         workspace = db.get(Workspace, workspace_id)
         assert workspace.name == "My Workspace"
         assert db.scalar(select(func.count()).select_from(Membership)) == 1
-        repository = db.scalar(select(Repository))
-        assert repository.name == "spring-petclinic"
-        assert repository.workspace_id == workspace_id
+        assert db.scalar(select(func.count()).select_from(Repository)) == 0
         assert db.scalar(select(func.count()).select_from(ScoringProfile)) == 3
 
 
