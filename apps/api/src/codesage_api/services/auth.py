@@ -21,7 +21,13 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.enums import AnalysisStatus, MembershipStatus
+from codesage_api.db.enums import (
+    AnalysisStatus,
+    MembershipStatus,
+    RepositoryConnectionStatus,
+    RepositoryPlatform,
+    RepositoryVisibility,
+)
 from codesage_api.db.models import (
     AnalysisAttempt,
     Branch,
@@ -186,6 +192,9 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
     )
     db.add(session)
     db.flush()
+    # Request-local hint for the callback redirect. Durable tour state remains
+    # on the user and is also returned by GET /auth/session.
+    session.product_tour_required = user.product_tour_completed_at is None  # type: ignore[attr-defined]
     session.raw_token = raw_token  # type: ignore[attr-defined]
     return session
 
@@ -195,12 +204,12 @@ def _token_hash(raw_token: str) -> bytes:
 
 
 def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """First sign-in: create the person, and nothing else.
+    """Create a ready-to-explore account on the first sign-in.
 
-    No workspace and no repository. Naming a workspace is the first thing the
-    product asks the user to do, and a "My Workspace" invented here would be a
-    name nobody chose, sitting in the switcher next to the real one they create a
-    moment later.
+    The workspace, membership, profiles, and starter repository are created in
+    the caller's transaction. A failure therefore cannot leave a half-provisioned
+    account behind. Workspaces created later through the normal endpoint remain
+    empty.
     """
     user = User(
         asgardeo_sub=claims.sub,
@@ -212,7 +221,35 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     db.add(user)
     db.flush()
+    workspace_id = _create_workspace_records(db, user.id, name="My Workspace")
+    _seed_trial_repository(db, workspace_id)
     return user
+
+
+def _seed_trial_repository(db: DbSession, workspace_id: uuid.UUID) -> None:
+    """Add the public Spring PetClinic project without an external API call."""
+    repository = Repository(
+        workspace_id=workspace_id,
+        source_platform=RepositoryPlatform.GITHUB,
+        external_repository_id="7517918",
+        name="spring-petclinic",
+        owner="spring-projects",
+        url="https://github.com/spring-projects/spring-petclinic",
+        visibility=RepositoryVisibility.PUBLIC,
+        connection_status=RepositoryConnectionStatus.CONNECTED,
+    )
+    repository.branches.append(
+        Branch(name="main", head_commit_sha="0" * 40, is_default=True)
+    )
+    db.add(repository)
+    db.flush()
+
+
+def complete_product_tour(db: DbSession, user_id: uuid.UUID) -> None:
+    """Prevent automatic relaunch after either Finish or Skip."""
+    user = db.get_one(User, user_id)
+    user.product_tour_completed_at = datetime.now(timezone.utc)
+    db.flush()
 
 
 def _create_workspace_records(

@@ -138,6 +138,7 @@ def test_wire_names_are_snake_case() -> None:
         "avatar_url",
         "workspace_id",
         "needs_workspace_setup",
+        "product_tour_required",
         "role",
         "permissions",
         "identity_provider",

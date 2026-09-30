@@ -1,14 +1,9 @@
-"""Onboarding: being signed in before having anywhere to work.
-
-The state this file is about did not exist before — every session carried a
-workspace because sign-in quietly made one. These tests pin the new shape: a real
-authenticated session with no workspace, what it is allowed to reach, and what
-creating the first workspace actually provisions.
-"""
+"""Workspace-less recovery and first-sign-in provisioning."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from alembic import command
@@ -48,14 +43,33 @@ def _claims(email: str = "new@example.test") -> IdentityClaims:
 
 @pytest.fixture
 def onboarding(database):
-    """A signed-in user who has no workspace at all."""
+    """A signed-in user in the valid post-deletion/revocation recovery state."""
     config, _owner, engine = database
     command.upgrade(config, "head")
     claims = _claims()
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
-        record = establish_session(db, claims)
-        session_id, user_id = record.id, record.user_id
+        user = User(
+            asgardeo_sub=claims.sub,
+            email=claims.email,
+            display_name=claims.name,
+            identity_provider=claims.identity_provider,
+            email_verified=True,
+        )
+        db.add(user)
+        db.flush()
+        now = datetime.now(UTC)
+        record = UserSession(
+            token_hash=b"x" * 32,
+            user_id=user.id,
+            workspace_id=None,
+            created_at=now,
+            last_used_at=now,
+            expires_at=now + timedelta(minutes=30),
+        )
+        db.add(record)
+        db.flush()
+        session_id, user_id = record.id, user.id
         db.commit()
     return engine, claims, user_id, session_id
 
@@ -80,16 +94,26 @@ def client(onboarding, monkeypatch):
 # ── first sign-in ───────────────────────────────────────────────────────────
 
 
-def test_first_sign_in_creates_a_person_and_nothing_else(onboarding):
-    engine, _claims_value, _user_id, session_id = onboarding
+def test_first_sign_in_creates_the_starter_workspace(database):
+    config, _owner, engine = database
+    command.upgrade(config, "head")
+    with Session(engine) as db:
+        db.execute(text("SET LOCAL ROLE codesage_app"))
+        record = establish_session(db, _claims())
+        session_id = record.id
+        db.commit()
 
     with Session(engine) as db:
-        assert db.get(UserSession, session_id).workspace_id is None
+        workspace_id = db.get(UserSession, session_id).workspace_id
+        assert workspace_id is not None
         assert db.scalar(select(func.count()).select_from(User)) == 1
-        assert db.scalar(select(func.count()).select_from(Workspace)) == 0
-        assert db.scalar(select(func.count()).select_from(Membership)) == 0
-        assert db.scalar(select(func.count()).select_from(Repository)) == 0
-        assert db.scalar(select(func.count()).select_from(ScoringProfile)) == 0
+        workspace = db.get(Workspace, workspace_id)
+        assert workspace.name == "My Workspace"
+        assert db.scalar(select(func.count()).select_from(Membership)) == 1
+        repository = db.scalar(select(Repository))
+        assert repository.name == "spring-petclinic"
+        assert repository.workspace_id == workspace_id
+        assert db.scalar(select(func.count()).select_from(ScoringProfile)) == 3
 
 
 def test_the_session_reports_onboarding_rather_than_failing(client):
@@ -102,6 +126,15 @@ def test_the_session_reports_onboarding_rather_than_failing(client):
     assert body["role"] is None
     assert body["permissions"] == []
     assert body["email"] == "new@example.test"
+
+
+def test_finishing_the_tour_is_persisted_for_the_account(client):
+    assert client.get("/api/auth/session").json()["product_tour_required"] is True
+
+    finished = client.put("/api/auth/tour", json={"status": "completed"})
+
+    assert finished.status_code == 204
+    assert client.get("/api/auth/session").json()["product_tour_required"] is False
 
 
 def test_a_workspace_less_session_reaches_only_what_onboarding_needs(client):
@@ -344,16 +377,15 @@ def test_a_workspace_less_user_can_accept_an_invitation(client, onboarding):
     """
     engine, _claims_value, user_id, _session_id = onboarding
     from codesage_api.services import member_admin
-    from codesage_api.services.auth import create_workspace, establish_session
+    from codesage_api.services.auth import establish_session
 
     # Somebody else's workspace, and an invitation to this user's verified email.
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
         host = establish_session(db, _claims("host@example.test"))
-        hosted = create_workspace(
-            db, session_id=host.id, user_id=host.user_id, name="Host Team"
-        )
-        host_user_id, host_workspace_id = host.user_id, hosted.workspace_id
+        host_workspace_id = host.workspace_id
+        db.get_one(Workspace, host_workspace_id).name = "Host Team"
+        host_user_id = host.user_id
         db.commit()
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
