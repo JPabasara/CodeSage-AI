@@ -32,6 +32,7 @@ class PMDTimeout(PMDRunError):
 class PMDRunOutput:
     report: str
     stderr: str
+    return_code: int = 0
 
 
 def run(repository_path: Path, config: PMDConfig) -> PMDRunOutput:
@@ -120,10 +121,12 @@ def run(repository_path: Path, config: PMDConfig) -> PMDRunOutput:
                 "stderr": completed.stderr.strip()[-4000:],
             },
         )
-        if completed.returncode != 0:
-            detail = completed.stderr.strip()[-4000:] or "no diagnostic output"
-            raise PMDRunError(f"PMD exited with status {completed.returncode}: {detail}")
         if not report_path.is_file():
+            detail = completed.stderr.strip()[-4000:] or "no diagnostic output"
+            if completed.returncode != 0:
+                raise PMDRunError(
+                    f"PMD exited with status {completed.returncode}: {detail}"
+                )
             raise PMDRunError("PMD completed without producing its XML report.")
         try:
             report = report_path.read_text(encoding="utf-8")
@@ -137,4 +140,8 @@ def run(repository_path: Path, config: PMDConfig) -> PMDRunOutput:
             raise PMDRunError(
                 f"Expected PMD {PMD_VERSION}, got {root.get('version', 'unknown')}."
             )
-        return PMDRunOutput(report=report, stderr=completed.stderr)
+        return PMDRunOutput(
+            report=report,
+            stderr=completed.stderr,
+            return_code=completed.returncode,
+        )
