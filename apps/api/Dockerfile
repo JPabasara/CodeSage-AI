@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 # Code Sage AI — backend image.
 #
 # One image, two entrypoints:
