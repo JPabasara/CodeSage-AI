@@ -82,3 +82,28 @@ test("a done finding can be reopened, while read-only users get no action", () =
     screen.queryByRole("button", { name: "Reopen" }),
   ).not.toBeInTheDocument()
 })
+
+test("adds actionable guidance to a selected PMD finding", () => {
+  const finding = {
+    ...mockFindings[0],
+    source: "rule" as const,
+    rule_id: "pmd:UseEqualsToCompareStrings",
+    reason: "Use equals() to compare strings instead of ==.",
+  }
+
+  render(<FindingDetailPanel finding={finding} onClose={vi.fn()} />)
+
+  expect(screen.getByText("What PMD found")).toBeInTheDocument()
+  expect(screen.getByText(finding.reason)).toBeInTheDocument()
+  expect(screen.getByText("How to fix it")).toBeInTheDocument()
+  expect(
+    screen.getByText(/reference comparison checks object identity/i),
+  ).toBeInTheDocument()
+  expect(screen.getByText(/use equals or Objects.equals/i)).toBeInTheDocument()
+  expect(
+    screen.getByRole("link", { name: "Read the PMD rule documentation" }),
+  ).toHaveAttribute(
+    "href",
+    "https://docs.pmd-code.org/pmd-doc-7.27.0/pmd_rules_java_errorprone.html#useequalstocomparestrings",
+  )
+})
