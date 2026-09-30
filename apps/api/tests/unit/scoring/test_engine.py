@@ -456,3 +456,100 @@ def test_aggregate_subtree_ignores_unknown_files() -> None:
         files=["unknown.py"],
         result=result,
     ) == pytest.approx(0.0)
+
+
+def test_test_scope_contributes_debt_and_loc_when_enabled() -> None:
+    profile = balanced_profile()
+    profile = Profile(profile.weights, profile.s, include_test_findings=True)
+    facts = {
+        "src/test/AppTest.java": FileFacts(
+            "src/test/AppTest.java", 0.0, 0, 1000, source_scope="test"
+        )
+    }
+    finding = make_finding(
+        fingerprint="test", file="src/test/AppTest.java",
+        category=Category.TEST, severity=Severity.HIGH,
+    )
+
+    result = score([finding], facts, profile)
+
+    assert result.total_debt == pytest.approx(5.0)
+    assert result.health_kloc == pytest.approx(1.0)
+
+
+def test_test_scope_is_excluded_from_debt_and_loc_but_finding_remains() -> None:
+    profile = balanced_profile()
+    facts = {
+        "src/test/AppTest.java": FileFacts(
+            "src/test/AppTest.java", 0.0, 0, 1000, source_scope="test"
+        )
+    }
+    finding = make_finding(
+        fingerprint="test", file="src/test/AppTest.java",
+        category=Category.TEST, severity=Severity.HIGH,
+    )
+
+    result = score([finding], facts, profile)
+
+    assert result.total_debt == 0.0
+    assert result.health_kloc == 0.0
+    assert [item.finding.fingerprint for item in result.findings] == ["test"]
+    assert result.findings[0].priority == pytest.approx(5.0)
+
+
+def test_mixed_repository_uses_matching_health_scope_for_debt_and_loc() -> None:
+    profile = balanced_profile()
+    facts = {
+        "src/main/App.java": FileFacts(
+            "src/main/App.java", 0.0, 0, 2000, source_scope="production"
+        ),
+        "src/test/AppTest.java": FileFacts(
+            "src/test/AppTest.java", 0.0, 0, 8000, source_scope="test"
+        ),
+    }
+    findings = [
+        make_finding(
+            fingerprint="production", file="src/main/App.java",
+            category=Category.CODE_DESIGN, severity=Severity.HIGH,
+        ),
+        make_finding(
+            fingerprint="test", file="src/test/AppTest.java",
+            category=Category.TEST, severity=Severity.HIGH,
+        ),
+    ]
+
+    result = score(findings, facts, profile)
+
+    assert result.total_debt == pytest.approx(5.0)
+    assert result.health_kloc == pytest.approx(2.0)
+    assert result.health_score == pytest.approx(90.0)
+
+
+def test_generated_scope_is_excluded_from_both_debt_and_loc() -> None:
+    profile = balanced_profile()
+    facts = {
+        "target/generated/Generated.java": FileFacts(
+            "target/generated/Generated.java", 0.0, 0, 5000, source_scope="generated"
+        ),
+        "src/main/App.java": FileFacts(
+            "src/main/App.java", 0.0, 0, 1000, source_scope="production"
+        ),
+    }
+    findings = [
+        make_finding(
+            fingerprint="generated", file="target/generated/Generated.java",
+            category=Category.CODE_DESIGN, severity=Severity.CRITICAL,
+        ),
+        make_finding(
+            fingerprint="production", file="src/main/App.java",
+            category=Category.CODE_DESIGN, severity=Severity.LOW,
+        ),
+    ]
+
+    result = score(findings, facts, profile)
+
+    assert result.total_debt == pytest.approx(1.0)
+    assert result.health_kloc == pytest.approx(1.0)
+    assert {item.finding.fingerprint for item in result.findings} == {
+        "generated", "production"
+    }

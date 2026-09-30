@@ -29,6 +29,7 @@ from codesage_api.scoring.cache import (
 from codesage_api.scoring.engine import score
 from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity, Source
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
+from codesage_api.scoring.scope import contributes_to_health
 from codesage_api.services import profiles
 from codesage_api.services.finding_diff import diff_snapshots
 from codesage_api.tasks import progress
@@ -41,6 +42,7 @@ class _ScoredSnapshot:
     result: ScoringResult
     file_facts: dict[str, FileFacts]
     findings_by_fingerprint: dict[str, Finding]
+    profile: Profile
 
 
 @dataclass(slots=True)
@@ -99,8 +101,8 @@ def calculate_snapshot_score(
     scored = _score_snapshot(hydrated, profile)
     cached.health_score = scored.result.health_score
     cached.grade = scored.result.grade
-    cached.debt_score = sum(item.debt_score for item in scored.result.files)
-    cached.kloc = sum(item.loc for item in scored.file_facts.values()) / 1000.0
+    cached.debt_score = scored.result.total_debt
+    cached.kloc = scored.result.health_kloc
     refs = dashboard_repository.list_completed_snapshot_refs(
         session,
         workspace_id,
@@ -175,10 +177,13 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         file_facts[source_file.relative_path] = FileFacts(
             file=source_file.relative_path,
             risk_score=file_risk,
-            # The process extractor now measures cumulative versions, not a
-            # rolling 90-day commit count. Do not substitute one for the other.
-            commits_90d=0,
+            commits_90d=(
+                source_file.process_metric.commits_90d or 0
+                if source_file.process_metric is not None
+                else 0
+            ),
             loc=int(_metric_value(source_file, "loc")),
+            source_scope=source_file.source_scope or "unknown",
         )
         for location in source_file.source_locations:
             for stored in location.findings:
@@ -216,9 +221,8 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
         scoring_findings,
         file_facts,
         profile,
-        kloc=sum(item.loc for item in file_facts.values()) / 1000.0,
     )
-    return _ScoredSnapshot(snapshot, result, file_facts, findings_by_fingerprint)
+    return _ScoredSnapshot(snapshot, result, file_facts, findings_by_fingerprint, profile)
 
 
 def _finding_outputs(scored: _ScoredSnapshot, previous: Snapshot | None = None) -> list[FindingOut]:
@@ -294,7 +298,14 @@ def _tree(scored: _ScoredSnapshot) -> list[TreeNodeOut]:
             rendered.append(child_out)
             descendant_files.extend(child_files)
         debt = sum(scored_files[path].debt_score for path in descendant_files)
-        kloc = sum(scored.file_facts[path].loc for path in descendant_files) / 1000.0
+        kloc = sum(
+            scored.file_facts[path].loc
+            for path in descendant_files
+            if contributes_to_health(
+                scored.file_facts[path].source_scope,
+                include_test_findings=scored.profile.include_test_findings,
+            )
+        ) / 1000.0
         health = formula.repo_health(debt, kloc)
         risk = max((scored_files[path].risk_score for path in descendant_files), default=0.0)
         return (

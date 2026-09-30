@@ -275,6 +275,20 @@ def _ready_cache(snapshot: Snapshot, profile: Profile) -> SimpleNamespace:
     )
 
 
+def test_snapshot_scoring_reuses_persisted_commits_90d() -> None:
+    snapshot = _snapshot(
+        scanned_at=datetime(2026, 9, 1, tzinfo=UTC),
+        commit_sha="c" * 40,
+        with_finding=True,
+    )
+    snapshot.source_files[0].process_metric.commits_90d = 10
+
+    scored = dashboard._score_snapshot(snapshot, _profile())
+
+    assert scored.file_facts["src/A.java"].commits_90d == 10
+    assert scored.result.findings[0].priority == pytest.approx(12.0)
+
+
 @patch(
     "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
 )
