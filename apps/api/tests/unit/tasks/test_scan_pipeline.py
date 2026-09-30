@@ -130,10 +130,16 @@ def test_finalize_records_trained_risk_provenance(
 @patch("codesage_api.tasks.scan_pipeline.set_workspace_context")
 @patch("codesage_api.tasks.scan_pipeline.attempts.get_worker_attempt")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
+@pytest.mark.parametrize(
+    ("rule_id", "occurrences"),
+    [("long-method", 1), ("sql-concat", 2), ("pmd:ExceptionAsFlowControl", 2)],
+)
 def test_finalize_persists_file_and_class_risk_and_finding_context(
     session_scope: Mock,
     get_attempt: Mock,
     _set_workspace: Mock,
+    rule_id: str,
+    occurrences: int,
 ) -> None:
     attempt = AnalysisAttempt(
         id=uuid.uuid4(),
@@ -174,7 +180,7 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
         file_path="src/Foo.java",
         line=12,
         symbol="Foo.work",
-        rule_id="long-method",
+        rule_id=rule_id,
         category=Category.CODE_DESIGN,
         severity=Severity.MEDIUM,
         description="Long method",
@@ -196,7 +202,7 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
                 process_metrics=[],
                 comments=[],
             ),
-            [finding],
+            [finding] * occurrences,
             RiskClientResult(
                 class_scores={
                     ("src/Foo.java", "Foo"): 0.8,
@@ -212,6 +218,11 @@ def test_finalize_persists_file_and_class_risk_and_finding_context(
     file_prediction = next(item for item in added if isinstance(item, BugRiskPrediction))
     class_predictions = [item for item in added if isinstance(item, ClassRiskPrediction)]
     stored_finding = next(item for item in added if isinstance(item, Finding))
+    stored_findings = [item for item in added if isinstance(item, Finding)]
+    assert len(stored_findings) == occurrences
+    assert len({item.fingerprint for item in stored_findings}) == occurrences
+    assert stored_findings[0].fingerprint == finding.fingerprint
+    assert all(item.rule_id == rule_id for item in stored_findings)
 
     assert file_prediction.risk_score == 0.85
     assert {item.class_name: item.risk_score for item in class_predictions} == {
