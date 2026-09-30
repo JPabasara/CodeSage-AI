@@ -371,9 +371,9 @@ def test_health_report_reads_cached_result_without_running_scoring(
     )
 
     assert report.snapshot_id == str(current.id)
-    assert report.health_score == 68.0
-    assert report.grade is Grade.C
-    assert report.delta == -32.0
+    assert report.health_score == 92.0
+    assert report.grade is Grade.A
+    assert report.delta == -8.0
     assert report.red_issue_count == 1
     assert len(report.history) == 2
     assert report.findings[0].line == 7
@@ -486,7 +486,7 @@ def test_scan_history_is_newest_first_and_uses_current_profile(
     )
 
     assert [item.snapshot_id for item in history] == [str(current.id), str(previous.id)]
-    assert history[0].delta == -32.0
+    assert history[0].delta == -8.0
     assert history[1].delta == 0.0
 
 
@@ -535,7 +535,7 @@ def test_repository_scan_history_keeps_deltas_independent_per_branch(
     )
 
     assert [item.branch for item in history] == ["release", "main", "release", "main"]
-    assert [item.delta for item in history] == [32.0, -32.0, 0.0, 0.0]
+    assert [item.delta for item in history] == [8.0, -8.0, 0.0, 0.0]
     list_snapshots.assert_called_once()
     assert list_snapshots.call_args.args[-1] is None
 

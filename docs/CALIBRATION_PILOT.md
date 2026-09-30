@@ -18,8 +18,9 @@ Every run verifies the same canonical profile before scanning:
 The runner uses the normal CodeSage connect, scan, score, and calibration-export
 HTTP paths. It does not reimplement a scanner. It resolves the default branch's
 commit SHA at run time, writes one JSON record per successful repository,
-continues after failures, and can be interrupted and resumed. Production
-`k = 25.0` is never modified.
+continues after failures, and can be interrupted and resumed. The runner
+never modifies the production `k` in `scoring/config/calibration.yaml`
+(currently `100.0`, calibrated from the 2026-09-30 pilot).
 
 ## Run a 25-repository pilot
 

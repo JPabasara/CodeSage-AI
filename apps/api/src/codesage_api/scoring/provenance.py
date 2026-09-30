@@ -62,7 +62,7 @@ def health_scoring_profile(
             "version": "linear-debt-density-v1",
             "formula": "100 * (1 - min(1, (D / KLOC) / k))",
             "current_k": config.k,
-            "k_status": "placeholder_not_calibrated",
+            "k_status": "calibrated_pilot",
         },
         "analysis_engine": analysis_engine or {},
         "model_versions": model_versions or {},

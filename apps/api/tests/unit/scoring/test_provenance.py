@@ -21,7 +21,7 @@ def test_health_scoring_profile_freezes_actual_configuration() -> None:
     assert frozen["severity_base_points"]["critical"] == 8
     assert frozen["active_profile"]["include_test_findings"] is False
     assert frozen["health_scope"]["generated"] == "excluded from both debt and LOC"
-    assert frozen["health_formula"]["current_k"] == 25.0
-    assert frozen["health_formula"]["k_status"] == "placeholder_not_calibrated"
+    assert frozen["health_formula"]["current_k"] == 100.0
+    assert frozen["health_formula"]["k_status"] == "calibrated_pilot"
     assert frozen["analysis_engine"]["tool_versions"]["pmd"] == "7.0"
     assert frozen["model_versions"]["satd"] == "satd-v1"

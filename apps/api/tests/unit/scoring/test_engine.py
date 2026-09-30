@@ -522,7 +522,7 @@ def test_mixed_repository_uses_matching_health_scope_for_debt_and_loc() -> None:
 
     assert result.total_debt == pytest.approx(5.0)
     assert result.health_kloc == pytest.approx(2.0)
-    assert result.health_score == pytest.approx(90.0)
+    assert result.health_score == pytest.approx(97.5)
 
 
 def test_generated_scope_is_excluded_from_both_debt_and_loc() -> None:

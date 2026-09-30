@@ -165,7 +165,7 @@ def _finding(
 
 
 def test_worked_example(balanced: Profile) -> None:
-    """Hand-computed under Balanced (s = 0.5, so both trusts are 1.0) and k = 25.
+    """Hand-computed under Balanced (s = 0.5, so both trusts are 1.0) and k = 100.
 
         A.java: 10 commits -> churn 1.5; B.java: 0 commits -> churn 1.0; 1 KLOC each.
 
@@ -173,9 +173,9 @@ def test_worked_example(balanced: Profile) -> None:
         f3 rule security  medium,  B, risk 0.5: 3 x 1.0 x (1 + 0.5) = 4.5
         f2 satd documentation low, B, risk 0.0: 1 x 1.0 x 1.0       = 1.0
 
-        debt A = 9.0 -> health 100 x (1 - 9.0 / 25)  = 64.0
-        debt B = 5.5 -> health 100 x (1 - 5.5 / 25)  = 78.0
-        total 14.5 over 2 KLOC -> 100 x (1 - 14.5 / 50) = 71.0 -> grade B
+        debt A = 9.0 -> health 100 x (1 - 9.0 / 100)  = 91.0
+        debt B = 5.5 -> health 100 x (1 - 5.5 / 100)  = 94.5
+        total 14.5 over 2 KLOC -> 100 x (1 - 14.5 / 200) = 92.75 -> grade A
     """
     from codesage_api.scoring.engine import score
 
@@ -197,10 +197,10 @@ def test_worked_example(balanced: Profile) -> None:
         {"A.java": 9.0, "B.java": 5.5}
     )
     assert {item.file: item.health_score for item in result.files} == pytest.approx(
-        {"A.java": 64.0, "B.java": 78.0}
+        {"A.java": 91.0, "B.java": 94.5}
     )
-    assert result.health_score == pytest.approx(71.0)
-    assert result.grade == "B"
+    assert result.health_score == pytest.approx(92.75)
+    assert result.grade == "A"
     breakdown = {item.category: (item.count, item.debt) for item in result.breakdown}
     assert breakdown[Category.CODE_DESIGN] == (1, pytest.approx(9.0))
     assert breakdown[Category.SECURITY] == (1, pytest.approx(4.5))
