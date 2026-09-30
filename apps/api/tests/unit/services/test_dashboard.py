@@ -386,6 +386,37 @@ def test_health_report_reads_cached_result_without_running_scoring(
     "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
 )
 @patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_health_report_overlays_triage_without_changing_scores(
+    list_snapshots: Mock,
+    _active_profile: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 25, tzinfo=UTC)
+    current = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
+    list_snapshots.return_value = [current]
+    session = MagicMock(spec=Session)
+    session.scalars.return_value.all.return_value = [_ready_cache(current, _profile())]
+    workspace_id, repository_id = uuid.uuid4(), uuid.uuid4()
+    untriaged = dashboard.build_health_report(session, workspace_id, repository_id, "main")
+    fingerprint = untriaged.findings[0].fingerprint
+    statuses = MagicMock(return_value={fingerprint: "done"})
+    monkeypatch.setattr(dashboard.finding_triage, "statuses_for_snapshot", statuses)
+
+    report = dashboard.build_health_report(session, workspace_id, repository_id, "main")
+
+    statuses.assert_called_once_with(session, current.id)
+    assert untriaged.findings[0].status == "open"
+    assert report.findings[0].status == "done"
+    assert report.model_dump(exclude={"findings"}) == untriaged.model_dump(exclude={"findings"})
+    assert [item.priority for item in report.findings] == [
+        item.priority for item in untriaged.findings
+    ]
+
+
+@patch(
+    "codesage_api.services.dashboard.profiles.resolve_effective", return_value=_profile()
+)
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
 def test_health_can_select_a_past_snapshot(
     list_snapshots: Mock,
     _active_profile: Mock,

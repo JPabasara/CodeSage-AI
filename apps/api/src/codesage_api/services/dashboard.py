@@ -33,7 +33,7 @@ from codesage_api.scoring.enums import Category, FindingStatus, Grade, Severity,
 from codesage_api.scoring.models import FileFacts, Profile, ScoringFinding, ScoringResult
 from codesage_api.scoring.provenance import health_scoring_profile
 from codesage_api.scoring.scope import contributes_to_health
-from codesage_api.services import profiles
+from codesage_api.services import finding_triage, profiles
 from codesage_api.services.finding_diff import diff_snapshots
 from codesage_api.tasks import progress
 from codesage_api.tasks.app import celery_app
@@ -478,6 +478,9 @@ def build_health_report(
     previous_score = previous.health_score if previous is not None else None
     health_score = float(payload["health_score"])
     delta = health_score - previous_score if previous_score is not None else 0.0
+    # Triage is overlaid after scoring: the cached payload, and every score and
+    # count in it, stays exactly as computed.
+    statuses = finding_triage.statuses_for_snapshot(session, selected_ref.id)
 
     return HealthReportOut(
         snapshot_id=str(selected_ref.id),
@@ -513,7 +516,12 @@ def build_health_report(
         ],
         tree=[TreeNodeOut.model_validate(item) for item in payload["tree"]],
         file_scores=[FileScoreOut.model_validate(item) for item in payload["file_scores"]],
-        findings=[FindingOut.model_validate(item) for item in payload["findings"]],
+        findings=[
+            FindingOut.model_validate(
+                {**item, "status": statuses.get(str(item["fingerprint"]), item["status"])}
+            )
+            for item in payload["findings"]
+        ],
         category_breakdown=[
             CategoryBreakdownItemOut.model_validate(item) for item in payload["category_breakdown"]
         ],
