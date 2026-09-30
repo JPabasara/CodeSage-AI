@@ -86,7 +86,7 @@ test("with no project, Dashboard and Scan History open their no-project pages", 
   )
 })
 
-test("Workspace comes first; Support expands into the guide and trial", async () => {
+test("Workspace comes first; Support expands into the guide, help centre and trial", async () => {
   const user = userEvent.setup()
   renderRail()
   const nav = screen.getByRole("navigation", { name: "Main navigation" })
@@ -107,6 +107,9 @@ test("Workspace comes first; Support expands into the guide and trial", async ()
   expect(
     within(nav).getByRole("link", { name: /product guide/i }),
   ).toHaveAttribute("target", "_blank")
+  expect(
+    within(nav).getByRole("link", { name: /help centre/i }),
+  ).toHaveAttribute("href", "/help")
   expect(
     within(nav).getByRole("link", { name: /new user trial/i }),
   ).toHaveAttribute("href", "/support")
