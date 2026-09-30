@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from codesage_api.authorization.context import AuthorizationContext
 from codesage_api.db.models import AnalysisAttempt, Repository, ScoringProfile, Snapshot
 from codesage_api.db.repositories import attempts
+from codesage_api.db.repositories import dashboard as dashboard_repository
 from codesage_api.deps import get_authorization_context, get_db
 from codesage_api.errors import NotFound
 
@@ -59,6 +60,29 @@ def require_profile_permission(permission: str) -> Callable[..., AuthorizationCo
 
     def check(
         context: Annotated[AuthorizationContext, Depends(profile_context)],
+    ) -> AuthorizationContext:
+        context.require_permission(permission)
+        return context
+
+    return check
+
+
+def snapshot_context(
+    snapshot_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    context: Annotated[AuthorizationContext, Depends(get_authorization_context)],
+) -> AuthorizationContext:
+    snapshot = dashboard_repository.find_done_snapshot(db, context.workspace_id, snapshot_id)
+    if snapshot is None:
+        raise NotFound
+    return context
+
+
+def require_snapshot_permission(permission: str) -> Callable[..., AuthorizationContext]:
+    """Visibility first, then permission, as for profiles."""
+
+    def check(
+        context: Annotated[AuthorizationContext, Depends(snapshot_context)],
     ) -> AuthorizationContext:
         context.require_permission(permission)
         return context

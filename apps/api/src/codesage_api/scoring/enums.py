@@ -49,11 +49,13 @@ class Grade(StrEnum):
 
 
 class FindingStatus(StrEnum):
+    """Workflow state of one finding in one snapshot. Never an input to scoring."""
 
     OPEN = "open"
-    ACCEPTED = "accepted"  
-    RESOLVED = "resolved" 
-    FALSE_POSITIVE = "false-positive" 
+    DONE = "done"
+    ACCEPTED = "accepted"
+    RESOLVED = "resolved"
+    FALSE_POSITIVE = "false-positive"
 
 
 class ScanPhase(StrEnum):
