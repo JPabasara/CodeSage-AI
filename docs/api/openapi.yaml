@@ -633,7 +633,7 @@ paths:
         reports, so a repository CodeSage could never scan is refused before a
         project exists:
 
-        - GitHub's `size` over the limit (300 MB by default) →
+        - GitHub's `size` over the limit (500 MB by default) →
           `REPOSITORY_TOO_LARGE`;
         - no Java in GitHub's language list → `REPOSITORY_HAS_NO_JAVA`, with the
           languages GitHub did find in `languages`.
@@ -662,7 +662,7 @@ paths:
                 too_large:
                   summary: Larger than the size limit
                   value:
-                    detail: This repository is larger than 300 MB, the most CodeSage can analyse today.
+                    detail: This repository is larger than 500 MB, the most CodeSage can analyse today.
                     code: REPOSITORY_TOO_LARGE
                 no_java:
                   summary: No Java in the repository

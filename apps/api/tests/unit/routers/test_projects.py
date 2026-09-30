@@ -115,7 +115,7 @@ def test_an_oversized_repository_is_a_400_naming_the_limit(monkeypatch) -> None:
     from codesage_api.errors import RepositoryTooLarge
 
     def connect(*_args) -> RepoOut:
-        raise RepositoryTooLarge(300)
+        raise RepositoryTooLarge(500)
 
     with _app_with_connect(monkeypatch, connect) as client:
         response = client.post("/api/projects", json={"url": "https://github.com/a/b"})
@@ -123,6 +123,6 @@ def test_an_oversized_repository_is_a_400_naming_the_limit(monkeypatch) -> None:
     assert response.status_code == 400
     # Exactly the contract's envelope: no `languages` on other codes.
     assert response.json() == {
-        "detail": "This repository is larger than 300 MB, the most CodeSage can analyse today.",
+        "detail": "This repository is larger than 500 MB, the most CodeSage can analyse today.",
         "code": "REPOSITORY_TOO_LARGE",
     }

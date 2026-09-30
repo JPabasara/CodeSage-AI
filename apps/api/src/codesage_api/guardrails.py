@@ -86,23 +86,10 @@ def count_java(repository_path: Path) -> JavaInventory:
 
 
 def check_java_sources(repository_path: Path) -> JavaInventory:
-    """Raise ScanLimitReached unless the branch has some, but not too much, Java."""
-    settings = get_settings()
+    """Return the Java inventory, rejecting only branches with no Java."""
     inventory = count_java(repository_path)
     if inventory.files == 0:
         raise ScanLimitReached(ScanErrorCode.NO_JAVA_FILES, NO_JAVA_MESSAGE)
-    if inventory.files > settings.max_java_files:
-        raise ScanLimitReached(
-            ScanErrorCode.REPOSITORY_TOO_LARGE,
-            f"This branch has {inventory.files:,} Java files, more than the "
-            f"{settings.max_java_files:,} CodeSage can analyse today.",
-        )
-    if inventory.lines > settings.max_java_lines:
-        raise ScanLimitReached(
-            ScanErrorCode.REPOSITORY_TOO_LARGE,
-            f"This branch has {inventory.lines:,} lines of Java, more than the "
-            f"{settings.max_java_lines:,} CodeSage can analyse today.",
-        )
     return inventory
 
 

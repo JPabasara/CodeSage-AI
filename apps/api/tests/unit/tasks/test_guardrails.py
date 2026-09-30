@@ -59,39 +59,11 @@ def test_a_branch_with_no_java_ends_cleanly_with_its_code(tmp_path: Path) -> Non
     assert ended.value.message.startswith("No Java files on this branch.")
 
 
-def test_too_many_java_files_names_the_limit(monkeypatch, tmp_path: Path) -> None:
-    _limits(monkeypatch, max_java_files=2)
-    for name in ("A", "B", "C"):
-        _java(tmp_path, f"{name}.java", 1)
+def test_java_source_size_is_not_limited(monkeypatch, tmp_path: Path) -> None:
+    inventory = guardrails.JavaInventory(files=9_272, lines=900_000)
+    monkeypatch.setattr(guardrails, "count_java", lambda _path: inventory)
 
-    with pytest.raises(ScanLimitReached) as ended:
-        check_java_sources(tmp_path)
-
-    assert ended.value.code is ScanErrorCode.REPOSITORY_TOO_LARGE
-    assert ended.value.message == (
-        "This branch has 3 Java files, more than the 2 CodeSage can analyse today."
-    )
-
-
-def test_too_many_java_lines_names_the_limit(monkeypatch, tmp_path: Path) -> None:
-    _limits(monkeypatch, max_java_lines=1_000)
-    _java(tmp_path, "Big.java", 1_500)
-
-    with pytest.raises(ScanLimitReached) as ended:
-        check_java_sources(tmp_path)
-
-    assert ended.value.code is ScanErrorCode.REPOSITORY_TOO_LARGE
-    assert ended.value.message == (
-        "This branch has 1,500 lines of Java, more than the 1,000 CodeSage can analyse today."
-    )
-
-
-def test_exactly_at_the_limits_is_allowed(monkeypatch, tmp_path: Path) -> None:
-    _limits(monkeypatch, max_java_files=2, max_java_lines=10)
-    _java(tmp_path, "A.java", 5)
-    _java(tmp_path, "B.java", 5)
-
-    assert check_java_sources(tmp_path) == guardrails.JavaInventory(files=2, lines=10)
+    assert check_java_sources(tmp_path) == inventory
 
 
 def test_satd_comments_are_capped_in_file_order(monkeypatch) -> None:
@@ -116,7 +88,7 @@ def test_the_soft_limit_must_come_before_the_hard_limit() -> None:
 
 def test_every_limit_has_a_code_default() -> None:
     settings = Settings()
-    assert settings.max_repository_size_mb == 300
+    assert settings.max_repository_size_mb == 500
     assert settings.scan_time_limit_seconds == 15 * 60
     assert settings.scan_soft_time_limit_seconds == 14 * 60
     assert settings.max_running_scans_per_workspace == 1

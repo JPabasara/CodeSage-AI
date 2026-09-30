@@ -599,20 +599,6 @@ def test_a_branch_with_no_java_ends_cleanly_before_extraction(scan: _Run) -> Non
     scan["cancel.cleanup"].assert_called_once_with(str(scan.attempt_id), str(scan.clone_dir))
 
 
-def test_a_branch_over_the_limits_ends_as_too_large(scan: _Run) -> None:
-    message = (
-        "This branch has 7,210 Java files, more than the 5,000 CodeSage can analyse today."
-    )
-    with patch(
-        f"{_PIPELINE}.check_java_sources",
-        side_effect=ScanLimitReached(ScanErrorCode.REPOSITORY_TOO_LARGE, message),
-    ):
-        scan()
-
-    scan.ended_with(AnalysisStatus.ERROR, message, ScanErrorCode.REPOSITORY_TOO_LARGE)
-    scan["extract"].assert_not_called()
-
-
 def test_the_soft_time_limit_ends_the_scan_and_still_cleans_up(scan: _Run) -> None:
     scan["extract"].side_effect = SoftTimeLimitExceeded()
 
