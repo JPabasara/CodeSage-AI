@@ -831,6 +831,53 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ScorePending' }
 
+  /api/snapshots/{snapshot_id}/findings/{fingerprint}/status:
+    parameters:
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: The snapshot the finding belongs to (`HealthReport.snapshot_id`).
+      - name: fingerprint
+        in: path
+        required: true
+        schema: { type: string, maxLength: 128 }
+        description: The finding's `fingerprint`, unique within its snapshot.
+    put:
+      tags: [dashboard]
+      operationId: set_finding_status
+      summary: Mark a finding done, or reopen it
+      description: |
+        Records a collaboration status for one finding in one snapshot and
+        answers `204`. Requires `finding:triage`.
+
+        Status is a label, not suppression. It never changes a score, a
+        priority, a count or the stored finding, and it does not carry over:
+        the next scan's snapshot starts every finding `open`, so a finding
+        still detected after a fix is visible again. Repeating the current
+        status is accepted and changes nothing. Each change is audited.
+
+        The snapshot is resolved within the caller's workspace before the
+        permission is checked, so another workspace's snapshot answers `404`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FindingStatusUpdate' }
+            example: { status: done }
+      responses:
+        '204': { description: The status was recorded. }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: |
+            No such completed snapshot in this workspace, or no finding with
+            that fingerprint in it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
   /api/repos/{repo_id}/scans:
     parameters:
       - $ref: '#/components/parameters/RepoId'
@@ -1764,10 +1811,22 @@ components:
     FindingStatus:
       type: string
       description: |
-        v1.0 is view-only: every finding is `open`. The later values exist now
-        because FR-11 sums *open* finding priorities — the filter needs something to
-        filter on. The v1.1 accept / resolve / false-positive actions will set them.
-      enum: [open, accepted, resolved, false-positive]
+        Collaboration status of a finding in one snapshot. `done` is set with
+        `PUT /api/snapshots/{snapshot_id}/findings/{fingerprint}/status` and is
+        a label only: scores still count every finding. `accepted`, `resolved`
+        and `false-positive` are reserved for later actions and are not set by
+        any endpoint yet.
+      enum: [open, done, accepted, resolved, false-positive]
+
+    FindingStatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [open, done]
+          description: "`done` marks the finding done; `open` reopens it."
 
     ScanStage:
       type: string

@@ -22,6 +22,7 @@ operation and the permission it requires.
 | `scan:cancel_own` | Cancel scans started by the same user | ✓ | ✓ | ✓ | — |
 | `scan:cancel_any` | Cancel any running scan in the workspace | ✓ | ✓ | — | — |
 | `result:read` | View findings and analysis results | ✓ | ✓ | ✓ | ✓ |
+| `finding:triage` | Mark findings done or reopen them | ✓ | ✓ | ✓ | — |
 | `history:read` | View scan and analysis history | ✓ | ✓ | ✓ | ✓ |
 | `profile:read` | View scoring profiles | ✓ | ✓ | ✓ | ✓ |
 | `profile:update` | Apply/change the workspace scoring profile | ✓ | ✓ | — | — |
@@ -185,6 +186,12 @@ another workspace are indistinguishable `404`s.
 | Cancel scan | `POST /api/repos/{repo_id}/scan/{scan_id}/stop` | `scan:cancel_any`, or `scan:cancel_own` when the authenticated user initiated it (resource-first) |
 | Read scan history | `GET /api/repos/{repo_id}/scans` | `history:read` (resource-first) |
 | Read repository health and findings | `GET /api/repos/{repo_id}/health` | `result:read` (resource-first) |
+| Mark a finding done or reopen it | `PUT /api/snapshots/{snapshot_id}/findings/{fingerprint}/status` | `finding:triage` (resource-first: the snapshot must belong to the workspace) |
+
+`finding:triage` was added by revision `20260930_0025`, which grants it to
+org-admin, manager and developer. Triage is a per-snapshot collaboration label:
+it never changes scores, and each change is recorded as a
+`finding_status_changed` security audit event.
 
 ### Scoring profiles
 
