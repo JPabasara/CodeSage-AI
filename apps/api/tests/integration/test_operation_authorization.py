@@ -71,6 +71,8 @@ INVENTORY = {
     ("GET", "/api/profiles/{profile_id}"): "profile:read",
     ("PATCH", "/api/profiles/{profile_id}"): "profile:update",
     ("DELETE", "/api/profiles/{profile_id}"): "profile:update",
+    ("GET", "/api/projects/{repo_id}/source-scope"): "profile:read",
+    ("PATCH", "/api/projects/{repo_id}/source-scope"): "profile:update",
     ("GET", "/api/projects/{repo_id}/profile"): "profile:read",
     ("PUT", "/api/projects/{repo_id}/profile"): "profile:update",
     ("DELETE", "/api/projects/{repo_id}/profile"): "profile:update",
