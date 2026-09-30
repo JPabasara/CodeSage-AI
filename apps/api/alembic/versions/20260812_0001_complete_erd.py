@@ -70,6 +70,7 @@ LATER_TABLES = {
     "workspace_profile_settings",  # 0015
     "repository_profile_assignment",  # 0015
     "class_risk_prediction",  # 0017
+    "finding_triage",  # 0025
 }
 
 # Columns introduced after 0001.

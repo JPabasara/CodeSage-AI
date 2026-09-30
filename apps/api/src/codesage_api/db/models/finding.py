@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Double, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Double,
+    Enum,
+    ForeignKey,
+    ForeignKeyConstraint,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -55,4 +67,34 @@ class Finding(UUIDPrimaryKey, Base):
         UniqueConstraint("snapshot_id", "fingerprint", name="uq_finding_snapshot_fingerprint"),
         CheckConstraint("(source = 'rule' AND rule_id IS NOT NULL AND satd_prediction_id IS NULL) OR (source = 'satd' AND satd_prediction_id IS NOT NULL AND rule_id IS NULL)", name="provenance_consistency"),
         CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)", name="confidence_probability"),
+    )
+
+
+class FindingTriage(Base):
+    """Collaboration status of one finding in one snapshot.
+
+    Kept apart from `finding` because result tables are immutable: triage is a
+    workflow label layered over the stored facts, never an input to scoring.
+    The composite key follows the finding's own identity, so the label belongs
+    to exactly one snapshot and a rescan starts every finding open again.
+    """
+
+    __tablename__ = "finding_triage"
+    snapshot_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(128), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20))
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_id", "fingerprint"],
+            ["finding.snapshot_id", "finding.fingerprint"],
+            ondelete="CASCADE",
+            name="fk_finding_triage_finding",
+        ),
+        CheckConstraint("status IN ('open', 'done')", name="status_value"),
     )

@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "debt_category",
     "file_tree_node",
     "finding",
+    "finding_triage",
     "membership",
     "ml_model_version",
     "process_metric",
