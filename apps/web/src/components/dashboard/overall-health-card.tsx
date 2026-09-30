@@ -1,5 +1,7 @@
 "use client"
 
+import { LearnMore } from "@/components/support/learn-more"
+
 import type { KeyboardEvent, MouseEvent } from "react"
 import {
   useCallback,
@@ -258,6 +260,7 @@ export function OverallHealthCard({
     <Card data-tour="dashboard-health" className="h-full gap-3 border ring-0">
       <CardHeader>
         <CardTitle className="text-[15px] font-semibold">Code Health</CardTitle>
+        <LearnMore article="scoring-method" about="health scoring" />
         <CardDescription className="tabular-nums">
           {redIssueCount} red {redIssueCount === 1 ? "issue" : "issues"}
         </CardDescription>

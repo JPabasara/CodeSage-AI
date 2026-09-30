@@ -147,6 +147,13 @@ test("focusing the chart shows the first slice, and arrow keys step through them
     document.getElementById(chart.getAttribute("aria-describedby")!)!
 
   await user.tab()
+  expect(
+    screen.getByRole("link", { name: "Learn more about health scoring" }),
+  ).toHaveFocus()
+  expect(
+    screen.getByRole("link", { name: "Learn more about health scoring" }),
+  ).toHaveAttribute("href", "/help/scoring-method")
+  await user.tab()
   expect(chart).toHaveFocus()
   expect(live()).toHaveTextContent("Security · 2 findings · 13%")
 

@@ -1,5 +1,7 @@
 "use client"
 
+import { LearnMore } from "@/components/support/learn-more"
+
 import { CheckCircle2, Loader2, RotateCcw, X } from "lucide-react"
 
 import {
@@ -97,6 +99,12 @@ export function FindingDetailPanel({
             Why this matters
           </h3>
           <p>{finding.reason}</p>
+          <LearnMore
+            article={
+              finding.source === "satd" ? "satd-detection" : "debt-detection"
+            }
+            about="how this finding was detected"
+          />
         </section>
 
         {finding.metric_value !== undefined &&

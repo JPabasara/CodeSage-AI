@@ -1,5 +1,7 @@
 "use client"
 
+import { LearnMore } from "@/components/support/learn-more"
+
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 import {
@@ -182,10 +184,47 @@ export function ProfileValueEditor({
       <h3 className="text-sm font-semibold">Configurations</h3>
       <div className="flex items-center justify-between gap-4 rounded-md border bg-muted/20 p-3">
         <div className="space-y-1">
-          <label htmlFor={`${idPrefix}include-test-findings`} className="text-sm font-medium">Include test-code findings</label>
-          <p className="text-xs text-muted-foreground">Show findings from identified test paths in Refactor first by default.</p>
+          <label
+            htmlFor={`${idPrefix}include-test-findings`}
+            className="text-sm font-medium"
+          >
+            Include test-code findings
+          </label>
+          <LearnMore
+            article="profile-test-inclusion"
+            about="test findings in scoring"
+          />
+          <p className="text-xs text-muted-foreground">
+            Show findings from identified test paths in Refactor first by
+            default.
+          </p>
         </div>
-        <button id={`${idPrefix}include-test-findings`} type="button" role="switch" aria-checked={Boolean(values.include_test_findings)} disabled={disabled} onClick={() => set({ ...values, include_test_findings: !values.include_test_findings })} className={cn("relative h-6 w-11 rounded-full border transition-colors disabled:opacity-50", values.include_test_findings ? "bg-primary" : "bg-muted")}><span className={cn("absolute top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform", values.include_test_findings ? "translate-x-5" : "translate-x-0.5")} /></button>
+        <button
+          id={`${idPrefix}include-test-findings`}
+          type="button"
+          role="switch"
+          aria-checked={Boolean(values.include_test_findings)}
+          disabled={disabled}
+          onClick={() =>
+            set({
+              ...values,
+              include_test_findings: !values.include_test_findings,
+            })
+          }
+          className={cn(
+            "relative h-6 w-11 rounded-full border transition-colors disabled:opacity-50",
+            values.include_test_findings ? "bg-primary" : "bg-muted",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform",
+              values.include_test_findings
+                ? "translate-x-5"
+                : "translate-x-0.5",
+            )}
+          />
+        </button>
       </div>
     </section>
   )
