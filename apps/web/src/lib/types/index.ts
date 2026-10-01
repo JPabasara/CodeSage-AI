@@ -46,11 +46,7 @@ export type Category =
  * dashboard visibility; it never changes the stored severity, priority or score.
  */
 export type FindingStatus =
-  | "open"
-  | "done"
-  | "accepted"
-  | "resolved"
-  | "false-positive"
+  "open" | "done" | "accepted" | "resolved" | "false-positive"
 export type FindingChangeStatus = "new" | "unchanged"
 
 // A is best, E is worst.
@@ -378,6 +374,13 @@ export interface SourceScopeConfig {
 }
 
 // ── HealthReport: the full dashboard payload for one branch snapshot ─────────
+
+export interface FindingPage {
+  items: Finding[]
+  total: number
+  limit: number
+  offset: number
+}
 
 export interface HealthReport {
   snapshot_id: string

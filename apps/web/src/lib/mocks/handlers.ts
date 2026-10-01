@@ -1431,7 +1431,41 @@ export const handlers = [
           commit_sha: newest.commit_sha ?? report.commit_sha,
         }
       : report
-    return HttpResponse.json(withFindingStatuses(selectedReport))
+    const response = withFindingStatuses(selectedReport)
+    return HttpResponse.json(
+      url.searchParams.get("include_findings") === "false"
+        ? { ...response, findings: [] }
+        : response,
+    )
+  }),
+
+  http.get("*/api/repos/:repoId/health/findings", ({ params, request }) => {
+    const repoId = params.repoId as string
+    if (!knownRepo(repoId)) return NOT_FOUND()
+    const url = new URL(request.url)
+    const branch = url.searchParams.get("branch") ?? defaultBranch.name
+    if (!mockBranches.some((item) => item.name === branch)) return NOT_FOUND()
+    const requested = url.searchParams.get("snapshot_id") ?? undefined
+    const report = withFindingStatuses(
+      reportFor(
+        repoId,
+        branch,
+        branchInfoFor(branch).is_default,
+        effectiveFor(repoId),
+        requested,
+      ),
+    )
+    const limit = Math.min(
+      100,
+      Math.max(1, Number(url.searchParams.get("limit") ?? 25)),
+    )
+    const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0))
+    return HttpResponse.json({
+      items: report.findings.slice(offset, offset + limit),
+      total: report.findings.length,
+      limit,
+      offset,
+    })
   }),
 
   http.put(

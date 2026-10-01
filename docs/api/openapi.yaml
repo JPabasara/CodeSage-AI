@@ -787,6 +787,11 @@ paths:
             Load a specific historical snapshot instead of the newest one (FR-19).
             Omit for the latest. Only snapshots produced by a **successful** scan
             are addressable — a cancelled or failed attempt produces no snapshot.
+        - name: include_findings
+          in: query
+          required: false
+          schema: { type: boolean, default: true }
+          description: Set false to omit findings and fetch them through the paginated endpoint.
       responses:
         '200':
           description: The dashboard payload.
@@ -802,6 +807,51 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '503': { $ref: '#/components/responses/ScorePending' }
+
+  /api/repos/{repo_id}/health/findings:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [dashboard]
+      operationId: get_findings_page
+      summary: Return one ranked page of findings
+      parameters:
+        - name: branch
+          in: query
+          required: true
+          schema: { type: string }
+        - name: snapshot_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: source
+          in: query
+          schema: { type: string, enum: [rule, satd] }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [critical, high, medium, low] }
+        - name: category
+          in: query
+          schema: { $ref: '#/components/schemas/Category' }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, done] }
+      responses:
+        '200':
+          description: A stable slice of the snapshot's score-ranked findings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FindingPage' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/ScorePending' }
 
   /api/repos/{repo_id}/health/calibration-export:
@@ -2570,6 +2620,18 @@ components:
         category_breakdown:
           type: array
           items: { $ref: '#/components/schemas/CategoryBreakdownItem' }
+
+    FindingPage:
+      type: object
+      required: [items, total, limit, offset]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Finding' }
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        offset: { type: integer, minimum: 0 }
 
     CalibrationRecord:
       type: object

@@ -19,7 +19,7 @@ from codesage_api.schemas.auth import (
 )
 from codesage_api.schemas.base import ApiModel
 from codesage_api.schemas.branch import BranchOut
-from codesage_api.schemas.finding import FindingOut
+from codesage_api.schemas.finding import FindingOut, FindingPageOut
 from codesage_api.schemas.health import (
     CategoryBreakdownItemOut,
     FileScoreOut,
@@ -62,6 +62,7 @@ __all__ = [
     "CreateWorkspaceIn",
     "FileScoreOut",
     "FindingOut",
+    "FindingPageOut",
     "HealthPointOut",
     "HealthReportOut",
     "LatestHealthOut",

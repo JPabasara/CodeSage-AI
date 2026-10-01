@@ -68,8 +68,10 @@ def client(volume) -> Iterator[TestClient]:
             if name == "codesage.score_snapshot":
                 score_cache.score_snapshot(*args)
 
+        # Both services import the same Celery application. One dispatcher must
+        # therefore handle both call sites; patching repositories.celery_app a
+        # second time would replace this inline scorer with a no-op.
         patch.setattr(dashboard.celery_app, "send_task", inline)
-        patch.setattr(repositories.celery_app, "send_task", lambda *_a, **_k: None)
         http = TestClient(create_app())
         http.cookies.set(
             get_settings().session_cookie_name,
@@ -128,6 +130,22 @@ def test_dashboard_queries_avoid_sequential_scans(volume, client) -> None:
     }
     offenders = {name: found for name, action in actions.items() if (found := _explain_all(engine, workspace, action))}
     assert offenders == {}
+
+
+def test_findings_are_paginated_without_changing_rank_order(volume, client) -> None:
+    _, workspace = volume
+    repo = workspace.repository_ids[0]
+    full = client.get(f"/api/repos/{repo}/health", params={"branch": "main"}).json()
+    page = client.get(
+        f"/api/repos/{repo}/health/findings",
+        params={"branch": "main", "limit": 3, "offset": 0},
+    )
+    assert page.status_code == 200, page.text
+    body = page.json()
+    assert body["limit"] == 3
+    assert body["offset"] == 0
+    assert body["total"] == len(full["findings"])
+    assert body["items"] == full["findings"][:3]
 
 
 @pytest.mark.parametrize(

@@ -92,7 +92,7 @@ test("renders full reason in title attribute for hover accessibility", () => {
   expect(reasonText).toHaveAttribute("title", "critical one")
 })
 
-test("caps findings list to 10 items and toggles show all / show top 10", async () => {
+test("paginates findings in groups of 10 with stable global ranks", async () => {
   const fifteenFindings: Finding[] = Array.from({ length: 15 }, (_, i) => ({
     fingerprint: `f-${i}`,
     source: "rule",
@@ -110,22 +110,20 @@ test("caps findings list to 10 items and toggles show all / show top 10", async 
   const user = userEvent.setup()
   render(<RefactorFirstList findings={fifteenFindings} />)
 
-  expect(findingCards().length).toBe(10)
+  expect(findingCards()).toHaveLength(10)
+  expect(screen.getByText("Page 1 of 2 · 1–10 of 15")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled()
 
-  const toggleBtn = screen.getByRole("button", {
-    name: /show all 15 findings/i,
-  })
-  expect(toggleBtn).toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "Next" }))
 
-  await user.click(toggleBtn)
+  expect(findingCards()).toHaveLength(5)
+  expect(findingCards()[0]).toHaveTextContent("#11")
+  expect(screen.getByText("Page 2 of 2 · 11–15 of 15")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
 
-  expect(findingCards().length).toBe(15)
-  expect(
-    screen.getByRole("button", { name: /show top 10/i }),
-  ).toBeInTheDocument()
-
-  await user.click(screen.getByRole("button", { name: /show top 10/i }))
-  expect(findingCards().length).toBe(10)
+  await user.click(screen.getByRole("button", { name: "Previous" }))
+  expect(findingCards()).toHaveLength(10)
+  expect(findingCards()[0]).toHaveTextContent("#1")
 })
 
 test("clicking a finding card fires onSelect with that finding", async () => {
@@ -416,12 +414,21 @@ test("Clear filter resets source, severity and type together", async () => {
   expect(within(countBadge()).getByText("5")).toBeInTheDocument()
 })
 
-
 test("hides test-code findings by default and allows a temporary override", async () => {
   const user = userEvent.setup()
   const scoped = [
-    { ...findings[0], fingerprint: "production", reason: "production finding", source_scope: "production" as const },
-    { ...findings[1], fingerprint: "test", reason: "test finding", source_scope: "test" as const },
+    {
+      ...findings[0],
+      fingerprint: "production",
+      reason: "production finding",
+      source_scope: "production" as const,
+    },
+    {
+      ...findings[1],
+      fingerprint: "test",
+      reason: "test finding",
+      source_scope: "test" as const,
+    },
   ]
   render(<RefactorFirstList findings={scoped} />)
   expect(screen.getByText("production finding")).toBeInTheDocument()

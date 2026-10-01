@@ -16,6 +16,7 @@ import type {
   DeleteWorkspaceRequest,
   ErrorCode,
   FindingStatus,
+  FindingPage,
   HealthReport,
   Member,
   MemberList,
@@ -259,13 +260,23 @@ export function getProjects(): Promise<Repo[]> {
   }).then(json<Repo[]>)
 }
 
-export function getSourceScopeConfig(repoId: string): Promise<SourceScopeConfig> {
-  return fetch(`${API_BASE}/api/projects/${repoId}/source-scope`, { credentials: "include" }).then(json<SourceScopeConfig>)
+export function getSourceScopeConfig(
+  repoId: string,
+): Promise<SourceScopeConfig> {
+  return fetch(`${API_BASE}/api/projects/${repoId}/source-scope`, {
+    credentials: "include",
+  }).then(json<SourceScopeConfig>)
 }
 
-export function updateSourceScopeConfig(repoId: string, body: SourceScopeConfig): Promise<SourceScopeConfig> {
+export function updateSourceScopeConfig(
+  repoId: string,
+  body: SourceScopeConfig,
+): Promise<SourceScopeConfig> {
   return fetch(`${API_BASE}/api/projects/${repoId}/source-scope`, {
-    method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   }).then(json<SourceScopeConfig>)
 }
 
@@ -275,16 +286,35 @@ export function getBranches(repoId: string): Promise<Branch[]> {
   }).then(json<Branch[]>)
 }
 
-export function getHealthReport(
+export async function getHealthReport(
   repoId: string,
   branch: string,
   snapshotId?: string,
 ): Promise<HealthReport> {
-  const qs = new URLSearchParams({ branch })
+  const qs = new URLSearchParams({ branch, include_findings: "false" })
   if (snapshotId) qs.set("snapshot_id", snapshotId)
-  return fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
+  const report = await fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
     credentials: "include",
   }).then(json<HealthReport>)
+  const pageSize = 100
+  const findingsQuery = (offset: number) => {
+    const page = new URLSearchParams({
+      branch,
+      limit: String(pageSize),
+      offset: String(offset),
+    })
+    if (snapshotId) page.set("snapshot_id", snapshotId)
+    return fetch(`${API_BASE}/api/repos/${repoId}/health/findings?${page}`, {
+      credentials: "include",
+    }).then(json<FindingPage>)
+  }
+  const first = await findingsQuery(0)
+  const offsets = Array.from(
+    { length: Math.max(0, Math.ceil(first.total / pageSize) - 1) },
+    (_, index) => (index + 1) * pageSize,
+  )
+  const rest = await Promise.all(offsets.map(findingsQuery))
+  return { ...report, findings: [first, ...rest].flatMap((page) => page.items) }
 }
 
 /**

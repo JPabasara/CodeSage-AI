@@ -521,6 +521,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/{repo_id}/health/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        /** Return one ranked page of findings */
+        get: operations["get_findings_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/repos/{repo_id}/health/calibration-export": {
         parameters: {
             query?: never;
@@ -1737,6 +1757,12 @@ export interface components {
             findings: components["schemas"]["Finding"][];
             category_breakdown: components["schemas"]["CategoryBreakdownItem"][];
         };
+        FindingPage: {
+            items: components["schemas"]["Finding"][];
+            total: number;
+            limit: number;
+            offset: number;
+        };
         /** @description One repository-level observation accepted by the offline calibration tool. */
         CalibrationRecord: {
             /** Format: uuid */
@@ -2697,6 +2723,8 @@ export interface operations {
                  *     are addressable — a cancelled or failed attempt produces no snapshot.
                  */
                 snapshot_id?: string;
+                /** @description Set false to omit findings and fetch them through the paginated endpoint. */
+                include_findings?: boolean;
             };
             header?: never;
             path: {
@@ -2730,6 +2758,42 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            503: components["responses"]["ScorePending"];
+        };
+    };
+    get_findings_page: {
+        parameters: {
+            query: {
+                branch: string;
+                snapshot_id?: string;
+                limit?: number;
+                offset?: number;
+                source?: "rule" | "satd";
+                severity?: "critical" | "high" | "medium" | "low";
+                category?: components["schemas"]["Category"];
+                status?: "open" | "done";
+            };
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A stable slice of the snapshot's score-ranked findings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingPage"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["ScorePending"];
         };
     };
