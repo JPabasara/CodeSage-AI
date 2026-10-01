@@ -48,6 +48,15 @@ class FindingOut(ApiModel):
     confidence: float | None = None
 
 
+class FindingPageOut(ApiModel):
+    """One stable slice of the score-ranked findings for a snapshot."""
+
+    items: list[FindingOut]
+    total: int
+    limit: int
+    offset: int
+
+
 class FindingStatusIn(ApiModel):
     """`PUT /api/snapshots/{snapshot_id}/findings/{fingerprint}/status`.
 

@@ -623,6 +623,9 @@ test("a report with an empty file tree displays the named empty tree state (U-14
 
 test("a report with zero findings displays the celebratory empty state in place of the list (U-14)", async () => {
   server.use(
+    http.get("*/api/repos/:repoId/health/findings", () =>
+      HttpResponse.json({ items: [], total: 0, limit: 100, offset: 0 }),
+    ),
     http.get("*/api/repos/:repoId/health", () =>
       HttpResponse.json({
         ...mockHealthReport,
@@ -653,6 +656,14 @@ test("a report with zero findings displays the celebratory empty state in place 
 
 test("filtering to nothing inside the dashboard displays the filter empty state and clear button (U-14)", async () => {
   server.use(
+    http.get("*/api/repos/:repoId/health/findings", () =>
+      HttpResponse.json({
+        items: [mockFindings[0]],
+        total: 1,
+        limit: 100,
+        offset: 0,
+      }),
+    ),
     http.get("*/api/repos/:repoId/health", () =>
       HttpResponse.json({
         ...mockHealthReport,

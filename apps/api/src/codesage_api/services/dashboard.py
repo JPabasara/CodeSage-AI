@@ -5,8 +5,8 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session, defer
 
 from codesage_api.db.models import Finding, Snapshot, SnapshotScore, SourceFile
 from codesage_api.db.repositories import dashboard as dashboard_repository
@@ -16,6 +16,7 @@ from codesage_api.schemas import (
     CategoryBreakdownItemOut,
     FileScoreOut,
     FindingOut,
+    FindingPageOut,
     HealthPointOut,
     HealthReportOut,
     ScanSummaryOut,
@@ -301,14 +302,17 @@ def _tree(scored: _ScoredSnapshot) -> list[TreeNodeOut]:
             rendered.append(child_out)
             descendant_files.extend(child_files)
         debt = sum(scored_files[path].debt_score for path in descendant_files)
-        kloc = sum(
-            scored.file_facts[path].loc
-            for path in descendant_files
-            if contributes_to_health(
-                scored.file_facts[path].source_scope,
-                include_test_findings=scored.profile.include_test_findings,
+        kloc = (
+            sum(
+                scored.file_facts[path].loc
+                for path in descendant_files
+                if contributes_to_health(
+                    scored.file_facts[path].source_scope,
+                    include_test_findings=scored.profile.include_test_findings,
+                )
             )
-        ) / 1000.0
+            / 1000.0
+        )
         health = formula.repo_health(debt, kloc)
         risk = max((scored_files[path].risk_score for path in descendant_files), default=0.0)
         return (
@@ -434,12 +438,93 @@ def _enqueue_missing_scores(
         )
 
 
+def build_findings_page(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    snapshot_id: uuid.UUID | None,
+    *,
+    limit: int,
+    offset: int,
+    source: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    status: str | None = None,
+) -> FindingPageOut:
+    """Read one ranked page without transferring the full cached JSON document."""
+    profile = profiles.resolve_effective(session, workspace_id, repository_id)
+    refs = dashboard_repository.list_completed_snapshot_refs(
+        session, workspace_id, repository_id, branch
+    )
+    if not refs:
+        raise NotFound
+    selected: Snapshot | None = refs[-1]
+    if snapshot_id is not None:
+        selected = next((item for item in refs if item.id == snapshot_id), None)
+    if selected is None:
+        raise NotFound
+    cache_id = session.scalar(
+        select(SnapshotScore.id).where(
+            SnapshotScore.snapshot_id == selected.id,
+            SnapshotScore.profile_fingerprint == profile_fingerprint(profile),
+            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+            SnapshotScore.status == "ready",
+        )
+    )
+    if cache_id is None:
+        _enqueue_pending_score(session, workspace_id, selected, profile)
+        raise ScorePending
+
+    clauses = []
+    params: dict[str, object] = {
+        "cache": cache_id,
+        "snapshot": selected.id,
+        "limit": limit,
+        "offset": offset,
+    }
+    for key, value in (("source", source), ("severity", severity), ("category", category)):
+        if value is not None:
+            clauses.append(f"item->>\x27{key}\x27 = :{key}")
+            params[key] = value
+    if status is not None:
+        clauses.append("actual_status = :status")
+        params["status"] = status
+    where = " AND ".join(clauses) or "true"
+    base = f"""
+        FROM snapshot_score ss
+        CROSS JOIN LATERAL jsonb_array_elements(ss.result_payload->\x27findings\x27)
+            WITH ORDINALITY AS ranked(item, ordinal)
+        LEFT JOIN finding_triage ft ON ft.snapshot_id = :snapshot
+            AND ft.fingerprint = ranked.item->>\x27fingerprint\x27
+        CROSS JOIN LATERAL (SELECT coalesce(ft.status, ranked.item->>\x27status\x27) AS actual_status) state
+        WHERE ss.id = :cache AND {where}
+    """
+    total = int(session.scalar(text("SELECT count(*) " + base), params) or 0)
+    rows = session.scalars(
+        text(
+            "SELECT item || jsonb_build_object(\x27status\x27, actual_status) "
+            + base
+            + " ORDER BY ordinal LIMIT :limit OFFSET :offset"
+        ),
+        params,
+    ).all()
+    return FindingPageOut(
+        items=[FindingOut.model_validate(item) for item in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
 def build_health_report(
     session: Session,
     workspace_id: uuid.UUID,
     repository_id: uuid.UUID,
     branch: str,
     snapshot_id: uuid.UUID | None = None,
+    *,
+    include_findings: bool = True,
 ) -> HealthReportOut:
     profile = profiles.resolve_effective(session, workspace_id, repository_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
@@ -455,25 +540,30 @@ def build_health_report(
         if selected_index < 0:
             raise NotFound
     fingerprint = profile_fingerprint(profile)
-    cached_rows = session.scalars(
-        select(SnapshotScore).where(
-            SnapshotScore.snapshot_id.in_([item.id for item in refs]),
-            SnapshotScore.profile_fingerprint == fingerprint,
-            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
-        )
-    ).all()
+    cache_statement = select(SnapshotScore).where(
+        SnapshotScore.snapshot_id.in_([item.id for item in refs]),
+        SnapshotScore.profile_fingerprint == fingerprint,
+        SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+    )
+    if not include_findings:
+        cache_statement = cache_statement.options(defer(SnapshotScore.result_payload))
+    cached_rows = session.scalars(cache_statement).all()
     cached_by_snapshot = {item.snapshot_id: item for item in cached_rows}
     selected_ref = refs[selected_index]
     selected_cache = cached_by_snapshot.get(selected_ref.id)
-    if (
-        selected_cache is None
-        or selected_cache.status != "ready"
-        or selected_cache.result_payload is None
-    ):
+    if selected_cache is None or selected_cache.status != "ready":
         _enqueue_pending_score(session, workspace_id, selected_ref, profile)
         raise ScorePending
 
     payload = selected_cache.result_payload
+    if not include_findings:
+        payload = session.scalar(
+            select(SnapshotScore.result_payload.op("-")("findings")).where(
+                SnapshotScore.id == selected_cache.id
+            )
+        )
+    if payload is None:
+        raise ScorePending
     previous = cached_by_snapshot.get(refs[selected_index - 1].id) if selected_index > 0 else None
     previous_score = previous.health_score if previous is not None else None
     health_score = float(payload["health_score"])
@@ -520,7 +610,7 @@ def build_health_report(
             FindingOut.model_validate(
                 {**item, "status": statuses.get(str(item["fingerprint"]), item["status"])}
             )
-            for item in payload["findings"]
+            for item in payload.get("findings", [])
         ],
         category_breakdown=[
             CategoryBreakdownItemOut.model_validate(item) for item in payload["category_breakdown"]
@@ -536,9 +626,7 @@ def build_calibration_export(
     snapshot_id: uuid.UUID | None = None,
 ) -> CalibrationRecordOut:
     """Export the same finalized D and L used by the production health score."""
-    report = build_health_report(
-        session, workspace_id, repository_id, branch, snapshot_id
-    )
+    report = build_health_report(session, workspace_id, repository_id, branch, snapshot_id)
     profile = profiles.resolve_effective(session, workspace_id, repository_id)
     cached = session.scalar(
         select(SnapshotScore).where(

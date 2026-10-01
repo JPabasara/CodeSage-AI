@@ -196,9 +196,28 @@ export function RefactorFirstList({
     () => new Set(SEVERITIES),
   )
   const [category, setCategory] = useState<Category | "all">("all")
-  const [showAll, setShowAll] = useState(false)
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (!selectedFingerprint) return 0
+    const initiallyVisible = findings
+      .filter(
+        (finding) =>
+          finding.status !== "done" &&
+          (includeTestFindingsByDefault || finding.source_scope !== "test"),
+      )
+      .sort(
+        (a, b) =>
+          sortKey(b) - sortKey(a) ||
+          SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity],
+      )
+    const selectedIndex = initiallyVisible.findIndex(
+      (finding) => finding.fingerprint === selectedFingerprint,
+    )
+    return selectedIndex < 0 ? 0 : Math.floor(selectedIndex / PAGE_SIZE)
+  })
   const [showDone, setShowDone] = useState(false)
-  const [showTestFindings, setShowTestFindings] = useState(includeTestFindingsByDefault)
+  const [showTestFindings, setShowTestFindings] = useState(
+    includeTestFindingsByDefault,
+  )
   // The toolbar control that holds the single Tab stop (roving tabindex). It
   // starts on the debt-type filter — the one filter this list has always had,
   // so Tab still lands where it used to — and then follows the arrow keys.
@@ -233,20 +252,26 @@ export function RefactorFirstList({
   ).length
   const openCount = findings.length - doneCount
 
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, pageCount - 1)
+  const pageStart = safePage * PAGE_SIZE
   const visibleRows = useMemo(
-    () => (showAll ? rows : rows.slice(0, PAGE_SIZE)),
-    [rows, showAll],
+    () => rows.slice(pageStart, pageStart + PAGE_SIZE),
+    [rows, pageStart],
   )
 
-  const toggleSeverity = (severity: Severity) =>
+  const toggleSeverity = (severity: Severity) => {
+    setCurrentPage(0)
     setSeverities((current) => {
       const next = new Set(current)
       if (next.has(severity)) next.delete(severity)
       else next.add(severity)
       return next
     })
+  }
 
   const clearFilters = () => {
+    setCurrentPage(0)
     setSource("all")
     setSeverities(new Set(SEVERITIES))
     setCategory("all")
@@ -282,7 +307,10 @@ export function RefactorFirstList({
               key={option.value}
               type="button"
               aria-pressed={pressed}
-              onClick={() => setSource(option.value)}
+              onClick={() => {
+                setCurrentPage(0)
+                setSource(option.value)
+              }}
               className={cn(
                 segment,
                 pressed
@@ -339,7 +367,10 @@ export function RefactorFirstList({
 
       <Select
         value={category}
-        onValueChange={(value) => setCategory(value as Category | "all")}
+        onValueChange={(value) => {
+          setCurrentPage(0)
+          setCategory(value as Category | "all")
+        }}
       >
         <SelectTrigger
           className="w-36"
@@ -361,7 +392,10 @@ export function RefactorFirstList({
       <button
         type="button"
         aria-pressed={showDone}
-        onClick={() => setShowDone((current) => !current)}
+        onClick={() => {
+          setCurrentPage(0)
+          setShowDone((current) => !current)
+        }}
         className={cn(
           segment,
           "h-7 gap-1.5 border",
@@ -378,14 +412,25 @@ export function RefactorFirstList({
       <button
         type="button"
         aria-pressed={showTestFindings}
-        onClick={() => setShowTestFindings((current) => !current)}
-        className={cn(segment, "h-7 gap-1.5 border", showTestFindings ? "border-border bg-accent text-accent-foreground" : "border-dashed text-muted-foreground hover:text-foreground")}
+        onClick={() => {
+          setCurrentPage(0)
+          setShowTestFindings((current) => !current)
+        }}
+        className={cn(
+          segment,
+          "h-7 gap-1.5 border",
+          showTestFindings
+            ? "border-border bg-accent text-accent-foreground"
+            : "border-dashed text-muted-foreground hover:text-foreground",
+        )}
         {...toolbarItem(TEST_FILTER_INDEX)}
       >
         <FileCode2 className="size-3.5" aria-hidden="true" />
         Test code
       </button>
-      {repoId ? <SourceScopeSettings repoId={repoId} nodes={treeNodes} /> : null}
+      {repoId ? (
+        <SourceScopeSettings repoId={repoId} nodes={treeNodes} />
+      ) : null}
 
       <span className="text-xs text-muted-foreground tabular-nums">
         {openCount} open / {doneCount} done
@@ -500,7 +545,7 @@ export function RefactorFirstList({
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="min-w-6 font-mono text-[11px] font-medium text-muted-foreground tabular-nums">
-                        #{index + 1}
+                        #{pageStart + index + 1}
                       </span>
                       <SeverityTag severity={finding.severity} />
                       <CategoryTag category={finding.category} />
@@ -572,20 +617,44 @@ export function RefactorFirstList({
             })}
           </ul>
 
-          {rows.length > PAGE_SIZE && (
-            <div className="flex justify-center pt-1 pb-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAll((prev) => !prev)}
-                className="text-xs text-muted-foreground tabular-nums hover:text-foreground"
+          {rows.length > PAGE_SIZE ? (
+            <nav
+              aria-label="Findings pagination"
+              className="sticky bottom-0 flex items-center justify-between gap-3 border-t bg-card px-3 py-2"
+            >
+              <p
+                className="text-xs text-muted-foreground tabular-nums"
+                aria-live="polite"
               >
-                {showAll
-                  ? `Show top ${PAGE_SIZE}`
-                  : `Show all ${rows.length} findings`}
-              </Button>
-            </div>
-          )}
+                Page {safePage + 1} of {pageCount} · {pageStart + 1}–
+                {Math.min(pageStart + PAGE_SIZE, rows.length)} of {rows.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage === 0}
+                  onClick={() =>
+                    setCurrentPage((page) => Math.max(0, page - 1))
+                  }
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= pageCount - 1}
+                  onClick={() =>
+                    setCurrentPage((page) => Math.min(pageCount - 1, page + 1))
+                  }
+                >
+                  Next
+                </Button>
+              </div>
+            </nav>
+          ) : null}
         </div>
       )}
     </ListPanel>
