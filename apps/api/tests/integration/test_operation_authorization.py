@@ -322,7 +322,7 @@ def test_every_operation_checks_role_before_business_service(
                 "clear_project",
             ],
         ),
-        (dashboard, ["build_health_report"]),
+        (dashboard, ["build_findings_page", "build_health_report"]),
         (auth_service, ["delete_workspace"]),
         (
             member_admin,
@@ -381,6 +381,7 @@ def test_foreign_resources_are_404_before_work(account, resources, client, monke
     monkeypatch.setattr(analysis, "cancel", side_effect)
     monkeypatch.setattr(analysis, "get_status", side_effect)
     monkeypatch.setattr(analysis, "get_active", side_effect)
+    monkeypatch.setattr(dashboard, "build_findings_page", side_effect)
     monkeypatch.setattr(dashboard, "build_health_report", side_effect)
     monkeypatch.setattr(repositories, "disconnect", side_effect)
     for method, template in INVENTORY:
@@ -562,7 +563,7 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
         ),
         (profiles, ["list_available", "get_active_output", "apply"]),
-        (dashboard, ["build_health_report"]),
+        (dashboard, ["build_findings_page", "build_health_report"]),
         (auth_service, ["delete_workspace"]),
         (
             member_admin,
