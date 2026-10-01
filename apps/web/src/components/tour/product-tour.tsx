@@ -81,13 +81,6 @@ export const PRODUCT_TOUR_STEPS: readonly TourStep[] = [
       "Paste a public GitHub repository URL here. CodeSage currently analyses Java repositories.",
   },
   {
-    section: "projects",
-    target: "project-list",
-    title: "PetClinic is ready",
-    description:
-      "We added Spring PetClinic so you can try CodeSage now. Open its dashboard when you are ready.",
-  },
-  {
     section: "dashboard",
     target: "branch-selector",
     title: "Choose a branch",
@@ -206,13 +199,19 @@ export function ProductTourProvider({
   const [confirmClose, setConfirmClose] = useState(false)
   const autoStartedFor = useRef<string | undefined>(undefined)
 
-  const steps = useMemo(
-    () =>
+  const steps = useMemo(() => {
+    const scopedSteps =
       scope === "full"
         ? PRODUCT_TOUR_STEPS
-        : PRODUCT_TOUR_STEPS.filter((step) => step.section === scope),
-    [scope],
-  )
+        : PRODUCT_TOUR_STEPS.filter((step) => step.section === scope)
+    if (repoId) return scopedSteps
+    return scopedSteps.filter(
+      (candidate) =>
+        candidate.section !== "dashboard" &&
+        candidate.section !== "history" &&
+        candidate.profileScope !== "project",
+    )
+  }, [repoId, scope])
   const step = steps[stepIndex]
 
   const startTour = useCallback((nextScope: TourScope = "full") => {

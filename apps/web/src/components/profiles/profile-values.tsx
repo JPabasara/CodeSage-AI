@@ -218,10 +218,10 @@ export function ProfileValueEditor({
         >
           <span
             className={cn(
-              "absolute top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform",
+              "absolute left-0.5 top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform",
               values.include_test_findings
                 ? "translate-x-5"
-                : "translate-x-0.5",
+                : "translate-x-0",
             )}
           />
         </button>

@@ -28,6 +28,7 @@ class FakeUser:
     display_name: str | None
     avatar_url: str | None
     identity_provider: str | None
+    product_tour_completed_at: object | None = None
 
 
 class FakeDb:
@@ -41,6 +42,15 @@ class FakeDb:
         return self._user
 
     def execute(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+    def flush(self) -> None:
+        return None
+
+    def commit(self) -> None:
+        return None
+
+    def rollback(self) -> None:
         return None
 
     def close(self) -> None:
@@ -87,6 +97,7 @@ def test_returns_the_signed_in_user() -> None:
         "user_id": str(USER_ID),
         "workspace_id": str(WORKSPACE_ID),
         "needs_workspace_setup": False,
+        "product_tour_required": True,
         "role": "org-admin",
         "permissions": ["project:read"],
         "email": "dev@codesageai.dev",
@@ -135,6 +146,23 @@ def test_a_user_with_no_workspace_is_signed_in_and_told_to_set_one_up() -> None:
     assert body["role"] is None
     assert body["permissions"] == []
     assert body["user_id"] == str(USER_ID)
+
+
+def test_finishing_the_tour_prevents_automatic_relaunch() -> None:
+    user = FakeUser(
+        id=USER_ID,
+        email="new@codesageai.dev",
+        display_name="New",
+        avatar_url=None,
+        identity_provider="github",
+    )
+    client = _client(user)
+
+    response = client.put("/api/auth/tour", json={"status": "completed"})
+
+    assert response.status_code == 204
+    assert user.product_tour_completed_at is not None
+    assert client.get("/api/auth/session").json()["product_tour_required"] is False
 
 
 def test_session_is_mounted_on_the_protected_router() -> None:

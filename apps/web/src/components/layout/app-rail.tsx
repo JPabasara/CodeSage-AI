@@ -6,22 +6,17 @@ import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
 import {
   Building2,
-  BookOpen,
-  ChevronDown,
   CircleHelp,
-  ExternalLink,
   FolderGit2,
   LayoutDashboard,
   History,
   Lock,
-  LifeBuoy,
   LogOut,
   Moon,
   SlidersHorizontal,
   Sun,
   PanelLeftClose,
   PanelLeftOpen,
-  Play,
   type LucideIcon,
 } from "lucide-react"
 // shadcn/ui components are already Client Components.
@@ -34,9 +29,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar"
 import {
@@ -110,6 +102,14 @@ function navItems(repoId: string | undefined): NavItem[] {
       isActive: (p) => p.startsWith("/profiles"),
       tourTarget: "profiles-nav",
     },
+    {
+      href: "/help",
+      label: "Support",
+      icon: CircleHelp,
+      isActive: (p) => p.startsWith("/help"),
+      requiresWorkspace: false,
+      tourTarget: "support-nav",
+    },
   ]
 }
 
@@ -132,7 +132,6 @@ export function AppRail() {
   const sidebarCollapsed = state === "collapsed"
   const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
   const [signingOut, setSigningOut] = useState(false)
-  const [supportOpen, setSupportOpen] = useState(false)
   const themeMounted = useSyncExternalStore(
     subscribeToHydration,
     clientHydrationSnapshot,
@@ -196,88 +195,6 @@ export function AppRail() {
                     </SidebarMenuItem>
                   )
                 })}
-                <SidebarMenuItem
-                  onMouseEnter={() => setSupportOpen(true)}
-                  onMouseLeave={() => setSupportOpen(false)}
-                  onFocusCapture={() => setSupportOpen(true)}
-                  onBlurCapture={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget)) {
-                      setSupportOpen(false)
-                    }
-                  }}
-                >
-                  <SidebarMenuButton
-                    type="button"
-                    isActive={
-                      pathname.startsWith("/support") ||
-                      pathname.startsWith("/help")
-                    }
-                    tooltip="Support"
-                    className="h-9 text-sm"
-                    data-tour="support-nav"
-                    aria-expanded={supportOpen}
-                    aria-controls="support-navigation"
-                    onClick={() => setSupportOpen((open) => !open)}
-                  >
-                    <LifeBuoy />
-                    <span className="group-data-[collapsible=icon]:hidden">
-                      Support
-                    </span>
-                    <ChevronDown
-                      aria-hidden="true"
-                      className={`ml-auto transition-transform group-data-[collapsible=icon]:hidden ${supportOpen ? "rotate-180" : ""}`}
-                    />
-                  </SidebarMenuButton>
-                  {supportOpen ? (
-                    <SidebarMenuSub id="support-navigation">
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton asChild>
-                          <Link
-                            href="/guide"
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={() => setOpenMobile(false)}
-                          >
-                            <BookOpen aria-hidden="true" />
-                            <span>Product Guide</span>
-                            <ExternalLink
-                              className="ml-auto"
-                              aria-hidden="true"
-                            />
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          asChild
-                          isActive={pathname.startsWith("/help")}
-                        >
-                          <Link
-                            href="/help"
-                            onClick={() => setOpenMobile(false)}
-                          >
-                            <CircleHelp aria-hidden="true" />
-                            <span>Help Centre</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          asChild
-                          isActive={pathname.startsWith("/support")}
-                        >
-                          <Link
-                            href="/support"
-                            onClick={() => setOpenMobile(false)}
-                          >
-                            <Play aria-hidden="true" />
-                            <span>New User Trial</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    </SidebarMenuSub>
-                  ) : null}
-                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

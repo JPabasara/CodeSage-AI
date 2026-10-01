@@ -14,7 +14,6 @@ from codesage_api.db.rls import set_workspace_context
 from codesage_api.errors import NotFound
 from codesage_api.services.auth import (
     IdentityClaims,
-    create_workspace,
     establish_session,
     load_valid_session,
 )
@@ -30,24 +29,16 @@ from .test_rbac_migration import postgres_url as postgres_url  # noqa: PLC0414 -
 
 @pytest.fixture
 def account(database):
-    """A signed-in user who has completed onboarding.
-
-    Two steps now, because sign-in no longer invents a workspace: establish the
-    session, then create one the way the onboarding screen does. Everything
-    downstream of this fixture assumes a user who is already working.
-    """
+    """A signed-in user with the starter workspace created on first sign-in."""
     config, _, engine = database
     command.upgrade(config, "head")
     claims = IdentityClaims(str(uuid.uuid4()), "user@example.test", "User", None, "github")
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
         record = establish_session(db, claims)
-        assert record.workspace_id is None, "a first sign-in must not create a workspace"
-        created = create_workspace(
-            db, session_id=record.id, user_id=record.user_id, name="Acme"
-        )
-        assert created is not None
-        ids = (record.user_id, created.workspace_id, record.id)
+        assert record.workspace_id is not None
+        db.get_one(Workspace, record.workspace_id).name = "Acme"
+        ids = (record.user_id, record.workspace_id, record.id)
         db.commit()
     return engine, claims, *ids
 

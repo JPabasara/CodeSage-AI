@@ -35,7 +35,9 @@ vi.mock("@/hooks/use-session", () => ({
 }))
 
 vi.mock("@/hooks/use-projects", () => ({
-  useProjects: () => ({ data: [{ id: session.repoId }] }),
+  useProjects: () => ({
+    data: session.repoId ? [{ id: session.repoId }] : [],
+  }),
 }))
 
 vi.mock("@/lib/api/client", () => ({
@@ -76,6 +78,28 @@ beforeEach(() => {
   navigation.push.mockClear()
   finish.mockClear()
   session.required = true
+  session.repoId = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+})
+
+test("the first tour guides an empty workspace to connect its own project", async () => {
+  session.repoId = ""
+  const user = userEvent.setup()
+  renderTour()
+
+  expect(
+    await screen.findByRole("heading", { name: "Your workspace is ready" }),
+  ).toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "Skip Workspace" }))
+  expect(
+    screen.getByRole("heading", { name: "Add a Java project" }),
+  ).toBeInTheDocument()
+  expect(screen.getByText("3 of 6")).toBeInTheDocument()
+  expect(screen.queryByText(/PetClinic/i)).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole("button", { name: "Next" }))
+  expect(
+    screen.getByRole("heading", { name: "Choose what you are tuning" }),
+  ).toBeInTheDocument()
 })
 
 test("a new user gets the short tour and can skip the current section", async () => {

@@ -19,7 +19,7 @@ from codesage_api.db.models import (
     WorkspaceInvitation,
 )
 from codesage_api.routers import members as members_router
-from codesage_api.services.auth import IdentityClaims, create_workspace, establish_session
+from codesage_api.services.auth import IdentityClaims, establish_session
 
 from .scans import (
     Issue,
@@ -72,12 +72,13 @@ def second_tenant(tenant: Tenant, monkeypatch) -> Tenant:
     claims = IdentityClaims(str(uuid.uuid4()), "b@example.test", "B", None, "github")
     db = app_session(tenant.engine)
     record = establish_session(db, claims)
-    created = create_workspace(db, session_id=record.id, user_id=record.user_id, name="Beta")
+    workspace_id = record.workspace_id
+    db.get_one(Workspace, workspace_id).name = "Beta"
     db.commit()
     db.close()
-    repository_id, branch_id = add_repository(tenant.engine, created.workspace_id, "beta-app")
+    repository_id, branch_id = add_repository(tenant.engine, workspace_id, "beta-app")
     other = Tenant(
-        tenant.engine, record.user_id, created.workspace_id, record.id,
+        tenant.engine, record.user_id, workspace_id, record.id,
         repository_id, branch_id, ScanWorld(issues=[Issue("src/B.java", "b")]),
     )
     # The outside-world stubs read the *current* world; point them at B briefly.

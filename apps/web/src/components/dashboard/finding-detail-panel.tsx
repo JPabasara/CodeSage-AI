@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { getPmdRuleGuidance } from "@/lib/pmd-rule-guidance"
 import type { Finding, FindingStatus } from "@/lib/types"
 
 export type FindingDetailPanelProps = {
@@ -61,6 +62,8 @@ export function FindingDetailPanel({
     )
   }
 
+  const pmdGuidance = getPmdRuleGuidance(finding.rule_id)
+
   return (
     <Card
       aria-label="Finding detail"
@@ -96,16 +99,42 @@ export function FindingDetailPanel({
       <CardContent className="min-h-0 flex-1 space-y-4 overflow-y-auto pt-4 text-sm">
         <section>
           <h3 className="mb-1 text-xs font-medium text-muted-foreground">
-            Why this matters
+            {pmdGuidance ? "What PMD found" : "Why this matters"}
           </h3>
           <p>{finding.reason}</p>
-          <LearnMore
-            article={
-              finding.source === "satd" ? "satd-detection" : "debt-detection"
-            }
-            about="how this finding was detected"
-          />
         </section>
+
+        {pmdGuidance ? (
+          <>
+            <section>
+              <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+                Why this matters
+              </h3>
+              <p>{pmdGuidance.impact}</p>
+            </section>
+            <section>
+              <h3 className="mb-1 text-xs font-medium text-muted-foreground">
+                How to fix it
+              </h3>
+              <p>{pmdGuidance.recommendation}</p>
+              <a
+                className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
+                href={pmdGuidance.documentationUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read the PMD rule documentation
+              </a>
+            </section>
+          </>
+        ) : null}
+
+        <LearnMore
+          article={
+            finding.source === "satd" ? "satd-detection" : "debt-detection"
+          }
+          about="how this finding was detected"
+        />
 
         {finding.metric_value !== undefined &&
         finding.metric_value !== null &&

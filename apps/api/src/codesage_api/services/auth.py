@@ -21,7 +21,10 @@ from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session as DbSession
 
 from codesage_api.config import get_settings
-from codesage_api.db.enums import AnalysisStatus, MembershipStatus
+from codesage_api.db.enums import (
+    AnalysisStatus,
+    MembershipStatus,
+)
 from codesage_api.db.models import (
     AnalysisAttempt,
     Branch,
@@ -186,6 +189,9 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
     )
     db.add(session)
     db.flush()
+    # Request-local hint for the callback redirect. Durable tour state remains
+    # on the user and is also returned by GET /auth/session.
+    session.product_tour_required = user.product_tour_completed_at is None  # type: ignore[attr-defined]
     session.raw_token = raw_token  # type: ignore[attr-defined]
     return session
 
@@ -195,12 +201,11 @@ def _token_hash(raw_token: str) -> bytes:
 
 
 def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
-    """First sign-in: create the person, and nothing else.
+    """Create a ready-to-use account on the first sign-in.
 
-    No workspace and no repository. Naming a workspace is the first thing the
-    product asks the user to do, and a "My Workspace" invented here would be a
-    name nobody chose, sitting in the switcher next to the real one they create a
-    moment later.
+    The workspace, membership, and profiles are created in the caller's
+    transaction. A failure therefore cannot leave a half-provisioned account
+    behind. The workspace starts empty so the user can connect their own project.
     """
     user = User(
         asgardeo_sub=claims.sub,
@@ -212,7 +217,15 @@ def _provision_new_user(db: DbSession, claims: IdentityClaims) -> User:
     )
     db.add(user)
     db.flush()
+    _create_workspace_records(db, user.id, name="My Workspace")
     return user
+
+
+def complete_product_tour(db: DbSession, user_id: uuid.UUID) -> None:
+    """Prevent automatic relaunch after either Finish or Skip."""
+    user = db.get_one(User, user_id)
+    user.product_tour_completed_at = datetime.now(timezone.utc)
+    db.flush()
 
 
 def _create_workspace_records(
