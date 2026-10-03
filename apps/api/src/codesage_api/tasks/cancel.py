@@ -3,8 +3,8 @@
 **Why the worker is not killed.** Celery can revoke a task with SIGTERM, and that
 is the wrong tool here. The pipeline's last stage writes a Snapshot with its files,
 metrics, findings and predictions; a signal arriving mid-write would leave a
-partial snapshot that reads exactly like a complete one. FR-6 requires the previous
-snapshot to remain intact after a cancellation, and DBR-22 requires that a
+partial snapshot that reads exactly like a complete one. The previous
+snapshot must remain intact after a cancellation, and a
 cancelled attempt never be presented as a finalized result — neither survives a
 forced kill.
 

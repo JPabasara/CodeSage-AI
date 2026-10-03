@@ -406,7 +406,7 @@ test("an unscanned branch is 404 so the client can render an empty state", async
   expect(((await res.json()) as ApiError).code).toBe("NOT_FOUND")
 })
 
-test("?snapshot_id= loads that stored snapshot instead of the newest (FR-19)", async () => {
+test("?snapshot_id= loads that stored snapshot instead of the newest", async () => {
   const history = await get<ScanSummary[]>(`/repos/${DEMO_REPO_ID}/scans`)
   const older = history[history.length - 1] // oldest row
 
@@ -447,7 +447,7 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
   }
 
   const times = history.map((s) => Date.parse(s.scanned_at))
-  expect(times, "newest first (FR-19)").toEqual(
+  expect(times, "newest first").toEqual(
     [...times].sort((a, b) => b - a),
   )
 })
@@ -764,7 +764,7 @@ test("a security finding's weight moves it past a higher-severity one", async ()
   expect(rank(after, "f-sqli-1")).toBeLessThan(rank(after, "f-long-1"))
 })
 
-test("the trust slider cannot de-weight a security finding (FR-24)", async () => {
+test("the trust slider cannot de-weight a security finding", async () => {
   const priorityOf = async (fp: string) => {
     const r = await get<HealthReport>(
       `/repos/${DEMO_REPO_ID}/health?branch=main`,

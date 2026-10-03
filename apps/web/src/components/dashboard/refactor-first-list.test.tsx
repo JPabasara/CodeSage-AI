@@ -152,7 +152,7 @@ test("filters the list by debt type and updates count badge", async () => {
   expect(within(heading.parentElement!).getByText("1 of 3")).toBeInTheDocument()
 })
 
-test("zero findings displays the celebratory empty state (U-14)", () => {
+test("zero findings displays the celebratory empty state", () => {
   render(<RefactorFirstList findings={[]} />)
 
   expect(screen.getByText("No refactoring issues found")).toBeInTheDocument()
@@ -168,7 +168,7 @@ test("zero findings displays the celebratory empty state (U-14)", () => {
   ).toBeInTheDocument()
 })
 
-test("filtered to nothing names the active filter and provides a clear filter button (U-14)", async () => {
+test("filtered to nothing names the active filter and provides a clear filter button", async () => {
   const user = userEvent.setup()
   render(<RefactorFirstList findings={findings} />)
 

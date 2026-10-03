@@ -60,7 +60,7 @@ docker compose down -v --remove-orphans && docker compose build && docker compos
 | `docker compose config` | Print the file with every `${...}` resolved — fastest way to see what a variable became |
 | `docker compose exec postgres psql -U codesage_owner codesage` | The database, without opening a port |
 | `docker compose exec api alembic upgrade head` | Run migrations by hand |
-| `docker compose up -d --scale worker=3` | Three concurrent scans (PERF-07) |
+| `docker compose up -d --scale worker=3` | Three concurrent scans |
 
 | You changed | Run |
 |---|---|

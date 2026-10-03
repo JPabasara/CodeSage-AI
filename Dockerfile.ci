@@ -39,7 +39,7 @@ COPY apps/api/src ./apps/api/src
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/api-venv/bin/pip install -e "./apps/api[dev]"
 
-COPY apps/ml/pyproject.toml apps/ml/README.md ./apps/ml/
+COPY apps/ml/pyproject.toml ./apps/ml/
 COPY apps/ml/src ./apps/ml/src
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/ml-venv/bin/pip install -e "./apps/ml[dev]"

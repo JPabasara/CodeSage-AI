@@ -1,4 +1,4 @@
-"""GET /api/auth/session — who is signed in, and whether they can work yet (J3.2).
+"""GET /api/auth/session — who is signed in, and whether they can work yet.
 
 The dependency chain is exercised elsewhere; overriding it here lets this file
 test only what the handler itself is responsible for: shaping a session from the
@@ -174,7 +174,7 @@ def test_session_is_mounted_on_the_protected_router() -> None:
 
 
 def test_the_session_cookie_is_the_raw_token_not_the_row_id(monkeypatch) -> None:
-    """DBR-29: the row id is internal; the browser gets an unrelated random token."""
+    """The row id is internal; the browser gets an unrelated random token."""
     from types import SimpleNamespace
 
     from codesage_api.config import Settings

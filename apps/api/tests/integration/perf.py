@@ -25,7 +25,7 @@ from .support import new_session_token
 
 API_ROOT = Path(__file__).resolve().parents[2]
 
-# DBR-32's profile is "full"; the default keeps a local run to a few minutes.
+# The large-volume profile is "full"; the default keeps a local run to a few minutes.
 SCALES = {
     "full": {"repositories": 20, "snapshots": 30, "files": 500, "findings_per_file": 20},
     "ci": {"repositories": 5, "snapshots": 10, "files": 200, "findings_per_file": 5},

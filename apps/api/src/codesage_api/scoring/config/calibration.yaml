@@ -9,7 +9,7 @@ weight_max: 3.0
 s_min: 0.0
 s_max: 1.0
 
-# ── grade bands, evaluated top-down (FR-11) ────────────────────────────────
+# ── grade bands, evaluated top-down ────────────────────────────────────────
 grade_bands:
   - { min_score: 85, grade: A }
   - { min_score: 70, grade: B }

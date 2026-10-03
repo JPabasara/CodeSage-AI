@@ -136,7 +136,7 @@ class UserSession(UUIDPrimaryKey, Base):
     """One signed-in browser.
 
     The cookie we give the browser holds a random token; this row stores only
-    its SHA-256 digest (DBR-29), so reading the table does not yield live
+    its SHA-256 digest, so reading the table does not yield live
     sessions. The row id is internal. Everything that matters lives here, on the
     server. That is what makes signing out actually work: we delete this row,
     and the next request finds nothing and gets a 401.

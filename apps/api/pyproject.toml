@@ -49,7 +49,7 @@ asyncio_mode = "auto"
 # Volume and timing checks run nightly (`pytest -m perf`), not on every PR.
 addopts = "-m 'not perf'"
 markers = [
-    "perf: seeded-volume query plan and latency checks (DBR-32/33); nightly only",
+    "perf: seeded-volume query plan and latency checks; nightly only",
 ]
 
 [tool.ruff]

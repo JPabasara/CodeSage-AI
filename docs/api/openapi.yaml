@@ -16,9 +16,9 @@ info:
       profile. Valid profile- and formula-stamped summary caches may be reused.
     - **The scan** (`POST /repos/{repo_id}/scan`) is asynchronous. It returns a
       `202` with a `scan_id` immediately and the client polls; the work happens on
-      a Celery worker (PERF-03, PERF-05).
+      a Celery worker.
     - **The profile** (`PUT /profiles/active`) is a single idempotent write of six
-      numbers. It touches no snapshot and starts no scan (FR-20, FR-21).
+      numbers. It touches no snapshot and starts no scan.
 
     **No endpoint accepts a scoring profile.** The active profile is server-side
     state scoped to the workspace, so `GET /repos/{repo_id}/health?branch=…` takes
@@ -129,7 +129,7 @@ paths:
         project. The browser lands on Workspace so the guided trial starts with
         the container those later screens belong to.
 
-        A `SecurityAuditRecord` is written for both success and failure (SEC-14).
+        A `SecurityAuditRecord` is written for both success and failure.
         A failed sign-in has no established actor, which is exactly the event most
         worth recording.
       parameters:
@@ -327,7 +327,7 @@ paths:
 
         Permanently deletes the workspace and everything it owns, including its
         memberships, invitations, projects, profiles, scans, snapshots and
-        findings, in one transaction (DBR-28). It never deletes a global user
+        findings, in one transaction. It never deletes a global user
         account or that user's memberships in other workspaces.
 
         Nobody is signed out. Every session bound to the workspace, the caller's
@@ -518,7 +518,7 @@ paths:
       description: |
         Deletes the session **server-side**, clears the cookie, and redirects to
         Asgardeo's sign-out endpoint, which clears its own SSO cookie and sends the
-        browser back to `/login` (SEC-10).
+        browser back to `/login`.
 
         This is why the session is server-side state rather than a self-contained
         JWT: a stateless token stays valid until it expires, and sign-out could not
@@ -715,7 +715,7 @@ paths:
       operationId: get_health_report
       summary: The full dashboard payload
       description: |
-        One response carrying all six dashboard outputs (SRS Appendix B): the health
+        One response carrying all six dashboard outputs: the health
         card, the category breakdown, the trend, the Refactor-First list, the data
         behind the finding detail, and the hotspot tree.
 
@@ -723,7 +723,7 @@ paths:
         scoring worker and read from a complete profile- and engine-stamped derived
         cache. FastAPI does not execute the scoring formula. A profile change
         therefore re-ranks everything with no re-scan, and the trend is redrawn end
-        to end so every point is comparable with every other (FR-14, FR-21).
+        to end so every point is comparable with every other.
 
         **There is no profile parameter, by design.** See the description at the top
         of this document.
@@ -739,7 +739,7 @@ paths:
           required: false
           schema: { type: string, format: uuid }
           description: |
-            Load a specific historical snapshot instead of the newest one (FR-19).
+            Load a specific historical snapshot instead of the newest one.
             Omit for the latest. Only snapshots produced by a **successful** scan
             are addressable — a cancelled or failed attempt produces no snapshot.
         - name: include_findings
@@ -891,9 +891,9 @@ paths:
       operationId: list_scan_history
       summary: Scan history
       description: |
-        The stored snapshots for this repository, newest first (FR-19). Only
+        The stored snapshots for this repository, newest first. Only
         successful scans appear — a cancelled or failed attempt is retained for
-        diagnosis (SP-13) but is never presented as a result (DBR-22).
+        diagnosis but is never presented as a result.
 
         `finding_count` and `commit_sha` are stored facts; `health_score`, `grade`
         and `delta` are derived on this request, which is why switching profiles
@@ -926,8 +926,8 @@ paths:
       summary: Start a scan
       description: |
         Enqueues an analysis and returns immediately with `202` — the work runs on a
-        Celery worker, never inside this request (PERF-05). The job is on the queue
-        within one second (PERF-03).
+        Celery worker, never inside this request. The job is on the queue
+        within one second.
 
         **Skip-if-unchanged.** The API first reads the branch head SHA from GitHub
         and compares it with the SHA of the **last successful** scan of that branch.
@@ -1068,13 +1068,13 @@ paths:
       summary: Poll a scan
       description: |
         Polled once per second while a scan is active, and stopped as soon as
-        `phase` is `done`, `error` or `cancelled` (SRS Table 3.107). No WebSockets
+        `phase` is `done`, `error` or `cancelled`. No WebSockets
         and no Server-Sent Events in v1.0.
 
         **The two fields come from two different stores.** `phase` is read from
         PostgreSQL and `progress` from Redis. Losing a percentage when the broker
         restarts costs nothing — the next poll produces a new one. Losing the fact
-        that a scan failed would breach SP-13, which requires the terminal phase and
+        that a scan failed would break diagnosis, which needs the terminal phase and
         its error message to be recoverable from the database alone.
       responses:
         '200':
@@ -1106,8 +1106,8 @@ paths:
           learns the scan really stopped from the **next poll**, not from this call.
         - A user who presses Stop waits until the current stage ends. That is the
           price of never leaving a half-written snapshot.
-        - Once finalization begins the scan completes. FR-6 requires the previous
-          snapshot to survive a cancellation intact, and a killed write would leave
+        - Once finalization begins the scan completes. The previous
+          snapshot must survive a cancellation intact, and a killed write would leave
           a partial one.
         - The terminal phase is `cancelled`, **not** `idle`, so a scan that was
           stopped stays distinguishable from one that never ran.
@@ -1486,7 +1486,7 @@ paths:
         its `id` never changes and no history is kept. There is deliberately no
         version column: no endpoint in this contract can express or return one, so
         accumulating a row per Apply would grow the table without bound for a
-        history nothing is able to read. Scores are derived on read (FR-21), so a
+        history nothing is able to read. Scores are derived on read, so a
         superseded profile also explains no stored result.
 
         **This writes no snapshot and starts no scan.** Six numbers change on that
@@ -1494,9 +1494,9 @@ paths:
         `FINDING`, no `SNAPSHOT`, no `ANALYSIS_ATTEMPT` row is touched. A snapshot is
         keyed by commit SHA and records what the code was; a profile is not a commit.
         Were a profile change to write one, the trend chart would show a step on a
-        day nobody touched the code (FR-21).
+        day nobody touched the code.
 
-        **The visibility floor holds regardless** (FR-24). No weight, including the
+        **The visibility floor holds regardless**. No weight, including the
         minimum `0.1` on `security`, can push a critical security finding out of
         sight — such findings come back with `pinned_by_floor: true`.
       requestBody:
@@ -1560,8 +1560,8 @@ components:
 
         FastAPI is the BFF: it completes the Asgardeo OIDC flow, keeps the tokens
         server-side, and hands the browser only this cookie. Two consequences: an
-        XSS bug cannot steal a credential that JavaScript cannot read (SEC-09), and
-        sign-out genuinely revokes the session because the server holds it (SEC-10).
+        XSS bug cannot steal a credential that JavaScript cannot read, and
+        sign-out genuinely revokes the session because the server holds it.
 
         Browser clients must send `credentials: "include"` on every request.
 
@@ -1600,7 +1600,7 @@ components:
     Forbidden:
       description: |
         The resource belongs to another workspace. Row-Level Security keys every
-        tenant-owned table on `workspace_id` (DBR-3), so this is enforced in the
+        tenant-owned table on `workspace_id`, so this is enforced in the
         database rather than only in application code.
       content:
         application/json:
@@ -1636,7 +1636,7 @@ components:
               - field: weights.security
                 detail: Input should be a valid number.
     RateLimited:
-      description: Too many requests (SEC-12).
+      description: Too many requests.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1650,7 +1650,7 @@ components:
     UpstreamUnavailable:
       description: |
         A required external service — GitHub or Asgardeo — is unavailable or
-        degraded (REL-06, PERF-09). Previously completed results stay readable.
+        degraded. Previously completed results stay readable.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1674,7 +1674,7 @@ components:
         Every non-2xx response in this API has this shape.
 
         **Clients switch on `code`, never on `detail`.** `detail` is a human
-        sentence whose wording may change; `code` is a stable constant. Per SEC-16,
+        sentence whose wording may change; `code` is a stable constant.
         `detail` never carries a stack trace, SQL, an internal hostname or any other
         implementation detail.
       required: [detail, code]
@@ -1755,8 +1755,8 @@ components:
     Severity:
       type: string
       description: |
-        How bad a finding is. **Assigned once, at detection, and never recomputed**
-        (FR-8.1): the rule register fixes it for rule findings, the SATD marker
+        How bad a finding is. **Assigned once, at detection, and never recomputed**:
+        the rule register fixes it for rule findings, the SATD marker
         table for SATD findings, and ML-2 assigns none because it produces no
         findings. No model and no user ever sets a severity.
 
@@ -1767,7 +1767,7 @@ components:
     Source:
       type: string
       description: |
-        Which detector produced the finding. **Exactly two values** (FR-8.2).
+        Which detector produced the finding. **Exactly two values**.
 
         There is no `security` source: security patterns run inside the rule engine,
         so a security finding is a `rule` finding whose `category` is `security`. A
@@ -1781,7 +1781,7 @@ components:
     Category:
       type: string
       description: |
-        What kind of debt it is. **Exactly five values** (FR-9.3), orthogonal to
+        What kind of debt it is. **Exactly five values**, orthogonal to
         `source` — a finding is always both *found by X* and *of type Y*.
 
         Four are SATDAUG comment-dataset labels, so ML-1 trains and predicts on the
@@ -1846,7 +1846,7 @@ components:
         `idle` is the resting state of the scan control **before** a scan; it is
         never a stored outcome. `cancelled` is a distinct terminal phase, not a
         return to `idle`, so a scan that was stopped stays distinguishable from one
-        that never ran — which SP-13 needs for diagnosis and DBR-22 needs to keep a
+        that never ran — which diagnosis needs, and which keeps a
         cancelled attempt from ever being presented as a result.
       enum: [idle, queued, running, done, error, cancelled]
 
@@ -1854,7 +1854,7 @@ components:
       type: object
       description: |
         The signed-in user. Carries no token and no provider credential — those stay
-        server-side (SEC-09).
+        server-side.
 
         **Only `user_id` is guaranteed.** `workspace_id` is null for someone who
         has signed in but has no workspace yet — a real authenticated state, not a
@@ -2139,9 +2139,9 @@ components:
         visibility:
           type: string
           description: |
-            Recorded for every repository from v1.0 - FR-3 stores it and the projects
+            Recorded for every repository from v1.0; the projects
             list displays it. What is deferred is *connecting* a private repository,
-            which needs a GitHub App installation and the SEC-04/SEC-06 authorization
+            which needs a GitHub App installation and stronger authorization
             controls: that is **v2**, not v1.1.
           enum: [public, private]
         url: { type: string, format: uri }
@@ -2216,7 +2216,7 @@ components:
           description: |
             Present only when `phase` is `error`. Stored on the attempt row, not
             merely logged, so a user-reported failure is diagnosable from the
-            database alone (SP-13).
+            database alone.
         error_code:
           description: |
             Why the scan failed, when the reason is one the user can act on.
@@ -2293,7 +2293,7 @@ components:
 
     ScanSummary:
       type: object
-      description: One row in the Scan-History view (FR-19).
+      description: One row in the Scan-History view.
       required: [snapshot_id, scan_id, branch, commit_sha, scanned_at, finding_count, health_score, grade, delta]
       additionalProperties: false
       properties:
@@ -2339,7 +2339,7 @@ components:
           type: string
           description: |
             Stable across scans, so a finding can be tracked over time and
-            deduplicated (DBR-15).
+            deduplicated.
         source: { $ref: '#/components/schemas/Source' }
         category: { $ref: '#/components/schemas/Category' }
         severity: { $ref: '#/components/schemas/Severity' }
@@ -2357,7 +2357,7 @@ components:
           type: string
           description: |
             A one-line, plain-English explanation produced by a **string template**,
-            never by text generation (FR-16). Reliable, instant, and incapable of
+            never by text generation. Reliable, instant, and incapable of
             hallucinating.
           example: charge() has cyclomatic complexity 18, over the limit of 15 - split it into smaller functions.
         status: { $ref: '#/components/schemas/FindingStatus' }
@@ -2365,14 +2365,14 @@ components:
           type: number
           description: |
             `base_points(severity) × category_weight × source_trust × churn_factor ×
-            risk_factor` (FR-11). Derived, never stored. The list is returned already
+            risk_factor`. Derived, never stored. The list is returned already
             sorted by this, descending.
         pinned_by_floor:
           type: boolean
           default: false
           description: |
             True when this finding is held in the visible list by the
-            **critical-security visibility floor** (FR-24) rather than by its
+            **critical-security visibility floor** rather than by its
             computed priority. Lets the UI explain why a row is present even at the
             minimum `security` weight of 0.1.
         rule_id:
@@ -2392,7 +2392,7 @@ components:
           description: |
             The developer's own words, quoted as evidence. SATD findings only. Only
             the comment that produced the finding is stored — never the surrounding
-            source (DBR-27).
+            source.
           example: '// FIXME: this is not thread-safe'
         confidence:
           type: [number, 'null']
@@ -2423,13 +2423,12 @@ components:
             never as a zero-risk badge.
 
             A risky file with no findings still contributes no debt: risk enters
-            scoring only as a bounded multiplier on findings that already exist
-            (FR-10).
+            scoring only as a bounded multiplier on findings that already exist.
 
     TreeNode:
       type: object
       description: |
-        A node in the hotspot file tree (FR-18). Folder values aggregate the stored
+        A node in the hotspot file tree. Folder values aggregate the stored
         file scores beneath them, so drilling in re-aggregates a subtree by summing
         numbers already in memory — no re-scan and no second query.
       required: [path, name, type, health_score, grade, debt_score]
@@ -2458,7 +2457,7 @@ components:
     HealthPoint:
       type: object
       description: |
-        One point on the trend chart (FR-14). **Every point on a line is computed
+        One point on the trend chart. **Every point on a line is computed
         under the same, currently active profile**, so a profile change redraws the
         entire history and every point stays comparable with every other. A line
         whose points came from different profiles would be unreadable: you could not
@@ -2473,7 +2472,7 @@ components:
     CategoryBreakdownItem:
       type: object
       description: |
-        One slice of the category pie (FR-13). `count` is a plain query over stored
+        One slice of the category pie. `count` is a plain query over stored
         rows; `debt` is weighted by the active profile — so the two move
         independently, and a category can hold many findings but little debt.
       required: [category, count, debt]
@@ -2486,7 +2485,7 @@ components:
     HealthReport:
       type: object
       description: |
-        The whole dashboard in one response — all six outputs of SRS Appendix B.
+        The whole dashboard in one response — all six dashboard outputs.
 
         Everything numeric here is derived on this request under the active profile.
         The client renders; it computes nothing.
@@ -2524,8 +2523,7 @@ components:
           type: string
           description: |
             The active profile's name, shown on the trend chart. Without the label,
-            the chart changing shape after a profile switch reads as a defect
-            (FR-14).
+            the chart changing shape after a profile switch reads as a defect.
           example: Balanced
         include_test_findings:
           type: boolean
@@ -2537,7 +2535,7 @@ components:
         model_version:
           type: [string, 'null']
           description: |
-            The ML model version that produced this snapshot (AI-03, DBR-18). Null
+            The ML model version that produced this snapshot. Null
             when the snapshot was taken in degraded mode with no ML available.
         history:
           type: array
@@ -2630,12 +2628,11 @@ components:
           default: 0.5
           description: |
             The trust slider `s`. `0` = trust the model, `1` = trust the rules.
-            Scoring derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it
-            (FR-11).
+            Scoring derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it.
 
             **Security findings are excluded**: `source_trust` is fixed at 1.0 for
             the `security` category, so no position of this slider can de-weight
-            them (FR-24 mechanism 2).
+            them.
 
     CategoryWeightsPatch:
       type: object

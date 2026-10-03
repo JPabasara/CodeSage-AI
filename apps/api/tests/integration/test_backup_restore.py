@@ -1,4 +1,4 @@
-"""DBR-31: a logical backup restores data, policies, grants and usable reads."""
+"""A logical backup restores data, policies, grants and usable reads."""
 
 from __future__ import annotations
 

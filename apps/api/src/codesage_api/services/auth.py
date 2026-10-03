@@ -1,4 +1,4 @@
-"""Sign-in, sessions and sign-out (FR-1, SEC-01, SEC-10, SEC-17).
+"""Sign-in, sessions and sign-out.
 
 The session lives in the database. The browser gets an opaque random token while
 the database stores only its SHA-256 digest. Two things follow from that:

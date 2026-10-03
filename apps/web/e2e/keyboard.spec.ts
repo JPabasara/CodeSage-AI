@@ -45,7 +45,7 @@ test("the top finding opens with the keyboard alone", async ({ page }) => {
   const topFinding = findingCards(page).first()
   await tabTo(page, topFinding)
 
-  // Focus has to be SEEN, not just held (U-9 asks for a visible indicator).
+  // Focus has to be SEEN, not just held (a visible indicator is required).
   await expect(topFinding).toBeFocused()
   const focusPaint = await topFinding.evaluate(
     (el) => getComputedStyle(el).outlineWidth + getComputedStyle(el).boxShadow,

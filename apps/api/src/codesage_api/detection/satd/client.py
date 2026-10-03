@@ -2,7 +2,7 @@
 
 The classifier predicts a category from {code-design, requirement, documentation,
 test} — four of the five. `security` is never predicted: it is not in the training
-data and only the rule engine emits it (FR-9.3).
+data and only the rule engine emits it.
 
 It does not predict severity. That comes from the marker table.
 """

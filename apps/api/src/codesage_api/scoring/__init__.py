@@ -4,9 +4,9 @@ This package must not import the database, the web framework, the queue, or any
 I/O library. That rule is enforced by the `scoring is pure` contract in
 pyproject.toml; run `lint-imports` to check it.
 
-The reason is not neatness. FR-20's promise — *change a profile, re-rank instantly,
-never re-scan* — is only deliverable if no score is ever stored, and SP-11's
-"exactly testable" is only deliverable if this runs with nothing else running.
+The reason is not neatness. The promise — *change a profile, re-rank instantly,
+never re-scan* — is only deliverable if no score is ever stored, and "exactly
+testable" is only deliverable if this runs with nothing else running.
 """
 
 from codesage_api.scoring.engine import score

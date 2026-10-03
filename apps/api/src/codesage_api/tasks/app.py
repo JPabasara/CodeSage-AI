@@ -1,8 +1,8 @@
 """The Celery application.
 
 Each scan is an independent task, so one repository's failure cannot affect
-another's (REL-02). Celery's own retry handles transient faults — a GitHub blip, a
-momentary ML timeout — before an attempt is reported as failed (REL-04).
+another's. Celery's own retry handles transient faults — a GitHub blip, a
+momentary ML timeout — before an attempt is reported as failed.
 """
 
 from __future__ import annotations

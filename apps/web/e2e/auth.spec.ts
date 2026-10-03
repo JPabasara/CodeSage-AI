@@ -102,7 +102,7 @@ signedIn(
   },
 )
 
-signedIn("the account menu shows who is signed in (J3.2)", async ({ page }) => {
+signedIn("the account menu shows who is signed in", async ({ page }) => {
   await page.goto("/projects")
   // The mock session's display name. A 401 would have redirected us instead.
   await page.getByRole("button", { name: "Account menu" }).click()

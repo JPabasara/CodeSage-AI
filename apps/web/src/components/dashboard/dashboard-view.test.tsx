@@ -554,7 +554,7 @@ test("the error state's Retry actually re-runs the read", async () => {
   ).not.toBeInTheDocument()
 })
 
-test("a never-scanned repository displays the empty state with first-scan guidance, not an error state (U-14)", async () => {
+test("a never-scanned repository displays the empty state with first-scan guidance, not an error state", async () => {
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
 
   expect(await screen.findByText("No scans yet")).toBeInTheDocument()
@@ -571,7 +571,7 @@ test("a never-scanned repository displays the empty state with first-scan guidan
   ).not.toBeInTheDocument()
 })
 
-test("a report with an empty file tree displays the named empty tree state (U-14)", async () => {
+test("a report with an empty file tree displays the named empty tree state", async () => {
   server.use(
     http.get("*/api/repos/:repoId/health", () =>
       HttpResponse.json({
@@ -594,7 +594,7 @@ test("a report with an empty file tree displays the named empty tree state (U-14
   ).toBeInTheDocument()
 })
 
-test("a report with zero findings displays the celebratory empty state in place of the list (U-14)", async () => {
+test("a report with zero findings displays the celebratory empty state in place of the list", async () => {
   server.use(
     http.get("*/api/repos/:repoId/health/findings", () =>
       HttpResponse.json({ items: [], total: 0, limit: 100, offset: 0 }),
@@ -627,7 +627,7 @@ test("a report with zero findings displays the celebratory empty state in place 
   )
 })
 
-test("filtering to nothing inside the dashboard displays the filter empty state and clear button (U-14)", async () => {
+test("filtering to nothing inside the dashboard displays the filter empty state and clear button", async () => {
   server.use(
     http.get("*/api/repos/:repoId/health/findings", () =>
       HttpResponse.json({

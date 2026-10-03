@@ -10,7 +10,7 @@ the whole degraded-mode contract, and it is the reason this service is allowed t
 be a single point of failure without being a single point of *outage*.
 
 **Inference only.** Training happens offline, in `training/`, and is never
-reachable from here (AI-05). This process loads versioned artifacts and answers
+reachable from here. This process loads versioned artifacts and answers
 questions; it never learns.
 """
 
@@ -38,11 +38,11 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
 
     Predicts one of four categories — code-design, requirement, documentation,
     test — plus the negative class. **`security` is never predicted**: it is not in
-    the SATDAUG training data and only the rule engine emits it (FR-9.3).
+    the SATDAUG training data and only the rule engine emits it.
 
     **Does not predict severity, and cannot.** A supervised model predicts only
     what its training data labels, and the dataset labels categories. Severity is
-    assigned downstream by the deterministic marker table (FR-9.2).
+    assigned downstream by the deterministic marker table.
 
     Batched because a repository has tens of thousands of comments and a
     per-comment round trip would dominate scan time.
@@ -131,7 +131,7 @@ def version() -> VersionResponse:
 
     Recorded by the worker against every analysis attempt, so a snapshot always
     identifies what produced it. Without this, trend points computed before and
-    after a retraining would be silently incomparable (AI-03, DBR-18).
+    after a retraining would be silently incomparable.
     """
     satd_info = load_satd_model()
     risk_info = load_risk_model()

@@ -6,7 +6,7 @@ Three detectors doing fundamentally different jobs:
     satd/    SATDClassifier (ML-1) → is this debt, and of what type → findings
     risk/    BugRiskModel   (ML-2) → per-file bug-proneness → NO findings
 
-**`source` and `category` are orthogonal** (FR-8.2, FR-9.3). A finding is never
+**`source` and `category` are orthogonal**. A finding is never
 "either a rule finding or a debt-type finding" — it is both at once: *found by X,
 classified as type Y*.
 
@@ -20,7 +20,7 @@ classified as type Y*.
     │ Risk (ML-2)  │ assigns no category at all      │ it scores only │
     └──────────────┴─────────────────────────────────┴────────────────┘
 
-**No ML model and no user ever assigns a severity** (FR-8.1). It is 100%
+**No ML model and no user ever assigns a severity**. It is 100%
 deterministic in v1.0: the rule register for rule findings, the marker table for
 SATD findings, nothing at all for ML-2 because it produces no findings.
 

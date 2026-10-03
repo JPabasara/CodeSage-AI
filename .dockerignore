@@ -14,7 +14,7 @@
 **/node_modules
 **/.next
 **/.ipynb_checkpoints
-apps/ml/chamodh
+apps/ml/research
 apps/ml/data
 apps/ml/models
 apps/ml/repo-test

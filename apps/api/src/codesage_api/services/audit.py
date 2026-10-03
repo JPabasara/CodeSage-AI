@@ -58,7 +58,7 @@ def record(
 
 
 def record_denial(session: Session, denied: PermissionDenied, *, method: str, path: str) -> None:
-    """Audit a refused operation in its own transaction (DBR-30).
+    """Audit a refused operation in its own transaction.
 
     The request's data transaction is rolled back with the error, so the caller
     passes a fresh session and commits it.

@@ -282,7 +282,7 @@ test("the whole create dialog is operable from the keyboard", async ({
   await expect(page.getByTestId("custom-count")).toHaveText("1 of 5")
 })
 
-test("a profile change re-ranks the dashboard with no re-scan (FR-21)", async ({
+test("a profile change re-ranks the dashboard with no re-scan", async ({
   page,
 }) => {
   const requests = watchRequests(page)
@@ -325,7 +325,7 @@ test("a profile change re-ranks the dashboard with no re-scan (FR-21)", async ({
   expect(requests.scans()).toHaveLength(0)
 })
 
-test("the trust slider cannot de-weight a security finding (FR-24)", async ({
+test("the trust slider cannot de-weight a security finding", async ({
   page,
 }) => {
   await createProfile(page, "Trust the model")

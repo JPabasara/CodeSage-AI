@@ -66,7 +66,7 @@ class ActivityOut(ApiModel):
 
 
 class ScanSummaryOut(ApiModel):
-    """One row in the Scan-History view (FR-19).
+    """One row in the Scan-History view.
 
     Only the stored fields are stored. Health, grade and delta are derived under
     the active profile on every request, which is why switching profiles redraws

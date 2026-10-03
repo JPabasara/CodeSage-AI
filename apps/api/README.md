@@ -1,7 +1,7 @@
 # apps/api — FastAPI + Celery
 
 The backend API process and the asynchronous scan workers. **One codebase, one
-image, two entrypoints** (SAD §7): they share the domain model, the ORM and the
+image, two entrypoints**: they share the domain model, the ORM and the
 data contract, so splitting them would mean maintaining the same shapes on both
 sides of a network boundary.
 
@@ -17,7 +17,7 @@ src/codesage_api/
 ├── routers/       HTTP edge — the 16 operations of docs/api/openapi.yaml. No domain logic.
 ├── schemas/       Pydantic wire shapes; snake_case on the wire (locked decision 1)
 ├── services/      domain layer — orchestrates db + scoring + queue. No FastAPI imports.
-├── scoring/       ★ PURE. No db, no io, no web. The read path's whole output.
+├── scoring/       PURE. No db, no io, no web. The read path's whole output.
 ├── tasks/         Celery — the write path: clone → extract → detect → finalize
 ├── extractors/    dataclass SHAPES only so far (CK / history / comments output)
 ├── detection/     rule engine · SATD markers · ML clients · reason templates
@@ -42,7 +42,7 @@ those rows, it does not go on screen.
 **2. Store facts, derive opinions.** `FINDING` and `SOURCE_FILE` hold what was true
 of the code at one commit. Priority, file debt, health, grade, delta and the
 category breakdown are *not columns* — they are functions of the active profile,
-computed on every read (FR-21). This is what lets a profile change re-rank
+computed on every read. This is what lets a profile change re-rank
 instantly and never re-scan.
 
 **3. Scoring is pure, and the workers never call it.** The write path ends at
@@ -53,7 +53,7 @@ command someone has to run, not a gate that runs itself.
 
 **4. Severity is system-owned; weights are user-owned.** `severity` and `category`
 are written once at detection and no later process or user setting touches them.
-The profile carries weights only. This separation is what makes the FR-24
+The profile carries weights only. This separation is what makes the security
 visibility floor safe.
 
 ## Running it
@@ -76,7 +76,7 @@ GitHub token.
 
 The browser is redirected to `/api/auth/login`, comes back to `/api/auth/callback`,
 and leaves with an httpOnly cookie holding a **session row id and nothing else**. No
-token ever reaches client JavaScript (SEC-08, SEC-09), and signing out deletes the
+token ever reaches client JavaScript, and signing out deletes the
 row, so revocation is immediate.
 
 Fill `CODESAGE_ASGARDEO_CLIENT_ID` and `CODESAGE_ASGARDEO_CLIENT_SECRET` from the
@@ -148,30 +148,30 @@ tests use PostgreSQL 16 through Testcontainers and skip if Docker is unavailable
 
 ## Things that are deliberately not here
 
-No suppression or finding-action tables — v1.0 is view-only (FR-17b). No webhook
-endpoint — scans are user-initiated only (FR-6). No RBAC beyond `Membership.role`
-— roles are v2 (DBR-5). No private-repository support — that needs a GitHub App
-installation (FR-3).
+No suppression or finding-action tables — v1.0 is view-only. No webhook
+endpoint — scans are user-initiated only. No RBAC beyond `Membership.role`
+— roles are v2. No private-repository support — that needs a GitHub App
+installation.
 
 ## Open items
 
-- **`k` is a placeholder.** FR-11 requires it to be calibrated against reference
-  repositories before release, with the value and method recorded in the SAD.
+- **`k` is a placeholder.** It must be calibrated against reference
+  repositories before release, with the value and method recorded.
   No grade is meaningful until that is done.
 - ~~**RLS policies are not written yet.**~~ **Done** — the migration enables row-level
   security and writes the policies. `session` is deliberately excluded: it is the
   table that *tells us* which workspace the caller is in, so it cannot be filtered by
   the workspace it has not yet reported. `app_workspace_for_user()` is the one
   `SECURITY DEFINER` function in the system, and it exists for the same reason.
-- **Preset weights are not normative.** FR-20 names the three presets but no longer
-  publishes their weight table — see the note in `scoring/config/presets.yaml`.
+- **Preset weights are not normative.** The three presets are named but their weight table
+  is not published — see the note in `scoring/config/presets.yaml`.
 - **The CK jar version is unpinned.** Pin it and record it on
-  `AnalysisEngineVersion.ck_version`, or REL-10's consistency claim is unverifiable.
+  `AnalysisEngineVersion.ck_version`, or the consistency claim is unverifiable.
 - **The frontend's hand-written types are stale.** `docs/api/openapi.yaml` is the
   contract and `apps/web/src/lib/types/api.ts` is generated from it
   (`pnpm gen:types`) — both agree with `scoring/enums.py`. But the components still
   import the hand-written `apps/web/src/lib/types/index.ts`, which has the
-  pre-CR-001 enums and camelCase field names. Phase 10.6 switches them over.
+  older enums and camelCase field names. Phase 10.6 switches them over.
 - **Nothing checks the API against the contract.** `pnpm gen:types:check` keeps the
   *frontend* honest, but no job yet diffs FastAPI's generated `/openapi.json`
   against `docs/api/openapi.yaml`. That only becomes meaningful once the handlers

@@ -3,14 +3,14 @@
 * A failed sign-in has no workspace. The tenant policy doubled as the INSERT
   check, so `workspace_id = app_current_workspace_id()` rejected those rows and
   the event was lost. Inserts may now carry a NULL workspace; such rows are
-  readable by no tenant, only by the owner (DBR-30).
+  readable by no tenant, only by the owner.
 * FORCE is lifted on this table alone, as 0002 did for MEMBERSHIP. The app role
   is not the owner and stays fully bound by the policy; the owner-run SECURITY
   DEFINER account-deletion function can now rewrite actor identities, which it
-  silently could not while FORCE applied the tenant filter to it (DBR-28).
+  silently could not while FORCE applied the tenant filter to it.
 * Invitation acceptance writes `outcome` separately, like every other event.
 * ANALYSIS_ATTEMPT `failure_code` (added by 0018) widens to 64 characters and
-  legacy errors are backfilled with a stable code (DBR-22).
+  legacy errors are backfilled with a stable code.
 """
 
 from collections.abc import Sequence

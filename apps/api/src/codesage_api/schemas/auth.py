@@ -1,6 +1,6 @@
 """What `GET /api/auth/session` and the workspace endpoints return.
 
-Carries no token and no password. Those never leave this server (SEC-09).
+Carries no token and no password. Those never leave this server.
 """
 
 from __future__ import annotations

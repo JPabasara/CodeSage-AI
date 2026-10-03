@@ -8,7 +8,7 @@
     Redis       cancel flag    transient by nature; a restart cancels nothing
 
 Losing a percentage on a broker restart is harmless. Losing the fact that a scan
-failed would break SP-13, which requires the final phase and its error message to
+failed would break diagnosis, which needs the final phase and its error message to
 be recoverable from the database alone — so every terminal phase is written to the
 attempt row by the process that reaches it.
 

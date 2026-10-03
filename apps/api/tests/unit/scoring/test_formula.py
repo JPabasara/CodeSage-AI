@@ -1,8 +1,8 @@
 """Unit tests for the scoring formula.
 
 These run with **no database, no broker, no HTTP** — that is the property the
-`scoring is pure` import contract exists to protect, and it is what SP-11 means by
-an exactly testable scoring path.
+`scoring is pure` import contract exists to protect, and it is what makes the
+scoring path exactly testable.
 
 The stubs below are written against the current signatures so they fail loudly
 when `engine.score` is implemented, rather than passing vacuously.
@@ -58,7 +58,7 @@ def test_neither_trust_end_can_silence_a_source() -> None:
 
 
 def test_security_bypasses_the_trust_slider() -> None:
-    """FR-24 mechanism 2: source_trust is pinned at 1.0 for security, at BOTH ends.
+    """Security floor: source_trust is pinned at 1.0 for security, at BOTH ends.
 
     Without this, the "trust the model" end would quietly halve every security
     finding, since all security detection is deterministic.
@@ -132,7 +132,7 @@ def test_file_risk_does_not_control_finding_priority(
 
 
 def test_weights_and_s_are_clamped() -> None:
-    """FR-20: clamping is a server-side rule, and it clamps rather than rejects."""
+    """Clamping is a server-side rule, and it clamps rather than rejects."""
     weights, s = formula.clamp_profile({Category.SECURITY: 99.0, Category.TEST: -5.0}, s=42.0)
     assert weights[Category.SECURITY] == 3.0
     assert weights[Category.TEST] == 0.1

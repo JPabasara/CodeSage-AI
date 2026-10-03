@@ -94,15 +94,41 @@ DevTools, which is what the Playwright tests do. More in [apps/web/README.md](ap
 
 ### The whole stack in Docker
 
+Requires Docker with Docker Compose.
+
+1. In `infra/`, copy `.env.example` to `.env` and set your Asgardeo and Resend values:
+
+   ```dotenv
+   CODESAGE_ASGARDEO_BASE_URL=https://api.asgardeo.io/t/YOUR_ORG
+   CODESAGE_ASGARDEO_CLIENT_ID=YOUR_CLIENT_ID
+   CODESAGE_ASGARDEO_CLIENT_SECRET=YOUR_CLIENT_SECRET
+   CODESAGE_RESEND_API_KEY=re_YOUR_API_KEY
+   CODESAGE_INVITATION_FROM_EMAIL=CodeSage <onboarding@resend.dev>
+   CODESAGE_WEB_API_BASE_URL=http://localhost:8000
+   ```
+
+   In the Asgardeo application, allow the callback URL `http://localhost:8000/api/auth/callback`.
+
+2. Build and start the stack from `infra/`. The first build takes several minutes, and database
+   migrations run automatically.
+
+   ```powershell
+   docker compose up -d --build
+   docker compose ps -a        # migrate exits with code 0; every other service stays running
+   ```
+
+3. Open <http://localhost:3000>, sign in and scan a **Java** repository. The API runs on
+   <http://localhost:8000>.
+
+Useful commands, all from `infra/`:
+
 ```powershell
-cd infra
-copy .env.example .env      # fill in the Asgardeo values
-docker compose up -d
-docker compose ps           # every service should report (healthy)
+docker compose logs --tail=100 migrate api worker score-worker ml   # when something fails
+docker compose down                                                 # stop and keep the database
 ```
 
-`web` runs on <http://localhost:3000> and `api` on <http://localhost:8000>. Short version:
-[LOCAL_SETUP.md](LOCAL_SETUP.md). Full version: [infra/README.md](infra/README.md).
+Do not add `-v` to `down` unless you want to delete the stored database. More detail:
+[infra/README.md](infra/README.md).
 
 Scan a **Java** repository. CodeSage analyses Java only, so other languages scan successfully but
 produce no findings.
@@ -119,8 +145,7 @@ produce no findings.
 | ML service (pytest) | `cd apps/ml; pytest` | 24 tests |
 | Load test (k6) | `k6 run -e MODE=load tests/load/dashboard.js` | 50 virtual users |
 
-All automated suites run in CI on every push. Results of the final test cycle, including load,
-security and usability testing: [docs/Testing/](docs/Testing/).
+All automated suites run in CI on every push.
 
 ---
 
@@ -132,7 +157,7 @@ security and usability testing: [docs/Testing/](docs/Testing/).
   Sessions are server-side rows, so signing out revokes access on the next request.
 - Every endpoint requires a session except sign-in start, sign-in callback and `/api/healthz`.
 - Every operation is checked against the caller's role in the workspace
-  ([permission matrix](docs/RBAC_PERMISSION_MATRIX.md)), and PostgreSQL Row-Level Security keeps
+  ([permission policy](apps/api/src/codesage_api/authorization/policy.json)), and PostgreSQL Row-Level Security keeps
   workspaces apart even if an application check were missed.
 
 ---
@@ -179,9 +204,8 @@ apps/ml/         ML inference service and offline training
 infra/           Docker Compose stack and k3s manifests
 tests/load/      k6 load test
 docs/api/        openapi.yaml, the API contract; frontend types are generated from it
-docs/Deliverables/  Proposal, Feasibility Study, SRS, SAD, Gantt chart
-docs/Diagrams/   UML diagrams by version
-docs/Testing/    Master Test Plan, test results, usability study
+docs/Deliverables/  Proposal, Feasibility Report, SRS and SAD (all versions), Master Test Plan,
+                    usability study, User Manual, Gantt charts
 ```
 
 `apps/web/src/lib/types/api.ts` is generated from [docs/api/openapi.yaml](docs/api/openapi.yaml) by

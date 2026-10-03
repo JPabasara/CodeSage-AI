@@ -424,7 +424,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Collapse the pool back to one active profile per workspace.
 
-    ⚠️ LOSSY, and unavoidably so. The old schema can hold exactly one profile per
+    LOSSY, and unavoidably so. The old schema can hold exactly one profile per
     workspace, so going back keeps the workspace default and DELETES every other
     profile in the pool along with every project override. Custom profiles a team
     authored and any per-project selection are gone for good; the profile each

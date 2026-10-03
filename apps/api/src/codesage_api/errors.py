@@ -38,7 +38,7 @@ class PermissionDenied(Forbidden):
     """A 403 that knows who was refused what, so the refusal can be audited.
 
     The response body is identical to `Forbidden`: the caller learns nothing
-    extra. The identifiers exist only for the security audit record (DBR-30).
+    extra. The identifiers exist only for the security audit record.
     """
 
     def __init__(

@@ -1,4 +1,4 @@
-"""Sign-out ends the session here AND at Asgardeo (SEC-10, J3.0).
+"""Sign-out ends the session here AND at Asgardeo.
 
 The bug these lock down: sign-out used to delete our own session row and stop
 there. Asgardeo kept its own SSO cookie, so clicking "Sign in" straight afterwards

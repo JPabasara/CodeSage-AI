@@ -28,7 +28,7 @@ test("shows a skeleton while the first request is in flight", () => {
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })
 
-test("lists the stored snapshots newest first (FR-19)", async () => {
+test("lists the stored snapshots newest first", async () => {
   render(<ScanHistory repoId={DEMO_REPO_ID} />)
 
   const rows = await screen.findAllByRole("row")

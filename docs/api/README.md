@@ -1,7 +1,7 @@
 # The API contract
 
 `openapi.yaml` is **normative**. It is the single source of truth for every shape
-that crosses the browser/backend boundary (SRS SP-4, SRS Appendix B).
+that crosses the browser/backend boundary.
 
 ## Who consumes it
 
@@ -70,41 +70,22 @@ This is what makes degraded mode expressible in the contract rather than implied
 the code.
 
 **`pinned_by_floor` explains itself.** A finding held in the visible list by the
-critical-security floor (FR-24) rather than by its computed priority carries
+critical-security floor rather than by its computed priority carries
 `pinned_by_floor: true`, so the UI can say why a row is there even at the minimum
 `security` weight of 0.1.
 
-## Relationship to SRS Table 3.106
+## Path conventions
 
-**They agree.** SRS v1.1 was corrected to match this contract, so Table 3.106 and
-`openapi.yaml` can be read side by side. Three things were fixed to get there, and
-they are worth knowing because the first one also explains a bug in the backend:
+**Auth paths are provider-neutral.** `/api/auth/login`, `/api/auth/callback`,
+`/api/auth/session` and `/api/auth/logout` carry no provider segment, because which
+sign-in method a user picks is Asgardeo's business.
 
-**1. The four auth rows were rotated.** In SRS v1.0 each path carried the *next*
-row's purpose:
+**Past snapshots.** `GET /api/repos/{repo_id}/health?snapshot_id=` loads a stored
+snapshot into the dashboard. `GET /api/healthz` is an operational liveness probe,
+outside the product surface.
 
-| v1.0 path | v1.0 purpose | Actually belongs to |
-|---|---|---|
-| `GET /api/auth/github` | Begin sign-in | correct |
-| `GET /api/auth/github/login` | "GitHub's redirect target…" | the callback |
-| `GET /api/auth/github/callback` | "Return the signed-in user…" | the session endpoint |
-| `POST /api/auth/session` | "End the session…" | logout |
-
-The first backend implementation reproduced the same off-by-one, because it was built
-faithfully from the table. It has since been corrected to the contract.
-
-**2. The auth paths are provider-neutral.** `/api/auth/login`, `/api/auth/callback`,
-`/api/auth/session`, `/api/auth/logout` — no `/github/` segment, because which
-provider a user picks is Asgardeo's business. A user may sign in with Google or a
-password and the endpoint is the same.
-
-**3. Two additions.** `GET /api/repos/{repo_id}/health?snapshot_id=` is required by
-FR-19 ("selecting a past scan loads that snapshot into the dashboard") but was absent
-from the table. `GET /api/healthz` is an operational liveness probe, outside the
-product surface.
-
-Path parameters are **snake_case** on both sides now (`{repo_id}`), matching every
-other field name on the wire.
+Path parameters are **snake_case** (`{repo_id}`), matching every other field name on
+the wire.
 
 ## Implementation status
 
@@ -115,5 +96,4 @@ The backend enforces the contract:
 - `{ detail, code, errors[] }` on every error, with `code` drawn from the `ErrorCode` enum
 - snake_case field names on the wire
 
-The full endpoint reference is in [ENDPOINTS_README.md](ENDPOINTS_README.md), and a
-rendered view of the contract is in [openapi.html](openapi.html).
+A rendered view of the contract is in [openapi.html](openapi.html).

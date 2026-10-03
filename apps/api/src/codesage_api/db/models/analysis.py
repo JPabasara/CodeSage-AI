@@ -57,7 +57,7 @@ class AnalysisAttempt(UUIDPrimaryKey, Base):
     retry_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0"))
     failure_information: Mapped[str | None] = mapped_column(Text)
-    # Stable, machine-readable reason next to the human sentence (DBR-22).
+    # Stable, machine-readable reason next to the human sentence.
     failure_code: Mapped[str | None] = mapped_column(String(64))
     branch: Mapped[Branch] = relationship(back_populates="analysis_attempts")
     analysis_engine_version: Mapped[AnalysisEngineVersion] = relationship(back_populates="analysis_attempts")

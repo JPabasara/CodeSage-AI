@@ -16,7 +16,7 @@ class FileScoreOut(ApiModel):
 
 
 class TreeNodeOut(ApiModel):
-    """A node in the hotspot heat map (FR-18).
+    """A node in the hotspot heat map.
 
     Folder health is the aggregation of the stored file scores beneath it, so
     drilling in re-aggregates a subtree — summing numbers already in memory, with
@@ -34,7 +34,7 @@ class TreeNodeOut(ApiModel):
 
 
 class HealthPointOut(ApiModel):
-    """One point on the trend chart (FR-14)."""
+    """One point on the trend chart."""
 
     t: str  # ISO timestamp
     score: float
@@ -42,7 +42,7 @@ class HealthPointOut(ApiModel):
 
 
 class CategoryBreakdownItemOut(ApiModel):
-    """One slice of the category pie (FR-13).
+    """One slice of the category pie.
 
     `count` is a plain query over stored rows. `debt` is weighted by the active
     profile, so the two move independently — a category can hold many findings and

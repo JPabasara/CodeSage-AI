@@ -1,6 +1,6 @@
-"""DBR-32: dashboard reads use indexes and meet PERF-02/03 on seeded volume.
+"""Dashboard reads use indexes and meet the latency targets on seeded volume.
 
-Nightly only (`pytest -m perf`). `CODESAGE_PERF_SCALE=full` seeds the DBR-32
+Nightly only (`pytest -m perf`). `CODESAGE_PERF_SCALE=full` seeds the large
 profile of 20 repositories x 30 snapshots x 500 files x ~20 findings; the default
 "ci" scale is smaller so a local run stays short. Timings print to stdout for
 the Performance Measurements report (run with `-s`).
@@ -166,7 +166,7 @@ def test_read_endpoints_meet_perf_02(volume, client, name, path, params) -> None
         assert response.status_code == 200, response.text
 
     seconds = p95_seconds(read)
-    print(f"PERF-02 {name}: p95 {seconds * 1000:.0f} ms over 20 runs ({scale()})")
+    print(f"{name}: p95 {seconds * 1000:.0f} ms over 20 runs ({scale()})")
     assert seconds < PERF_02_SECONDS
 
 
@@ -185,5 +185,5 @@ def test_scan_submission_meets_perf_03(volume, client, monkeypatch) -> None:
             db.execute(text("UPDATE analysis_attempt SET status = 'cancelled' WHERE status = 'queued'"))
 
     seconds = p95_seconds(submit)
-    print(f"PERF-03 scan submission: p95 {seconds * 1000:.0f} ms over 20 runs")
+    print(f"Scan submission: p95 {seconds * 1000:.0f} ms over 20 runs")
     assert seconds < PERF_03_SECONDS

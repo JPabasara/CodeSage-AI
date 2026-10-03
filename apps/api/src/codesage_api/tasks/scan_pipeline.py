@@ -418,7 +418,7 @@ def _finalize(
     workspace_id: uuid.UUID,
     results: PipelineResults,
 ) -> uuid.UUID:
-    """Commit everything as a finalized result, or nothing at all (DBR-22, REL-05).
+    """Commit everything as a finalized result, or nothing at all.
 
     Separated from `run_scan` so the transactional boundary is a single, obvious
     function rather than an indented block two hundred lines into a task.
