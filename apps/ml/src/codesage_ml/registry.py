@@ -1,4 +1,4 @@
-"""Model artifact loading (SRS MAINT-05, AI-04).
+"""Model artifact loading.
 
 Models are trained offline and loaded at runtime as versioned artifacts.
 

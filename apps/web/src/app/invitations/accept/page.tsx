@@ -33,21 +33,10 @@ export default function AcceptInvitationPage() {
   )
 }
 
-/**
- * `/invitations/accept?token=…` — the link in an invitation email.
- *
- * Public in the middleware on purpose: a signed-out visitor must reach this page
- * so its sign-in link can carry the token back here as `return_to`. The token is
- * also kept in this tab's sessionStorage (a fallback for one release) and then
- * scrubbed from the address bar, so it does not sit in history or leak through
- * a Referer.
- */
 function AcceptInvitation() {
   const router = useRouter()
   const params = useSearchParams()
   const urlToken = params.get("token")
-  // Rendered on the client only (the search params bail out of prerendering),
-  // so reading storage in the initialiser cannot mismatch a server render.
   const [token] = useState(() => urlToken ?? readPendingInvitation())
   const { data: session, error: sessionError } = useSession()
   const { switchTo } = useWorkspaceSwitch()
@@ -55,8 +44,6 @@ function AcceptInvitation() {
   const [attempt, setAttempt] = useState(0)
   const started = useRef(-1)
 
-  // Once only: a re-run after the accept has cleared the token would put a
-  // spent token back in storage and send the next sign-in round here again.
   const saved = useRef(false)
   useEffect(() => {
     if (!urlToken || saved.current) return
@@ -85,8 +72,6 @@ function AcceptInvitation() {
       })
       .catch((caught: unknown) => {
         if (caught instanceof ApiRequestError && caught.status === 404) {
-          // Invalid, expired, revoked, used or for another email: the API
-          // answers all of them alike, and so does this page.
           clearPendingInvitation()
           setOutcome({ kind: "unusable" })
         } else {
@@ -122,10 +107,7 @@ function AcceptInvitation() {
         title="Sign in to accept your invitation"
         body="Sign in with the email address the invitation was sent to. You will come back here to finish joining."
       >
-        {/* Straight to sign-in, carrying this page as `return_to`. The API keeps
-            it in its signed handshake cookie, so the invitee lands back here
-            even from the email-verification tab, which has none of this tab's
-            sessionStorage. A plain <a>: this leaves the app. */}
+        {/* Straight to sign-in, carrying this page as `return_to`. */}
         <Button asChild>
           <a
             href={signInHref(

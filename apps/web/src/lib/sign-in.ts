@@ -1,12 +1,5 @@
 // What the sign-in page says, and the one note it carries across sign-out.
 
-/**
- * The API sends a failed sign-in back to `/login?error=<code>`. Each known code
- * gets a calm sentence; anything else gets one generic line. The raw value is
- * never rendered — it came from a URL anyone can craft.
- *
- * `session` is the web's own code: the app got a 401 mid-session.
- */
 const MESSAGES: Record<string, string> = {
   expired: "Sign-in took too long. Please try again.",
   invalid: "That sign-in attempt wasn't valid. Please try again.",
@@ -29,27 +22,12 @@ export const SESSION_ENDED_URL = "/login?error=session"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
-/**
- * The sign-in link: a navigation to the API, never a fetch.
- *
- * `returnTo` is where to land afterwards, a path on the API's allowlist
- * (`/invitations/accept`, `/projects`, `/dashboard/…`, `/profiles`,
- * `/workspace`). The API keeps it in its signed handshake cookie, so it
- * survives the identity provider and even an email-verification tab; anything
- * off the list is ignored there.
- */
 export function signInHref(returnTo?: string): string {
   const url = `${API_BASE}/api/auth/login`
   return returnTo
     ? `${url}?${new URLSearchParams({ return_to: returnTo })}`
     : url
 }
-
-// ── "You're signed out." ────────────────────────────────────────────────────
-//
-// Sign-out is a form POST that ends on the identity provider and comes back to
-// /login. The post-logout URL is matched exactly by Asgardeo, so it cannot carry
-// a query parameter. The note travels in this tab's sessionStorage instead.
 
 const SIGNED_OUT_KEY = "codesage.signedOut"
 
@@ -72,13 +50,7 @@ export function markSignedOut() {
 
 let consumed: boolean | undefined
 
-/**
- * Whether to say "You're signed out." — true once per sign-out, then false.
- *
- * The answer is read once and remembered for the life of the page, so every
- * re-render agrees with the first one while the note itself is already gone
- * from storage and will not show again on a refresh.
- */
+// Whether to say "You're signed out." — true once per sign-out, then false.
 export function consumeSignedOut(): boolean {
   if (consumed !== undefined) return consumed
   try {

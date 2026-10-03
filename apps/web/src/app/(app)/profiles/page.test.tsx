@@ -15,8 +15,6 @@ import { server } from "@/lib/mocks/server"
 import type { ProfileValues } from "@/components/profiles/profile-values"
 import type { Session } from "@/lib/types"
 
-// The scope being configured lives in `?project=`, so the search string is a
-// knob, and `replace` records what the page wrote back.
 const nav = vi.hoisted(() => ({ replace: vi.fn(), search: "" }))
 vi.mock("next/navigation", () => ({
   usePathname: () => "/profiles",
@@ -24,9 +22,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }))
 
-// <Toaster> lives in the root layout, so a page rendered alone puts no toast in
-// the DOM. Assert on the calls instead: what matters is which message was
-// chosen for which refusal.
+// <Toaster> lives in the root layout, so a page rendered alone puts no toast in the DOM.
 const { toastError, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -35,8 +31,6 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: toastError, success: toastSuccess }),
 }))
 
-// The role is the one thing these screens branch on, so it is a knob rather
-// than a fixed fixture: a read-only role has to be renderable in the same file.
 const session = vi.hoisted(() => ({ current: null as Session | null }))
 vi.mock("@/hooks/use-session", () => ({
   useSession: () => ({ data: session.current, loading: false }),
@@ -84,8 +78,6 @@ async function fillCustomProfiles(count: number) {
   }
 }
 
-// ── the pool ────────────────────────────────────────────────────────────────
-
 test("renders the three built-ins, and says which is the workspace default", async () => {
   render(<ProfilesPage />)
   await ready()
@@ -97,8 +89,6 @@ test("renders the three built-ins, and says which is the workspace default", asy
   expect(screen.getByTestId("workspace-default-name")).toHaveTextContent(
     "Balanced",
   )
-  // Built-ins do not count toward the five-custom limit, so an untouched
-  // workspace has used none of them.
   expect(screen.getByTestId("custom-count")).toHaveTextContent("0 of 5")
 })
 
@@ -177,8 +167,6 @@ test("the pool read failing offers a Retry that actually reloads it", async () =
   ).not.toBeInTheDocument()
 })
 
-// ── editing ─────────────────────────────────────────────────────────────────
-
 test("moving a slider marks the profile unsaved and sends nothing", async () => {
   await client.createProfile({ name: "Release gate", ...values })
   const patch = vi.spyOn(client, "updateProfile")
@@ -220,8 +208,6 @@ test("Save sends only what changed, and Discard puts the stored values back", as
   await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
   const [profileId, body] = patch.mock.calls[0]
   expect(profileId).toBe(created.id)
-  // PATCH, not PUT: the four untouched weights and the name are absent, so
-  // re-sending values the form only displayed cannot re-clamp them.
   expect(Object.keys(body)).toEqual(["weights"])
   expect(Object.keys(body.weights ?? {})).toEqual(["test"])
   expect(screen.queryByTestId("unsaved-badge")).not.toBeInTheDocument()
@@ -241,8 +227,7 @@ test("the clamped values the server stored replace the draft", async () => {
 
   const slider = await screen.findByRole("slider", { name: /security weight/i })
   slider.focus()
-  // Drive it past the 3.0 maximum. The client clamp holds the slider at the
-  // bound; the response is still what decides what is on screen.
+  // Drive it past the 3.0 maximum.
   for (let i = 0; i < 20; i++) await userEvent.keyboard("{ArrowRight}")
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
@@ -276,8 +261,6 @@ test("editing another profile with unsaved changes asks before discarding", asyn
   await userEvent.click(screen.getByRole("button", { name: "Keep editing" }))
   expect(await screen.findByTestId("unsaved-badge")).toBeVisible()
 })
-
-// ── creating ────────────────────────────────────────────────────────────────
 
 test("a profile can be created from a built-in, and is offered a name", async () => {
   const post = vi.spyOn(client, "createProfile")
@@ -314,8 +297,7 @@ test("the sixth custom profile is refused, with the count on screen", async () =
   await ready()
 
   expect(screen.getByTestId("custom-count")).toHaveTextContent("5 of 5")
-  // The create path is closed rather than offering a refusal the server has
-  // already promised.
+  // The create path is closed rather than offering a refusal the server has already promised.
   expect(screen.getByRole("button", { name: /new profile/i })).toBeDisabled()
   expect(
     screen.getByLabelText("This workspace already has 5 custom profiles"),
@@ -344,8 +326,6 @@ test("a name already in the pool keeps the dialog open and says so", async () =>
   ).toBeInTheDocument()
   expect(screen.getByRole("dialog")).toBeInTheDocument()
 })
-
-// ── deleting ────────────────────────────────────────────────────────────────
 
 test("an unused custom profile is deleted after a named confirmation", async () => {
   await client.createProfile({ name: "Release gate", ...values })
@@ -384,18 +364,14 @@ test("an in-use profile survives the delete, and the dialog explains why", async
   expect(
     await screen.findByText(/change those selections first/i),
   ).toBeInTheDocument()
-  // The dialog stays open: the next step is to move the reference, not to press
-  // Delete again.
+  // The dialog stays open: the next step is to move the reference, not to press Delete again.
   expect(screen.getByRole("dialog")).toBeInTheDocument()
 
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }))
-  // And the profile is still in the pool — the refusal was not a silent delete.
   expect(
     within(poolList()).getByRole("button", { name: /^Release gate/ }),
   ).toBeInTheDocument()
 })
-
-// ── choosing what is in force ───────────────────────────────────────────────
 
 test("the workspace default moves to the selected profile", async () => {
   render(<ProfilesPage />)
@@ -465,8 +441,6 @@ test("a project overrides the default, and clearing it inherits again", async ()
   )
 })
 
-// ── roles ───────────────────────────────────────────────────────────────────
-
 test("a viewer reads the pool and can change nothing", async () => {
   session.current = mockSessionViewer
   await client.createProfile({ name: "Release gate", ...values })
@@ -475,8 +449,6 @@ test("a viewer reads the pool and can change nothing", async () => {
   await ready()
 
   expect(card("Release gate")).toBeInTheDocument()
-  // Main actions stay visible but locked, with the reason on the wrapper that
-  // hover and keyboard focus reach.
   expect(screen.getByRole("button", { name: /new profile/i })).toBeDisabled()
   expect(
     screen.getByRole("button", { name: /set as workspace default/i }),
@@ -496,8 +468,7 @@ test("a viewer reads the pool and can change nothing", async () => {
     screen.getByText(/needs the manager or org-admin role/i),
   ).toBeInTheDocument()
 
-  // Read-only means readable: the numbers are still on screen, they just do not
-  // operate.
+  // Read-only means readable: the numbers are still on screen, they just do not operate.
   expect(
     screen.getByRole("slider", { name: /security weight/i }),
   ).toHaveAttribute("aria-disabled", "true")
@@ -531,8 +502,6 @@ test("a 403 from the API explains the permission rather than failing vaguely", a
     expect.stringContaining("org-admin or a manager"),
   )
 })
-
-// ── the scope rail (13F) ────────────────────────────────────────────────────
 
 test("the rail lists the workspace default and every project with its profile", async () => {
   render(<ProfilesPage />)

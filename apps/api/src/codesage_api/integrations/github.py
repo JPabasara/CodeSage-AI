@@ -114,8 +114,6 @@ def fetch_repository(url: str) -> GitHubRepository:
             branch_response.raise_for_status()
             branch_data = branch_response.json()
 
-            # Asked at connect so a repository with no Java is refused before a
-            # project exists, rather than producing an empty scan later.
             languages_response = client.get(
                 f"/repos/{quote(owner)}/{quote(repository_name)}/languages"
             )

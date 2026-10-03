@@ -5,7 +5,7 @@
 changing the contract first, then both sides.
 
 Field names are **snake_case on the wire** (see `ApiModel`), the same spelling
-used by the contract, the SRS and the database columns — so no one has to
+used by the contract and database columns — so no one has to
 remember which side of the wire they are on.
 """
 

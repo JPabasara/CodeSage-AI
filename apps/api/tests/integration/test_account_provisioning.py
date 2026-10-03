@@ -84,11 +84,6 @@ def test_nonactive_membership_revokes_existing_session_and_blocks_signin(account
         assert db.get(UserSession, session_id) is None
     with Session(engine) as db:
         db.execute(text("SET LOCAL ROLE codesage_app"))
-        # Signing in again succeeds, but lands nowhere. Losing your last
-        # membership is not the same as not being a user: identity is the
-        # Asgardeo subject, and it is still valid. What they lose is every
-        # workspace, so the new session has none and every workspace-bound
-        # endpoint answers WORKSPACE_REQUIRED until someone invites them back.
         revoked = establish_session(db, claims)
         assert revoked.user_id == user_id
         assert revoked.workspace_id is None

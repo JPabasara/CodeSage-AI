@@ -101,8 +101,6 @@ def main() -> int:
 
     attempt = _read_attempt(args.workspace, args.attempt_id)
     if attempt is None:
-        # Indistinguishable, and deliberately so: RLS gives a caller from the wrong
-        # workspace the same answer as a caller asking for a row that never existed.
         print(
             f"No attempt {args.attempt_id} visible in workspace {args.workspace}.\n"
             "It does not exist, or it belongs to a different workspace.",
@@ -149,8 +147,6 @@ def main() -> int:
     print(f"\n{attempt.status.value} after {elapsed:.1f}s")
 
     if attempt.status is AnalysisStatus.ERROR:
-        # Stored on the row, not merely logged — SP-13 requires it to be
-        # recoverable from the database alone.
         print(f"reason: {attempt.failure_information or '(none recorded)'}", file=sys.stderr)
 
     return 0 if attempt.status is AnalysisStatus.DONE else 1

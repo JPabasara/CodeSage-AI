@@ -1,9 +1,3 @@
-# This Secret asks Kubernetes to mint a token for the namespace-scoped
-# github-deployer ServiceAccount. It deliberately contains no token value in
-# Git; Kubernetes fills .data.token after the manifest is applied.
-#
-# The resulting token is long-lived. Keep its derived kubeconfig only in the
-# GitHub production Environment secret and rotate it immediately if exposed.
 apiVersion: v1
 kind: Secret
 metadata:

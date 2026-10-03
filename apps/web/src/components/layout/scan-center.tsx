@@ -24,13 +24,7 @@ export function dashboardHrefFor(repoId: string, branch: string) {
 const signed = (delta: number) =>
   `${delta >= 0 ? "+" : "−"}${Math.abs(Math.round(delta))}`
 
-/**
- * What the app says about scans, from wherever the user happens to be.
- *
- * Mounted once in the app shell, so the "finished" toast reaches you on the
- * Projects page as surely as on the dashboard, and a refresh picks up the scans
- * this tab was following. Renders nothing.
- */
+// What the app says about scans, from wherever the user happens to be.
 export function ScanCenter() {
   const router = useRouter()
   const workspaceId = useActiveWorkspaceId()
@@ -45,8 +39,6 @@ export function ScanCenter() {
       label: "Try again",
       onClick: () => void startScan(target),
     })
-    // "View dashboard" is also "Show them": the user asked for the new
-    // results, so the dashboard should not keep the previous ones pinned.
     const view = (scan: TrackedScan) => ({
       label: "View dashboard",
       onClick: () => {
@@ -66,8 +58,7 @@ export function ScanCenter() {
           )
           return
         case "finished": {
-          // Sent once the score is ready too, so the toast has the news. A
-          // score that came too late still ends the job, and says so.
+          // Sent once the score is ready too, so the toast has the news.
           const { scan, report } = event
           if (report) {
             toast.success(`${nameOf(scan)} · ${scan.branch} is ready`, {

@@ -1,9 +1,10 @@
 # infra/
 
-The local stack: seven Compose services — six that stay running, plus `migrate`, which applies the
-database migrations and exits.
+The local stack: `postgres`, `redis`, `ml`, `api`, `worker`, `score-worker` and `web` stay running,
+and `migrate` applies the database migrations and exits. `dozzle` is an optional log viewer.
 
-**None of this runs in production.** Railway, Neon and Upstash never read these files.
+**This is for local development only.** Production runs on k3s with the manifests in
+[k3s/linode/](k3s/linode/README.md), against Neon PostgreSQL.
 
 | File | What it is |
 |---|---|
@@ -17,8 +18,8 @@ database migrations and exits.
 ```powershell
 cd infra
 cp .env.example .env      # fill in the Asgardeo values
-docker compose up -d      # ~90s; the worker's start_period alone is 45s
-docker compose ps         # all six (healthy)
+docker compose up -d      # about 90 s; the worker's start period alone is 45 s
+docker compose ps         # every running service should report (healthy)
 ```
 
 `web` → <http://localhost:3000> · `api` → <http://localhost:8000>
@@ -59,7 +60,7 @@ docker compose down -v --remove-orphans && docker compose build && docker compos
 | `docker compose config` | Print the file with every `${...}` resolved — fastest way to see what a variable became |
 | `docker compose exec postgres psql -U codesage_owner codesage` | The database, without opening a port |
 | `docker compose exec api alembic upgrade head` | Run migrations by hand |
-| `docker compose up -d --scale worker=3` | Three concurrent scans (PERF-07) |
+| `docker compose up -d --scale worker=3` | Three concurrent scans |
 
 | You changed | Run |
 |---|---|
@@ -71,7 +72,7 @@ docker compose down -v --remove-orphans && docker compose build && docker compos
 ## Five things that will confuse you once
 
 1. **`localhost` inside a container means the container**, not your laptop. Use the service name —
-   `postgres`, not `localhost`. This was the J0.4 bug.
+   `postgres`, not `localhost`.
 2. **`EXPOSE` opens nothing.** Only a `ports:` entry does. In `docker compose ps`, look for the `->`
    arrow: `0.0.0.0:8000->8000/tcp` is published, bare `5432/tcp` is not. Only `api` and `web` are
    published — that is the *only* difference between them and the rest.
@@ -79,8 +80,7 @@ docker compose down -v --remove-orphans && docker compose build && docker compos
    because a `${...}` in `environment:` puts it there.
 4. **`down -v` deletes your database.** Without `-v` the data survives.
 5. **`NEXT_PUBLIC_*` is baked into the JavaScript at build time**, not read at startup — the browser
-   cannot read your server's environment. Changing it means a rebuild. It sat in compose as
-   `environment:` until 20 Aug 2026 and did nothing at all.
+   cannot read your server's environment. Changing it means a rebuild.
 
 ## `devpassword` is committed on purpose
 
@@ -113,13 +113,16 @@ so it cannot collide with a local PostgreSQL.
 
 ## Known gaps
 
-- **`GET /readyz` and `/version` return 501.** Unfinished stubs. The health endpoint is
-  **`/api/healthz`** — never point an orchestrator at `/readyz`.
-- **Profiles endpoints return 501.** The Profiles screen works only against MSW.
+- **`/readyz` and `/version` are not implemented.** The health endpoint is **`/api/healthz`**; point
+  probes there.
 - **Scan a Java repository.** `analysed_extensions` is `[".java"]`; a Python repo scans successfully
   and finds nothing, which looks like a failure and is not.
 
-## More
+## What cannot be tested locally
 
-[Deployment log](../docs/Project%20Management%20&%20Planning/deployment-implementation-log.md) — what
-is deployed, what broke on the way, and what cannot be tested locally.
+| | |
+|---|---|
+| `Secure` cookies, the cross-host cookie domain, real CORS | locally `web` and `api` are both `localhost` |
+| HTTPS and certificates | no TLS locally |
+| Neon pooled and direct endpoints | local Postgres is a plain container |
+| The published image itself | Compose builds from your working tree; production runs what CI built |

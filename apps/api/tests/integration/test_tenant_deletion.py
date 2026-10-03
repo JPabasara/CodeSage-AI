@@ -1,4 +1,4 @@
-"""DBR-28: a workspace, or a person, can be removed completely and safely."""
+"""A workspace, or a person, can be removed completely and safely."""
 
 from __future__ import annotations
 

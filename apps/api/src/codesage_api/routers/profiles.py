@@ -39,8 +39,6 @@ def _rescore(db: Session, workspace_id: uuid.UUID, profile_id: str) -> None:
         )
     except Exception:
         logger.exception("Could not enqueue score warm-up after a profile change")
-        # The queue call runs after the commit, so the transaction is gone and
-        # with it the bound workspace. Restore it for whatever runs next.
         set_workspace_context(db, workspace_id)
 
 

@@ -1,14 +1,4 @@
-"""Scan-time repository guardrails (Phase 13H.1).
-
-The connect-time checks answer from GitHub's metadata. These answer from the
-branch actually checked out, which is the real answer: a branch can differ from
-what GitHub reports for the default branch.
-
-Every limit comes from settings, so 13I.4 can move them to the admin page
-without touching this module. Every ending here is a *clean* one: a stable
-`ScanErrorCode` plus one plain sentence stored on the attempt row, never a
-stack trace.
-"""
+"""Repository guardrails for scans."""
 
 from __future__ import annotations
 
@@ -18,9 +8,6 @@ from pathlib import Path
 from codesage_api.config import get_settings
 from codesage_api.scoring.enums import ScanErrorCode
 
-#: How long past the hard limit a RUNNING attempt must be before it is treated
-#: as abandoned. The hard limit kills the worker process, so its `finally`
-#: never runs and nothing else would ever end the row.
 STALE_GRACE_SECONDS = 5 * 60
 
 

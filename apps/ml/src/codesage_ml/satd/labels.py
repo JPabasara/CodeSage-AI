@@ -1,4 +1,4 @@
-"""SATDAUG label ↔ product category mapping (SRS FR-9.3, Appendix C.3).
+"""SATDAUG label-to-product-category mapping.
 
 The model trains on the dataset's own label strings and this mapping is applied to
 its output, so the rename is deterministic and cannot affect trainability.
@@ -17,7 +17,7 @@ by the rule engine alone — the classifier can never predict it. That is why th
 model is a four-class problem while the product has five categories.
 
 **Imbalance to state honestly:** only a small fraction of comments are debt at all,
-so FR-25 requires PER-CLASS precision/recall/F1 with support counts. A single
+so evaluation reports PER-CLASS precision/recall/F1 with support counts. A single
 macro- or weighted-average figure would hide poor performance on the smaller
 classes.
 """

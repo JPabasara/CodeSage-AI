@@ -23,8 +23,12 @@ Workloads:
 | `redis` | `redis:7.4-alpine` | 1 | — |
 
 `web`, `api`, `worker` and `score-worker` have no `replicas` field: the HPA or
-KEDA owns the count. The resource numbers and the reasons behind them are in
-`K3_DEPLOYMENT_PLAN.MD`, Phase 23.
+KEDA owns the count. Resource requests and limits are set in each manifest.
+
+Normal deploys are done by CI (`.github/workflows/ci.yml`): after the tests and
+the staging smoke test pass, it sets the new `sha-` image tags on the cluster and
+runs a smoke test against the public site. The steps below are for a first
+install or a manual change.
 
 Do not commit real secrets. Use `secrets.example.env` as the checklist only.
 

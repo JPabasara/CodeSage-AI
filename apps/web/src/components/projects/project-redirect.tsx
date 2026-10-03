@@ -8,11 +8,6 @@ import { NoProjectState } from "@/components/projects/no-project-state"
 import { useProjects } from "@/hooks/use-projects"
 import { useSelectedProject } from "@/hooks/use-selected-project"
 
-/**
- * `/dashboard` and `/dashboard/history` without a project: go to the project
- * this workspace was last on, or — with no projects at all — say how to get
- * one. This is where the rail points when there is no project to name.
- */
 export function ProjectRedirect({
   page,
 }: Readonly<{ page: "dashboard" | "history" }>) {

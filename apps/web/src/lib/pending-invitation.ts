@@ -1,12 +1,4 @@
 // An invitation token waiting for sign-in to finish.
-//
-// FALLBACK, for one release. Sign-in now carries the accept page back as
-// `return_to` (see `signInHref`), which works from any tab. This per-tab copy
-// only covers a sign-in started some other way, and is removed after that.
-// Whichever screen the user lands on sends them back to finish accepting.
-//
-// sessionStorage rather than localStorage: the token is a one-time credential,
-// and it should not outlive the tab it was opened in.
 
 const KEY = "codesage.pendingInvitation"
 

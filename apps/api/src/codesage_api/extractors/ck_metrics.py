@@ -115,9 +115,6 @@ def extract_ck_analysis(
                     "false",
                     "0",
                     "false",
-                    # CK treats this argument as a filename prefix, not a
-                    # directory. The separator makes it emit class.csv and
-                    # method.csv inside our temporary output directory.
                     f"{output}{os.sep}",
                 ],
                 check=True,

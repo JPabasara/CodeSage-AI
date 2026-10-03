@@ -16,8 +16,6 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
-        // A solid red box with white text: the one control on a screen that
-        // cannot be undone should not look like the others.
         destructive:
           "bg-destructive-solid text-white hover:bg-destructive-solid/90 focus-visible:border-destructive-solid focus-visible:ring-destructive-solid/30",
         link: "text-primary underline-offset-4 hover:underline",

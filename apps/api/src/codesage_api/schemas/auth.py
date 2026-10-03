@@ -1,6 +1,6 @@
 """What `GET /api/auth/session` and the workspace endpoints return.
 
-Carries no token and no password. Those never leave this server (SEC-09).
+Carries no token and no password. Those never leave this server.
 """
 
 from __future__ import annotations
@@ -139,9 +139,6 @@ class SessionOut(ApiModel):
     needs_workspace_setup: bool = False
     product_tour_required: bool = False
 
-    # The caller's standing in the active workspace. Sent so the web can hide
-    # controls it would be refused anyway — a convenience, never the boundary.
-    # The API re-checks every permission on every request regardless.
     role: str | None = None
     permissions: list[str] = Field(default_factory=list)
 

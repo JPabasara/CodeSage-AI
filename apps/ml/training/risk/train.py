@@ -38,9 +38,6 @@ from sklearn.metrics import (
 from sklearn.model_selection import ParameterGrid
 
 
-# ---------------------------------------------------------------------------
-# Production imports
-# ---------------------------------------------------------------------------
 
 current_dir = Path(__file__).resolve().parent
 ml_src = current_dir.parent.parent / "src"
@@ -60,9 +57,6 @@ from codesage_ml.risk.model import (  # noqa: E402
 )
 
 
-# ---------------------------------------------------------------------------
-# Training contract
-# ---------------------------------------------------------------------------
 
 PROJECT_COLUMN = "project_name"
 CLASS_COLUMN = "class_name"
@@ -101,9 +95,6 @@ PARAM_GRID = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Dataset
-# ---------------------------------------------------------------------------
 
 
 def sha256(path: Path) -> str:
@@ -210,9 +201,6 @@ def load_dataset(
     return df, sha256(path)
 
 
-# ---------------------------------------------------------------------------
-# Evaluation evidence
-# ---------------------------------------------------------------------------
 
 
 def load_json(
@@ -265,9 +253,6 @@ def verify_evaluation_evidence(
         )
 
 
-# ---------------------------------------------------------------------------
-# Random Forest helpers
-# ---------------------------------------------------------------------------
 
 
 def make_random_forest(
@@ -308,9 +293,6 @@ def positive_probability(
     )[:, positive_index]
 
 
-# ---------------------------------------------------------------------------
-# Final hyperparameter selection
-# ---------------------------------------------------------------------------
 
 
 def evaluate_configuration_lopo(
@@ -496,9 +478,6 @@ def select_final_parameters(
     return best_params, results
 
 
-# ---------------------------------------------------------------------------
-# Project-aware calibration
-# ---------------------------------------------------------------------------
 
 
 def generate_out_of_project_predictions(
@@ -645,9 +624,6 @@ def calibrated_positive_probability(
     )[:, positive_index]
 
 
-# ---------------------------------------------------------------------------
-# Final production model
-# ---------------------------------------------------------------------------
 
 
 def train_production_model(
@@ -678,8 +654,6 @@ def train_production_model(
         y,
     )
 
-    # Training can use all CPU cores, but a deployed inference request
-    # should not consume the entire worker host.
     base_model.set_params(
         n_jobs=1
     )
@@ -690,9 +664,6 @@ def train_production_model(
     )
 
 
-# ---------------------------------------------------------------------------
-# Artifact export
-# ---------------------------------------------------------------------------
 
 
 def validate_round_trip(
@@ -773,9 +744,6 @@ def validate_round_trip(
         )
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
@@ -885,17 +853,11 @@ def main() -> None:
         f"Features: {len(FEATURE_ORDER)}"
     )
 
-    # ---------------------------------------------------------------
-    # 1. Select one final RF configuration using all five projects.
-    # ---------------------------------------------------------------
 
     best_params, selection_results = (
         select_final_parameters(df)
     )
 
-    # ---------------------------------------------------------------
-    # 2. Generate strictly out-of-project probabilities.
-    # ---------------------------------------------------------------
 
     raw_oop, oop_labels = (
         generate_out_of_project_predictions(
@@ -904,9 +866,6 @@ def main() -> None:
         )
     )
 
-    # ---------------------------------------------------------------
-    # 3. Fit one production sigmoid calibrator.
-    # ---------------------------------------------------------------
 
     calibrator = (
         fit_sigmoid_calibrator(
@@ -957,9 +916,6 @@ def main() -> None:
         f"{calibrated_oop_brier:.4f}"
     )
 
-    # ---------------------------------------------------------------
-    # 4. Train RF once on all five projects.
-    # ---------------------------------------------------------------
 
     model = train_production_model(
         df,
@@ -967,9 +923,6 @@ def main() -> None:
         calibrator,
     )
 
-    # ---------------------------------------------------------------
-    # 5. Export self-describing artifact.
-    # ---------------------------------------------------------------
 
     trained_at = (
         datetime.now(UTC).isoformat()
@@ -1075,9 +1028,6 @@ def main() -> None:
         args.output,
     )
 
-    # ---------------------------------------------------------------
-    # 6. Ensure the exact artifact can be loaded back and used.
-    # ---------------------------------------------------------------
 
     validate_round_trip(
         args.output,
@@ -1088,9 +1038,6 @@ def main() -> None:
         args.output
     )
 
-    # ---------------------------------------------------------------
-    # 7. Save a human-readable final-training report.
-    # ---------------------------------------------------------------
 
     args.report.parent.mkdir(
         parents=True,

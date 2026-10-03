@@ -1,18 +1,5 @@
 #!/usr/bin/env node
-/**
- * Fails if `src/lib/types/api.ts` is not what the OpenAPI contract generates.
- *
- * This is the guard that stops the contract and the generated types drifting
- * apart silently. Edit the contract without regenerating — or hand-edit the
- * generated file — and this exits 1.
- *
- * A script rather than `openapi-typescript … | diff -`, because `diff` is not a
- * command on Windows and pnpm runs scripts through `cmd.exe` there.
- *
- * Line endings are normalised before comparing: git hands Windows checkouts a
- * CRLF copy while the generator always emits LF, so comparing raw bytes would
- * report every line as changed on one machine and none on another.
- */
+// Fails if `src/lib/types/api.ts` is not what the OpenAPI contract generates.
 
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
@@ -39,8 +26,6 @@ if (!existsSync(CLI))
   fail("openapi-typescript is not installed. Run `pnpm install`.")
 if (!existsSync(GENERATED)) fail(`${GENERATED} does not exist. ${REGENERATE}`)
 
-// Invoke the CLI's own entry point rather than the `openapi-typescript` shim,
-// so this behaves the same whether it is run by pnpm or by hand.
 const generation = spawnSync(process.execPath, [CLI, CONTRACT], {
   encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
@@ -64,8 +49,7 @@ if (expected === actual) {
   process.exit(0)
 }
 
-// Point at the first line that differs. A full diff of a 1,500-line generated
-// file is noise; the line number plus the fix is what the reader needs.
+// Point at the first line that differs.
 const expectedLines = expected.split("\n")
 const actualLines = actual.split("\n")
 const at = expectedLines.findIndex((line, i) => line !== actualLines[i]) + 1

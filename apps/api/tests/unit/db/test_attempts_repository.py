@@ -138,8 +138,6 @@ def test_abandoned_running_rows_end_as_timed_out() -> None:
     assert params["status"] == AnalysisStatus.ERROR
     assert params["failure_code"] == "SCAN_TIMED_OUT"
     assert params["failure_information"].startswith("The scan took longer than 31 minutes")
-    # Only rows older than the hard limit plus the grace period: a live scan
-    # is always younger than that.
     cutoff = next(value for key, value in params.items() if key.startswith("start_time"))
     age = (datetime.now(UTC) - cutoff).total_seconds()
     assert 31 * 60 + 5 * 60 - 5 < age < 31 * 60 + 5 * 60 + 5

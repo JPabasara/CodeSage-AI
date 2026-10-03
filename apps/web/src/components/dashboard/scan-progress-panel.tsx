@@ -60,35 +60,16 @@ export type ScanProgressPanelProps =
       /** A job the app is following: scanning, scoring, or ready to show. */
       kind: "job"
       scan: TrackedScan
-      /**
-       * `full` fills the middle of a dashboard with nothing else to show (a
-       * first scan). `compact` sits above the previous results, which stay
-       * usable underneath.
-       */
       size: "full" | "compact"
-      /** "Show them", once the new results are ready (compact only). */
       onShow?: () => void
     }
   | {
-      /**
-       * The score is being recalculated with no scan behind it — after a
-       * profile change. Nothing to measure, so the bar sweeps.
-       */
+      // The score is being recalculated with no scan behind it — after a profile change.
       kind: "calculating"
       slow?: boolean
-      /** Injectable for tests; defaults to Math.random. */
       random?: () => number
     }
 
-/**
- * What the dashboard shows about a scan in progress (13H.4): an icon for the
- * stage, a plain headline, one bar that only moves forward from the first
- * stage to the score, and a friendly line that changes every few seconds.
- *
- * The bar and the line come from the app-wide scan store, not from this
- * component, so leaving the dashboard and coming back continues exactly
- * where it was. Stop stays in the strip under the top bar: one Stop on screen.
- */
 export function ScanProgressPanel(props: Readonly<ScanProgressPanelProps>) {
   return props.kind === "job" ? (
     <JobProgress {...props} />
@@ -241,13 +222,11 @@ function Layout({
         compact ? "size-10" : "size-20",
       )}
     >
-      {/* A softly breathing ring — decoration, and still under reduced
-          motion. */}
+      {/* A softly breathing ring — decoration, and still under reduced motion. */}
       <span
         aria-hidden="true"
         className="absolute inset-0 rounded-full bg-primary/10 motion-safe:animate-[panel-breathe_2.4s_ease-in-out_infinite]"
       />
-      {/* Re-keyed by mode, so each new stage's icon pops in. */}
       <Icon
         key={`${mode}:${slow}`}
         aria-hidden="true"
@@ -292,8 +271,7 @@ function Layout({
     </div>
   )
 
-  // The headline is the one live region: it changes per stage, which is worth
-  // hearing. The rotating line is not announced.
+  // The headline is the one live region: it changes per stage, which is worth hearing.
   const title = (
     <p
       role="status"

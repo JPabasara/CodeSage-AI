@@ -30,8 +30,6 @@ def _status_out(
 ) -> ScanStatusOut:
     phase = ScanPhase(attempt.status.value)
     failed = attempt.status == AnalysisStatus.ERROR
-    # Stage details mean something only while the worker is running; every
-    # other phase answers without asking Redis at all.
     reading = progress.ProgressReading()
     if phase is ScanPhase.DONE:
         percent = 100
@@ -84,9 +82,6 @@ def start(
     actor_user_id: uuid.UUID,
 ) -> ScanStatusOut:
 
-    # Repository removal takes this same row lock. Keep it until the queued
-    # attempt is committed so a concurrent delete cannot pass its active-scan
-    # check in the gap between this check and create_queued().
     if attempts.lock_repository_for_scan(session, workspace_id, repository_id) is None:
         raise NotFound
 
@@ -111,10 +106,6 @@ def start(
     if completed is not None and completed.commit_sha == remote_branch.head_commit_sha:
         return _status_out(completed, stored_branch.name)
 
-    # The workspace's queue is capped. Checked last — joining a running scan
-    # and "nothing new to scan" are answers, not queue entries — and under a
-    # per-workspace lock held until the commit below, so two presses at the
-    # same moment cannot both take the last place.
     attempts.lock_workspace_queue(session, workspace_id)
     limit = get_settings().max_queued_scans_per_workspace
     if attempts.count_queued_in_workspace(session, workspace_id) >= limit:

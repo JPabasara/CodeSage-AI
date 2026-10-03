@@ -1,12 +1,4 @@
 // What the scan panel says while it waits (13H.4).
-//
-// Every stage has a fixed headline — the honest "what is happening" — and a
-// pool of friendly lines that rotate beneath it. The pool mixes lines about
-// that stage with general ones, and the next line is drawn at random, never the
-// one just shown, so the wait does not read like a script on repeat.
-//
-// A scan that runs well past its usual time switches to the "slow" pool, which
-// says so plainly instead of pretending all is normal.
 import type { ScanStage } from "@/lib/types"
 
 export type PanelMode = ScanStage | "queued" | "calculating"
@@ -40,7 +32,6 @@ export function headlineFor(
   }
 }
 
-/** Lines tied to one stage. */
 export const STAGE_LINES: Record<PanelMode, readonly string[]> = {
   queued: [
     "Another scan in this workspace is running. Yours starts the moment it ends.",
@@ -108,21 +99,14 @@ export const SLOW_SCORE_LINES: readonly string[] = [
   "You can leave this page. The score will be ready when you come back.",
 ]
 
-/**
- * The pool for what is on screen. Stage lines come first; general ones fill
- * in, except while calculating (seconds long) and when slow (it should say so
- * every time).
- */
+// The pool for what is on screen.
 export function poolFor(mode: PanelMode, slow: boolean): readonly string[] {
   if (slow) return mode === "calculating" ? SLOW_SCORE_LINES : SLOW_LINES
   if (mode === "calculating" || mode === "finishing") return STAGE_LINES[mode]
   return [...STAGE_LINES[mode], ...GENERAL_LINES]
 }
 
-/**
- * Draw the next line at random, never the one just shown (unless the pool has
- * only one). `random` is injectable so a test can pin the draw.
- */
+// Draw the next line at random, never the one just shown (unless the pool has only one).
 export function pickLine(
   pool: readonly string[],
   previous: string | undefined,
@@ -136,10 +120,6 @@ export function pickLine(
 /** With no history to compare against, this long counts as slow. */
 export const SLOW_WITHOUT_HISTORY_MS = 3 * 60_000
 
-/**
- * Whether the scan has run well past its usual time: half again as long as
- * usual plus a little grace, or three minutes when there is no history yet.
- */
 export function isSlow(elapsedMs: number, typicalSeconds?: number | null) {
   if (typicalSeconds && typicalSeconds > 0) {
     return elapsedMs > typicalSeconds * 1_500 + 20_000

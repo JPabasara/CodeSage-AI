@@ -3,14 +3,6 @@ import { expect, test } from "vitest"
 
 import { useQuery } from "./use-query"
 
-// `reload` and `refetch` differ in exactly one way — whether the screen admits
-// it is fetching again — and each is a bug in the other's place. A quiet reload
-// behind Retry makes the button look dead; a loud one after "project connected"
-// blanks a list the user was reading. These four tests pin both halves.
-//
-// No MSW here on purpose: `useQuery` takes the fetcher as an argument, so the
-// hook can be tested without a network at all.
-
 /** A promise this test resolves by hand, so "still in flight" is assertable. */
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -92,8 +84,7 @@ test("reload leaves a stale error up until the new answer lands", async () => {
   inFlight = deferred<string>()
   act(() => result.current.reload())
 
-  // Nothing has changed on screen yet. Right after a write, wrong behind Retry
-  // — which is why the two functions exist rather than one.
+  // Nothing has changed on screen yet.
   expect(result.current.error).toBeDefined()
   expect(result.current.loading).toBe(false)
 
@@ -116,8 +107,6 @@ test("a local update cannot be overwritten by an older request", async () => {
 
   expect(result.current.data).toEqual(["after-write"])
 })
-
-// ── the workspace gate ──────────────────────────────────────────────────────
 
 test("with no workspace, a workspace-bound read sends nothing and waits", async () => {
   const { noteActiveWorkspace } = await import("./use-workspace-scope")
@@ -180,8 +169,6 @@ test("enabled: false sends nothing and waits; turning it on asks once", async ()
     { initialProps: { enabled: false } },
   )
 
-  // The dashboard's case: the branch is not known yet, so there is nothing
-  // worth asking — and an empty branch must not be asked about either.
   await new Promise((resolve) => setTimeout(resolve, 20))
   expect(calls).toBe(0)
   expect(result.current.loading).toBe(true)
@@ -191,8 +178,6 @@ test("enabled: false sends nothing and waits; turning it on asks once", async ()
   await waitFor(() => expect(result.current.data).toBe("data"))
   expect(calls).toBe(1)
 })
-
-// ── the app-wide cache (13G, 13H.3) ─────────────────────────────────────────
 
 test("two mounted consumers of the same key cause one fetch", async () => {
   let calls = 0

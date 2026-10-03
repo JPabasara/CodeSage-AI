@@ -15,10 +15,6 @@ from codesage_api.services import analysis
 router = APIRouter(tags=["scans"])
 
 
-# A workspace-level read, not a per-repository one: the list spans every project,
-# and everyone who may read results in the workspace sees the same work in
-# progress, whoever started it. The operation id is set explicitly because the
-# contract names it and the derived one would carry the path and method.
 @router.get(
     "/activity",
     response_model=ActivityOut,

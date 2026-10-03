@@ -1,4 +1,4 @@
-"""DBR-7 and DBR-23: a finished scan's facts cannot be rewritten by the application."""
+"""A finished scan's facts cannot be rewritten by the application."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def finished(tenant):
     return tenant, attempt_id
 
 
-# ── DBR-7: repository revision of an attempt ────────────────────────────────
+# ── Repository revision of an attempt ─────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ def test_snapshot_commit_sha_cannot_change(finished) -> None:
     db.close()
 
 
-# ── DBR-23: completed results are never overwritten ─────────────────────────
+# ── Completed results are never overwritten ───────────────────────────────────
 
 
 @pytest.mark.parametrize("table", RESULT_TABLES)
@@ -163,7 +163,7 @@ def test_result_tables_grant_no_update_but_keep_delete(account) -> None:
                     text("SELECT has_table_privilege('codesage_app', :t, :p)"),
                     {"t": table, "p": privilege},
                 ), (table, privilege)
-        # The score cache is derived and is refreshed in place (DBR-21).
+        # The score cache is derived and is refreshed in place.
         assert db.scalar(text("SELECT has_table_privilege('codesage_app', 'snapshot_score', 'UPDATE')"))
 
 

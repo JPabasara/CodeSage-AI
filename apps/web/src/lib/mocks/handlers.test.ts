@@ -1,21 +1,3 @@
-// Do the mocks tell the truth?
-//
-// The frontend is built against these while the backend endpoints are still
-// stubs. If they drift from the OpenAPI contract, the component tests pass
-// against a fiction and the live site breaks with nothing catching it.
-//
-// These check RESPONSES, not fixtures — a handler can assemble a shape no
-// fixture ever had — and three things in particular:
-//
-//   • Status codes. 202 for a queued scan, 201 for a connect, 409 for the two
-//     conflicts, 422 for a malformed body. A mock that answers 200 to everything
-//     teaches the UI that failure modes do not exist.
-//   • No extra keys. Every schema is `additionalProperties: false`, so a field
-//     invented here is drift, not a bonus.
-//   • Derived, not stored. Applying a profile must actually re-rank the list.
-//
-// Field lists come from the contract's `required:` arrays, so a contract change
-// fails these — which is the point.
 import { expect, test } from "vitest"
 
 import type {
@@ -69,13 +51,7 @@ function del(path: string) {
   return fetch(`${BASE}${path}`, { method: "DELETE" })
 }
 
-/**
- * Every required key present, no key outside `allowed`, and nothing camelCase.
- *
- * The "no extra keys" half matters as much as the first: every schema in the
- * contract is `additionalProperties: false`, so a field the mock invents is a
- * field the real API will never send — and any UI built on it breaks at go-live.
- */
+// Every required key present, no key outside `allowed`, and nothing camelCase.
 function expectShape(
   obj: unknown,
   required: string[],
@@ -96,8 +72,6 @@ function expectShape(
   const camel = Object.keys(record).filter((k) => /[a-z][A-Z]/.test(k))
   expect(camel, `${where} still has camelCase keys`).toEqual([])
 }
-
-// ── projects ────────────────────────────────────────────────────────────────
 
 test("GET /projects returns contract-shaped repos", async () => {
   const repos = await get<Repo[]>("/projects")
@@ -136,8 +110,7 @@ test("latest_health is ABSENT on a repo that was never scanned, not zero", async
   const unscanned = repos.find((r) => r.id === UNSCANNED_REPO_ID)
 
   expect(unscanned, "the fixture needs a never-scanned repo").toBeDefined()
-  // Absent means "not yet scanned". A score of 0 would mean "measured, and
-  // terrible" — the projects list renders the two differently and must be able to.
+  // Absent means "not yet scanned".
   expect(unscanned?.latest_health ?? undefined).toBeUndefined()
 })
 
@@ -165,7 +138,6 @@ test("POST /projects returns 201 and a contract-shaped Repo", async () => {
   expect(repo.id).toMatch(UUID)
   // v1.0 accepts public repositories only, so anything stored is public.
   expect(repo.visibility).toBe("public")
-  // Freshly connected and never scanned — so no health hint yet.
   expect(repo.latest_health ?? undefined).toBeUndefined()
 })
 
@@ -210,8 +182,6 @@ test("a connected repository shows up in the projects list", async () => {
   expect(after.some((r) => r.name === "brand-new")).toBe(true)
 })
 
-// ── branches ────────────────────────────────────────────────────────────────
-
 test("GET /repos/:id/branches returns contract-shaped branches", async () => {
   const branches = await get<Record<string, unknown>[]>(
     `/repos/${DEMO_REPO_ID}/branches`,
@@ -225,8 +195,7 @@ test("GET /repos/:id/branches returns contract-shaped branches", async () => {
       ["head_commit_sha", "head_commit_at"],
       "Branch",
     )
-    // Full 40-character SHA: a 7-char fixture would let a `.slice(0, 7)` bug
-    // through unnoticed.
+    // Full 40-character SHA: a 7-char fixture would let a `.slice(0, 7)` bug through unnoticed.
     if (branch.head_commit_sha !== null) {
       expect(branch.head_commit_sha).toMatch(SHA40)
     }
@@ -248,8 +217,6 @@ test("an unknown repo is 404 with the error envelope, on every repo route", asyn
     expect(body.code, path).toBe("NOT_FOUND")
   }
 })
-
-// ── the dashboard payload ───────────────────────────────────────────────────
 
 test("GET /repos/:id/health returns the whole dashboard payload", async () => {
   const report = await get<HealthReport>(
@@ -310,8 +277,6 @@ test("GET /repos/:id/health returns the whole dashboard payload", async () => {
       ],
       "Finding",
     )
-    // Exactly two sources: a security finding is a `rule` finding whose
-    // category is security, never a `security` source.
     expect(["rule", "satd"]).toContain(finding.source)
     expect([
       "code-design",
@@ -346,8 +311,6 @@ test("the fixture exercises every enum the contract defines", async () => {
   )
   const findings = report.findings
 
-  // A fixture that only covers three categories leaves render paths untested,
-  // and "it looked fine locally" is exactly how those ship broken.
   expect(new Set(findings.map((f) => f.category))).toEqual(
     new Set([
       "code-design",
@@ -364,13 +327,9 @@ test("the fixture exercises every enum the contract defines", async () => {
     new Set(["rule", "satd"]),
   )
 
-  // The critical-security floor has to be renderable, so at least one finding
-  // must carry it and at least one must not.
   expect(findings.some((f) => f.pinned_by_floor)).toBe(true)
   expect(findings.some((f) => !f.pinned_by_floor)).toBe(true)
 
-  // All five categories in the pie, including any at zero: a missing slice and
-  // an empty slice mean different things.
   expect(report.category_breakdown).toHaveLength(5)
 })
 
@@ -382,8 +341,6 @@ test("rule findings and SATD findings carry their own evidence fields", async ()
   const rule = findings.filter((f) => f.source === "rule")
   const satd = findings.filter((f) => f.source === "satd")
 
-  // `rule_id` is rule-only; `comment_text` / `confidence` are SATD-only. Mixing
-  // them would be inventing a shape the backend cannot produce.
   expect(rule.every((f) => typeof f.rule_id === "string")).toBe(true)
   expect(rule.every((f) => f.comment_text == null)).toBe(true)
   expect(satd.every((f) => typeof f.comment_text === "string")).toBe(true)
@@ -406,13 +363,9 @@ test("a null risk_score survives the wire as null, never as 0", async () => {
     `/repos/${DEMO_REPO_ID}/health?branch=main`,
   )
 
-  // null means never assessed — a different thing from 0.0, which is a measured
-  // "this file looks safe".
   expect(file_scores.some((f) => f.risk_score === null)).toBe(true)
   expect(file_scores.some((f) => typeof f.risk_score === "number")).toBe(true)
 
-  // risk_score is files-only on the tree; a folder-level risk would be an
-  // average of estimates that were never averaged.
   const walk = (nodes: typeof tree): typeof tree =>
     nodes.flatMap((n) => [n, ...(n.children ? walk(n.children) : [])])
   for (const node of walk(tree)) {
@@ -453,7 +406,7 @@ test("an unscanned branch is 404 so the client can render an empty state", async
   expect(((await res.json()) as ApiError).code).toBe("NOT_FOUND")
 })
 
-test("?snapshot_id= loads that stored snapshot instead of the newest (FR-19)", async () => {
+test("?snapshot_id= loads that stored snapshot instead of the newest", async () => {
   const history = await get<ScanSummary[]>(`/repos/${DEMO_REPO_ID}/scans`)
   const older = history[history.length - 1] // oldest row
 
@@ -466,8 +419,6 @@ test("?snapshot_id= loads that stored snapshot instead of the newest (FR-19)", a
   // Same lens for both reads, so the dashboard and the history row agree.
   expect(report.health_score).toBe(older.health_score)
 })
-
-// ── scan history ────────────────────────────────────────────────────────────
 
 test("GET /repos/:id/scans returns contract-shaped summaries, newest first", async () => {
   const history = await get<ScanSummary[]>(`/repos/${DEMO_REPO_ID}/scans`)
@@ -496,12 +447,10 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
   }
 
   const times = history.map((s) => Date.parse(s.scanned_at))
-  expect(times, "newest first (FR-19)").toEqual(
+  expect(times, "newest first").toEqual(
     [...times].sort((a, b) => b - a),
   )
 })
-
-// ── scan lifecycle ──────────────────────────────────────────────────────────
 
 /** Every optional ScanStatus key the contract defines, 13H.4's stage included. */
 const SCAN_STATUS_OPTIONAL = [
@@ -567,8 +516,6 @@ test("stop is cooperative: the phase is unchanged until the NEXT poll", async ()
   const after = await get<ScanStatus>(
     `/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`,
   )
-  // `cancelled`, never `idle` — a stopped scan must stay distinguishable from
-  // one that never ran.
   expect(after.phase).toBe("cancelled")
 })
 
@@ -622,8 +569,6 @@ test("POST /scan without a branch is 422, not a silent default", async () => {
   expect(res.status).toBe(422)
   expect(((await res.json()) as ApiError).code).toBe("VALIDATION_FAILED")
 })
-
-// ── profiles ────────────────────────────────────────────────────────────────
 
 const PROFILE_KEYS = [
   "id",
@@ -688,8 +633,6 @@ test("PUT /profiles/active clamps out-of-range values and returns what it stored
 })
 
 test("PUT /profiles/active rejects a MALFORMED body with 422, not a clamp", async () => {
-  // Out-of-range is clamped; wrong type / missing key / unknown category is a
-  // different thing, and the contract gives it a different answer.
   const cases: unknown[] = [
     {
       weights: {
@@ -761,8 +704,6 @@ test("PUT then GET /profiles/active reflects the write", async () => {
   expect(active.is_active).toBe(true)
 })
 
-// ── the one the old mock could not pass ─────────────────────────────────────
-
 test("scores are DERIVED: applying a profile re-ranks the list with no re-scan", async () => {
   const before = await get<HealthReport>(
     `/repos/${DEMO_REPO_ID}/health?branch=main`,
@@ -786,14 +727,12 @@ test("scores are DERIVED: applying a profile re-ranks the list with no re-scan",
     before.findings.map((f) => f.fingerprint),
   )
   expect(after.health_score).not.toBe(before.health_score)
-  // One lens per line: the whole history is redrawn, not just today.
   expect(after.history.map((p) => p.score)).not.toEqual(
     before.history.map((p) => p.score),
   )
   // The chart is labelled with the profile, or its changing shape reads as a bug.
   expect(after.profile).toBe("Security-first")
 
-  // A profile change writes no snapshot and starts no scan.
   expect(after.snapshot_id).toBe(before.snapshot_id)
   expect(after.scanned_at).toBe(before.scanned_at)
   expect(after.commit_sha).toBe(before.commit_sha)
@@ -825,7 +764,7 @@ test("a security finding's weight moves it past a higher-severity one", async ()
   expect(rank(after, "f-sqli-1")).toBeLessThan(rank(after, "f-long-1"))
 })
 
-test("the trust slider cannot de-weight a security finding (FR-24)", async () => {
+test("the trust slider cannot de-weight a security finding", async () => {
   const priorityOf = async (fp: string) => {
     const r = await get<HealthReport>(
       `/repos/${DEMO_REPO_ID}/health?branch=main`,
@@ -846,8 +785,6 @@ test("the trust slider cannot de-weight a security finding (FR-24)", async () =>
   await put("/profiles/active", { weights: balanced, trust_s: 1 })
   const trustRules = await priorityOf("f-secret-1")
 
-  // source_trust is pinned at 1.0 for the security category, so no position of
-  // the slider changes this number. A SATD finding, by contrast, moves.
   expect(trustRules).toBe(trustModel)
 })
 
@@ -860,8 +797,6 @@ test("different repositories score differently", async () => {
   )
   expect(other.health_score).not.toBe(demo.health_score)
 })
-
-// ── the profile pool ────────────────────────────────────────────────────────
 
 const weights = {
   security: 2,
@@ -890,7 +825,6 @@ test("POST /profiles adds to the pool WITHOUT becoming the default", async () =>
 
   const pool = await get<ScoreProfile[]>("/profiles")
   expect(pool).toHaveLength(4)
-  // Built-ins still come first, and the default has not moved.
   expect(pool.slice(0, 3).every((p) => p.is_preset)).toBe(true)
   expect(pool.find((p) => p.is_active)?.name).toBe("Balanced")
 })
@@ -933,8 +867,6 @@ test("PATCH is partial: an omitted weight keeps its stored value", async () => {
   const saved = (await res.json()) as ScoreProfile
 
   expect(saved.weights.test).toBe(0.4)
-  // The four the body never mentioned are untouched, which is the whole point
-  // of a PATCH from a form that tracks only what changed.
   expect(saved.weights.security).toBe(2)
   expect(saved.name).toBe("Release gate")
   expect(saved.trust_s).toBe(0.5)
@@ -1009,7 +941,6 @@ test("PUT /profiles/default moves the default and is idempotent", async () => {
   expect(first.status).toBe(200)
   expect(((await first.json()) as ScoreProfile).is_active).toBe(true)
 
-  // The second PUT of the same id changes nothing.
   const again = await put("/profiles/default", {
     profile_id: securityFirst.id,
   })
@@ -1059,8 +990,6 @@ test("an override applies to one project and leaves the others inheriting", asyn
   expect(neighbour.inherited).toBe(true)
   expect(neighbour.effective.name).toBe("Balanced")
 
-  // usage_count counts the projects that name it; the default's inheritors are
-  // what `is_active` already says, so they are not counted here.
   const pool = await get<ScoreProfile[]>("/profiles")
   expect(pool.find((p) => p.id === securityFirst.id)?.usage_count).toBe(1)
   expect(pool.find((p) => p.name === "Balanced")?.usage_count).toBe(0)
@@ -1087,8 +1016,6 @@ test("the dashboard scores each project with its OWN effective profile", async (
     profile_id: securityFirst.id,
   })
 
-  // Assigning a profile re-scores the project, like the real API's warm-up:
-  // the score is pending for a moment, and Activity lists it meanwhile.
   const whileRescoring = await fetch(
     `${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`,
   )
@@ -1105,7 +1032,6 @@ test("the dashboard scores each project with its OWN effective profile", async (
   )
   expect(neighbour.profile).toBe("Balanced")
 
-  // An assignment is not a scan: no snapshot was written.
   expect(after.snapshot_id).toBe(before.snapshot_id)
   expect(after.scanned_at).toBe(before.scanned_at)
 })
@@ -1146,8 +1072,6 @@ test("removing a project takes its profile assignment with it", async () => {
     ).status,
   ).toBe(204)
 
-  // The assignment cascades, so the profile is not left permanently
-  // undeletable by a project that no longer exists.
   expect(
     (await get<ScoreProfile[]>("/profiles")).find((p) => p.id === spare.id)
       ?.usage_count,
@@ -1155,13 +1079,9 @@ test("removing a project takes its profile assignment with it", async () => {
   expect((await del(`/profiles/${spare.id}`)).status).toBe(204)
 })
 
-// ── system ──────────────────────────────────────────────────────────────────
-
 test("GET /healthz is alive", async () => {
   expect(await get<{ status: string }>("/healthz")).toEqual({ status: "ok" })
 })
-
-// ── members ─────────────────────────────────────────────────────────────────
 
 test("the only active org-admin can be neither demoted nor deactivated", async () => {
   const self = "a1000000-0000-4000-8000-000000000001"
@@ -1195,8 +1115,6 @@ test("member_count counts active members only, and follows deactivation", async 
   )
   expect(await count()).toBe(3)
 })
-
-// ── activity ────────────────────────────────────────────────────────────────
 
 test("activity lists running scans with their project, and nothing when quiet", async () => {
   const quiet = await get<Activity>("/activity")

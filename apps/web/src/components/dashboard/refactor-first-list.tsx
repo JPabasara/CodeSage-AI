@@ -139,9 +139,6 @@ function ListPanel({
   )
 }
 
-// Every control in the filter row is one toolbar: a single Tab stop, with the
-// arrow keys moving between controls. Eight separate stops between the page and
-// the first finding would put the list itself out of easy reach.
 const TOOLBAR_ITEM = "data-toolbar-item"
 // Toolbar order: the source toggle, the severity chips, then the category menu.
 const CATEGORY_FILTER_INDEX = SOURCE_OPTIONS.length + SEVERITIES.length
@@ -149,8 +146,6 @@ const DONE_FILTER_INDEX = CATEGORY_FILTER_INDEX + 1
 const TEST_FILTER_INDEX = DONE_FILTER_INDEX + 1
 
 function onToolbarKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-  // The category menu renders in a portal. Its key presses still bubble up the
-  // React tree to here, but they are the menu's, not the toolbar's.
   const target = event.target as HTMLElement
   if (!event.currentTarget.contains(target)) return
   const items = Array.from(
@@ -218,9 +213,7 @@ export function RefactorFirstList({
   const [showTestFindings, setShowTestFindings] = useState(
     includeTestFindingsByDefault,
   )
-  // The toolbar control that holds the single Tab stop (roving tabindex). It
-  // starts on the debt-type filter — the one filter this list has always had,
-  // so Tab still lands where it used to — and then follows the arrow keys.
+  // The toolbar control that holds the single Tab stop (roving tabindex).
   const [focusIndex, setFocusIndex] = useState(CATEGORY_FILTER_INDEX)
 
   const categories = useMemo(
@@ -347,8 +340,6 @@ export function RefactorFirstList({
               )}
               {...toolbarItem(SOURCE_OPTIONS.length + index)}
             >
-              {/* Filled when on, hollow when off: the state never rests on
-                  colour alone, and aria-pressed says it outright. */}
               <span
                 aria-hidden="true"
                 className="size-2 shrink-0 rounded-full border"

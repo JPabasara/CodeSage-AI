@@ -16,14 +16,6 @@ import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher"
 import { useWorkspaces } from "@/hooks/use-workspace"
 import { useWorkspaceGate } from "@/hooks/use-workspace-scope"
 
-/**
- * The fixed app bar on every signed-in page: brand, the workspace (always), the
- * project (on pages about one project), the page's own controls, the account.
- *
- * Deep mint with white text in both themes. Below `md` it wraps: the project and
- * the page's context controls move to a second row, and the menu button opens
- * the rail as a sheet.
- */
 export function AppTopBar() {
   const pathname = usePathname()
   const { data: workspaces, loading } = useWorkspaces()

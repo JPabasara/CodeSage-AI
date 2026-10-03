@@ -1,16 +1,5 @@
 // The app-wide memory behind every read hook (13G, 13H.3).
-//
-// Two maps, both module state so every mounted hook shares them:
-// - `answers`: the last good answer per key. A page mounting again renders it at
-//   once and refreshes quietly behind it, instead of starting from a skeleton.
-// - `inflight`: the one request out for a key. Two consumers of the same read —
-//   the top bar and the page under it — share it rather than each sending one.
-//
-// Keys arrive already prefixed with the workspace epoch (`3:projects`), so a
-// workspace switch makes every old answer unreachable; `clearQueryCache` then
-// drops them outright.
 
-/** Enough for every page of a large workspace; the oldest answer goes first. */
 const MAX_ANSWERS = 100
 
 const answers = new Map<string, { data: unknown }>()
@@ -19,10 +8,6 @@ const inflight = new Map<string, Promise<unknown>>()
 /** The part of a key after the epoch: `3:health:r1:main:latest` → `health:…`. */
 const requestedPart = (key: string) => key.slice(key.indexOf(":") + 1)
 
-/**
- * Same content, compared by value. A revalidation that returns what is already
- * on screen hands back the *old* object, so nothing downstream re-renders.
- */
 function sameAnswer(a: unknown, b: unknown) {
   if (a === b) return true
   try {
@@ -46,23 +31,12 @@ export function readCached<T>(key: string): { data: T } | undefined {
   return answers.get(key) as { data: T } | undefined
 }
 
-/**
- * Put a local write in the cache, so the next mount shows it. Any request
- * already out for the key predates the write, so it is disowned.
- */
 export function writeCached(key: string, data: unknown) {
   inflight.delete(key)
   remember(key, data)
 }
 
-/**
- * Ask once per key. A second caller while the first request is out joins it.
- * `fresh` skips joining — a reload after a write must not accept an answer
- * that was already on its way before the write.
- *
- * Errors are not remembered, and they drop the old answer: whatever made the
- * read fail (a deleted project, a score being recomputed) makes it stale too.
- */
+// Ask once per key. A second caller while the first request is out joins it.
 export function fetchShared<T>(
   key: string,
   fetcher: () => Promise<T>,
@@ -74,8 +48,6 @@ export function fetchShared<T>(
   }
   const request: Promise<T> = fetcher().then(
     (data) => {
-      // Superseded, or invalidated while out: hand it to the caller that
-      // asked, but do not let it overwrite what the cache now holds.
       if (inflight.get(key) !== request) return data
       inflight.delete(key)
       const previous = answers.get(key)
@@ -98,10 +70,7 @@ export function fetchShared<T>(
   return request
 }
 
-/**
- * Forget every read whose key (without the epoch) matches. Mounted hooks keep
- * what they show; the next mount asks the server instead of the cache.
- */
+// Forget every read whose key (without the epoch) matches.
 export function forgetQueries(matches: (key: string) => boolean) {
   for (const key of [...answers.keys()]) {
     if (matches(requestedPart(key))) answers.delete(key)
@@ -122,11 +91,7 @@ export function forgetScanResults(repoId: string, branch: string) {
   )
 }
 
-/**
- * A profile was saved, deleted, made the default, assigned or cleared. Any
- * project's score may have moved, so every report, the list's health hint and
- * every profile read are forgotten.
- */
+// A profile was saved, deleted, made the default, assigned or cleared.
 export function forgetScores() {
   forgetQueries(
     (key) =>

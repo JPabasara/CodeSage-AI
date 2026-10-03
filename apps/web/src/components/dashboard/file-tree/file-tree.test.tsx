@@ -74,8 +74,6 @@ test("selecting a file without a finding calls the feedback path", async () => {
   )
 })
 
-// Detail mode must reveal the finding's file: tinting a row inside a folder the
-// user collapsed earlier would highlight something invisible.
 test("a selected file re-opens the folders that hide it", async () => {
   const { rerender } = render(
     <FileTree nodes={mockTree} colorFor={() => "red"} />,
@@ -97,7 +95,7 @@ test("a selected file re-opens the folders that hide it", async () => {
   expect(row).toHaveAttribute("aria-current", "true")
 })
 
-test("renders a named empty state with next action when nodes is empty (U-14)", () => {
+test("renders a named empty state with next action when nodes is empty", () => {
   render(<FileTree nodes={[]} colorFor={() => "red"} />)
 
   // Names what is empty and provides the next action

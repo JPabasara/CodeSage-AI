@@ -54,9 +54,6 @@ import { healthColor } from "@/lib/utils"
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const { data: branches, error: branchesError } = useBranches(repoId)
 
-  // `repo_id` is a uuid in the contract, so the top nav cannot just print it —
-  // "7c9e6679-7425-40de-…" is not a repository name. Look up the connected repo
-  // and fall back to the id only while the list is still loading.
   const { data: repos } = useProjects()
   const repo = repos?.find((r) => r.id === repoId)
   const reposLoaded = repos !== undefined
@@ -66,9 +63,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       ? "Project unavailable"
       : "Loading project"
 
-  // A user pick wins; until then fall back to the repo's default branch, then
-  // the first available one. Empty string until the branches load; nothing is
-  // fetched for it (see `readsEnabled` below).
+  // A user pick wins; until then fall back to the repo's default branch, then the first available one.
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -80,8 +75,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     Boolean(branch && (!branchNames || branchNames.includes(branch)))
   const fallbackBranch =
     branches?.find((branch) => branch.is_default)?.name ?? branches?.[0]?.name
-  // The branch this project was last looked at. Only trusted once the branch
-  // list has landed and still contains it — a deleted branch falls back quietly.
+  // The branch this project was last looked at.
   const workspaceId = useActiveWorkspaceId()
   const { storedBranch, rememberBranch } = useSelectedBranch(
     workspaceId,
@@ -91,8 +85,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     branchNames && storedBranch && branchNames.includes(storedBranch)
       ? storedBranch
       : undefined
-  // The URL wins, then a pick made here, then the remembered one, then the
-  // repository's default.
+  // The URL wins, then a pick made here, then the remembered one, then the repository's default.
   const activeBranch =
     (branchIsAvailable(branchFromUrl)
       ? branchFromUrl
@@ -106,12 +99,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     if (settledOnRealBranch) rememberBranch(activeBranch)
   }, [activeBranch, settledOnRealBranch, rememberBranch])
 
-  // Resolve the branch first, then fetch once (13G). Asking before the branch
-  // list landed meant a request for a guessed branch, and its 404 flashed "No
-  // scans yet" at a project that has results. The one exception: if the branch
-  // list itself failed, ask for the URL's branch or, without one, the
-  // repository's default (the empty branch) rather than leave the page waiting
-  // on a list that is not coming.
   const noBranches = branches !== undefined && branches.length === 0
   const branchResolved =
     settledOnRealBranch || (branchesError !== undefined && !branches)
@@ -124,9 +111,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     { enabled: readsEnabled },
   )
 
-  // The job on this branch lives in the app-wide scan store, not in this
-  // page: leaving the dashboard mid-scan and coming back shows it exactly where
-  // it was — same stage, same bar, same line — with Stop.
   const {
     scan: trackedScan,
     start: startTrackedScan,
@@ -134,10 +118,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   } = useScanFor(repoId, activeBranch, repo?.name)
   const jobActive = Boolean(trackedScan && isJobActive(trackedScan))
 
-  // Once the scan is done, "latest" is the new snapshot. Until the user
-  // chooses "Show them", the results that were on screen stay on screen, read
-  // by their own snapshot id (the store keeps a copy in the cache, so the
-  // switch is instant). A URL snapshot always wins: that is an explicit ask.
+  // Once the scan is done, "latest" is the new snapshot.
   const pinnedSnapshotId =
     trackedScan && trackedScan.job !== "scanning"
       ? trackedScan.pinnedSnapshotId
@@ -154,22 +135,16 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   } = useHealthReport(repoId, activeBranch, readSnapshotId, {
     enabled: readsEnabled,
   })
-  // A report already on screen at the first render came from the cache: the
-  // charts were drawn before, so they appear drawn rather than animate again.
   const [animateCharts] = useState(() => report === undefined)
 
   const { data: session } = useSession()
   const permissions = session?.permissions ?? []
-  // Until the session answers, assume the button is usable rather than flash
-  // a locked one at everyone.
+  // Until the session answers, assume the button is usable rather than flash a locked one at everyone.
   const canStartScan = !session || permissions.includes("scan:start")
   const canStopScan =
     !session ||
     permissions.includes("scan:cancel_own") ||
     permissions.includes("scan:cancel_any")
-  // Role fallback for the rollout window: the existing API may not expose the
-  // new grant yet, but its role still describes the agreed RBAC matrix. The
-  // status endpoint performs the final authorization check.
   const canTriage =
     permissions.includes("finding:triage") ||
     session?.role === "org-admin" ||
@@ -203,9 +178,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           ? storedView
           : "overview"
 
-  // The results on screen while this branch is being scanned are the ones to
-  // keep until "Show them" — tell the store, so they survive even if the
-  // cached copy is dropped meanwhile.
   const trackedKey = trackedScan?.key
   const trackedJob = trackedScan?.job
   useEffect(() => {
@@ -214,8 +186,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
   }, [trackedKey, trackedJob, report, snapshotId])
 
-  // A scan this tab never started — a teammate's, another tab's, one from
-  // before a refresh on a cleared tab — is found and followed.
   useEffect(() => {
     if (!workspaceId || !activeBranch) return
     void discoverScan({
@@ -241,8 +211,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
   }
 
-  // The new report is fetched by the scan store itself; only the history list
-  // (for the older/newer arrows) needs a quiet refresh when the job ends.
   useEffect(
     () =>
       onScanEvent((event) => {
@@ -257,9 +225,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     [repoId, activeBranch, reloadHistory],
   )
 
-  // The selected finding lives in the URL, not in state, so a refresh restores
-  // detail mode and Back closes it. Fingerprints are stable across scans, which
-  // is what a shareable link needs.
   const displayedFindings = useMemo(
     () =>
       report?.findings.map((finding) => ({
@@ -274,10 +239,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   const selectedFingerprint = searchParams.get("finding") ?? undefined
   const selectedFinding: Finding | null =
     displayedFindings.find((f) => f.fingerprint === selectedFingerprint) ?? null
-  // The file tree writes the hovered node here. Card B always shows repo health
-  // today, so only the setter is used and the value is deliberately discarded.
-  // Wiring it up later means keeping the value, passing it to Card B, and adding
-  // a per-node history to TreeNode.
+  // The file tree writes the hovered node here.
   const [, setHoveredNode] = useState<TreeNode | null>(null)
   const [treeSelectionNotice, setTreeSelectionNotice] = useState<string | null>(
     null,
@@ -303,8 +265,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     if (viewPreferenceKey) window.localStorage.setItem(viewPreferenceKey, next)
   }
 
-  // push, not replace: Back should leave detail mode, the way it does in a mail
-  // client. scroll: false keeps the dashboard where it is as the region swaps.
   const openFinding = (finding: Finding) => {
     setTreeSelectionNotice(null)
     rememberViewMode("findings-detail")
@@ -411,16 +371,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         }
       : undefined
 
-  // A branch that has never been scanned answers 404. That is the first-run
-  // state, not a failure, so it must not take the whole screen down. Only a
-  // real read can say so: the report is not asked for until the branch is
-  // resolved, so there is no guessed-branch 404 to mistake for it.
+  // A branch that has never been scanned answers 404.
   const neverScanned =
     error instanceof ApiRequestError && error.code === "NOT_FOUND"
 
-  // The top nav always renders above this. It used to live inside the success
-  // branch, so a freshly connected repository (404, no snapshot) lost the very
-  // Scan button that would produce the first one. Only the body below swaps.
   const body = () => {
     if (projectGone) {
       return (
@@ -438,8 +392,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
-    // The repository has no branches at all, so there is nothing to scan and
-    // nothing to ask the report for.
     if (noBranches) {
       return (
         <EmptyState
@@ -451,22 +403,15 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
-    // A job on this branch with no results to keep on screen (a first scan,
-    // or a report that is not there): the middle of the page is about the
-    // job, with its stage, bar and friendly line. When it ends, the new
-    // results simply appear — there is nothing to lose.
     if (jobActive && trackedScan && !loading && !report) {
       return <ScanProgressPanel kind="job" scan={trackedScan} size="full" />
     }
 
-    // A score being recalculated with no scan behind it — after a profile
-    // change. The hook keeps asking; nothing here has to.
+    // A score being recalculated with no scan behind it — after a profile change.
     if (scorePending && !report) {
       return <ScanProgressPanel kind="calculating" slow={scorePendingSlow} />
     }
 
-    // `loading` is "the request is in flight" — or held until the project and
-    // branch are known.
     if (!reposLoaded || loading) {
       return <DashboardSkeleton />
     }
@@ -486,9 +431,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
-    // A genuine failure, and only a genuine failure, gets here — SCORE_PENDING
-    // was handled above and a 404 is the empty state. Retry re-runs the read
-    // from scratch, including a fresh score-pending budget.
     if (error) {
       return (
         <ErrorState
@@ -638,8 +580,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         snapshotNavigation={snapshotNavigation}
         profileName={report?.profile}
         scan={{
-          // The job, not just the worker: "Scoring…" while the health score
-          // is calculated, and a free Scan button once the job is ready.
           phase:
             trackedScan && jobActive
               ? trackedScan.job === "scoring"
@@ -647,15 +587,13 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
                 : trackedScan.status.phase
               : "idle",
           scoring: trackedScan?.job === "scoring",
-          // Only the screen-reader summary reads this, in quarters: the bar
-          // itself lives in the panel.
+          // Only the screen-reader summary reads this, in quarters: the bar itself lives in the panel.
           progress: trackedScan
             ? trackedScan.job === "scoring"
               ? SCAN_SHARE
               : Math.floor(toBar(trackedScan.status.progress))
             : 0,
           stopping: trackedScan?.stopping ?? false,
-          // Only once there is a branch to scan.
           onScan: activeBranch ? startTrackedScan : undefined,
           // Stop lives in the status strip below the bar.
           showStop: false,
@@ -669,10 +607,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         onStop={stopTrackedScan}
       />
 
-      {/* A job on this branch while results are on screen: a compact card
-          above them, which the results stay usable under. When the job is
-          ready it offers "Show them" — the page never swaps on its own, so
-          nobody loses their place. */}
       {trackedScan && showJobCard ? (
         <ScanProgressPanel
           kind="job"

@@ -359,8 +359,6 @@ def test_risk_client_broadcasts_file_process_metrics_to_classes():
         == 80.0
     )
 
-    # Process metrics are intentionally identical because both classes
-    # belong to the same physical source file.
     process_feature_names = (
         "numberOfVersionsUntil",
         "numberOfAuthorsUntil",
@@ -418,11 +416,6 @@ def test_risk_client_aggregates_class_probabilities_by_file():
     ):
         result = predict(classes, {})
 
-    # Current aggregation policy is noisy-OR:
-    #
-    # 1 - (1 - 0.6)(1 - 0.3)
-    # = 1 - 0.28
-    # = 0.72
     assert result.class_scores == {
         ("src/Example.java", "Example"): pytest.approx(0.6),
         ("src/Example.java", "Helper"): pytest.approx(0.3),

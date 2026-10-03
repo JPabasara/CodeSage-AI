@@ -1,34 +1,15 @@
-# Scoring calibration constants (SRS FR-11, FR-20).
-# Change a number here, restart, done — no migration, no release.
 
-# ── churn_factor = 1 + min(commits_90d, cap) / cap  →  1.0 – 2.0 ────────────
-# The window is 90 days measured BACK FROM THE SCANNED COMMIT'S committer date,
-# never from the scan time (FR-11). The anchoring itself lives in the process-metric
-# extractor; this is only the saturation cap.
 churn_cap_commits: 20
 churn_window_days: 90
 
-# ── repo_health = 100 × (1 − min(1, Σ file_debt / (k × KLOC))) ──────────────
-# Calibrated 2026-09-30 (FR-11) as P95 of repository debt density (D/KLOC)
-# under the canonical Balanced profile (weights 1.0, trust 0.5, test findings
-# excluded), Hyndman-Fan type 7 percentile, 10,000-sample repository bootstrap,
-# seed 42. Pilot corpus: 17-19 open-source Java repositories scanned with PMD
-# enabled; P95 = 98.5-101.4, bootstrap 95% CI [78.7, 124.3]. Scans without PMD
-# and without SATD were excluded as incomparable. Pilot-sized: rerun
-# calibration-pilot/run-calibration.sh on a larger corpus before final release
-# and record the method in the SAD.
 k: 100.0
 
-# ── Profile clamps, enforced server-side on write (FR-20) ───────────────────
-# The client also clamps, but that is a usability affordance. This is the rule:
-# repo_health is calibrated against k, so one unclamped weight arriving from any
-# client would render every stored grade incomparable with every other.
 weight_min: 0.1
 weight_max: 3.0
 s_min: 0.0
 s_max: 1.0
 
-# ── grade bands, evaluated top-down (FR-11) ────────────────────────────────
+# ── grade bands, evaluated top-down ────────────────────────────────────────
 grade_bands:
   - { min_score: 85, grade: A }
   - { min_score: 70, grade: B }

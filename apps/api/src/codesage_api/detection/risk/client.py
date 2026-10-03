@@ -23,8 +23,6 @@ from codesage_api.extractors.process_metrics import FileProcessMetrics
 
 @dataclass(frozen=True, slots=True)
 class RiskClientResult:
-    # Canonical ML-2 predictions:
-    # (source file path, class name) -> class bug-proneness probability
     class_scores: dict[tuple[str, str], float]
 
     # Derived aggregate retained for file-level scoring/dashboard use.
@@ -33,9 +31,6 @@ class RiskClientResult:
     model_version: str
 
 
-# These names form the wire contract between the API and ML service.
-#
-# They intentionally match the D'Ambros/AEEEM training feature names.
 RISK_FEATURES = (
     # Class-level CK metrics
     "wmc",
@@ -86,9 +81,6 @@ def _build_metrics(
     """
     metrics = dict.fromkeys(RISK_FEATURES, 0.0)
 
-    # -------------------------------------------------------------
-    # Class-level CK metrics
-    # -------------------------------------------------------------
 
     metrics["wmc"] = float(class_metrics.wmc)
     metrics["cbo"] = float(class_metrics.cbo)
@@ -104,9 +96,6 @@ def _build_metrics(
         class_metrics.number_of_methods
     )
 
-    # -------------------------------------------------------------
-    # File-level process metrics
-    # -------------------------------------------------------------
 
     if process_metrics is not None:
         metrics["numberOfVersionsUntil"] = float(

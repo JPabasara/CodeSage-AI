@@ -1,4 +1,4 @@
-"""Finding wire shape — one row in the Refactor-First list (SRS FR-15)."""
+"""Finding wire shape."""
 
 from __future__ import annotations
 
@@ -34,8 +34,6 @@ class FindingOut(ApiModel):
 
     priority: float
 
-    # Set when the FR-24 visibility floor moved this row, so the UI can explain a
-    # position that would otherwise appear to contradict the priority beside it.
     pinned_by_floor: bool = False
 
     # Rule findings: the evidence interpolated into the reason.

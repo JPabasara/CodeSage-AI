@@ -1,9 +1,6 @@
 import { cn } from "@/lib/utils"
 
-/**
- * Nothing here yet, and what to do next. Not an error and not a lock — those
- * are `ErrorState` and the locked cards.
- */
+// Nothing here yet, and what to do next.
 export function EmptyState({
   icon,
   title,

@@ -66,12 +66,7 @@ export function lockedPageFor(pathname: string): LockedPage {
   return "projects"
 }
 
-/**
- * What a signed-in user with no workspace sees in place of a page's content.
- *
- * Not an error — nothing failed. One sentence on what the page is for, one way
- * forward, and the other way in for someone who was invited.
- */
+// What a signed-in user with no workspace sees in place of a page's content.
 export function NoWorkspaceState({ page }: Readonly<{ page: LockedPage }>) {
   const [open, setOpen] = useState(false)
   const { icon: Icon, heading, body } = COPY[page]
@@ -185,12 +180,6 @@ function InlineCreate() {
   )
 }
 
-/**
- * The app shell's content, or — for a signed-in user with no workspace — the
- * locked card for whichever page they opened. While the session is still
- * loading the page renders as usual: its reads are held back until there is a
- * workspace, so it shows its own skeleton rather than a second one here.
- */
 export function WorkspaceGate({
   children,
 }: Readonly<{ children: React.ReactNode }>) {

@@ -42,7 +42,7 @@ def session_cookie(engine: Engine, session_id: uuid.UUID) -> str:
     """Give an existing session a known token and return the cookie for it.
 
     The raw token exists only in the sign-in response, so tests that hold a
-    session id mint a fresh one (DBR-29). The old token stops working.
+    session id mint a fresh one. The old token stops working.
     """
     raw, digest = new_session_token()
     with engine.begin() as db:
@@ -73,7 +73,7 @@ def orphan_counts(db: Connection) -> dict[str, int]:
 
 
 def assert_no_orphans(db: Connection) -> None:
-    """Fail if any foreign key anywhere is dangling (DBR-28).
+    """Fail if any foreign key anywhere is dangling.
 
     PostgreSQL enforces foreign keys, so this can only fail if one is disabled,
     deferred past commit, or missing a cascade that a trigger was meant to do.

@@ -30,15 +30,6 @@ export type ProjectListProps = {
   emptyDescription?: React.ReactNode
 }
 
-/*
- * One grid template for the header and every row, so the columns line up.
- * Container queries rather than viewport ones: the app rail takes a variable
- * share of the viewport, and what matters is the width this list actually has.
- * Under @4xl the row stacks: repository, then health and date, then actions.
- * The actions column has a fixed width, not `auto`: each row is its own grid,
- * so `auto` sized the header's empty cell and every row's buttons differently
- * and the health and date columns drifted out from under their headings.
- */
 const COLUMNS =
   "@4xl:grid-cols-[minmax(0,1fr)_8.5rem_7rem_25rem] @4xl:items-center @4xl:gap-x-4"
 
@@ -108,8 +99,6 @@ export function ProjectList({
 
   return (
     <div className="@container overflow-hidden rounded-lg border bg-card">
-      {/* Visual column labels only. Each cell carries its own label for
-          assistive technology, which also serves the stacked layout. */}
       <div
         aria-hidden="true"
         className={cn(
@@ -123,9 +112,7 @@ export function ProjectList({
         <span />
       </div>
 
-      {/* Named, because this is not the only list on the page. The toast
-          surface is an <ol> of <li>s too, so "the repository rows" has to be
-          something a reader, human or test, can actually ask for. */}
+      {/* Named, because this is not the only list on the page. */}
       <ul className="divide-y" aria-label="Connected repositories">
         {repos.map((repo) => {
           const isActive = repo.id === activeRepoId
@@ -166,8 +153,7 @@ export function ProjectList({
                   <span className="text-xs text-muted-foreground @4xl:sr-only">
                     Latest health
                   </span>
-                  {/* The hint is always the default branch's latest scan, so
-                      it says which branch that is. */}
+                  {/* The hint is always the default branch's latest scan, so it says which branch that is. */}
                   <span className="flex flex-col gap-0.5">
                     <HealthCell health={repo.latest_health} />
                     <span
@@ -236,9 +222,6 @@ export function ProjectList({
                     <ExternalLink aria-hidden="true" />
                   </a>
                 </Button>
-                {/* Omitted, not disabled, for a role without
-                    repository:disconnect: a control that exists only to be
-                    refused teaches nothing. The API re-checks regardless. */}
                 {onRemove ? (
                   <Button
                     type="button"

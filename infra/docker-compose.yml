@@ -1,8 +1,3 @@
-# Code Sage AI — the local stack.
-#
-# `api`, `worker` and `score-worker` are the SAME IMAGE with different commands.
-# Only `web` and `api` are published to the host; postgres, redis and ml stay on
-# the private network and are never publicly exposed.
 
 name: codesage
 
@@ -21,11 +16,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    # Deliberately NOT published to the host. Reach it with:
-    #   docker compose exec postgres psql -U codesage_owner codesage
-    # An open database port is the single easiest thing to forget before a demo.
-    # If you need it from the host for a moment, use an override file rather
-    # than editing this one — see infra/README.
 
   redis:
     image: redis:7-alpine
@@ -37,24 +27,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    # Not published — broker traffic never leaves the private network.
 
   ml:
     build:
       context: ../apps/ml
     volumes:
-      # Artifacts are mounted, not baked in, so swapping a model is a restart.
       - ../apps/ml/models:/models:ro
     healthcheck:
-      # python:3.12-slim ships neither curl nor wget, and adding one just to ask
-      # a question Python can ask itself would be a layer for nothing.
-      # urlopen raises on any non-2xx, so a bad status is already a failure.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
-    # Not published. Workers call it by service name.
 
   migrate:
     build:
@@ -75,22 +59,12 @@ services:
       context: ../apps/api
     environment:
       CODESAGE_DATABASE_URL: postgresql+psycopg://codesage_app:devpassword@postgres:5432/codesage
-      # ⚠️ A SECOND URL, AND A DIFFERENT ROLE ON PURPOSE.
-      # `codesage_app` cannot create tables, and must not be able to — it is the
-      # role Row-Level Security applies to (infra/postgres/init/01-init.sql).
-      # Migrations therefore run as the owner. Without this line alembic falls
-      # back to the default in config.py, which points at localhost:5432 with
-      # the password "changeme", and `alembic upgrade head` fails inside the
-      # container with a connection error that looks like a networking problem
-      # and is not one.
       CODESAGE_MIGRATION_DATABASE_URL: postgresql+psycopg://codesage_owner:devpassword@postgres:5432/codesage
       CODESAGE_REDIS_URL: redis://redis:6379/0
       CODESAGE_ML_SERVICE_URL: http://ml:8001
       CODESAGE_GITHUB_TOKEN: ${CODESAGE_GITHUB_TOKEN:-}
       CODESAGE_CORS_ORIGINS: '["http://localhost:3000"]'
       CODESAGE_SECRET_KEY: dev-only-change-me
-      # ── Sign-in. The two blank ones come from infra/.env, which is never
-      #    committed.
       CODESAGE_ASGARDEO_BASE_URL: ${CODESAGE_ASGARDEO_BASE_URL:-}
       CODESAGE_ASGARDEO_CLIENT_ID: ${CODESAGE_ASGARDEO_CLIENT_ID:-}
       CODESAGE_ASGARDEO_CLIENT_SECRET: ${CODESAGE_ASGARDEO_CLIENT_SECRET:-}
@@ -98,17 +72,10 @@ services:
       CODESAGE_FRONTEND_BASE_URL: http://localhost:3000
       CODESAGE_RESEND_API_KEY: ${CODESAGE_RESEND_API_KEY:-}
       CODESAGE_INVITATION_FROM_EMAIL: '${CODESAGE_INVITATION_FROM_EMAIL:-CodeSage <onboarding@resend.dev>}'
-      # Local development is plain http, so a Secure-only cookie would never be
-      # sent at all. This MUST be true anywhere real.
       CODESAGE_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
     healthcheck:
-      # Liveness, not readiness — deliberately. /api/healthz answers "is the
-      # process up?" and checks nothing else, so a database blip cannot make an
-      # orchestrator restart a perfectly healthy API container. /readyz is the
-      # one that checks Postgres and Redis; use it by hand when diagnosing, not
-      # as the restart trigger. (See routers/system.py, which says the same.)
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/healthz')"]
       interval: 10s
       timeout: 5s
@@ -139,16 +106,8 @@ services:
       CODESAGE_DETECTOR_PROVIDER: ${CODESAGE_DETECTOR_PROVIDER:-codesage_api.detection.pmd:scan}
       CODESAGE_PMD_BIN: /opt/pmd/bin/pmd
     volumes:
-      # ~2 GB of scratch per concurrent scan. A named volume rather than the
-      # container's writable layer, so a large clone cannot bloat the image layer.
       - clones:/var/tmp/codesage-clones
     healthcheck:
-      # The worker serves no HTTP — there is no port to poll. Celery's own
-      # answer is `inspect ping`, which goes out over the broker and comes back
-      # "pong", so a green tick here means the worker is genuinely reachable on
-      # Redis rather than merely a process that has not exited yet.
-      # Slower interval and a long start_period: this costs a broker round trip,
-      # and Celery takes its time connecting.
       test: ["CMD-SHELL", "celery -A codesage_api.worker inspect ping -t 10 | grep -q pong"]
       interval: 30s
       timeout: 15s
@@ -159,9 +118,6 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    # Concurrency scales by replicas, not threads: each scan needs its own clone
-    # and its own ~2 GB. Run `docker compose up --scale worker=3` for three
-    # concurrent analyses.
 
   score-worker:
     dns:
@@ -197,23 +153,12 @@ services:
     build:
       context: ../apps/web
       args:
-        # ⚠️ A build argument, not an environment variable, and the difference
-        # is not cosmetic. Next.js replaces every NEXT_PUBLIC_* reference with a
-        # string literal while `next build` runs, so by the time a container
-        # starts the address is already inside the JavaScript the browser
-        # downloads. Written as `environment:` it did nothing at all — the image
-        # still pointed at localhost wherever it was deployed.
-        #
-        # Changing this means rebuilding: `docker compose build web`.
         NEXT_PUBLIC_API_BASE_URL: ${CODESAGE_WEB_API_BASE_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     depends_on:
       - api
 
-  # Optional local-only log GUI. It is excluded from normal `docker compose up`
-  # and has no application dependencies, so removing this block removes the
-  # facility completely.
   dozzle:
     profiles: ["observability"]
     image: ghcr.io/amir20/dozzle:v10.7.5

@@ -12,15 +12,7 @@ export interface WorkspaceFields {
   website_url: string
 }
 
-/**
- * The three fields a workspace has, in the one form that edits them.
- *
- * Shared by onboarding, the Workspace settings page and "create another", so a
- * field cannot be validated one way on the way in and another way afterwards.
- *
- * Empty text is sent as `null`, not as `""`: the contract distinguishes "leave
- * it alone" from "clear it", and an empty string is neither.
- */
+// The three fields a workspace has, in the one form that edits them.
 export function WorkspaceForm({
   values,
   onChange,
@@ -42,11 +34,6 @@ export function WorkspaceForm({
   busyLabel: string
   /** Read-only for a role that may look but not change. */
   disabled?: boolean
-  /**
-   * With `disabled`: keep the submit button on screen, disabled, with this as
-   * its caption — the role-locked action rule. Without it a read-only form
-   * simply has no buttons.
-   */
   lockedReason?: string
   /** Extra controls beside the submit button. */
   children?: React.ReactNode
@@ -61,10 +48,6 @@ export function WorkspaceForm({
   return (
     <form
       className="space-y-4"
-      // The browser's own validation is turned off so this form can say what is
-      // wrong in its own words, in the page, where a screen reader reads it —
-      // rather than in a native bubble that vanishes on the next keystroke and
-      // that the server's 422 would contradict anyway.
       noValidate
       onSubmit={(event) => {
         event.preventDefault()

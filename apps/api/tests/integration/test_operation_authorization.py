@@ -52,9 +52,6 @@ PROFILE = {
     "trust_s": 0.5,
 }
 
-# All workspace business operations. Auth/session is identity-only; login,
-# callback, logout, healthz and workspace discovery/selection are handled by
-# their dedicated authorization tests.
 INVENTORY = {
     ("GET", "/api/projects"): "project:read",
     ("POST", "/api/projects"): "repository:connect",
@@ -602,9 +599,6 @@ def test_initiator_migration_preserves_unknown_legacy_ownership(database):
     workspace = uuid.uuid4()
     attempt_id = uuid.uuid4()
     with Session(engine) as db:
-        # This test deliberately stops at migration 0010. Use that historical
-        # schema directly: the current Workspace model includes `name`, which
-        # is not added until migration 0014.
         db.execute(text("INSERT INTO workspace (id) VALUES (:id)"), {"id": workspace})
         repository_id = uuid.uuid4()
         branch_id = uuid.uuid4()

@@ -117,13 +117,9 @@ export function FileTree({
             className={cn(
               "group/file relative flex h-8 w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-muted",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              // Selection is a tint and an inset outline, never a colour on
-              // the bar — the bar only ever means health.
               isSelected &&
                 "bg-accent font-medium text-accent-foreground ring-1 ring-primary/60 ring-inset hover:bg-accent",
             )}
-            // The bar sits on the row's own left edge, before the indent, so
-            // every row's health lines up in one column down the tree.
             style={{ paddingLeft: depth * 14 + 12 }}
             onMouseEnter={() => onHoverNode?.(node)}
             onMouseLeave={() => onHoverNode?.(null)}
@@ -149,8 +145,7 @@ export function FileTree({
             )}
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
             {withFindings ? (
-              // A neutral mark, not a health colour: this file has findings
-              // to open. The label says so too.
+              // A neutral mark, not a health colour: this file has findings to open.
               <span
                 aria-hidden="true"
                 title="Has findings"

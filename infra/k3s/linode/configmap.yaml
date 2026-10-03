@@ -13,6 +13,4 @@ data:
   CODESAGE_COOKIE_SECURE: "true"
   CODESAGE_ML_SERVICE_URL: "http://ml:8001"
   CODESAGE_LOG_LEVEL: "INFO"
-  # The optional PMD detector, run by the scan worker after CK. It is bundled in
-  # the api image; a failure or its 120-second timeout skips only this stage.
   CODESAGE_PMD_ENABLED: "true"

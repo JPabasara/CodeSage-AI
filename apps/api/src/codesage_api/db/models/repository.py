@@ -41,16 +41,12 @@ class Repository(UUIDPrimaryKey, TimestampMixin, Base):
     production_path_overrides: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'"))
     workspace: Mapped[Workspace] = relationship(back_populates="repositories")
     branches: Mapped[list[Branch]] = relationship(back_populates="repository", passive_deletes=True)
-    # passive_deletes leaves the removal to the database cascade, which is the
-    # only thing that also runs when a workspace is deleted.
     profile_assignment: Mapped[RepositoryProfileAssignment | None] = relationship(
         back_populates="repository", uselist=False, passive_deletes=True
     )
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "source_platform", "external_repository_id"),
-        # Referenced by repository_profile_assignment's composite foreign key,
-        # which is what keeps a project and its profile in the same workspace.
         UniqueConstraint("workspace_id", "id"),
     )
 

@@ -58,7 +58,7 @@ export interface paths {
          *     project. The browser lands on Workspace so the guided trial starts with
          *     the container those later screens belong to.
          *
-         *     A `SecurityAuditRecord` is written for both success and failure (SEC-14).
+         *     A `SecurityAuditRecord` is written for both success and failure.
          *     A failed sign-in has no established actor, which is exactly the event most
          *     worth recording.
          */
@@ -189,7 +189,7 @@ export interface paths {
          *
          *     Permanently deletes the workspace and everything it owns, including its
          *     memberships, invitations, projects, profiles, scans, snapshots and
-         *     findings, in one transaction (DBR-28). It never deletes a global user
+         *     findings, in one transaction. It never deletes a global user
          *     account or that user's memberships in other workspaces.
          *
          *     Nobody is signed out. Every session bound to the workspace, the caller's
@@ -359,7 +359,7 @@ export interface paths {
          * End the session
          * @description Deletes the session **server-side**, clears the cookie, and redirects to
          *     Asgardeo's sign-out endpoint, which clears its own SSO cookie and sends the
-         *     browser back to `/login` (SEC-10).
+         *     browser back to `/login`.
          *
          *     This is why the session is server-side state rather than a self-contained
          *     JWT: a stateless token stays valid until it expires, and sign-out could not
@@ -499,7 +499,7 @@ export interface paths {
         };
         /**
          * The full dashboard payload
-         * @description One response carrying all six dashboard outputs (SRS Appendix B): the health
+         * @description One response carrying all six dashboard outputs: the health
          *     card, the category breakdown, the trend, the Refactor-First list, the data
          *     behind the finding detail, and the hotspot tree.
          *
@@ -507,7 +507,7 @@ export interface paths {
          *     scoring worker and read from a complete profile- and engine-stamped derived
          *     cache. FastAPI does not execute the scoring formula. A profile change
          *     therefore re-ranks everything with no re-scan, and the trend is redrawn end
-         *     to end so every point is comparable with every other (FR-14, FR-21).
+         *     to end so every point is comparable with every other.
          *
          *     **There is no profile parameter, by design.** See the description at the top
          *     of this document.
@@ -608,9 +608,9 @@ export interface paths {
         };
         /**
          * Scan history
-         * @description The stored snapshots for this repository, newest first (FR-19). Only
+         * @description The stored snapshots for this repository, newest first. Only
          *     successful scans appear — a cancelled or failed attempt is retained for
-         *     diagnosis (SP-13) but is never presented as a result (DBR-22).
+         *     diagnosis but is never presented as a result.
          *
          *     `finding_count` and `commit_sha` are stored facts; `health_score`, `grade`
          *     and `delta` are derived on this request, which is why switching profiles
@@ -640,8 +640,8 @@ export interface paths {
         /**
          * Start a scan
          * @description Enqueues an analysis and returns immediately with `202` — the work runs on a
-         *     Celery worker, never inside this request (PERF-05). The job is on the queue
-         *     within one second (PERF-03).
+         *     Celery worker, never inside this request. The job is on the queue
+         *     within one second.
          *
          *     **Skip-if-unchanged.** The API first reads the branch head SHA from GitHub
          *     and compares it with the SHA of the **last successful** scan of that branch.
@@ -734,13 +734,13 @@ export interface paths {
         /**
          * Poll a scan
          * @description Polled once per second while a scan is active, and stopped as soon as
-         *     `phase` is `done`, `error` or `cancelled` (SRS Table 3.107). No WebSockets
+         *     `phase` is `done`, `error` or `cancelled`. No WebSockets
          *     and no Server-Sent Events in v1.0.
          *
          *     **The two fields come from two different stores.** `phase` is read from
          *     PostgreSQL and `progress` from Redis. Losing a percentage when the broker
          *     restarts costs nothing — the next poll produces a new one. Losing the fact
-         *     that a scan failed would breach SP-13, which requires the terminal phase and
+         *     that a scan failed would break diagnosis, which needs the terminal phase and
          *     its error message to be recoverable from the database alone.
          */
         get: operations["get_scan_status"];
@@ -783,8 +783,8 @@ export interface paths {
          *       learns the scan really stopped from the **next poll**, not from this call.
          *     - A user who presses Stop waits until the current stage ends. That is the
          *       price of never leaving a half-written snapshot.
-         *     - Once finalization begins the scan completes. FR-6 requires the previous
-         *       snapshot to survive a cancellation intact, and a killed write would leave
+         *     - Once finalization begins the scan completes. The previous
+         *       snapshot must survive a cancellation intact, and a killed write would leave
          *       a partial one.
          *     - The terminal phase is `cancelled`, **not** `idle`, so a scan that was
          *       stopped stays distinguishable from one that never ran.
@@ -1013,7 +1013,7 @@ export interface paths {
          *     its `id` never changes and no history is kept. There is deliberately no
          *     version column: no endpoint in this contract can express or return one, so
          *     accumulating a row per Apply would grow the table without bound for a
-         *     history nothing is able to read. Scores are derived on read (FR-21), so a
+         *     history nothing is able to read. Scores are derived on read, so a
          *     superseded profile also explains no stored result.
          *
          *     **This writes no snapshot and starts no scan.** Six numbers change on that
@@ -1021,9 +1021,9 @@ export interface paths {
          *     `FINDING`, no `SNAPSHOT`, no `ANALYSIS_ATTEMPT` row is touched. A snapshot is
          *     keyed by commit SHA and records what the code was; a profile is not a commit.
          *     Were a profile change to write one, the trend chart would show a step on a
-         *     day nobody touched the code (FR-21).
+         *     day nobody touched the code.
          *
-         *     **The visibility floor holds regardless** (FR-24). No weight, including the
+         *     **The visibility floor holds regardless**. No weight, including the
          *     minimum `0.1` on `security`, can push a critical security finding out of
          *     sight — such findings come back with `pinned_by_floor: true`.
          */
@@ -1063,7 +1063,7 @@ export interface components {
          * @description Every non-2xx response in this API has this shape.
          *
          *     **Clients switch on `code`, never on `detail`.** `detail` is a human
-         *     sentence whose wording may change; `code` is a stable constant. Per SEC-16,
+         *     sentence whose wording may change; `code` is a stable constant.
          *     `detail` never carries a stack trace, SQL, an internal hostname or any other
          *     implementation detail.
          */
@@ -1111,8 +1111,8 @@ export interface components {
          */
         ErrorCode: "NOT_AUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "INVALID_REPOSITORY_URL" | "REPOSITORY_NOT_PUBLIC" | "REPOSITORY_UNREACHABLE" | "REPOSITORY_TOO_LARGE" | "REPOSITORY_HAS_NO_JAVA" | "ALREADY_CONNECTED" | "REPOSITORY_SCAN_RUNNING" | "SCAN_ALREADY_RUNNING" | "SCAN_NOT_CANCELLABLE" | "SCAN_QUEUE_FULL" | "PROFILE_LIMIT_REACHED" | "PROFILE_BUILT_IN" | "PROFILE_IN_USE" | "PROFILE_NAME_CONFLICT" | "WORKSPACE_REQUIRED" | "WORKSPACE_SCAN_RUNNING" | "WORKSPACE_CONFIRMATION_MISMATCH" | "LAST_WORKSPACE_ADMIN" | "VALIDATION_FAILED" | "RATE_LIMITED" | "UPSTREAM_UNAVAILABLE" | "SCORE_PENDING" | "INTERNAL_ERROR";
         /**
-         * @description How bad a finding is. **Assigned once, at detection, and never recomputed**
-         *     (FR-8.1): the rule register fixes it for rule findings, the SATD marker
+         * @description How bad a finding is. **Assigned once, at detection, and never recomputed**:
+         *     the rule register fixes it for rule findings, the SATD marker
          *     table for SATD findings, and ML-2 assigns none because it produces no
          *     findings. No model and no user ever sets a severity.
          *
@@ -1122,7 +1122,7 @@ export interface components {
          */
         Severity: "critical" | "high" | "medium" | "low";
         /**
-         * @description Which detector produced the finding. **Exactly two values** (FR-8.2).
+         * @description Which detector produced the finding. **Exactly two values**.
          *
          *     There is no `security` source: security patterns run inside the rule engine,
          *     so a security finding is a `rule` finding whose `category` is `security`. A
@@ -1135,7 +1135,7 @@ export interface components {
          */
         Source: "rule" | "satd";
         /**
-         * @description What kind of debt it is. **Exactly five values** (FR-9.3), orthogonal to
+         * @description What kind of debt it is. **Exactly five values**, orthogonal to
          *     `source` — a finding is always both *found by X* and *of type Y*.
          *
          *     Four are SATDAUG comment-dataset labels, so ML-1 trains and predicts on the
@@ -1193,14 +1193,14 @@ export interface components {
          *     `idle` is the resting state of the scan control **before** a scan; it is
          *     never a stored outcome. `cancelled` is a distinct terminal phase, not a
          *     return to `idle`, so a scan that was stopped stays distinguishable from one
-         *     that never ran — which SP-13 needs for diagnosis and DBR-22 needs to keep a
+         *     that never ran — which diagnosis needs, and which keeps a
          *     cancelled attempt from ever being presented as a result.
          * @enum {string}
          */
         ScanPhase: "idle" | "queued" | "running" | "done" | "error" | "cancelled";
         /**
          * @description The signed-in user. Carries no token and no provider credential — those stay
-         *     server-side (SEC-09).
+         *     server-side.
          *
          *     **Only `user_id` is guaranteed.** `workspace_id` is null for someone who
          *     has signed in but has no workspace yet — a real authenticated state, not a
@@ -1419,9 +1419,9 @@ export interface components {
             /** @example octocat */
             owner: string;
             /**
-             * @description Recorded for every repository from v1.0 - FR-3 stores it and the projects
+             * @description Recorded for every repository from v1.0; the projects
              *     list displays it. What is deferred is *connecting* a private repository,
-             *     which needs a GitHub App installation and the SEC-04/SEC-06 authorization
+             *     which needs a GitHub App installation and stronger authorization
              *     controls: that is **v2**, not v1.1.
              * @enum {string}
              */
@@ -1482,7 +1482,7 @@ export interface components {
             /**
              * @description Present only when `phase` is `error`. Stored on the attempt row, not
              *     merely logged, so a user-reported failure is diagnosable from the
-             *     database alone (SP-13).
+             *     database alone.
              */
             error?: string | null;
             /**
@@ -1535,7 +1535,7 @@ export interface components {
             repo_name: string;
             snapshots_left: number;
         };
-        /** @description One row in the Scan-History view (FR-19). */
+        /** @description One row in the Scan-History view. */
         ScanSummary: {
             /**
              * Format: uuid
@@ -1571,7 +1571,7 @@ export interface components {
         Finding: {
             /**
              * @description Stable across scans, so a finding can be tracked over time and
-             *     deduplicated (DBR-15).
+             *     deduplicated.
              */
             fingerprint: string;
             source: components["schemas"]["Source"];
@@ -1592,7 +1592,7 @@ export interface components {
             symbol?: string | null;
             /**
              * @description A one-line, plain-English explanation produced by a **string template**,
-             *     never by text generation (FR-16). Reliable, instant, and incapable of
+             *     never by text generation. Reliable, instant, and incapable of
              *     hallucinating.
              * @example charge() has cyclomatic complexity 18, over the limit of 15 - split it into smaller functions.
              */
@@ -1600,13 +1600,13 @@ export interface components {
             status: components["schemas"]["FindingStatus"];
             /**
              * @description `base_points(severity) × category_weight × source_trust × churn_factor ×
-             *     risk_factor` (FR-11). Derived, never stored. The list is returned already
+             *     risk_factor`. Derived, never stored. The list is returned already
              *     sorted by this, descending.
              */
             priority: number;
             /**
              * @description True when this finding is held in the visible list by the
-             *     **critical-security visibility floor** (FR-24) rather than by its
+             *     **critical-security visibility floor** rather than by its
              *     computed priority. Lets the UI explain why a row is present even at the
              *     minimum `security` weight of 0.1.
              * @default false
@@ -1630,7 +1630,7 @@ export interface components {
             /**
              * @description The developer's own words, quoted as evidence. SATD findings only. Only
              *     the comment that produced the finding is stored — never the surrounding
-             *     source (DBR-27).
+             *     source.
              * @example // FIXME: this is not thread-safe
              */
             comment_text?: string | null;
@@ -1651,13 +1651,12 @@ export interface components {
              *     never as a zero-risk badge.
              *
              *     A risky file with no findings still contributes no debt: risk enters
-             *     scoring only as a bounded multiplier on findings that already exist
-             *     (FR-10).
+             *     scoring only as a bounded multiplier on findings that already exist.
              */
             risk_score: number | null;
         };
         /**
-         * @description A node in the hotspot file tree (FR-18). Folder values aggregate the stored
+         * @description A node in the hotspot file tree. Folder values aggregate the stored
          *     file scores beneath them, so drilling in re-aggregates a subtree by summing
          *     numbers already in memory — no re-scan and no second query.
          */
@@ -1678,7 +1677,7 @@ export interface components {
             children?: components["schemas"]["TreeNode"][] | null;
         };
         /**
-         * @description One point on the trend chart (FR-14). **Every point on a line is computed
+         * @description One point on the trend chart. **Every point on a line is computed
          *     under the same, currently active profile**, so a profile change redraws the
          *     entire history and every point stays comparable with every other. A line
          *     whose points came from different profiles would be unreadable: you could not
@@ -1691,7 +1690,7 @@ export interface components {
             commit_sha?: string | null;
         };
         /**
-         * @description One slice of the category pie (FR-13). `count` is a plain query over stored
+         * @description One slice of the category pie. `count` is a plain query over stored
          *     rows; `debt` is weighted by the active profile — so the two move
          *     independently, and a category can hold many findings but little debt.
          */
@@ -1701,7 +1700,7 @@ export interface components {
             debt: number;
         };
         /**
-         * @description The whole dashboard in one response — all six outputs of SRS Appendix B.
+         * @description The whole dashboard in one response — all six dashboard outputs.
          *
          *     Everything numeric here is derived on this request under the active profile.
          *     The client renders; it computes nothing.
@@ -1733,8 +1732,7 @@ export interface components {
             resolved_finding_count: number;
             /**
              * @description The active profile's name, shown on the trend chart. Without the label,
-             *     the chart changing shape after a profile switch reads as a defect
-             *     (FR-14).
+             *     the chart changing shape after a profile switch reads as a defect.
              * @example Balanced
              */
             profile: string;
@@ -1746,7 +1744,7 @@ export interface components {
              */
             include_test_findings: boolean;
             /**
-             * @description The ML model version that produced this snapshot (AI-03, DBR-18). Null
+             * @description The ML model version that produced this snapshot. Null
              *     when the snapshot was taken in degraded mode with no ML available.
              */
             model_version?: string | null;
@@ -1822,12 +1820,11 @@ export interface components {
             weights: components["schemas"]["CategoryWeights"];
             /**
              * @description The trust slider `s`. `0` = trust the model, `1` = trust the rules.
-             *     Scoring derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it
-             *     (FR-11).
+             *     Scoring derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s` from it.
              *
              *     **Security findings are excluded**: `source_trust` is fixed at 1.0 for
              *     the `security` category, so no position of this slider can de-weight
-             *     them (FR-24 mechanism 2).
+             *     them.
              * @default 0.5
              */
             trust_s: number;
@@ -1951,7 +1948,7 @@ export interface components {
         };
         /**
          * @description The resource belongs to another workspace. Row-Level Security keys every
-         *     tenant-owned table on `workspace_id` (DBR-3), so this is enforced in the
+         *     tenant-owned table on `workspace_id`, so this is enforced in the
          *     database rather than only in application code.
          */
         Forbidden: {
@@ -2017,7 +2014,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Too many requests (SEC-12). */
+        /** @description Too many requests. */
         RateLimited: {
             headers: {
                 /** @description Seconds to wait before retrying. */
@@ -2036,7 +2033,7 @@ export interface components {
         };
         /**
          * @description A required external service — GitHub or Asgardeo — is unavailable or
-         *     degraded (REL-06, PERF-09). Previously completed results stay readable.
+         *     degraded. Previously completed results stay readable.
          */
         UpstreamUnavailable: {
             headers: {
@@ -2718,7 +2715,7 @@ export interface operations {
                  */
                 branch: string;
                 /**
-                 * @description Load a specific historical snapshot instead of the newest one (FR-19).
+                 * @description Load a specific historical snapshot instead of the newest one.
                  *     Omit for the latest. Only snapshots produced by a **successful** scan
                  *     are addressable — a cancelled or failed attempt produces no snapshot.
                  */

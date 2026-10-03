@@ -14,23 +14,12 @@ import {
   useSelectedProject,
 } from "@/hooks/use-selected-project"
 
-/**
- * The pages that are about one project. Elsewhere this control is hidden —
- * Profiles included: it configures every project from its own rail, so the
- * dashboard's project has no say there.
- */
+// The pages that are about one project.
 export function isProjectPage(pathname: string) {
   return pathname.startsWith("/dashboard/")
 }
 
-/**
- * Which project of the active workspace a page is about.
- *
- * Switching keeps the kind of page: the Dashboard of one project becomes the
- * Dashboard of another, and History stays History. A bare URL is used on
- * purpose — the branch, a snapshot id and an open finding all belonged to the
- * project being left.
- */
+// Which project of the active workspace a page is about.
 export function ProjectSwitcher() {
   const router = useRouter()
   const pathname = usePathname()

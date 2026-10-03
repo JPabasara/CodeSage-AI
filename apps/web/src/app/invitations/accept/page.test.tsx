@@ -80,8 +80,6 @@ test("signed out: the token is kept and sign-in is offered", async () => {
   expect(
     await screen.findByRole("heading", { name: /sign in to accept/i }),
   ).toBeVisible()
-  // Straight to sign-in, with this page (token included) as `return_to`, so the
-  // invitee comes back here even from the email-verification tab.
   const href = screen
     .getByRole("link", { name: "Sign in" })
     .getAttribute("href")

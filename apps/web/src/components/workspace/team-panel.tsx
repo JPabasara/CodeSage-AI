@@ -37,11 +37,7 @@ import { cn } from "@/lib/utils"
 import type { Invitation, Member, MemberList, Role } from "@/lib/types"
 import type { MutableQueryState } from "@/hooks/use-query"
 
-/**
- * Roles an invitation may carry. Org-admin is deliberately left out: admin
- * rights go to someone who has already joined and is known, by promotion — not
- * to whoever ends up holding an emailed link.
- */
+// Roles an invitation may carry.
 const INVITE_ROLES: Role[] = ["manager", "developer", "viewer"]
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -64,12 +60,6 @@ const STATUS_LABEL: Record<Member["status"], string> = {
   invited: "Invited",
 }
 
-/**
- * The member and invitation lists share one set of columns — who, role, and
- * (for an org-admin) an action — so the two read as one table. The columns
- * follow the width of the panel, not the window: at a narrow width the row
- * stacks, and the role and action move under the name.
- */
 const COLUMNS = {
   manage:
     "grid-cols-[minmax(0,1fr)_auto] @md:grid-cols-[minmax(0,1fr)_9rem_6.5rem]",
@@ -118,17 +108,7 @@ function inviteError(caught: unknown): { message: string; delivery: boolean } {
   return { message: caught.detail, delivery: false }
 }
 
-/**
- * Who is in the workspace, and — for an org-admin — the controls to change it.
- *
- * Everyone can read the list. Only `member:manage` renders the invite form, the
- * role pickers, Remove and Revoke; the API refuses them anyway, so hiding
- * them is about not offering what cannot work.
- *
- * Your own row is always read-only. The API would let one of two org-admins
- * demote themselves, but doing it from here would pull the page out from under
- * the person using it — another org-admin changes your role.
- */
+// Who is in the workspace, and — for an org-admin — the controls to change it.
 export function TeamPanel({
   query,
   canManage,
@@ -415,11 +395,7 @@ export function TeamPanel({
   )
 }
 
-/**
- * The column labels over a list. Only drawn once the panel is wide enough for
- * columns; each row already says what its cells are to a screen reader, so the
- * labels are visual only.
- */
+// The column labels over a list.
 function ColumnHeader({
   mode,
   first,

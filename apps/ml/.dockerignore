@@ -1,23 +1,9 @@
-# Build context for apps/ml/Dockerfile.
-#
-# Owned by whoever does deployment, like the Dockerfile beside it — see the team
-# plan, §1. Nathasha: if something you need is missing from the image, ask
-# rather than editing this.
-#
-# ⚠️ THE `data/` LINE IS THE IMPORTANT ONE. Training data is not inference data.
-# The service loads model artifacts from a mounted volume (/models) and never
-# reads a dataset at run time, so shipping SATDAUG or D'Ambros into the build
-# context is megabytes of waiting for nothing. `data/raw/` is also a separate
-# git repository, which is its own reason to keep it out.
 
 # Datasets. Training happens offline; the image only answers questions.
 data
 dataset
 experiments
 
-# Only the production ML-1 and ML-2 artifacts are baked into the image. Local
-# Compose may still mount the complete models directory over /models for
-# development.
 models/*
 !models/satd_v1.joblib
 !models/risk_v2.joblib

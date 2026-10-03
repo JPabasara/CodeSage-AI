@@ -1,17 +1,4 @@
 // The fake backend (MSW request handlers).
-//
-// Each entry answers one endpoint the real API owns. MSW intercepts `fetch()` at
-// the network layer, so components call `/api/...` and never know the response
-// came from here. The same handlers feed the dev app, component tests and
-// Playwright.
-//
-//   scoring.ts   the stored facts, and the formula over them
-//   fixtures.ts  those facts as payloads, scored under Balanced
-//   handlers.ts  the HTTP surface: status codes, error envelopes, query
-//                parameters, and the little mutable state a fake backend needs
-//
-// Status codes are not decoration: `POST …/scan` answers 202 because the work is
-// queued rather than done, and a client written against a 200 will be surprised.
 import { http, HttpResponse } from "msw"
 import type {
   ApiError,
@@ -65,20 +52,11 @@ import {
 import { FINDING_FACTS, SNAPSHOTS, scanHistoryFor } from "./scoring"
 import { STAGE_BANDS, stageOf } from "@/lib/scan-progress"
 
-// ── error helper ────────────────────────────────────────────────────────────
-
 /** Typed, so an envelope missing `code` fails the build. */
 const fail = (status: number, code: ApiError["code"], detail: string) =>
   HttpResponse.json({ detail, code } satisfies ApiError, { status })
 
 const NOT_FOUND = () => fail(404, "NOT_FOUND", "Not found.")
-
-// ── mutable server state ────────────────────────────────────────────────────
-//
-// MSW handlers run in the page, not the service worker, so module variables die
-// on every navigation — apply a profile, refresh, and it silently reverts. The
-// mutable half is mirrored into sessionStorage: per tab, and invisible to Node,
-// where the module variables are the whole story.
 
 function storage(): Storage | null {
   try {
@@ -119,8 +97,7 @@ function findingStatusKey(snapshotId: string, fingerprint: string) {
 function withFindingStatuses(report: HealthReport): HealthReport {
   return {
     ...report,
-    // This is deliberately an overlay after scoring. Done is a dashboard
-    // workflow state, so none of the report's scores or counts are recomputed.
+    // This is deliberately an overlay after scoring.
     findings: report.findings.map((finding) => ({
       ...finding,
       status:
@@ -131,14 +108,7 @@ function withFindingStatuses(report: HealthReport): HealthReport {
   }
 }
 
-/**
- * Everything one workspace owns.
- *
- * Kept as a record per workspace rather than a set of global variables because
- * the whole point of the second workspace is that switching to it must not show
- * the first one's projects, profiles or assignments — a bug that is only
- * catchable if the mock really holds two separate sets.
- */
+// Everything one workspace owns.
 interface WorkspaceRecord {
   name: string
   description: string | null
@@ -181,12 +151,6 @@ function seedWorkspaces(): Record<string, WorkspaceRecord> {
   return seeded
 }
 
-/**
- * E2E only: start signed in with no workspace at all, which is the state
- * onboarding exists for and the one state a seeded mock can never reach on its
- * own. Read once, at module load, and only until a workspace is actually
- * created — after that the persisted value is the answer.
- */
 function startsWithoutWorkspace(): boolean {
   if (typeof document === "undefined") return false
   return document.cookie.includes("codesage_e2e_workspace=none")
@@ -208,27 +172,14 @@ let activeWorkspaceId: string | null = restore(
   startsWithoutWorkspace() ? null : WORKSPACE_ID,
 )
 
-// The active workspace's state, unpacked so every handler below reads it the
-// way it always has. `loadWorkspace` is the only place that swaps them, which
-// is what makes a switch atomic rather than four separate assignments a handler
-// could half-miss.
+// The active workspace's state, unpacked so every handler below reads it the way it always has.
 let connected: Repo[] = []
 
-/**
- * The half of a profile the workspace actually stores.
- *
- * `is_active`, `usage_count` and `editable` are deliberately not in here: they
- * are facts about the pool, not about the row, and storing them would let the
- * default flag drift on to two profiles at once. They are derived in `out()` on
- * every read, exactly as the API derives them.
- */
 type StoredProfile = Pick<
   ScoreProfile,
   "id" | "name" | "weights" | "trust_s" | "is_preset"
 >
 
-// A declaration, not a const: `seedWorkspaces` above calls it while the module
-// is still initialising, and an arrow assigned to a const is not yet there.
 function seedPool(): StoredProfile[] {
   return mockProfiles.map(({ id, name, weights, trust_s, is_preset }) => ({
     id,
@@ -239,16 +190,13 @@ function seedPool(): StoredProfile[] {
   }))
 }
 
-/** Three built-ins, then whatever this workspace has authored — at most five. */
 let pool: StoredProfile[] = []
 
 /** One pointer per workspace, which is why "exactly one default" needs no rule. */
 let defaultProfileId: string = balancedProfile.id
 
-/** repo id → the profile it names explicitly. Absent means it inherits. */
 let assignments: Record<string, string> = {}
 
-/** Fold the unpacked state back into the record it came from. */
 function packWorkspace() {
   const record = activeWorkspaceId
     ? workspaceRecords[activeWorkspaceId]
@@ -284,8 +232,6 @@ function persistState() {
   persist(ACTIVE_WORKSPACE_KEY, activeWorkspaceId)
 }
 
-// Unpack rather than load: at module start there is nothing to fold back yet,
-// and packing first would write these empty defaults over the seeded workspace.
 unpackWorkspace()
 
 const defaultBranch = mockBranches.find((b) => b.is_default) ?? mockBranches[0]
@@ -297,14 +243,8 @@ function branchInfoFor(name: string | null | undefined) {
 /** A repo id we know about — either seeded or connected during this session. */
 const knownRepo = (repoId: string) => connected.find((r) => r.id === repoId)
 
-// ── the scan state machine (in-memory, one running scan per repo) ───────────
-
 const SCAN_STEP = 17 // % added per poll → ~6 polls from 0 to done
 
-/**
- * E2E only: a slow scan (~15 s), for tests that must leave the page and come
- * back while it is still running. Read per tick, from the page's cookies.
- */
 const SLOW_SCAN_STEP = 4
 
 function scanStep() {
@@ -314,39 +254,15 @@ function scanStep() {
   return slow ? SLOW_SCAN_STEP : SCAN_STEP
 }
 
-/**
- * The pipeline is clone → extract → detect → finalize, and the cancel flag is
- * read only between stages — never inside finalize, because a half-written
- * snapshot reads exactly like a complete one. Past this progress Stop is
- * accepted but the scan still completes.
- */
 const FINALIZE_AT = 85
 
 const scans = new Map<string, ScanStatus>()
 
-/**
- * Stop only requests cancellation; the scan keeps reporting "running" until the
- * next poll. Returning "cancelled" straight from the POST would let the UI skip
- * the polling path the real backend needs.
- */
 const cancelRequested = new Set<string>()
 
-/**
- * Head SHA of the last successful scan per repo+branch — what skip-if-unchanged
- * compares against. Using the last *successful* one stops a cancelled attempt
- * being mistaken for a stored snapshot.
- */
+// Head SHA of the last successful scan per repo+branch — what skip-if-unchanged compares against.
 const lastSuccessfulSha = new Map<string, string>()
 
-/**
- * How many health requests answer 503 SCORE_PENDING once a scan completes.
- *
- * The real API stores the snapshot and scores it in a background task, so there
- * is a genuine window where the snapshot exists and its score does not. Faking
- * that window is the point: without it the client's pending path is dead code in
- * dev and in Playwright, and the first time anyone sees it is the demo. Two asks
- * (~4s at the client's poll interval) is long enough to read the message.
- */
 const PENDING_ASKS_AFTER_SCAN = 2
 
 /** repo@branch → how many more health requests still answer SCORE_PENDING. */
@@ -354,7 +270,6 @@ const pendingScores = new Map<string, number>()
 
 const scanKey = (repoId: string, branch: string) => `${repoId}@${branch}`
 
-/** A stand-in for a database-generated uuid. */
 function uuid(): string {
   return crypto.randomUUID()
 }
@@ -366,14 +281,8 @@ function idleScan(): ScanStatus {
 /** How many Java files the demo repository "has", for "Reading 1,240 Java files". */
 const MOCK_JAVA_FILES = 1240
 
-/** What the mock's scans usually take — short, so no test ever reads as slow. */
 const MOCK_TYPICAL_SECONDS = 5
 
-/**
- * The stage details the real worker reports (13H.4), derived from the mock's
- * percentage: the stage whose band holds it, and during reading_code a file
- * count that moves with it.
- */
 function withStage(status: ScanStatus): ScanStatus {
   const stage = stageOf({ progress: status.progress })
   const [start, end] = STAGE_BANDS.reading_code
@@ -397,8 +306,7 @@ function tick(repoId: string): ScanStatus {
 
   const now = new Date().toISOString()
 
-  // The worker reads the cancel flag between pipeline stages and stops at the
-  // first boundary. Progress freezes where it was: the scan did not finish.
+  // The worker reads the cancel flag between pipeline stages and stops at the first boundary.
   if (cancelRequested.has(repoId)) {
     cancelRequested.delete(repoId)
     if (current.progress < FINALIZE_AT) {
@@ -434,8 +342,6 @@ function tick(repoId: string): ScanStatus {
   if (done.branch) {
     // The snapshot is stored the moment the scan finishes; the score is not.
     pendingScores.set(scanKey(repoId, done.branch), PENDING_ASKS_AFTER_SCAN)
-    // …and it is a NEW snapshot: the latest report now has its own id, time
-    // and commit, while the older ids still answer with their own reports.
     newestSnapshot.set(scanKey(repoId, done.branch), {
       snapshot_id: uuid(),
       scanned_at: now,
@@ -448,21 +354,11 @@ function tick(repoId: string): ScanStatus {
   return done
 }
 
-/**
- * repo@branch → the snapshot a scan in this session stored. Only the
- * newest is kept: that is all "latest" ever answers with.
- */
 const newestSnapshot = new Map<
   string,
   { snapshot_id: string; scanned_at: string; commit_sha?: string }
 >()
 
-/**
- * A profile change re-scores the projects it affects, like the real API's
- * background warm-up: for a moment their default branch answers
- * SCORE_PENDING and `GET /api/activity` lists them as re-scoring. It ends on
- * its own clock, as the real worker does — not when someone looks.
- */
 export const PROFILE_RESCORE_MS = 1_500
 
 /** repo id → when its re-score (after a profile change) is done. */
@@ -470,7 +366,6 @@ const rescoringUntil = new Map<string, number>()
 
 function markRescoring(repoIds: string[]) {
   const until = Date.now() + PROFILE_RESCORE_MS
-  // A project with no scans has nothing to re-score.
   for (const repoId of repoIds) {
     if (repoId !== UNSCANNED_REPO_ID) rescoringUntil.set(repoId, until)
   }
@@ -487,9 +382,6 @@ export function resetMockBackend() {
   lastSuccessfulSha.clear()
   pendingScores.clear()
   findingStatuses = {}
-  // Cleared first: `loadWorkspace` folds the current state back into its record
-  // on the way out, which would copy the finished test's projects and profiles
-  // straight into the freshly seeded ones.
   activeWorkspaceId = null
   workspaceRecords = seedWorkspaces()
   loadWorkspace(WORKSPACE_ID)
@@ -497,8 +389,6 @@ export function resetMockBackend() {
   storage()?.removeItem(ACTIVE_WORKSPACE_KEY)
   storage()?.removeItem(FINDING_STATUSES_KEY)
 }
-
-// ── the workspace profile pool ──────────────────────────────────────────────
 
 const clamp = (n: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, n))
@@ -523,14 +413,11 @@ const clampWeights = (weights: CategoryWeights): CategoryWeights => ({
 const usageCount = (profileId: string) =>
   Object.values(assignments).filter((id) => id === profileId).length
 
-/** A stored row as the wire shows it, with the pool-level facts derived. */
 function out(stored: StoredProfile): ScoreProfile {
   return {
     ...stored,
     is_active: stored.id === defaultProfileId,
     usage_count: usageCount(stored.id),
-    // The three built-ins are refused every write by the database itself; the
-    // flag only saves the client a round trip to find that out.
     editable: !stored.is_preset,
   }
 }
@@ -553,12 +440,6 @@ const findProfile = (profileId: string | undefined) =>
 const defaultProfile = (): StoredProfile =>
   findProfile(defaultProfileId) ?? pool[0]
 
-/**
- * The profile one repository is really scored with: its override if it has one,
- * otherwise the workspace default. Every derived read — the dashboard and the
- * scan history — goes through here, which is what makes an override visible
- * everywhere at once.
- */
 const effectiveFor = (repoId: string): ScoreProfile =>
   out(findProfile(assignments[repoId]) ?? defaultProfile())
 
@@ -570,8 +451,6 @@ function projectProfileOut(repoId: string): ProjectProfile {
     inherited: !override,
     effective: override ? out(override) : workspaceDefault,
     workspace_default: workspaceDefault,
-    // Null exactly when `inherited` is true — the two cannot disagree here
-    // because both are read off the same lookup.
     override: override ? out(override) : null,
   }
 }
@@ -610,11 +489,6 @@ const invalid = (errors: { field: string; detail: string }[]) =>
     { status: 422 },
   )
 
-/**
- * A malformed body is not the same as an out-of-range one: the first is 422, the
- * second is clamped and accepted with 200. Keeping both is what teaches the UI
- * that a 422 exists.
- */
 function validationErrors(body: unknown): { field: string; detail: string }[] {
   const errors: { field: string; detail: string }[] = []
   if (typeof body !== "object" || body === null) {
@@ -634,8 +508,6 @@ function validationErrors(body: unknown): { field: string; detail: string }[] {
         })
       }
     }
-    // Exactly five, no more: an invented sixth category is rejected at the edge
-    // rather than producing a missing-key failure inside the scoring engine.
     for (const key of Object.keys(w)) {
       if (!WEIGHT_KEYS.includes(key as keyof CategoryWeights)) {
         errors.push({ field: `weights.${key}`, detail: "Unknown category." })
@@ -649,13 +521,7 @@ function validationErrors(body: unknown): { field: string; detail: string }[] {
   return errors
 }
 
-/**
- * The same rules for a PATCH, where every field is optional.
- *
- * `null` is not the same as omitted and is rejected: there is no profile with no
- * security weight, so a client that sends one is confused about what it is
- * asking for rather than asking for a default.
- */
+// The same rules for a PATCH, where every field is optional.
 function patchErrors(body: unknown): { field: string; detail: string }[] {
   const errors: { field: string; detail: string }[] = []
   if (typeof body !== "object" || body === null) {
@@ -696,13 +562,7 @@ function patchErrors(body: unknown): { field: string; detail: string }[] {
   return errors
 }
 
-/**
- * The built-in these exact numbers are, if they still are one.
- *
- * Matched on values rather than on the name the client sent: once a slider has
- * moved the profile is no longer that preset, and a built-in row cannot be
- * written to anyway.
- */
+// The built-in these exact numbers are, if they still are one.
 function matchingBuiltIn(
   weights: CategoryWeights,
   trustS: number,
@@ -716,14 +576,7 @@ function matchingBuiltIn(
   )
 }
 
-/**
- * Where the superseded `PUT /api/profiles/active` writes its numbers.
- *
- * It re-uses a row rather than adding one, because that endpoint is the pre-pool
- * "the workspace has a profile and Apply replaces it" contract: creating a row
- * per Apply would march a workspace into the five-custom limit through a UI that
- * never offered to name or keep them.
- */
+// Where the superseded `PUT /api/profiles/active` writes its numbers.
 function legacyCustomTarget(): StoredProfile {
   const current = defaultProfile()
   if (!current.is_preset) return current
@@ -740,12 +593,7 @@ function legacyCustomTarget(): StoredProfile {
   return created
 }
 
-/**
- * Clamp these six numbers and make them the workspace default.
- *
- * Values that are exactly a built-in's SELECT that built-in rather than writing
- * to it; anything else is written to the workspace's own custom row.
- */
+// Clamp these six numbers and make them the workspace default.
 function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
   const weights = clampWeights(body.weights)
   const trustS = clamp(body.trust_s, TRUST_MIN, TRUST_MAX)
@@ -763,12 +611,6 @@ function applyToWorkspace(body: ApplyProfileRequest): ScoreProfile {
   return out(target)
 }
 
-// ── the endpoints ───────────────────────────────────────────────────────────
-//
-// Three auth endpoints are deliberately absent: /login, /callback and /logout are
-// navigations, not fetches, so a service worker never sees them. Only
-// /api/auth/session is mockable, and only for E2E — see `authHandlers`.
-
 /** One workspace as the wire shows it, with the session-dependent bits derived. */
 function workspaceOut(workspaceId: string): Workspace {
   const record = workspaceRecords[workspaceId]
@@ -782,11 +624,7 @@ function workspaceOut(workspaceId: string): Workspace {
     is_active: isActive,
     created_at: record.created_at,
     updated_at: record.updated_at,
-    // Derived on read, never stored: both change whenever a project or a member
-    // does, and a stored copy would be wrong more often than right.
     project_count: isActive ? connected.length : record.repos.length,
-    // Active members only: pending invitations and deactivated people are
-    // not counted, which is what the contract says.
     member_count: record.members
       ? record.members.filter((m) => m.status === "active").length
       : record.member_count,
@@ -808,7 +646,6 @@ function creatorMembership(role: Role): Member {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ROLES: Role[] = ["org-admin", "manager", "developer", "viewer"]
 
-/** Every member write needs `member:manage`, which only an org-admin holds. */
 function forbidUnlessAdmin() {
   const record = activeWorkspaceId ? workspaceRecords[activeWorkspaceId] : null
   if (record?.role === "org-admin") return null
@@ -850,11 +687,6 @@ const trimmedOrNull = (value: string | null | undefined) => {
   return trimmed ? trimmed : null
 }
 
-/**
- * Endpoints that answer without a workspace. Everything else is scoped to one,
- * and answers 409 until there is one to be scoped to — which is what sends a
- * brand-new user to onboarding rather than to an empty-looking app.
- */
 const WORKSPACE_FREE = [
   "/api/auth/session",
   "/api/auth/workspaces",
@@ -863,8 +695,6 @@ const WORKSPACE_FREE = [
 ]
 
 export const handlers = [
-  // Registered first on purpose: MSW takes the first handler that matches, and
-  // returning nothing falls through to the real one below.
   http.all("*/api/*", ({ request }) => {
     if (activeWorkspaceId) return
     const path = new URL(request.url).pathname
@@ -876,10 +706,7 @@ export const handlers = [
     )
   }),
 
-  // ── workspaces ────────────────────────────────────────────────────────────
   http.get("*/api/auth/workspaces", () =>
-    // Reachable without a workspace, where it is an empty array — the state
-    // onboarding exists for, not an error.
     HttpResponse.json(workspaceIds().map(workspaceOut)),
   ),
 
@@ -908,8 +735,6 @@ export const handlers = [
         member_count: 1,
         members: [creatorMembership("org-admin")],
         invitations: [],
-        // Genuinely empty: no repository is created, and the Projects page
-        // says so rather than inventing a demo one.
         repos: [],
         pool: seedPool(),
         defaultProfileId: balancedProfile.id,
@@ -930,8 +755,6 @@ export const handlers = [
         { field: "workspace_id", detail: "Input should be a valid UUID." },
       ])
     }
-    // A membership that is missing, inactive, invited or someone else's all
-    // answer the same 404: which of those it is, is not ours to reveal.
     if (!workspaceRecords[body.workspace_id]) return NOT_FOUND()
 
     loadWorkspace(body.workspace_id)
@@ -941,9 +764,7 @@ export const handlers = [
 
   http.get("*/api/auth/workspaces/:workspaceId", ({ params }) => {
     const workspaceId = params.workspaceId as string
-    // Only the ACTIVE workspace is readable. Another one you belong to is a 404:
-    // the session binds one workspace, and reading past it would defeat the
-    // isolation every other endpoint depends on.
+    // Only the ACTIVE workspace is readable.
     if (workspaceId !== activeWorkspaceId) return NOT_FOUND()
     return HttpResponse.json(workspaceOut(workspaceId))
   }),
@@ -983,7 +804,6 @@ export const handlers = [
       if (errors.length > 0) return invalid(errors)
 
       // Partial: an omitted field is left alone, and an explicit null clears it.
-      // Collapsing those two would make "remove the description" unexpressible.
       if (body.name !== undefined) record.name = body.name.trim()
       if ("description" in body) {
         record.description = trimmedOrNull(body.description)
@@ -997,7 +817,6 @@ export const handlers = [
     },
   ),
 
-  // ── members & invitations ─────────────────────────────────────────────────
   http.delete(
     "*/api/auth/workspaces/:workspaceId",
     async ({ params, request }) => {
@@ -1053,8 +872,7 @@ export const handlers = [
           if (key.startsWith(`${repoId}@`)) pendingScores.delete(key)
         }
       }
-      // Like the API: the session drops to no workspace, even when another
-      // one is available. Choosing it is left to the user.
+      // Like the API: the session drops to no workspace, even when another one is available.
       loadWorkspace(null)
       persistState()
       return new HttpResponse(null, { status: 204 })
@@ -1073,8 +891,7 @@ export const handlers = [
     const body = (await request.json().catch(() => null)) as {
       token?: unknown
     } | null
-    // One answer for every kind of unusable token, as on the real API. The
-    // seeded token works once: after that its workspace is already joined.
+    // One answer for every kind of unusable token, as on the real API.
     if (
       body?.token !== MOCK_INVITATION_TOKEN ||
       workspaceRecords[INVITED_WORKSPACE_ID]
@@ -1149,8 +966,7 @@ export const handlers = [
         "That address is already a member or already invited.",
       )
     }
-    // A mailbox the mock cannot deliver to. The real API rolls the invitation
-    // back when Resend refuses it, so nothing is stored here either.
+    // A mailbox the mock cannot deliver to.
     if (normalized.endsWith("@bounce.example")) {
       return fail(
         503,
@@ -1237,7 +1053,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // ── projects ──────────────────────────────────────────────────────────────
   http.get("*/api/projects", () => HttpResponse.json(connected)),
 
   http.delete("*/api/projects/:repoId", ({ params }) => {
@@ -1245,9 +1060,6 @@ export const handlers = [
     const index = connected.findIndex((repo) => repo.id === repoId)
     if (index < 0) return fail(404, "NOT_FOUND", "Not found.")
     connected = connected.filter((repo) => repo.id !== repoId)
-    // The assignment row is keyed by repository and cascades with it, so a
-    // profile does not stay undeletable because a removed project still names
-    // it.
     if (assignments[repoId]) {
       assignments = Object.fromEntries(
         Object.entries(assignments).filter(([id]) => id !== repoId),
@@ -1257,8 +1069,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // Connect a repository. Each failure code needs its own message on screen —
-  // "400 Bad Request" tells someone who pasted a private repo nothing useful.
   http.post("*/api/projects", async ({ request }) => {
     const body = (await request
       .json()
@@ -1296,8 +1106,6 @@ export const handlers = [
     if (segments.length < 2) return invalid()
     const [owner, name] = segments
 
-    // Deterministic stand-ins so the UI can be built against every branch of the
-    // contract before the real backend exists.
     if (name.startsWith("private-")) {
       return fail(
         400,
@@ -1364,20 +1172,16 @@ export const handlers = [
     return HttpResponse.json(repo, { status: 201 })
   }),
 
-  // ── branches ──────────────────────────────────────────────────────────────
   http.get("*/api/repos/:repoId/branches", ({ params }) => {
     if (!knownRepo(params.repoId as string)) return NOT_FOUND()
     return HttpResponse.json(mockBranches)
   }),
 
-  // ── dashboard ─────────────────────────────────────────────────────────────
   http.get("*/api/repos/:repoId/health", ({ params, request }) => {
     const repoId = params.repoId as string
     const repo = knownRepo(repoId)
     if (!repo) return NOT_FOUND()
 
-    // No repo, no such branch, or never scanned successfully — the client
-    // renders the empty state, not an error.
     if (repoId === UNSCANNED_REPO_ID) {
       return fail(404, "NOT_FOUND", "This branch has not been scanned yet.")
     }
@@ -1388,9 +1192,7 @@ export const handlers = [
       return fail(404, "NOT_FOUND", "No such branch.")
     }
 
-    // 503, not 404 and not an empty report: the snapshot is there, its score is
-    // not yet. Answering 200 with a zero would be the harmful version of this —
-    // "scored 0" and "not scored" must never look the same.
+    // 503, not 404 and not an empty report: the snapshot is there, its score is not yet.
     const stillScoring = pendingScores.get(scanKey(repoId, branch)) ?? 0
     if (
       isRescoring(repoId) &&
@@ -1512,8 +1314,6 @@ export const handlers = [
     },
   ),
 
-  // Scan history, derived under the same effective profile — which is why
-  // switching profiles redraws this list as well as the dashboard.
   http.get("*/api/repos/:repoId/scans", ({ params, request }) => {
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
@@ -1528,12 +1328,6 @@ export const handlers = [
     )
   }),
 
-  // ── profiles ──────────────────────────────────────────────────────────────
-  //
-  // Route order is load-bearing: `/profiles/active` and `/profiles/default` are
-  // registered before `/profiles/:profileId`, or the parameterised route would
-  // swallow both and answer 404 for a word that is not a uuid.
-
   http.get("*/api/profiles", () => HttpResponse.json(poolOut())),
 
   http.post("*/api/profiles", async ({ request }) => {
@@ -1546,8 +1340,6 @@ export const handlers = [
     if (errors.length > 0) return invalid(errors)
 
     const created = body as CreateProfileRequest
-    // Checked before the name, because a full pool is a different thing to fix
-    // than a clashing name and the user should be told the blocking one.
     if (customProfiles().length >= MAX_CUSTOM_PROFILES) {
       return fail(
         409,
@@ -1566,8 +1358,6 @@ export const handlers = [
     }
     pool = [...pool, stored]
     persistState()
-    // 201, and NOT the default: authoring a profile and choosing the one in
-    // force are separate, deliberate acts.
     return HttpResponse.json(out(stored), { status: 201 })
   }),
 
@@ -1576,7 +1366,6 @@ export const handlers = [
     HttpResponse.json(out(defaultProfile())),
   ),
 
-  // Superseded by POST /api/profiles plus PUT /api/profiles/default.
   http.put("*/api/profiles/active", async ({ request }) => {
     const body = await request.json().catch(() => null)
     const errors = validationErrors(body)
@@ -1598,8 +1387,6 @@ export const handlers = [
       ])
     }
     const target = findProfile(body.profile_id)
-    // A profile from another workspace answers 404, the same as an id that
-    // exists nowhere: whether a foreign workspace holds one is not ours to say.
     if (!target) return NOT_FOUND()
 
     const changedDefault = defaultProfileId !== target.id
@@ -1609,8 +1396,6 @@ export const handlers = [
     if (changedDefault) {
       markRescoring(connected.map((r) => r.id).filter((id) => !assignments[id]))
     }
-    // Idempotent: the second PUT of the same id changes nothing, and neither
-    // writes a snapshot or starts a scan.
     return HttpResponse.json(out(target))
   }),
 
@@ -1633,8 +1418,6 @@ export const handlers = [
       return nameConflict()
     }
 
-    // A partial update: an omitted weight keeps its stored value, which is what
-    // makes this safe to send from a form that tracks only what changed.
     const merged = { ...stored.weights, ...(patch.weights ?? {}) }
     stored.name = patch.name === undefined ? stored.name : patch.name.trim()
     stored.weights = clampWeights(merged)
@@ -1644,8 +1427,6 @@ export const handlers = [
       TRUST_MAX,
     )
     persistState()
-    // Every project using it is now scored differently — deliberately, and with
-    // no scan: that is what a shared pool is for.
     return HttpResponse.json(out(stored))
   }),
 
@@ -1654,8 +1435,6 @@ export const handlers = [
     if (!stored) return NOT_FOUND()
     if (stored.is_preset) return builtInRefused()
     if (stored.id === defaultProfileId || usageCount(stored.id) > 0) {
-      // The two foreign keys would refuse the row anyway; checking first is what
-      // turns that refusal into a code the UI can explain.
       return fail(
         409,
         "PROFILE_IN_USE",
@@ -1668,7 +1447,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // ── one project's profile ─────────────────────────────────────────────────
   http.get("*/api/projects/:repoId/profile", ({ params }) => {
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
@@ -1687,12 +1465,8 @@ export const handlers = [
         { field: "profile_id", detail: "Input should be a valid UUID." },
       ])
     }
-    // Only this workspace's pool is addressable, so a cross-workspace
-    // assignment is unrepresentable rather than merely rejected.
     if (!findProfile(body.profile_id)) return NOT_FOUND()
 
-    // One override per project — the repository is the key — so this replaces
-    // any previous choice rather than adding to it.
     const changedAssignment = assignments[repoId] !== body.profile_id
     assignments = { ...assignments, [repoId]: body.profile_id }
     persistState()
@@ -1704,8 +1478,7 @@ export const handlers = [
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
 
-    // Idempotent: clearing a project that has no override succeeds and returns
-    // the same inherited state.
+    // Idempotent: clearing a project that has no override succeeds and returns the same inherited state.
     assignments = Object.fromEntries(
       Object.entries(assignments).filter(([id]) => id !== repoId),
     )
@@ -1713,9 +1486,6 @@ export const handlers = [
     return HttpResponse.json(projectProfileOut(repoId))
   }),
 
-  // ── activity ──────────────────────────────────────────────────────────────
-  // Everything running in the workspace, whoever started it: the scans still
-  // queued or running, and the projects whose scores are still pending.
   http.get("*/api/activity", () => {
     const nameOf = (repoId: string) => {
       const repo = knownRepo(repoId)
@@ -1732,8 +1502,7 @@ export const handlers = [
         repo_name: nameOf(repoId),
         status,
       }))
-    // Scores still pending: a finished scan's (counted in asks) and a
-    // profile change's (on its own clock).
+    // Scores still pending: a finished scan's (counted in asks) and a profile change's (on its own clock).
     const left = new Map<string, number>()
     for (const [key, asks] of pendingScores) {
       const repoId = key.split("@")[0] ?? ""
@@ -1754,7 +1523,6 @@ export const handlers = [
     return HttpResponse.json({ scans: running, rescoring })
   }),
 
-  // ── scan lifecycle ────────────────────────────────────────────────────────
   http.post("*/api/repos/:repoId/scan", async ({ params, request }) => {
     const repoId = params.repoId as string
     if (!knownRepo(repoId)) return NOT_FOUND()
@@ -1788,9 +1556,6 @@ export const handlers = [
     const head = info.head_commit_sha ?? null
     const now = new Date().toISOString()
 
-    // Skip-if-unchanged: the head SHA matches the last successful scan, so
-    // nothing is queued and the existing scan_id comes back as `done`. Still
-    // 202 — the client learns this from the phase, not the status code.
     const seen = lastSuccessfulSha.get(scanKey(repoId, info.name))
     if (head && seen === head) {
       const skipped: ScanStatus = {
@@ -1848,8 +1613,6 @@ export const handlers = [
     const current = scans.get(repoId)
     if (!current) return NOT_FOUND()
 
-    // "The scan already reached a terminal phase" — you cannot cancel what is
-    // no longer running, and saying so is more useful than a silent 202.
     if (current.phase !== "running" && current.phase !== "queued") {
       return fail(
         409,
@@ -1858,45 +1621,27 @@ export const handlers = [
       )
     }
 
-    // 202: the flag is set and the phase comes back UNCHANGED. The client learns
-    // the scan really stopped from the next poll, not from this response.
+    // 202: the flag is set and the phase comes back UNCHANGED.
     cancelRequested.add(repoId)
     return HttpResponse.json(current, { status: 202 })
   }),
 
-  // ── system ────────────────────────────────────────────────────────────────
   http.get("*/api/healthz", () => HttpResponse.json({ status: "ok" })),
 ]
 
-// ── auth, for E2E only ──────────────────────────────────────────────────────
-
-/**
- * Kept out of `handlers` on purpose: in dev, MSW passes /api/auth/session through
- * to the real API, which is the only way to test a real sign-in locally.
- * Playwright has the opposite need — no API, and no headless browser completes an
- * OIDC consent screen — so these switch on only for `e2e`.
- */
 export const authHandlers = [
   http.get("*/api/auth/session", ({ cookies }) => {
-    // The real API answers 401 when the session cookie is missing, and the app
-    // rail redirects to /login on that — the behaviour a route-protection test
-    // needs to be able to trigger.
     const name =
       process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "codesage_session"
     if (!cookies[name]) {
       return fail(401, "NOT_AUTHENTICATED", "Sign in to continue.")
     }
-    // A second cookie forces the role. Sign-in is bypassed in E2E anyway, and
-    // "a viewer is offered no write controls" cannot be journey-tested at all
-    // without a session that really lacks the grant. It is inert in the dev app,
-    // where nothing sets this cookie.
+    // A second cookie forces the role.
     const forcedViewer = cookies["codesage_e2e_role"] === "viewer"
     const identity = forcedViewer ? mockSessionViewer : mockSession
 
     if (!activeWorkspaceId) {
-      // Authenticated, with nowhere to work yet. A real state, not a failure —
-      // and a different one from 401, which is why the web must not treat them
-      // alike.
+      // Authenticated, with nowhere to work yet.
       return HttpResponse.json({
         ...identity,
         workspace_id: null,
@@ -1906,8 +1651,6 @@ export const authHandlers = [
       } satisfies Session)
     }
 
-    // Role and permissions come from the ACTIVE workspace's membership, so
-    // switching workspaces really does change what this session may do.
     const role: Role = forcedViewer
       ? "viewer"
       : workspaceRecords[activeWorkspaceId].role

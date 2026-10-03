@@ -1,4 +1,4 @@
-"""DBR-22 / REL-05: a scan commits a whole snapshot or nothing, on real PostgreSQL."""
+"""A scan commits a whole snapshot or nothing, on real PostgreSQL."""
 
 from __future__ import annotations
 
@@ -120,7 +120,7 @@ def test_failed_attempt_is_reported_but_dashboard_ignores_it(tenant, monkeypatch
 def test_finalize_is_insert_only(tenant) -> None:
     """UPDATE is revoked on result tables, so any ORM UPDATE after an insert
     (a back-filled foreign key, say) would fail the scan. A DONE attempt with its
-    rows present is the proof that finalize only inserts (DBR-23)."""
+    rows present is the proof that finalize only inserts."""
     tenant.world.issues = [Issue("src/App.java", "alpha"), Issue("src/App.java", "alpha", line=30)]
     attempt_id = run_scan(tenant, "6" * 40)
     attempt = _attempt(tenant, attempt_id)

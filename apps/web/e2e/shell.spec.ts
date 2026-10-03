@@ -1,8 +1,5 @@
 import { DEMO_REPO_ID, expect, test } from "./session"
 
-// The app shell (Phase 13C): one deep-mint app bar on every signed-in page, the
-// rail below it, and the page's own controls in the bar where they belong.
-
 const topBar = (page: import("@playwright/test").Page) =>
   page.getByTestId("app-top-bar")
 

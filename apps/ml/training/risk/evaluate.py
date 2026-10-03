@@ -30,9 +30,6 @@ from sklearn.metrics import (
 from sklearn.model_selection import ParameterGrid
 
 
-# ---------------------------------------------------------------------------
-# Import the production ML-2 feature contract.
-# ---------------------------------------------------------------------------
 
 current_dir = Path(__file__).resolve().parent
 ml_src = current_dir.parent.parent / "src"
@@ -48,9 +45,6 @@ from codesage_ml.risk.features import (  # noqa: E402
 )
 
 
-# ---------------------------------------------------------------------------
-# Dataset contract
-# ---------------------------------------------------------------------------
 
 PROJECT_COLUMN = "project_name"
 CLASS_COLUMN = "class_name"
@@ -74,11 +68,6 @@ EXPECTED_PROJECT_SIZES = {
 EXPECTED_TOTAL_CLASSES = 5_371
 
 
-# ---------------------------------------------------------------------------
-# Random Forest search space
-#
-# This is the same 36-configuration search used in the nested-LOPO notebook.
-# ---------------------------------------------------------------------------
 
 PARAM_GRID = {
     "n_estimators": [200],
@@ -94,9 +83,6 @@ PARAM_GRID = {
 RANDOM_STATE = 42
 
 
-# ---------------------------------------------------------------------------
-# Dataset loading / validation
-# ---------------------------------------------------------------------------
 
 
 def _sha256(path: Path) -> str:
@@ -183,8 +169,6 @@ def load_dataset(
             f"ML-2 target must contain {{0, 1}}, got {targets}"
         )
 
-    # Every project must independently contain both classes so that
-    # ROC-AUC and PR-AUC are meaningful in every LOPO fold.
     for project in EXPECTED_PROJECTS:
         project_targets = set(
             int(value)
@@ -202,9 +186,6 @@ def load_dataset(
     return df, _sha256(path)
 
 
-# ---------------------------------------------------------------------------
-# Model helpers
-# ---------------------------------------------------------------------------
 
 
 def make_random_forest(
@@ -242,9 +223,6 @@ def predict_positive_probability(
     return probabilities[:, positive_index]
 
 
-# ---------------------------------------------------------------------------
-# Inner LOPO
-# ---------------------------------------------------------------------------
 
 
 def evaluate_inner_lopo(
@@ -388,8 +366,6 @@ def select_best_parameters(
             }
         )
 
-        # Hyperparameter selection is deliberately based only
-        # on mean PR-AUC across the inner projects.
         if inner_metrics["mean_pr_auc"] > best_pr_auc:
             best_pr_auc = (
                 inner_metrics["mean_pr_auc"]
@@ -408,9 +384,6 @@ def select_best_parameters(
     )
 
 
-# ---------------------------------------------------------------------------
-# Outer LOPO
-# ---------------------------------------------------------------------------
 
 
 def run_nested_lopo(
@@ -482,9 +455,6 @@ def run_nested_lopo(
             )
         )
 
-        # -------------------------------------------------------------
-        # Refit using every class from all four outer-training projects.
-        # -------------------------------------------------------------
 
         model = make_random_forest(
             best_params
@@ -495,9 +465,6 @@ def run_nested_lopo(
             outer_train[TARGET_NAME],
         )
 
-        # -------------------------------------------------------------
-        # Only now evaluate on the untouched outer project.
-        # -------------------------------------------------------------
 
         probabilities = (
             predict_positive_probability(
@@ -573,9 +540,6 @@ def run_nested_lopo(
     )
 
 
-# ---------------------------------------------------------------------------
-# Reporting
-# ---------------------------------------------------------------------------
 
 
 def build_summary(
@@ -727,9 +691,6 @@ def write_results(
     print(f"  {summary_path}")
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:

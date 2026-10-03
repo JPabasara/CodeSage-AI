@@ -22,8 +22,6 @@ def safe_return_to(value: str | None) -> str | None:
     """The same value when it is safe to redirect to, otherwise None."""
     if not value or len(value) > MAX_LENGTH:
         return None
-    # One leading slash and nothing a browser might read as a host: `//evil`,
-    # `/\\evil` and a smuggled scheme or control character are all refused.
     if not value.startswith("/") or value.startswith("//") or "\\" in value:
         return None
     if any(ord(character) < 0x21 or ord(character) == 0x7F for character in value):

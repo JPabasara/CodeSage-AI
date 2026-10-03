@@ -1,4 +1,4 @@
-"""DBR-30: every security-relevant event leaves exactly one complete audit row."""
+"""Every security-relevant event leaves exactly one complete audit row."""
 
 from __future__ import annotations
 
@@ -320,7 +320,7 @@ def test_audit_is_tenant_isolated(tenant, client) -> None:
 
 
 def test_every_timestamp_column_uses_timezone_aware_postgresql_type(account) -> None:
-    """DBR-26: instants must not silently depend on the database session timezone."""
+    """Instants must not silently depend on the database session timezone."""
     with Session(account[0]) as db:
         timestamp_columns = db.execute(
             text(

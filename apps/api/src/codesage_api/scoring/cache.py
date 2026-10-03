@@ -7,9 +7,6 @@ import json
 
 from codesage_api.scoring.models import Profile
 
-# 1.1.0: health scope is applied consistently to debt and LOC, and stored
-# per-file 90-day churn participates in finding priority.
-# 1.2.0: k calibrated from the 25.0 placeholder to 100.0.
 SCORING_ENGINE_VERSION = "1.2.0"
 
 

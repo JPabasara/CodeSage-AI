@@ -15,8 +15,7 @@ test("shows the finding's reason and location", () => {
   ).toBeInTheDocument()
 })
 
-// It is a region in the page, not a sheet over it. A dialog would still trap
-// focus and blur the tree, which is the behaviour we removed.
+// It is a region in the page, not a sheet over it.
 test("renders no dialog — the detail is part of the page", () => {
   render(<FindingDetailPanel finding={mockFindings[0]} onClose={vi.fn()} />)
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()

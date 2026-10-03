@@ -1,35 +1,25 @@
 import { UNSCANNED_REPO_ID, test, expect } from "./session"
 
-// Scan history. This route used to render the word "(Placeholder.)", and it is
-// reachable from the rail, so it is a click anyone makes on the way through the
-// nav.
-
 test("clicking Scan History in the rail shows real snapshots", async ({
   page,
 }) => {
   await page.goto("/projects")
-  // The project cards each expose an "Open scan history for <repo>" link, so
-  // the rail entry only reads unambiguously as an exact name.
   await page.getByRole("link", { name: "Scan History", exact: true }).click()
 
   await expect(
     page.getByRole("heading", { name: "Scan History" }),
   ).toBeVisible()
-  // The placeholder this page replaced.
   await expect(page.getByText("Placeholder")).toHaveCount(0)
 
   // The fixture carries five stored snapshots; one header row on top of them.
   const rows = page.getByRole("row")
   await expect(rows).toHaveCount(6)
 
-  // Newest first, so the first body row is the latest commit.
   await expect(rows.nth(1).getByText("a1b2c3d")).toBeVisible()
 })
 
 test("clicking a history row opens the exact snapshot", async ({ page }) => {
   await page.goto("/projects")
-  // The project cards each expose an "Open scan history for <repo>" link, so
-  // the rail entry only reads unambiguously as an exact name.
   await page.getByRole("link", { name: "Scan History", exact: true }).click()
 
   const rows = page.getByRole("row")
@@ -44,8 +34,6 @@ test("clicking a history row opens the exact snapshot", async ({ page }) => {
 
 test("scan history exposes a latest-scan return link", async ({ page }) => {
   await page.goto("/projects")
-  // The project cards each expose an "Open scan history for <repo>" link, so
-  // the rail entry only reads unambiguously as an exact name.
   await page.getByRole("link", { name: "Scan History", exact: true }).click()
 
   await page.getByRole("link", { name: /open latest scan/i }).click()

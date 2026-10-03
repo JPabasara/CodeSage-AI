@@ -13,10 +13,6 @@ export function useSession(): QueryState<Session> {
   const { reload } = query
   const workspaceId = query.data?.workspace_id
 
-  // The session is where the active workspace is learned first-hand, so this is
-  // where the rest of the app is told. In an effect, not in render: the store is
-  // shared, and writing to it while rendering would update other components
-  // mid-render.
   useEffect(() => {
     if (query.data) noteActiveWorkspace(workspaceId ?? null)
   }, [query.data, workspaceId])

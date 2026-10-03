@@ -191,8 +191,6 @@ test("stopping says so", () => {
   expect(screen.getByRole("status")).toHaveTextContent("Stopping the scan")
 })
 
-// ── a re-score with no scan behind it (a profile change) ────────────────────
-
 test("re-scoring after a profile change: its own panel and lines", () => {
   render(<ScanProgressPanel kind="calculating" random={() => 0} />)
   expect(screen.getByRole("status")).toHaveTextContent(

@@ -1,7 +1,3 @@
-/**
- * GitHub's mark, drawn in the current text colour. lucide dropped its brand
- * icons, and connecting a GitHub repository is the one place this belongs.
- */
 export function GitHubMark({
   className,
   ...props
