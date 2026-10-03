@@ -44,3 +44,6 @@ out/
 .claude/
 # Third-party analyzer binaries are installed locally and copied into the worker image.
 apps/api/vendor/*.jar
+
+# Local demo video project
+/apps/video/
