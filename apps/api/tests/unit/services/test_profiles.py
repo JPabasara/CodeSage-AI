@@ -205,8 +205,6 @@ def test_list_available_returns_the_whole_pool_with_usage_and_mutability() -> No
     ]
     assert [item.is_preset for item in result] == [True, True, True, False, False]
     assert [item.editable for item in result] == [False, False, False, True, True]
-    # The default is in force for every project without an override, which
-    # is_active already says, so it is not double-counted as usage.
     assert [item.usage_count for item in result] == [0, 0, 0, 2, 0]
     assert [item.name for item in result if item.is_active] == ["Balanced"]
 

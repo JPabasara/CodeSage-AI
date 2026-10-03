@@ -4,8 +4,6 @@ version = "0.1.0"
 description = "Code Sage AI — ML inference service (ML-1 SATD, ML-2 bug-risk)"
 requires-python = ">=3.12"
 
-# Runtime = inference only. Training dependencies are in the `training` extra and
-# are NOT installed into the deployed image (SRS AI-05).
 dependencies = [
     "fastapi==0.141.1",
     "uvicorn[standard]==0.53.0",

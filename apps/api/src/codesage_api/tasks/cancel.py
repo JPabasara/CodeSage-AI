@@ -1,4 +1,4 @@
-"""Cooperative cancellation (SRS FR-6).
+"""Cooperative cancellation.
 
 **Why the worker is not killed.** Celery can revoke a task with SIGTERM, and that
 is the wrong tool here. The pipeline's last stage writes a Snapshot with its files,

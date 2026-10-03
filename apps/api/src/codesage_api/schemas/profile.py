@@ -1,4 +1,4 @@
-"""Scoring-profile wire shapes (SRS FR-20)."""
+"""Scoring-profile wire shapes."""
 
 from __future__ import annotations
 

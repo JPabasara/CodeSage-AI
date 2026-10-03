@@ -45,9 +45,6 @@ def record(
         resource = f"{resource}:{resource_id}"
     session.add(
         SecurityAuditRecord(
-            # Every column is supplied, so the INSERT needs no RETURNING. A
-            # returned row must also pass the SELECT policy, which a system-scope
-            # (NULL workspace) event deliberately does not: no tenant reads it.
             timestamp=datetime.now(UTC),
             workspace_id=workspace_id,
             workspace_name=workspace_name,

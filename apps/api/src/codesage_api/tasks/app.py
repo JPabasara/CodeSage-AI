@@ -26,15 +26,9 @@ celery_app.conf.update(
     enable_utc=True,
     # Preserve CodeSage structured logging instead of letting Celery replace it.
     worker_hijack_root_logger=False,
-    # A scan is minutes long; prefetching several would leave jobs queued behind a
-    # busy worker while another sits idle.
     worker_prefetch_multiplier=1,
-    # Acknowledge only after the task finishes, so a worker crash re-queues the
-    # scan rather than losing it.
     task_acks_late=True,
     task_track_started=True,
-    # Retries are for TRANSIENT faults only. A rule-engine bug must fail loudly and
-    # be recorded on the attempt row, not be silently retried three times.
     task_default_retry_delay=30,
     task_max_retries=3,
     task_routes={
@@ -46,9 +40,5 @@ celery_app.conf.update(
     },
 )
 
-# NOTE: no Celery result backend. The scan's outcome is not a task return value —
-# it is the AnalysisAttempt row and its Snapshot. Storing results in Redis as well
-# would create a second, expiring source of truth for something SP-13 requires to
-# be durable in PostgreSQL.
 
 celery_app.autodiscover_tasks(["codesage_api.tasks"])

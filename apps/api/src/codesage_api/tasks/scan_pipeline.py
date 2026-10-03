@@ -1,4 +1,4 @@
-"""The scan pipeline — the write path (SRS FR-6, FR-7, FR-8, FR-9, FR-10, FR-21).
+"""The scan pipeline write path.
 
     clone → extract → detect → finalize
 
@@ -101,10 +101,6 @@ _settings = get_settings()
 @celery_app.task(
     bind=True,
     name="codesage.scan",
-    # The soft limit raises SoftTimeLimitExceeded inside the task: the scan ends
-    # as SCAN_TIMED_OUT and `finally` still deletes the clone. The hard limit is
-    # the backstop that kills the process; `expire_stale_running` and
-    # `sweep_stale_clones` tidy up after it.
     soft_time_limit=_settings.scan_soft_time_limit_seconds,
     time_limit=_settings.scan_time_limit_seconds,
 )
@@ -122,8 +118,6 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
     At most `max_running_scans_per_workspace` run at once in one workspace;
     the rest stay queued and ask again every `scan_queue_retry_seconds`.
     """
-    # Authorization is checked when queued. Role changes do not revoke this job;
-    # worker database access remains constrained by the recorded workspace.
     attempt_uuid = uuid.UUID(attempt_id)
     workspace_uuid = uuid.UUID(workspace_id)
 
@@ -158,13 +152,9 @@ def _wait_for_slot(
         progress.clear(attempt_id)
         return
     logger.info("Workspace scan slot busy; the attempt stays queued")
-    # No retry cap: a running scan always ends, by itself, at its time limit or
-    # through `expire_stale_running`, so the slot is always freed eventually.
     raise task.retry(countdown=_settings.scan_queue_retry_seconds, max_retries=None)
 
 
-#: Report at most this many file counts per scan, so a 10,000-file repository
-#: does not turn into 10,000 Redis writes.
 FILE_REPORTS_PER_SCAN = 50
 
 
@@ -187,8 +177,6 @@ def _run_claimed(
     stored_rules: list[RuleDefinition],
 ) -> None:
     workspace_id = str(workspace_uuid)
-    # Known before cloning, so `finally` deletes it even when the clone itself
-    # was interrupted halfway.
     clone_dir = str(clone_path(attempt_uuid))
     stage = "cloning"
     try:
@@ -452,9 +440,6 @@ def _finalize(
         session.add(snapshot)
         session.flush()
 
-        # Register the exact ML-2 version before storing predictions.  Use the
-        # same conflict-safe pattern as ML-1: concurrent scans may observe a new
-        # model version at the same time.
         model_version_record: MLModelVersion | None = None
         if (
             results.risk_result
@@ -565,8 +550,6 @@ def _finalize(
                         source_file=source_file,
                         model_version=model_version_record,
                         risk_score=score,
-                        # A defect probability is the prediction, not a measure
-                        # of uncertainty about that prediction.
                         confidence=None,
                     )
                 )
@@ -588,9 +571,6 @@ def _finalize(
                     )
                 )
 
-        # Optional detectors and comment extraction may inspect valid Java files
-        # that CK cannot analyse. Preserve their findings without inventing
-        # static or process metrics for those files.
         for detected in results.findings:
             if detected.file_path not in files_by_path:
                 source_file = SourceFile(
@@ -660,8 +640,6 @@ def _finalize(
             )
 
         model_versions: dict[str, MLModelVersion] = {}
-        # One id per finding: the same comment on several lines is several
-        # findings, and the dashboard keys every row by its fingerprint.
         satd_fingerprints = unique_in_file_order(
             [
                 (

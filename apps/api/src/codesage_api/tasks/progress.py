@@ -1,6 +1,6 @@
 """Scan progress and the cancel flag — the two things Redis owns.
 
-**The split between Redis and PostgreSQL is deliberate** (SAD §6 decision 6):
+**Redis and PostgreSQL have separate responsibilities**:
 
     PostgreSQL  phase          done | error | cancelled must survive a restart
     Redis       progress %     losing it costs nothing; the next poll recomputes
@@ -28,15 +28,10 @@ from redis.exceptions import RedisError
 from codesage_api.config import get_settings
 
 PROGRESS_KEY = "codesage:scan:{attempt_id}:progress"
-#: A hash beside the percentage: `stage`, `files_done`, `files_total`,
-#: `typical_seconds` (13H.4). Separate so the percentage key keeps its plain
-#: integer value for older readers.
 STAGE_KEY = "codesage:scan:{attempt_id}:stage"
 CANCEL_KEY = "codesage:scan:{attempt_id}:cancel"
 #: Set when a score calculation is queued, so polls do not queue it again.
 SCORE_QUEUED_KEY = "codesage:score:{cache_id}:queued"
-#: Long enough to cover a busy scoring queue; short enough that a job lost in a
-#: broker restart is queued again on the next poll after it expires.
 SCORE_QUEUED_TTL_SECONDS = 120
 
 #: Long enough to outlive any realistic scan, short enough that abandoned keys go away.
@@ -97,8 +92,6 @@ def publish_stage(
     Entering a stage resets the file counter, so a count from reading code never
     shows under a later stage. Never raises — progress is decoration.
     """
-    # `Any`: redis-py types the mapping with an invariant key union no plain
-    # dict literal satisfies.
     fields: dict[Any, Any] = {"stage": stage}
     if files_total is not None:
         fields["files_total"] = max(0, int(files_total))

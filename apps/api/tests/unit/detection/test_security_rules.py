@@ -90,7 +90,7 @@ class Users {
     assert detect_sql_concat(Path("Users.java"), source) == []
 
 
-def test_sql_concat_covers_all_srs_statement_verbs() -> None:
+def test_sql_concat_covers_all_sql_statement_verbs() -> None:
     source = '''
 class Queries {
     void run(String value) {

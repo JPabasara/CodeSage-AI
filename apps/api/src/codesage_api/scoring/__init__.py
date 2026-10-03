@@ -1,4 +1,4 @@
-"""Scoring — the pure, dependency-free core (SAD §5.2, §9 · SRS FR-11, FR-20, FR-21).
+"""Scoring's pure, dependency-free core.
 
 This package must not import the database, the web framework, the queue, or any
 I/O library. That rule is enforced by the `scoring is pure` contract in

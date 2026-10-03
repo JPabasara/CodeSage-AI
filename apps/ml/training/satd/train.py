@@ -13,19 +13,12 @@ from datetime import datetime, timezone
 
 def main():
     print("Loading dataset...")
-    # Step 1: Load the dataset
-    # We use skiprows=1 because the raw CSV has an excel/pivot table summary header at the top
     df = pd.read_csv('../../data/raw/data-augmentation-code_comments.csv',sep=";")
     
     # Clean any rows that are missing critical text or classification labels
     df = df.dropna(subset=['text', 'classification', 'projectname', 'status'])
     print(f"Total dataset size: {len(df):,} rows.")
 
-    # Step 2: Split by Project (GroupShuffleSplit) to prevent data leakage!
-    # Because the dataset contains augmented (reworded) copies of comments, 
-    # doing a normal random split would leak augmented copies into the training set
-    # while testing on the original comment.
-    # By splitting by `projectname`, we guarantee the test set contains completely unseen projects!
     print("\nSplitting dataset by project to prevent data leakage...")
     
     # We assign 80% of projects to training, and 20% of projects to testing
@@ -38,9 +31,6 @@ def main():
     df_train_full = df.iloc[train_idx]
     df_test_full = df.iloc[test_idx]
 
-    # Step 3: Clean the Testing Set
-    # We only want to evaluate our model on REAL, un-augmented developer comments.
-    # We filter the test set so it only contains `status == 'ori'` (original rows).
     df_test_clean = df_test_full[df_test_full['status'] == 'ori']
     
     # The training set keeps BOTH original and augmented data so the model has lots of examples!
@@ -53,24 +43,15 @@ def main():
     print(f"Training on {len(X_train):,} comments (Original + Augmented)")
     print(f"Testing on {len(X_test):,} comments (Strictly Original comments from held-out projects)")
 
-    # Step 4: Build the TF-IDF Vectorizer
-    # We set stop_words=None (instead of 'english') so we don't accidentally delete 
-    # important technical debt words like "not", "cannot", and "should".
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
         max_features=25000,
         stop_words=None
     )
 
-    # Step 5: Build the Classifier with Probability Calibration
-    # The API contract requires a 'confidence' percentage (0 to 1).
-    # LinearSVC normally only outputs boundary distances.
-    # Wrapping it in CalibratedClassifierCV maps those distances to actual probabilities!
     base_classifier = LinearSVC(class_weight='balanced', random_state=42, max_iter=2000)
     calibrated_classifier = CalibratedClassifierCV(base_classifier, cv=5)
 
-    # Combine everything into a single Scikit-Learn Pipeline
-    # This prevents us from accidentally fitting the TF-IDF twice.
     pipeline = Pipeline([
         ('tfidf', vectorizer),
         ('clf', calibrated_classifier)
@@ -88,9 +69,6 @@ def main():
     metrics_dict = classification_report(y_test, y_pred, output_dict=True)
     print(classification_report(y_test, y_pred))
 
-    # Step 8: Save the Model with Metadata
-    # We package the pipeline alongside critical metadata so the API and DevOps teams
-    # know exactly what version is running in production.
     os.makedirs('../../models', exist_ok=True)
     model_path = '../../models/satd_v1.joblib'
     

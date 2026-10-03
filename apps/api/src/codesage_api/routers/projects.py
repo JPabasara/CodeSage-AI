@@ -1,4 +1,4 @@
-"""Project (repository) endpoints (SRS FR-3, FR-4)."""
+"""Project repository endpoints."""
 
 from __future__ import annotations
 
@@ -91,10 +91,6 @@ def update_source_scope_config(repo_id: uuid.UUID, body: UpdateSourceScopeConfig
     db.commit()
     return result
 
-# ── the project's effective scoring profile ─────────────────────────────────
-# All three resolve the repository before the operation permission, so a project
-# from another workspace is a 404 for every role rather than a 403 that would
-# confirm it exists.
 
 
 @router.get(

@@ -32,9 +32,6 @@ from codesage_api.scoring.formula import clamp_profile
 from codesage_api.scoring.models import Profile
 from codesage_api.services import audit
 
-# presets.yaml keys to the stored preset key. The YAML seeds a workspace's three
-# built-in rows once, at creation; from then on the rows are what the workspace
-# scores with, so later edits to the YAML cannot silently re-score old scans.
 PRESET_KEYS = {
     "balanced": ScoringPresetType.BALANCED,
     "security-first": ScoringPresetType.SECURITY_FIRST,
@@ -607,7 +604,7 @@ def _custom_target(
     endpoint is the pre-pool "the workspace has a profile and Apply replaces it"
     contract, and creating a row per Apply would march a workspace into the
     five-custom limit through a UI that never offered to name or keep them. The
-    Profiles pool UI and its own create/update endpoints arrive in phase 7B.
+    The profile pool has separate create and update endpoints.
     """
     if pool.default.kind is ScoringProfileKind.CUSTOM:
         return pool.default
@@ -635,10 +632,10 @@ def apply(
     actor_user_id: uuid.UUID | None,
     name: str | None = None,
 ) -> ScoreProfileOut:
-    """Clamp these numbers and make them the workspace default (SRS FR-20).
+    """Clamp these numbers and make them the workspace default.
 
     No analysis, snapshot, finding or queue object is referenced on this write
-    path (SRS FR-20/FR-21, SAD section 6.2) — only which profile the workspace
+    path — only which profile the workspace
     scores with, and the values of its own custom profile.
     """
     clamped_weights, clamped_s = clamp_profile(_category_weights(weights), s)

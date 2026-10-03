@@ -208,9 +208,6 @@ def _score_snapshot(snapshot: Snapshot, profile: Profile) -> _ScoredSnapshot:
                     )
                 )
 
-    # Snapshots stored before fingerprints were made unique can repeat one (the
-    # same SATD comment on several lines). The same rule the scan now applies
-    # gives each its own id here, so every row keeps its own line and link.
     unique = unique_in_file_order(
         [
             (stored.fingerprint, finding.file, stored.source_location.start_line)
@@ -397,8 +394,6 @@ def _enqueue_pending_score(
     cached, created = prepare_snapshot_score(session, snapshot, profile)
     if not needs_enqueue(cached, created):
         return
-    # The worker must not race an uncommitted cache row. SET LOCAL is restored by
-    # the next request/worker session, and this read path performs no later query.
     session.commit()
     celery_app.send_task(
         "codesage.score_snapshot",
@@ -568,8 +563,6 @@ def build_health_report(
     previous_score = previous.health_score if previous is not None else None
     health_score = float(payload["health_score"])
     delta = health_score - previous_score if previous_score is not None else 0.0
-    # Triage is overlaid after scoring: the cached payload, and every score and
-    # count in it, stays exactly as computed.
     statuses = finding_triage.statuses_for_snapshot(session, selected_ref.id)
 
     return HealthReportOut(

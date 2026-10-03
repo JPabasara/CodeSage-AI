@@ -141,8 +141,6 @@ def test_a_user_with_no_workspace_is_signed_in_and_told_to_set_one_up() -> None:
     body = response.json()
     assert body["workspace_id"] is None
     assert body["needs_workspace_setup"] is True
-    # No workspace means no standing in one; the web renders onboarding, not a
-    # shell full of controls that would all be refused.
     assert body["role"] is None
     assert body["permissions"] == []
     assert body["user_id"] == str(USER_ID)

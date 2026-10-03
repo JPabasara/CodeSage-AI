@@ -68,9 +68,6 @@ def client(volume) -> Iterator[TestClient]:
             if name == "codesage.score_snapshot":
                 score_cache.score_snapshot(*args)
 
-        # Both services import the same Celery application. One dispatcher must
-        # therefore handle both call sites; patching repositories.celery_app a
-        # second time would replace this inline scorer with a no-op.
         patch.setattr(dashboard.celery_app, "send_task", inline)
         http = TestClient(create_app())
         http.cookies.set(

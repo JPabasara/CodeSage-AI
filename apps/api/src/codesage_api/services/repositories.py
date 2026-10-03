@@ -40,7 +40,7 @@ from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
 
-#: GitHub's name for the one language CodeSage analyses (SRS §2.4).
+#: GitHub's name for the language CodeSage analyses.
 ANALYSED_GITHUB_LANGUAGES = frozenset({"Java"})
 
 
@@ -162,9 +162,6 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
         .order_by(Repository.created_at.desc(), Repository.id.desc())
     )
     stored_repositories = session.scalars(statement).all()
-    # One read of the pool for the whole list. Each card's health hint is scored
-    # with THAT project's effective profile, so two projects in one workspace can
-    # legitimately show numbers derived from different profiles.
     pool = profiles.load_pool(session, workspace_id) if stored_repositories else None
     output: list[RepoOut] = []
     pending: list[tuple[SnapshotScore, Profile]] = []

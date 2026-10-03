@@ -49,8 +49,6 @@ class _History:
     lines_removed: list[int] = field(default_factory=list)
     churn: list[int] = field(default_factory=list)
 
-    # Each entry is:
-    # (datetime of revision, lines added in that revision)
     changes: list[tuple[datetime, int]] = field(default_factory=list)
 
     first_change: datetime | None = None
@@ -119,10 +117,6 @@ def extract_process_metrics(
         for path in files
     }
 
-    # Maps historical paths to the current file whose history they belong to.
-    #
-    # Initially every current path maps to itself. When a rename is observed,
-    # the old path is associated with the same current file.
     path_aliases = {
         path: path
         for path in files
@@ -138,9 +132,6 @@ def extract_process_metrics(
 
         changed_at = commit.committer_date
 
-        # anchor_date is the reference point for the age metrics.
-        # commit_sha, rather than this date comparison, defines the
-        # repository-history boundary.
         if changed_at > anchor_date:
             continue
 
@@ -175,10 +166,6 @@ def extract_process_metrics(
             if new_path is not None:
                 path_aliases[new_path] = current_path
 
-            # One revision of this file.
-            #
-            # Using the commit hash prevents the same commit from being
-            # counted twice if path aliasing encounters it more than once.
             if commit.hash in history.commits:
                 continue
 
@@ -193,11 +180,6 @@ def extract_process_metrics(
             added = int(modified.added_lines or 0)
             removed = int(modified.deleted_lines or 0)
 
-            # D'Ambros/Moser churn:
-            #
-            #     churn = added LOC - removed LOC
-            #
-            # This is deliberately NOT added + removed.
             churn = added - removed
 
             history.lines_added.append(added)
@@ -244,9 +226,6 @@ def extract_process_metrics(
         avg_lines_removed = _mean(history.lines_removed)
         avg_churn = _mean(history.churn)
 
-        # -------------------------------------------------------------
-        # Age
-        # -------------------------------------------------------------
 
         if history.first_change is None:
             age_weeks = 0.0
@@ -260,18 +239,6 @@ def extract_process_metrics(
                 age_seconds / SECONDS_PER_WEEK,
             )
 
-        # -------------------------------------------------------------
-        # Weighted age
-        # -------------------------------------------------------------
-        #
-        # weighted age =
-        #
-        #   Σ(age of revision i in weeks × LOC added in revision i)
-        #   --------------------------------------------------------
-        #                    Σ(LOC added in revision i)
-        #
-        # If no lines were ever added, use 0.0 as the explicit fallback.
-        # -------------------------------------------------------------
 
         if lines_added > 0:
             weighted_age_sum = 0.0

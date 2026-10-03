@@ -75,13 +75,8 @@ def test_clone_fetches_one_branch_and_leaves_large_blobs_on_github(
     assert "--single-branch" in clone
     assert "--branch=feature/login" in clone
     assert "--no-tags" in clone
-    # Not blob:none: the process metrics walk every historical diff, and a
-    # blobless clone fetches those blobs one commit at a time (47x slower,
-    # measured). A size limit skips only binaries and datasets.
     assert "--filter=blob:limit=1m" in clone
     assert "--filter=blob:none" not in clone
-    # The URL and the destination come after `--`, so neither can be read as
-    # an option.
     assert clone[-3:] == (
         "--",
         "https://github.com/example/project.git",

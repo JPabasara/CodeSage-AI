@@ -47,8 +47,6 @@ def start_scan(
     return analysis.start(db, workspace_id, repo_id, body.branch, actor_user_id=user_id)
 
 
-# Registered before `/scan/{scan_id}`: that route would otherwise take "active"
-# as a scan id and answer 422.
 @router.get(
     "/scan/active",
     response_model=ScanStatusOut,

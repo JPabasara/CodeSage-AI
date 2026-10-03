@@ -14,12 +14,6 @@ from urllib.parse import urlparse
 
 from codesage_api.config import get_settings
 
-#: Blobs above this are left on GitHub. Measured on joda-money (429 commits):
-#: `--filter=blob:none` made the PyDriller history walk 47x slower (542 s against
-#: 11.6 s), because every historical diff fetched its blobs one commit at a time.
-#: A size limit keeps every source-sized blob local, so the walk costs the same
-#: as a full clone, and skips only the binaries and datasets that make a
-#: repository huge.
 BLOB_SIZE_FILTER = "blob:limit=1m"
 
 
@@ -113,8 +107,6 @@ def clone_at_commit(
             _git("show", "-s", "--format=%cI", "HEAD", cwd=destination)
         )
     except BaseException:
-        # BaseException: a soft time limit or a worker shutdown must not leave
-        # half a clone behind either.
         shutil.rmtree(destination, ignore_errors=True)
         raise
 

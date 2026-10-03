@@ -1,4 +1,4 @@
-"""SATDAUG label ↔ product category mapping (SRS FR-9.3, Appendix C.3).
+"""SATDAUG label-to-product-category mapping.
 
 The model trains on the dataset's own label strings and this mapping is applied to
 its output, so the rename is deterministic and cannot affect trainability.

@@ -24,7 +24,7 @@ classified as type Y*.
 deterministic in v1.0: the rule register for rule findings, the marker table for
 SATD findings, nothing at all for ML-2 because it produces no findings.
 
-**The two ML models are independent and are not chained** (SAD §6 decision 10).
+**The two ML models are independent and are not chained.**
 They take different inputs, produce different outputs and exchange no data, so an
 implementation may issue both calls together. They also fail together, because
 both live in one inference container — and when they do, the worker still persists

@@ -1,4 +1,4 @@
-"""ML-1 client: comments in, debt/not-debt + category out (SRS FR-9).
+"""ML-1 client for debt classification.
 
 The classifier predicts a category from {code-design, requirement, documentation,
 test} — four of the five. `security` is never predicted: it is not in the training

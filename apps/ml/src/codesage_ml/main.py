@@ -1,9 +1,9 @@
-"""ML inference service — the two models behind one HTTP surface (SAD §7).
+"""ML inference service — the two models behind one HTTP surface.
 
 Called by Celery workers only, over the private network. The API process never
 performs inference.
 
-**Both models live in this one container**, which is why SAD §6 decision 11 says
+**Both models live in this one container**, so
 they are reachable or unreachable together. When this service is down the worker
 still persists a valid snapshot: rule findings only, every risk score 0.0. That is
 the whole degraded-mode contract, and it is the reason this service is allowed to
@@ -34,7 +34,7 @@ app = FastAPI(title="Code Sage AI — ML Inference", version="1.0.0")
 
 @app.post("/classify", response_model=ClassifyResponse)
 def classify(body: ClassifyRequest) -> ClassifyResponse:
-    """ML-1: is each comment debt, and if so of what type (SRS FR-9).
+    """Classify each comment by debt status and category.
 
     Predicts one of four categories — code-design, requirement, documentation,
     test — plus the negative class. **`security` is never predicted**: it is not in
@@ -79,7 +79,7 @@ def classify(body: ClassifyRequest) -> ClassifyResponse:
 
 @app.post("/risk", response_model=RiskResponse)
 def risk(body: RiskRequest) -> RiskResponse:
-    """ML-2: per-class bug-proneness, 0–1 (SRS FR-10).
+    """Return a per-class bug-proneness score from 0 to 1.
 
     Produces a score, never a finding, and assigns neither category nor severity.
 
@@ -100,11 +100,6 @@ def risk(body: RiskRequest) -> RiskResponse:
         for class_ in body.classes
     ]
 
-    # Predict continuous bug-proneness probability [0.0, 1.0].
-    #
-    # The registry guarantees a fitted binary classifier with classes {0, 1}.
-    # Locate the defective class explicitly instead of assuming probability
-    # column 1 always corresponds to class 1.
     class_labels = list(risk_info.artifact.classes_)
     positive_index = class_labels.index(POSITIVE_CLASS)
 

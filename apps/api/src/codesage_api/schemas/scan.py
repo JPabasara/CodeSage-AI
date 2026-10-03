@@ -1,4 +1,4 @@
-"""Scan lifecycle wire shapes (SRS FR-6, FR-19)."""
+"""Scan lifecycle wire shapes."""
 
 from __future__ import annotations
 
@@ -22,12 +22,7 @@ class ScanStatusOut(ApiModel):
     started_at: str | None = None
     finished_at: str | None = None
     error: str | None = None
-    # Why it failed, when the reason is one the user can act on (13H.1). Absent
-    # for unexpected failures and for every phase but `error`.
     error_code: ScanErrorCode | None = None
-    # 13H.4, all optional and only while `running`: which stage the worker is
-    # in, how many Java files it has read so far, and how long this repository's
-    # recent scans usually took. Older clients ignore them.
     stage: ScanStage | None = None
     files_done: int | None = Field(default=None, ge=0)
     files_total: int | None = Field(default=None, ge=0)

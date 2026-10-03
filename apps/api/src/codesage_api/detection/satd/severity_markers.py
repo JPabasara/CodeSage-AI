@@ -1,4 +1,4 @@
-"""SATD severity from comment markers (SRS FR-9.2, Appendix C.2).
+"""SATD severity from comment markers.
 
 The classifier predicts a category. This assigns the severity — and the split is
 forced, not stylistic: a supervised model can only predict what its training data

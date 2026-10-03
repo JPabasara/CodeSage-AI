@@ -1,7 +1,7 @@
 """ORM models. Importing this package registers every table on Base.metadata,
 which is what makes Alembic's --autogenerate see the full schema.
 
-Grouped to match the four domains of SAD §9 Data View:
+Grouped into four domains:
 
     tenancy.py     — Workspace, User, Membership, SecurityAuditRecord
     repository.py  — Repository, Branch

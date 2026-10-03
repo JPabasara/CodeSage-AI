@@ -57,9 +57,6 @@ class CategoryBreakdownItemOut(ApiModel):
 class HealthReportOut(ApiModel):
     """The complete dashboard payload for one branch snapshot."""
 
-    # The SNAPSHOT, not the attempt that made it. A cancelled or failed attempt
-    # has a scan id but no snapshot, so the dashboard is always keyed on the
-    # thing that actually exists (locked decision 9).
     snapshot_id: str
     repo_id: str
     branch: str
@@ -72,15 +69,9 @@ class HealthReportOut(ApiModel):
     red_issue_count: int  # critical + high, for the health-card summary
     resolved_finding_count: int = 0
 
-    # The active profile's name, shown on the trend chart. Always truthful because
-    # there is exactly one active profile per workspace to name; "custom" when the
-    # user has adjusted away from a preset.
     profile: str
     include_test_findings: bool = False
 
-    # Which ML model produced this snapshot (AI-03, DBR-18). Null when the scan
-    # ran in degraded mode with no ML available — which is a real state, not an
-    # error, so it has to be expressible.
     model_version: str | None = None
 
     history: list[HealthPointOut]
