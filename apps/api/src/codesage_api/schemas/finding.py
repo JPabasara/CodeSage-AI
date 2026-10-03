@@ -27,6 +27,7 @@ class FindingOut(ApiModel):
     file: str
     source_scope: Literal["production", "test", "generated", "example", "unknown"] = "unknown"
     line: int
+    end_line: int | None = None
     symbol: str | None
     reason: str
     status: FindingStatus

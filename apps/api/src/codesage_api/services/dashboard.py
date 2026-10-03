@@ -242,6 +242,7 @@ def _finding_outputs(scored: _ScoredSnapshot, previous: Snapshot | None = None) 
                 file=item.finding.file,
                 source_scope=location.source_file.source_scope or "unknown",
                 line=location.start_line,
+                end_line=location.end_line,
                 symbol=location.code_symbol.name if location.code_symbol else None,
                 reason=stored.description,
                 status=FindingStatus.OPEN,
