@@ -1585,6 +1585,7 @@ export interface components {
              */
             source_scope: "production" | "test" | "generated" | "example" | "unknown";
             line: number;
+            end_line?: number | null;
             /**
              * @description The method or class the finding sits on. Null for file-scoped rules.
              * @example charge
