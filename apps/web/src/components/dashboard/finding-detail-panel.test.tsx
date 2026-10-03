@@ -106,3 +106,57 @@ test("adds actionable guidance to a selected PMD finding", () => {
     "https://docs.pmd-code.org/pmd-doc-7.27.0/pmd_rules_java_errorprone.html#useequalstocomparestrings",
   )
 })
+
+const analyzedCommit = "a".repeat(40)
+
+test.each([
+  [undefined, "#L7"],
+  [null, "#L7"],
+  [7, "#L7"],
+  [12, "#L7-L12"],
+  [3, "#L7"],
+  [0, "#L7"],
+  [8.5, "#L7"],
+])("links to the analyzed commit with end line %s", (end_line, anchor) => {
+  render(
+    <FindingDetailPanel
+      finding={{ ...mockFindings[0], file: "src/A #é.java", line: 7, end_line }}
+      repositoryUrl="https://github.com/acme/private-repo.git"
+      commitSha={analyzedCommit}
+      onClose={vi.fn()}
+    />,
+  )
+  const link = screen.getByRole("link", { name: "View on GitHub ↗" })
+  expect(link).toHaveAttribute(
+    "href",
+    `https://github.com/acme/private-repo/blob/${analyzedCommit}/src/A%20%23%C3%A9.java${anchor}`,
+  )
+  expect(link).toHaveAttribute("target", "_blank")
+  expect(link).toHaveAttribute("rel", "noopener noreferrer")
+})
+
+test.each([
+  [undefined, analyzedCommit, "src/A.java", 7],
+  ["https://example.com/acme/repo", analyzedCommit, "src/A.java", 7],
+  ["https://github.com/acme/repo", undefined, "src/A.java", 7],
+  ["https://github.com/acme/repo", "main", "src/A.java", 7],
+  ["https://github.com/acme/repo", analyzedCommit, "../A.java", 7],
+  ["https://github.com/acme/repo", analyzedCommit, "/src/A.java", 7],
+  ["https://github.com/acme/repo", analyzedCommit, "", 7],
+  ["https://github.com/acme/repo", analyzedCommit, "src/A.java", 0],
+])(
+  "hides the action for invalid metadata (%s, %s, %s, %s)",
+  (repositoryUrl, commitSha, file, line) => {
+    render(
+      <FindingDetailPanel
+        finding={{ ...mockFindings[0], file, line }}
+        repositoryUrl={repositoryUrl}
+        commitSha={commitSha}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(
+      screen.queryByRole("link", { name: "View on GitHub ↗" }),
+    ).not.toBeInTheDocument()
+  },
+)
