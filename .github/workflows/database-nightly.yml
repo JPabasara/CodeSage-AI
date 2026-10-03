@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   postgres-volume:
-    name: PostgreSQL 16 — PERF-02, PERF-03, PERF-06
+    name: PostgreSQL 16 performance and capacity
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:

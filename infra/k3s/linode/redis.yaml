@@ -1,12 +1,3 @@
-# In-cluster Redis for the Celery queues, scan progress and the cancel flag.
-# Nothing here needs to survive a restart, so there is no persistence and no
-# volume beyond scratch space. Queue items must never be evicted, so memory is
-# capped with `noeviction`: a full Redis refuses new writes instead of silently
-# dropping a queued scan.
-#
-# The password comes from the `redis-auth` Secret (key `password`), created by
-# hand and never committed. It is written to a file at startup so it does not
-# appear in the process arguments.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -40,7 +31,6 @@ metadata:
 spec:
   replicas: 1
   revisionHistoryLimit: 2
-  # A single instance: never run two side by side.
   strategy:
     type: Recreate
   selector:
@@ -100,8 +90,6 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
-          # Requests equal limits: Guaranteed QoS, so Redis is the last pod the
-          # kernel would kill under memory pressure.
           resources:
             requests:
               cpu: 100m
@@ -134,7 +122,6 @@ spec:
           emptyDir:
             sizeLimit: 256Mi
 ---
-# ClusterIP only. Redis is never exposed through the ingress or a NodePort.
 apiVersion: v1
 kind: Service
 metadata:

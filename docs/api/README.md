@@ -1,15 +1,15 @@
 # The API contract
 
 `openapi.yaml` is **normative**. It is the single source of truth for every shape
-that crosses the browser/backend boundary (SRS SP-4, SRS Appendix B).
+that crosses the browser/backend boundary.
 
 ## Who consumes it
 
 | Side | How |
 |---|---|
 | **Frontend** | `apps/web/src/lib/types/api.ts` is **generated** from this file. Never hand-edit it. |
-| **Backend** | Pydantic models must match. CI diffs FastAPI's `/openapi.json` against this file. |
-| **Mocks** | MSW handlers should be validated against these schemas so the fake backend cannot lie. |
+| **Backend** | Pydantic models must match. `apps/api/tests/unit/schemas/test_contract.py` checks that the app serves every endpoint in this file. |
+| **Mocks** | MSW handlers are typed with the generated schemas, so the fake backend cannot return a shape the real one could not. |
 
 ## Regenerating the frontend types
 
@@ -23,8 +23,9 @@ that no longer agrees with the contract — which is the whole point: a backend 
 change the frontend has not absorbed becomes a **compile error**, not a runtime
 surprise at the demo.
 
-`pnpm gen:types:check` generates to nowhere and is the CI-friendly form — it fails if
-the contract is invalid without writing anything.
+`pnpm gen:types:check` regenerates in memory and compares the result with the
+committed `api.ts`. CI runs it on every push, so the contract and the frontend types
+cannot drift apart unnoticed.
 
 ### Using the generated types
 
@@ -48,7 +49,7 @@ python -c "from openapi_spec_validator import validate; from openapi_spec_valida
 
 ## The conventions it encodes
 
-All of these are settled decisions — see [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md).
+All of these are settled decisions.
 
 | Convention | Detail |
 |---|---|
@@ -69,51 +70,30 @@ This is what makes degraded mode expressible in the contract rather than implied
 the code.
 
 **`pinned_by_floor` explains itself.** A finding held in the visible list by the
-critical-security floor (FR-24) rather than by its computed priority carries
+critical-security floor rather than by its computed priority carries
 `pinned_by_floor: true`, so the UI can say why a row is there even at the minimum
 `security` weight of 0.1.
 
-## Relationship to SRS Table 3.106
+## Path conventions
 
-**They agree.** SRS v1.1 was corrected to match this contract, so Table 3.106 and
-`openapi.yaml` can be read side by side. Three things were fixed to get there, and
-they are worth knowing because the first one also explains a bug in the backend:
+**Auth paths are provider-neutral.** `/api/auth/login`, `/api/auth/callback`,
+`/api/auth/session` and `/api/auth/logout` carry no provider segment, because which
+sign-in method a user picks is Asgardeo's business.
 
-**1. The four auth rows were rotated.** In SRS v1.0 each path carried the *next*
-row's purpose:
+**Past snapshots.** `GET /api/repos/{repo_id}/health?snapshot_id=` loads a stored
+snapshot into the dashboard. `GET /api/healthz` is an operational liveness probe,
+outside the product surface.
 
-| v1.0 path | v1.0 purpose | Actually belongs to |
-|---|---|---|
-| `GET /api/auth/github` | Begin sign-in | ✅ correct |
-| `GET /api/auth/github/login` | "GitHub's redirect target…" | the callback |
-| `GET /api/auth/github/callback` | "Return the signed-in user…" | the session endpoint |
-| `POST /api/auth/session` | "End the session…" | logout |
+Path parameters are **snake_case** (`{repo_id}`), matching every other field name on
+the wire.
 
-`apps/api/.../routers/auth.py` reproduces the **same** off-by-one, because it was
-implemented faithfully from the table. That is a documentation bug that became a code
-bug — worth remembering next time a table looks slightly wrong.
+## Implementation status
 
-**2. The auth paths are provider-neutral.** `/api/auth/login`, `/api/auth/callback`,
-`/api/auth/session`, `/api/auth/logout` — no `/github/` segment, because which
-provider a user picks is Asgardeo's business. A user may sign in with Google or a
-password and the endpoint is the same.
-
-**3. Two additions.** `GET /api/repos/{repo_id}/health?snapshot_id=` is required by
-FR-19 ("selecting a past scan loads that snapshot into the dashboard") but was absent
-from the table. `GET /api/healthz` is an operational liveness probe, outside the
-product surface.
-
-Path parameters are **snake_case** on both sides now (`{repo_id}`), matching every
-other field name on the wire.
-
-## What the backend still has to do
-
-The contract is finished; the implementation is not. Until these land, the contract
-describes an API that does not yet enforce itself:
+The backend enforces the contract:
 
 - session-cookie authentication, with only `/auth/login`, `/auth/callback` and
   `/healthz` public (`security: []` in the spec marks exactly those three)
-- `{ detail, code }` on every error, with `code` drawn from the `ErrorCode` enum
-- snake_case responses — the Pydantic base still converts to camelCase
+- `{ detail, code, errors[] }` on every error, with `code` drawn from the `ErrorCode` enum
+- snake_case field names on the wire
 
-Steps 3a to 3f of [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md) cover all of it.
+A rendered view of the contract is in [openapi.html](openapi.html).

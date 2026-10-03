@@ -15,16 +15,6 @@ import { Input } from "@/components/ui/input"
 import { MAX_CUSTOM_PROFILES } from "@/lib/types"
 import { ProfileValueEditor, type ProfileValues } from "./profile-values"
 
-/**
- * Author one custom profile.
- *
- * It opens seeded — from a built-in, from another custom profile, or from the
- * numbers on the page — because starting five sliders from nothing is the slow
- * way to reach a profile that is usually a small edit of one that exists.
- *
- * Mounted only while open, and keyed by its seed, so every opening starts from
- * that seed rather than from whatever the last one was left on.
- */
 export function CreateProfileDialog({
   open,
   onOpenChange,
@@ -39,7 +29,6 @@ export function CreateProfileDialog({
   onOpenChange: (open: boolean) => void
   seedName: string
   seedValues: ProfileValues
-  /** How many custom profiles the workspace already holds. */
   customCount: number
   busy?: boolean
   /** A refusal from the server, already turned into a sentence. */

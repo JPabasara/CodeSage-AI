@@ -24,10 +24,6 @@ from codesage_api.db.models import (
     SourceLocation,
 )
 
-#: How long a pending or running score counts as work in progress. A score
-#: takes well under a minute even on a large repository; a row older than this
-#: belongs to a job that was lost (a worker restart, a dropped message), and
-#: must not show as "re-scoring" forever.
 RESCORING_WINDOW = timedelta(minutes=15)
 
 

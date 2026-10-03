@@ -2,15 +2,6 @@ import { ChevronDown, FileText, Folder } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-/*
- * A still life of the dashboard for the sign-in page: the same three tiles —
- * code health, the health trend, the file health map — drawn from made-up
- * numbers. Hover works (a trend point shows its score, a tree row lights up),
- * but nothing is a link or a control and nothing takes focus: it is a picture
- * that responds, not a second way into the app. Pure CSS and SVG, so the page
- * loads no chart library and no script for it.
- */
-
 const TREND = [
   { label: "Jun 20", score: 58 },
   { label: "Jun 30", score: 61 },

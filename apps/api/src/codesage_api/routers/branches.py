@@ -1,4 +1,4 @@
-"""Branch listing (SRS FR-5)."""
+"""Branch listing."""
 
 from __future__ import annotations
 

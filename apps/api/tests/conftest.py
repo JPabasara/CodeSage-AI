@@ -39,7 +39,7 @@ def security_first_profile() -> Profile:
 
 @pytest.fixture
 def min_security_profile() -> Profile:
-    """Security weight at its 0.1 floor — the adversarial case for FR-24.
+    """Security weight at its 0.1 floor — the adversarial case for the security floor.
 
     This is the profile that made mechanism 3 necessary: while profiles were
     preset-only the visibility floor held by construction, because no preset set

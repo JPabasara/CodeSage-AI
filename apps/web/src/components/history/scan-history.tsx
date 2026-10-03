@@ -61,13 +61,7 @@ const fullDateTime = new Intl.DateTimeFormat(undefined, {
   timeStyle: "long",
 })
 
-/**
- * One row's movement against the snapshot before it.
- *
- * The oldest snapshot has nothing to compare against and the API sends 0 for it,
- * so "▲ +0" would be a claim the data does not make. An em dash says "no
- * previous scan" without inventing a direction.
- */
+// One row's movement against the snapshot before it.
 function Delta({ value }: Readonly<{ value: number }>) {
   const delta = Math.round(value)
   if (delta === 0) {
@@ -148,11 +142,7 @@ function ScanRow({
         {Math.round(scan.health_score)}
       </TableCell>
       <TableCell>
-        {/*
-          The same colour rule as the dashboard's health card, from the same
-          helper. A grade that is green on one screen and grey on the next reads
-          as two different products.
-        */}
+        {/* The same colour rule as the dashboard's health card, from the same helper. */}
         <span
           className="font-semibold"
           style={{ color: gradeColor(scan.grade) }}
@@ -199,8 +189,6 @@ const ALL = "all"
 
 export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
   // The project comes from the app bar; the branch is a filter on this page.
-  // "All branches" asks the API with no branch, which the contract defines as
-  // every branch.
   const [branch, setBranch] = useState(ALL)
   const { data: branches } = useBranches(repoId)
   const {
@@ -209,8 +197,6 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
     error,
     refetch,
   } = useScanHistory(repoId, branch === ALL ? undefined : branch)
-  // Every row is re-weighed under the profile in force now — say which, or a
-  // score that changed after a profile edit reads as a different scan result.
   const { data: projectProfile } = useProjectProfile(repoId)
   const profileName = projectProfile?.effective.name
 
@@ -313,8 +299,6 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
           </Table>
         </div>
       ) : (
-        // A connected-but-never-scanned repository is the ordinary first-run
-        // state, not a failure — so it gets the way forward, not an apology.
         <EmptyState
           icon={<History />}
           title={branch === ALL ? "No scans yet" : `No scans on ${branch} yet`}

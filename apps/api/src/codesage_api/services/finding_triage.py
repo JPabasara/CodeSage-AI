@@ -19,9 +19,6 @@ from codesage_api.errors import NotFound, ValidationFailed
 from codesage_api.scoring.enums import FindingStatus
 from codesage_api.services import audit
 
-#: The statuses a caller may set today. The wider FindingStatus enum also
-#: names future actions (accepted, resolved, false-positive) that no endpoint
-#: sets yet.
 SETTABLE_STATUSES = frozenset({FindingStatus.OPEN.value, FindingStatus.DONE.value})
 
 
@@ -55,8 +52,6 @@ def set_status(
     if previous == status:
         return
 
-    # An upsert, so two people marking the same finding at once cannot collide
-    # on the primary key.
     statement = insert(FindingTriage).values(
         snapshot_id=snapshot_id,
         fingerprint=fingerprint,

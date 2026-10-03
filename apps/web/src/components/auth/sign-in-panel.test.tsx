@@ -15,8 +15,6 @@ vi.mock("next/navigation", () => ({
 
 const HREF = "http://api.test/api/auth/login"
 
-// The shared handlers leave the session to the real API in dev, so each test
-// says which answer it wants.
 const signedOut = () =>
   server.use(
     http.get("*/api/auth/session", () =>
@@ -91,8 +89,6 @@ test("the first click shows progress and a second click does nothing", async () 
   signedOut()
   render(<SignInPanel href={HREF} />)
   const link = screen.getByRole("link", { name: /sign in with asgardeo/i })
-  // On the document, so it runs after React's handler has had its say; jsdom
-  // cannot navigate, so the default is stopped here once recorded.
   const clicks: boolean[] = []
   const record = (event: MouseEvent) => {
     clicks.push(event.defaultPrevented)

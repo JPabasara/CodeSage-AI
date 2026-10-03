@@ -2,9 +2,6 @@ import type { Page } from "@playwright/test"
 
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// 13G and 13H.3: every read is asked once, and the dashboard comes back
-// instantly when nothing changed.
-
 /** Record every API GET the page sends, as "path?query". */
 function recordGets(page: Page) {
   const gets: string[] = []

@@ -23,8 +23,6 @@ def enum_values(enum: type[Theme] | type[MembershipStatus]) -> list[str]:
 class User(UUIDPrimaryKey, Base):
     __tablename__ = "app_user"
 
-    # Who this person is. Permanent and unique. Set once at first sign-in and
-    # never changed — this is the only column anything is allowed to key on.
     asgardeo_sub: Mapped[str] = mapped_column(
         String(255), nullable=False, unique=True, index=True
     )
@@ -37,8 +35,6 @@ class User(UUIDPrimaryKey, Base):
     # "github", "google", "local" — which button they clicked inside Asgardeo.
     identity_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    # Kept for display only. Now nullable, and no longer unique: someone who
-    # signs in with Google has no GitHub account at all.
     github_user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     github_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -47,9 +43,6 @@ class User(UUIDPrimaryKey, Base):
         nullable=False,
         default=Theme.SYSTEM,
     )
-    # Null until the first-run product tour is finished or explicitly skipped.
-    # Existing users were backfilled by migration 0019 so the tour is only
-    # automatic for genuinely new accounts.
     product_tour_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -143,7 +136,7 @@ class UserSession(UUIDPrimaryKey, Base):
     """One signed-in browser.
 
     The cookie we give the browser holds a random token; this row stores only
-    its SHA-256 digest (DBR-29), so reading the table does not yield live
+    its SHA-256 digest, so reading the table does not yield live
     sessions. The row id is internal. Everything that matters lives here, on the
     server. That is what makes signing out actually work: we delete this row,
     and the next request finds nothing and gets a 401.
@@ -159,10 +152,6 @@ class UserSession(UUIDPrimaryKey, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("app_user.id", ondelete="CASCADE"), index=True
     )
-    # Null while the user is signed in but has not created or joined a workspace
-    # yet. That state is the whole of onboarding: a real, authenticated session
-    # that simply has nowhere to act. Every workspace-bound endpoint refuses it
-    # with WORKSPACE_REQUIRED rather than pretending the user is anonymous.
     workspace_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("workspace.id", ondelete="CASCADE"), index=True, nullable=True
     )

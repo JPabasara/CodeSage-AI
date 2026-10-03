@@ -49,8 +49,6 @@ test("shows the workspace, the caller's role, and its derived counts", async () 
   render(<WorkspacePage />)
   await ready()
 
-  // The role sits beside the title. The member list names roles too, so look
-  // for it in the page heading's row only.
   const heading = screen.getByRole("heading", { name: "Acme Engineering" })
   expect(
     within(heading.closest("header") as HTMLElement).getByText("Org admin"),
@@ -75,8 +73,6 @@ test("an org-admin edits the metadata, and only what changed is sent", async () 
   await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
   const [workspaceId, body] = patch.mock.calls[0]
   expect(workspaceId).toBe(WORKSPACE_ID)
-  // PATCH, not PUT: the description and website were only displayed, never
-  // touched, so they are not in the body.
   expect(Object.keys(body)).toEqual(["name"])
 
   const workspaces = await getWorkspaces()
@@ -118,8 +114,6 @@ test("a role without workspace:update reads the settings and cannot change them"
   await ready()
 
   expect(screen.getByLabelText(/workspace name/i)).toBeDisabled()
-  // Save is a main action: shown, locked, and the reason is on the wrapper
-  // that hover and keyboard focus reach.
   expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled()
   expect(
     screen.getByLabelText("Only org-admins can change workspace settings"),
@@ -153,7 +147,6 @@ test("creating another workspace switches to it, and it starts empty", async () 
   // It stays put: the page it was created from fills in for the new workspace.
   expect(nav.push).not.toHaveBeenCalled()
 
-  // Switched to it, and none of Acme Engineering's three projects came along.
   const workspaces = await getWorkspaces()
   expect(workspaces.find((w) => w.is_active)?.name).toBe("Second Team")
   expect(await getProjects()).toEqual([])

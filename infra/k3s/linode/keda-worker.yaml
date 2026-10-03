@@ -31,8 +31,6 @@ metadata:
 spec:
   scaleTargetRef:
     name: worker
-  # One worker stays warm so a scan starts at once. No idleReplicaCount:
-  # with it set to 0, KEDA would still scale to zero when the queue is empty.
   minReplicaCount: 1
   maxReplicaCount: 3
   advanced:
@@ -40,12 +38,6 @@ spec:
       behavior:
         scaleDown:
           stabilizationWindowSeconds: 600
-    # The `scans` list holds only WAITING scans: a worker takes one at a time
-    # (concurrency 1, prefetch 1) and that scan leaves the list. Scaling on the
-    # raw length (one worker per waiting scan) therefore needed two scans
-    # waiting before a second worker started, so a second scan always queued
-    # behind the first. Any scan waiting means every worker is busy, so go
-    # straight to the maximum; at three workers further scans wait their turn.
     scalingModifiers:
       formula: "scans > 0 ? 3 : 1"
       target: "1"

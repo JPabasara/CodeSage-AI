@@ -7,14 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-/**
- * A main action this role cannot take: shown disabled, with the reason on
- * hover and on keyboard focus.
- *
- * A disabled button takes neither pointer nor focus, so the caption hangs on a
- * focusable wrapper. Admin-only and destructive controls are hidden instead —
- * this is only for actions worth knowing exist.
- */
+// A main action this role cannot take: shown disabled, with the reason on hover and on keyboard focus.
 export function LockedAction({
   reason,
   children,

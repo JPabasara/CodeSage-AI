@@ -2,10 +2,6 @@ import { test as base } from "@playwright/test"
 
 import { SESSION_COOKIE, expect, test } from "./session"
 
-// Team lives on the Workspace page beside its settings: one place for "this
-// workspace", with settings and people in separate columns because they are
-// separate permissions. Old `?tab=team` links still land here.
-
 const MOCK_INVITATION_TOKEN = "orbit-studio-invitation-token-0123456789"
 
 const main = (page: import("@playwright/test").Page) =>
@@ -118,8 +114,6 @@ base(
       ),
     ).toBe(MOCK_INVITATION_TOKEN)
 
-    // Sign-in brings the invitee back here from any tab: the link carries this
-    // page, token included, as `return_to`.
     const href = await page
       .getByRole("link", { name: "Sign in" })
       .getAttribute("href")

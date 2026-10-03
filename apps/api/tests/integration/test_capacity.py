@@ -1,4 +1,4 @@
-"""DBR-33 / PERF-06: baseline capacity and RLS isolation at 50 workspaces."""
+"""Baseline capacity and RLS isolation at 50 workspaces."""
 
 from __future__ import annotations
 
@@ -52,6 +52,6 @@ def test_fifty_workspaces_remain_isolated_and_size_is_recorded(capacity) -> None
     with engine.connect() as db:
         size = db.scalar(text("SELECT pg_database_size(current_database())"))
         active = db.scalar(text("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()"))
-    print(f"PERF-06 50-workspace database size: {size} bytes; active connections: {active}")
+    print(f"50-workspace database size: {size} bytes; active connections: {active}")
     assert size > 0
     assert active <= engine.pool.size() + engine.pool.checkedin() + 5

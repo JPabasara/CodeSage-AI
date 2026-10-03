@@ -141,7 +141,7 @@ def test_existing_sessions_keep_their_workspace_when_the_column_relaxes(database
 
     assert column(super_engine, "session", "workspace_id").is_nullable == "NO"
 
-    # Stop here: 0019 deliberately signs every session out (DBR-29).
+    # Stop here: 0019 deliberately signs every session out.
     command.upgrade(config, REVISION)
 
     assert column(super_engine, "session", "workspace_id").is_nullable == "YES"
@@ -194,7 +194,7 @@ def test_sign_in_returns_the_workspace_the_user_was_last_in(database):
     )
     seed_session(super_engine, user_id=user_id, workspace_id=second, last_used=NOW)
 
-    # Stop here: 0019 deliberately signs every session out (DBR-29).
+    # Stop here: 0019 deliberately signs every session out.
     command.upgrade(config, REVISION)
 
     assert workspace_for(super_engine, user_id) == second

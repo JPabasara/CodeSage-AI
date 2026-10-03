@@ -17,14 +17,6 @@ export function formatElapsed(ms: number) {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
 }
 
-/**
- * The slim bar under the app bar while this dashboard's scan is queued or
- * running: what is being scanned, a thin line for how far along — and Stop.
- * The percentage and the clock are in the scan panel in the middle, so they
- * are not repeated here.
- *
- * Nothing here polls. The scan store does that once, for every screen.
- */
 export function ScanStatusStrip({
   scan,
   canStop,
@@ -74,8 +66,7 @@ export function ScanStatusStrip({
           </Button>
         ) : null}
       </div>
-      {/* A thin mint line: its fill when there is a number, a slow sweep while
-          there is not. Under reduced motion the sweep is a still bar. */}
+      {/* A thin mint line: its fill when there is a number, a slow sweep while there is not. */}
       <div
         className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-primary/15"
         aria-hidden="true"

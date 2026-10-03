@@ -1,4 +1,4 @@
-"""Scoring-profile wire shapes (SRS FR-20)."""
+"""Scoring-profile wire shapes."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class CategoryWeights(ApiModel):
 
     Bounds are declared here for documentation and early rejection, but they are
     NOT the enforcement point: the server clamps in `services.profiles`, because
-    FR-20 requires out-of-range values to be silently corrected and returned, not
+    out-of-range values must be silently corrected and returned, not
     refused.
     """
 

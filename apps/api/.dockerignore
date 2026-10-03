@@ -1,13 +1,3 @@
-# Build context for apps/api/Dockerfile.
-#
-# Owned by whoever does deployment, like the Dockerfile beside it — see the team
-# plan, §1. Chamodh: if something you need is missing from the image, ask rather
-# than editing this.
-#
-# Without this file the build context was 253 MB, almost all of it .venv — a
-# Windows/Linux-mismatched virtualenv that the image would never use anyway.
-# Docker sends the whole context to the daemon before the first instruction
-# runs, so this is pure waiting.
 
 # Local virtualenvs. The image installs its own with pip.
 .venv
@@ -25,8 +15,6 @@ __pycache__
 .coverage
 htmlcov
 
-# Secrets and local settings. The image gets its configuration from the
-# environment at run time — never from a file baked into a layer.
 .env
 .env.*
 !.env.example
@@ -50,8 +38,4 @@ Dockerfile
 
 .DS_Store
 
-# vendor/ — no longer copied into the image. The CK jar is fetched and checksummed
-# by the Dockerfile itself (J4.1), so anything left in here is a local artefact.
-# Without this line a hand-downloaded ck.jar adds 16 MB to every build context,
-# which is the exact problem this file was created to solve (log Entry 2).
 vendor/

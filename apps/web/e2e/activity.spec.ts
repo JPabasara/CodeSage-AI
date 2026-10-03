@@ -1,8 +1,5 @@
 import { DEMO_REPO_ID, expect, test } from "./session"
 
-// The Activity menu and the profile labels: what is running is visible from
-// every page, and every score says which profile weighed it.
-
 const activity = (page: import("@playwright/test").Page) =>
   page.getByTestId("activity-trigger")
 

@@ -51,7 +51,7 @@ Rejected alternative, recorded so nobody tries it: widening the policy to
 NULL`. That reads as "when no workspace is bound, show every workspace's rows",
 which turns a forgotten `set_workspace_context` from a visible failure into a
 silent cross-tenant read. The bug we have is loud and safe. That one would be
-quiet and would breach DBR-3.
+quiet and would break tenant isolation.
 """
 
 from collections.abc import Sequence

@@ -18,13 +18,7 @@ import { useActiveWorkspace, useWorkspaceSwitch } from "@/hooks/use-workspace"
 import { ROLE_LABEL } from "@/lib/roles"
 import type { Workspace } from "@/lib/types"
 
-/**
- * Which workspace the app is looking at, and the quick way to change it.
- *
- * It is the first and largest control in the top bar because the answer
- * changes what every page shows. Its menu is for switching; settings are one
- * row at the foot that takes you to the Workspace tab, not a second panel here.
- */
+// Which workspace the app is looking at, and the quick way to change it.
 export function WorkspaceSwitcher({
   workspaces,
   loading = false,
@@ -42,10 +36,6 @@ export function WorkspaceSwitcher({
     try {
       const workspace = await switchTo(workspaceId)
 
-      // Where to land. The project this workspace was last on is the friendly
-      // answer, but only if it is still one of this workspace's projects — a
-      // remembered id from a deleted repository would land on a 404, and an id
-      // from the workspace we just left must never be opened here at all.
       const remembered = readSelectedProjectId(workspace.workspace_id)
       const projects = await getProjects().catch(() => [])
       const target = projects.find((repo) => repo.id === remembered)
@@ -68,8 +58,6 @@ export function WorkspaceSwitcher({
 
   if (!workspaces) return null
 
-  // Signed in with nowhere to work yet: say so where the name would be, and
-  // make creating one the obvious next step.
   if (workspaces.length === 0) {
     return (
       <>

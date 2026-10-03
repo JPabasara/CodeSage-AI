@@ -28,9 +28,7 @@ beforeEach(() => {
 })
 
 test("a signed-in user with no workspace stays in the app, not sent to sign-in", async () => {
-  // Each page shows its "create a workspace" card instead. Sending someone who
-  // just signed in back to /login would have them sign in again and land here
-  // again, never learning that what they are missing is a workspace.
+  // Each page shows its "create a workspace" card instead.
   session.data = mockSessionOnboarding
 
   render(<SessionGuard />)

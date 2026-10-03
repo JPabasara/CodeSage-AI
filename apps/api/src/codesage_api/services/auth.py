@@ -1,4 +1,4 @@
-"""Sign-in, sessions and sign-out (FR-1, SEC-01, SEC-10, SEC-17).
+"""Sign-in, sessions and sign-out.
 
 The session lives in the database. The browser gets an opaque random token while
 the database stores only its SHA-256 digest. Two things follow from that:
@@ -49,9 +49,6 @@ from codesage_api.services.memberships import get_active_membership
 
 logger = logging.getLogger(__name__)
 
-# The OAuth error codes that mean "the browser's request was bad", not "Asgardeo
-# is down". Both are terminal for this attempt and neither is worth retrying, so
-# they must not be dressed up as a temporary outage.
 _CLIENT_SIDE_GRANT_ERRORS = {"invalid_grant", "invalid_request", "expired_token"}
 
 
@@ -166,10 +163,6 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
         user.display_name = claims.name or user.display_name
         user.avatar_url = claims.picture or user.avatar_url
 
-    # May be None: a brand-new user, or one whose only memberships were revoked.
-    # That is a valid signed-in state, not a failure — the web sends them to
-    # workspace onboarding, and every workspace-bound endpoint refuses them with
-    # WORKSPACE_REQUIRED until they have one.
     workspace_id = resolve_workspace(db, user.id)
     if workspace_id is not None:
         set_workspace_context(db, workspace_id)
@@ -189,8 +182,6 @@ def establish_session(db: DbSession, claims: IdentityClaims) -> UserSession:
     )
     db.add(session)
     db.flush()
-    # Request-local hint for the callback redirect. Durable tour state remains
-    # on the user and is also returned by GET /auth/session.
     session.product_tour_required = user.product_tour_completed_at is None  # type: ignore[attr-defined]
     session.raw_token = raw_token  # type: ignore[attr-defined]
     return session
@@ -415,11 +406,6 @@ def delete_workspace(
         resource_type="workspace",
         resource_id=str(workspace_id),
     )
-    # Every session bound here, the caller's included, drops to the
-    # no-workspace state rather than being deleted with the tenant. Nobody is
-    # signed out: they land where onboarding starts, and any other workspace
-    # they belong to is one switch away. SESSION is not tenant-scoped, so this
-    # reaches other members' sessions as well.
     db.execute(
         update(UserSession)
         .where(UserSession.workspace_id == workspace_id)
@@ -427,10 +413,6 @@ def delete_workspace(
         .execution_options(synchronize_session=False)
     )
     db.flush()
-    # A Core DELETE, not `db.delete(workspace)`: the ORM would load each child
-    # collection and try to NULL the audit rows itself, and the application role
-    # may not UPDATE the append-only audit table. The foreign keys do the work:
-    # tenant data cascades, audit rows keep `workspace_name` with a NULL id.
     db.execute(delete(Workspace).where(Workspace.id == workspace_id))
     db.expunge(workspace)
 
@@ -493,14 +475,6 @@ def load_valid_session(db: DbSession, raw_cookie: str | None) -> UserSession | N
         db.delete(session)
         return None
 
-    # A valid cookie is not sufficient once membership has been revoked.
-    # Bind only the workspace recorded by the server-side session, then check
-    # the current membership. Do not activate invitations during sign-in.
-    #
-    # A session with no workspace skips both checks and stays valid: there is no
-    # membership to verify, and nothing it can reach needs one. Binding "None" as
-    # a tenant would be a type error, and deleting the session would sign the
-    # user out of onboarding halfway through naming their first workspace.
     if session.workspace_id is not None:
         set_workspace_context(db, session.workspace_id)
         if get_active_membership(db, session.user_id, session.workspace_id) is None:

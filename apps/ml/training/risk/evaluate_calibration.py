@@ -36,9 +36,6 @@ from sklearn.metrics import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Production ML-2 contract
-# ---------------------------------------------------------------------------
 
 current_dir = Path(__file__).resolve().parent
 ml_src = current_dir.parent.parent / "src"
@@ -67,9 +64,6 @@ EXPECTED_PROJECTS = (
 RANDOM_STATE = 42
 
 
-# ---------------------------------------------------------------------------
-# General helpers
-# ---------------------------------------------------------------------------
 
 
 def sha256(path: Path) -> str:
@@ -157,9 +151,6 @@ def positive_probability(
     return model.predict_proba(X)[:, index]
 
 
-# ---------------------------------------------------------------------------
-# Read exact RF configurations selected by nested LOPO
-# ---------------------------------------------------------------------------
 
 
 def load_outer_configurations(
@@ -229,9 +220,6 @@ def load_outer_configurations(
     return configurations
 
 
-# ---------------------------------------------------------------------------
-# Out-of-project calibration data
-# ---------------------------------------------------------------------------
 
 
 def make_calibration_dataset(
@@ -296,9 +284,6 @@ def make_calibration_dataset(
     )
 
 
-# ---------------------------------------------------------------------------
-# Sigmoid probability calibration
-# ---------------------------------------------------------------------------
 
 
 def fit_sigmoid_calibrator(
@@ -338,8 +323,6 @@ def fit_sigmoid_calibrator(
         calibrator.coef_[0, 0]
     )
 
-    # We require an increasing calibration mapping. Otherwise a larger raw
-    # RF risk would become a smaller calibrated defect probability.
     if slope <= 0:
         raise RuntimeError(
             "Sigmoid calibration produced a non-positive slope"
@@ -367,9 +350,6 @@ def apply_calibrator(
     )[:, positive_index]
 
 
-# ---------------------------------------------------------------------------
-# Outer evaluation
-# ---------------------------------------------------------------------------
 
 
 def evaluate_calibration(
@@ -417,10 +397,6 @@ def evaluate_calibration(
             )
         )
 
-        # ---------------------------------------------------------------
-        # Create out-of-project probabilities using only outer training
-        # projects. The outer test project is not involved.
-        # ---------------------------------------------------------------
 
         calibration_scores, calibration_y = (
             make_calibration_dataset(
@@ -449,9 +425,6 @@ def evaluate_calibration(
             f"{intercept:+.4f})"
         )
 
-        # ---------------------------------------------------------------
-        # Train the actual outer RF on all four available projects.
-        # ---------------------------------------------------------------
 
         model = make_random_forest(
             params
@@ -580,9 +553,6 @@ def evaluate_calibration(
     return pd.DataFrame(results)
 
 
-# ---------------------------------------------------------------------------
-# Reporting
-# ---------------------------------------------------------------------------
 
 
 def print_summary(
@@ -782,9 +752,6 @@ def write_results(
     print(f"  {json_path}")
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:

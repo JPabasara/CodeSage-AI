@@ -57,15 +57,7 @@ function ScopeButton({
   )
 }
 
-/**
- * One connected project, and the profile in force for it.
- *
- * It reads its own project profile — the same query the editor uses for the
- * project being configured — so every card is right on its own. `current` is the
- * editor's copy for the selected project, which a write updates first; `version`
- * moves after any write that can change what a project is scored with, and each
- * card then re-reads quietly.
- */
+// One connected project, and the profile in force for it.
 function ProjectScopeCard({
   repo,
   selected,
@@ -123,10 +115,7 @@ function ProjectScopeCard({
   )
 }
 
-/**
- * What the profile being configured applies to: the workspace default, or one
- * project's own choice. Selecting a card here is how the page changes scope.
- */
+// What the profile being configured applies to: the workspace default, or one project's own choice.
 export function ScopeRail({
   repos,
   reposError,
@@ -144,7 +133,6 @@ export function ScopeRail({
   workspaceDefault?: ScoreProfile
   /** Undefined while the workspace default is being configured. */
   selectedProjectId?: string
-  /** The editor's copy of the selected project's profile. */
   current?: ProjectProfile
   version: number
   onSelect: (projectId: string | undefined) => void
@@ -161,8 +149,7 @@ export function ScopeRail({
         </p>
       </div>
 
-      {/* A row that scrolls sideways on a phone, a column in the rail. The
-          padding keeps the selected ring clear of the scroll edge. */}
+      {/* A row that scrolls sideways on a phone, a column in the rail. */}
       <ul className="-m-1 flex gap-2 overflow-x-auto p-1 lg:flex-col lg:overflow-x-visible">
         <li className="w-60 shrink-0 lg:w-auto">
           <ScopeButton

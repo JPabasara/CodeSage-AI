@@ -31,14 +31,6 @@ import { headlineFor } from "@/lib/scan-messages"
 import { reportedProgress, stageOf, toBar } from "@/lib/scan-progress"
 import { cn } from "@/lib/utils"
 
-/**
- * The top bar's Activity menu: everything running in the workspace — this
- * tab's scans with their live bar, teammates' scans, and projects being
- * re-scored after a profile change — on every page.
- *
- * Collapsed it is a small spinner and a count; hidden when nothing is going
- * on. Open it for each job's stage and a way to it.
- */
 export function ActivityMenu() {
   const tracked = useActiveScans()
   const server = useActivity()

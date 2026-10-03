@@ -14,30 +14,13 @@ import {
 
 const WORKSPACES_CHANGED_EVENT = "codesage:workspaces-changed"
 
-/**
- * Say that a workspace's own details changed — a rename, a new description.
- *
- * Reads are per hook instance, not a shared cache, so the Workspace screen
- * reloading its own copy left the rail's switcher showing the old name until
- * the next navigation. Renaming something and watching the name not change is
- * the kind of thing that reads as data loss.
- *
- * Switching and creating need no event: both bump the workspace epoch, which
- * changes every query key at once.
- */
+// Say that a workspace's own details changed — a rename, a new description.
 export function publishWorkspacesChanged() {
   if (typeof window === "undefined") return
   window.dispatchEvent(new Event(WORKSPACES_CHANGED_EVENT))
 }
 
-/**
- * The workspaces this user can switch to, kept coherent across every mounted
- * consumer.
- *
- * Every summary carries the caller's role in that workspace and its project and
- * member counts, so the switcher and the Workspace screen both render from this
- * one read rather than asking per workspace.
- */
+// The workspaces this user can switch to, kept coherent across every mounted consumer.
 export function useWorkspaces(): MutableQueryState<Workspace[]> {
   const query = useQuery("workspaces", getWorkspaces, { scope: "account" })
   const { reload } = query
@@ -60,18 +43,7 @@ export function useActiveWorkspace(workspaces: Workspace[] | undefined) {
   )
 }
 
-/**
- * Switch the session to another workspace.
- *
- * The order matters and is the whole reason this is a hook rather than a call:
- *
- *  1. the server switches first — until it accepts, the session is still in the
- *     old workspace and any read would return the old workspace's data;
- *  2. then the scope is invalidated, which drops every cached read in one
- *     render, so nothing from the previous workspace is ever on screen under
- *     the new workspace's name;
- *  3. then the caller decides where to navigate.
- */
+// Switch the session to another workspace.
 export function useWorkspaceSwitch() {
   const [switchingTo, setSwitchingTo] = useState<string>()
 
@@ -90,23 +62,13 @@ export function useWorkspaceSwitch() {
   return { switchTo, switchingTo }
 }
 
-/**
- * Adopt a workspace this session has just created or joined.
- *
- * Same invalidation as a switch — a brand-new workspace is empty, and the
- * previous workspace's projects must not linger on the way in.
- */
+// Adopt a workspace this session has just created or joined.
 export function adoptWorkspace(workspace: Workspace) {
   noteActiveWorkspace(workspace.workspace_id)
   invalidateWorkspaceScope()
 }
 
-/**
- * Forget every browser-side reference to a workspace the API just deleted.
- * The API leaves the session with no workspace, so the screens lock to the
- * create-a-workspace state at once; any other workspace the user belongs to
- * stays in the switcher for them to pick.
- */
+// Forget every browser-side reference to a workspace the API just deleted.
 export function leaveDeletedWorkspace(workspaceId: string) {
   clearSelectedProjectId(workspaceId)
   noteActiveWorkspace(null)

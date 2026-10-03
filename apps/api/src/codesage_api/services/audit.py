@@ -45,9 +45,6 @@ def record(
         resource = f"{resource}:{resource_id}"
     session.add(
         SecurityAuditRecord(
-            # Every column is supplied, so the INSERT needs no RETURNING. A
-            # returned row must also pass the SELECT policy, which a system-scope
-            # (NULL workspace) event deliberately does not: no tenant reads it.
             timestamp=datetime.now(UTC),
             workspace_id=workspace_id,
             workspace_name=workspace_name,
@@ -61,7 +58,7 @@ def record(
 
 
 def record_denial(session: Session, denied: PermissionDenied, *, method: str, path: str) -> None:
-    """Audit a refused operation in its own transaction (DBR-30).
+    """Audit a refused operation in its own transaction.
 
     The request's data transaction is rolled back with the error, so the caller
     passes a fresh session and commits it.

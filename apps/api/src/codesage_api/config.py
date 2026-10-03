@@ -18,39 +18,27 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ── Data layer ──────────────────────────────────────────────────────────
-    # Must be a NON-superuser role, or Row-Level Security silently does nothing
-    # (SRS DB-2). See infra/postgres/init/01-init.sql.
     database_url: str = "postgresql+psycopg://codesage_app:changeme@localhost:5432/codesage"
     migration_database_url: str = (
         "postgresql+psycopg://codesage_owner:changeme@localhost:5432/codesage"
     )
 
-    # ── Broker: API enqueues, workers consume (SAD §6) ──────────────────────
+    # Broker configuration.
     redis_url: str = "redis://localhost:6379/0"
 
     # Optional for public repositories, but raises the GitHub REST rate limit.
     github_token: str = ""
 
-    # ── ML inference (SAD §7) — called by workers only, never by the API ────
+    # ML inference configuration.
     ml_service_url: str = "http://localhost:8001"
-    # Exceeding this budget is not a scan failure: the pipeline completes with
-    # rule-engine findings only (UC-3 extension 6a, SAD §11 reliability).
     ml_timeout_seconds: float = 30.0
 
-    # ── Sign-in ──────────────────────────────────────────────────────────────
-    # Asgardeo is the only place this service asks "who is this?". GitHub is set
-    # up *inside* Asgardeo, so this code never talks to GitHub about identity.
-    # Adding Google or a password login later is a change on their website, not
-    # a change here (SRS FR-1, SEC-17).
     asgardeo_base_url: str = ""          # https://api.asgardeo.io/t/<your-org>
     asgardeo_client_id: str = ""
     asgardeo_client_secret: str = ""
     asgardeo_redirect_uri: str = "http://localhost:8000/api/auth/callback"
     frontend_base_url: str = "http://localhost:3000"
 
-    # ── Transactional email ────────────────────────────────────────────────
-    # Server-side only. The browser never receives the Resend API key.
     resend_api_key: str = ""
     invitation_from_email: str = "CodeSage <onboarding@resend.dev>"
     email_timeout_seconds: float = 10.0
@@ -63,31 +51,14 @@ class Settings(BaseSettings):
     session_absolute_hours: int = 12
     # Cookie is sent over HTTPS only. Set to false for plain http on localhost.
     cookie_secure: bool = True
-    # Which hosts the browser sends the session cookie to.
-    #
-    # Empty means HOST-ONLY: the cookie belongs to whichever host set it, and to
-    # nothing else. That is right for localhost, where the API and the frontend
-    # share `localhost`, and wrong in production, where the API is on
-    # `api.codesageai.dev` and the site is on `codesageai.dev`. A host-only
-    # cookie there is invisible to the frontend, including to `middleware.ts`,
-    # which then bounces every signed-in visitor straight back to /login.
-    #
-    # Set it to the PARENT domain in production - ".codesageai.dev" - so both
-    # hosts receive it. Buying one domain for both halves is what makes this
-    # possible; it is also what lets SameSite stay Lax.
     cookie_domain: str = ""
 
-    # Signs the short-lived cookie that carries `state` and `code_verifier`
-    # between the redirect out to Asgardeo and the redirect back.
     secret_key: str = "dev-only-change-me"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     # ── Worker scratch: ~2 GB per concurrent scan, released on completion ────
     clone_dir: str = "/var/tmp/codesage-clones"
 
-    # ── Extraction toolchain (SRS FR-7) ─────────────────────────────────────
-    # CK is a Java jar run as a subprocess, so this is a filesystem path, not a
-    # package name. The image installs it; see the Dockerfile.
     ck_jar: str = "/opt/ck/ck.jar"
     # Import-path boundary for a replaceable optional detector.
     detector_provider: str = "codesage_api.detection.pmd:scan"
@@ -95,32 +66,16 @@ class Settings(BaseSettings):
     pmd_enabled: bool = False
     pmd_bin: str = "/opt/pmd/bin/pmd"
     pmd_timeout_seconds: float = 120.0
-    # v1.0 analyses Java only, because CK is a Java-only extractor (SRS §2.4).
-    # Widening this list needs a Tree-sitter grammar, a per-language rule pack and
-    # a recalibration of k — it is not just a config change.
     analysed_extensions: list[str] = Field(default_factory=lambda: [".java"])
 
-    # ── Scan guardrails  ────────────────────────────────────────
-    # Every limit is a named setting with a code default, so the platform admin
-    # page (13I.4) can move them into the database without a code change.
-    #
-    # Checked at connect time against GitHub's own `size` (KB, whole history).
     max_repository_size_mb: int = Field(default=500, ge=1)
-    # ML-1 is called in one batch; beyond this the batch would outlive
-    # `ml_timeout_seconds` and the scan would lose SATD entirely.
     max_satd_comments: int = Field(default=5_000, ge=1)
-    # The whole scan task, including persistence for large repositories.
-    # The soft limit ends the scan cleanly a minute before
-    # the hard limit kills the worker process.
     scan_time_limit_seconds: int = Field(default=31 * 60, ge=120)
     scan_soft_time_limit_seconds: int = Field(default=30 * 60, ge=60)
     # Any single git command (clone, checkout, rev-parse, show).
     git_timeout_seconds: int = Field(default=5 * 60, ge=10)
     # Scans beyond this per workspace wait in the queue for a free slot.
     max_running_scans_per_workspace: int = Field(default=1, ge=1)
-    # How many scans may wait in one workspace's queue. One more is refused
-    # with SCAN_QUEUE_FULL: without a cap one workspace could queue a scan per
-    # branch and make every other workspace wait behind them.
     max_queued_scans_per_workspace: int = Field(default=5, ge=1)
     # How often a waiting scan checks for a free slot.
     scan_queue_retry_seconds: int = Field(default=15, ge=1)
@@ -129,8 +84,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _soft_limit_first(self) -> "Settings":
-        # A soft limit at or past the hard limit never fires: the worker is
-        # killed first, the `finally` never runs and the clone is left behind.
         if self.scan_soft_time_limit_seconds >= self.scan_time_limit_seconds:
             raise ValueError(
                 "CODESAGE_SCAN_SOFT_TIME_LIMIT_SECONDS must be below "

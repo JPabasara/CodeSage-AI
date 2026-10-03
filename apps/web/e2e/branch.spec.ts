@@ -1,8 +1,5 @@
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// Branch re-scoping. Trends and deltas are per branch, so picking a different
-// branch has to move every number on the page, not just a label.
-
 async function pickBranch(page: import("@playwright/test").Page, name: string) {
   await page.getByRole("combobox", { name: /branch/i }).click()
   await page.getByRole("option", { name, exact: true }).click()
@@ -35,9 +32,6 @@ test("the branch defaults to the repository's default branch", async ({
 test("a branch with no head commit renders without printing null", async ({
   page,
 }) => {
-  // `head_commit_sha` and `head_commit_at` are both nullable in the contract, and
-  // release/2026.08 is the fixture that has neither. The top nav shows a short
-  // SHA, so a null here used to be one `.slice()` away from a crash.
   await pickBranch(page, "release/2026.08")
 
   await expect(page.getByText("Code Health")).toBeVisible()

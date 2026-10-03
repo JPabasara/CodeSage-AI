@@ -1,16 +1,3 @@
-# Code Sage AI — continuous integration.
-#
-# What this is for, beyond catching bugs: CI does what a hosting platform does —
-# check out the code fresh, install from the lockfile, build the images. Green
-# means the project is portable, proven rather than assumed. If it only builds on
-# one machine, that is not a deployment.
-#
-# One job per folder, so a red tick names the folder immediately.
-#
-# Images are built on every pull request and pushed only on `main` (a push, or a
-# manual run on main). A fork's token
-# is read-only and could not push anyway, and a registry full of images from
-# branches that were never merged helps nobody.
 
 name: CI
 
@@ -20,9 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A second push to the same branch makes the first run pointless. Cancel it
-# rather than queueing behind it — except on main, where every commit that
-# produces a published image deserves its own complete run.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -37,7 +21,6 @@ permissions:
   deployments: write
 
 jobs:
-  # ── Frontend ───────────────────────────────────────────────────────────────
   web:
     name: web — tests, types, contract, lint
     runs-on: ubuntu-latest
@@ -57,14 +40,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
 
-      # --frozen-lockfile fails rather than quietly resolving different versions
-      # than the ones that were tested.
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # First, deliberately. This stops the OpenAPI contract and the generated
-      # types drifting apart. The contract is the one file every folder depends
-      # on, so a drift breaks everyone
       - name: Contract check — generated types match openapi.yaml
         run: pnpm gen:types:check
 
@@ -83,7 +61,6 @@ jobs:
       - name: E2E tests
         run: pnpm test:e2e
 
-  # ── Backend ────────────────────────────────────────────────────────────────
   api:
     name: api — tests, layer check
     runs-on: ubuntu-latest
@@ -97,8 +74,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          # `defaults.run.working-directory` applies only to `run:` steps, not
-          # to `uses:` steps, so this path is from the repository root.
           cache-dependency-path: apps/api/pyproject.toml
 
       - uses: actions/setup-java@v4
@@ -119,18 +94,6 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]"
 
-      # The cheapest check here, and it exists because its absence broke `main`:
-      # two pull requests each added a migration with the same revision id, both
-      # were green, both merged, and `alembic upgrade head` then refused to run
-      # against a graph with two heads.
-      #
-      # Nothing else notices. The tests build a schema from ORM metadata, not
-      # from the migration chain, so a broken chain stays invisible until someone
-      # actually migrates — on a clean clone, or in the pre-deploy command — and
-      # it reads as a database outage.
-      #
-      # `alembic heads` reads the versions directory and touches no database, so
-      # this costs a fraction of a second and needs no services.
       - name: Migration chain has exactly one head
         run: |
           out="$(alembic heads 2>&1)"
@@ -145,42 +108,21 @@ jobs:
             exit 1
           fi
 
-      # The architecture test. `lint-imports` enforces the layering rules:
-      # scoring stays pure, workers never score, dependencies point downward
-      # only. None of that is visible to a reviewer reading a single file, which
-      # is exactly why it is a machine check. Cheap, so it runs before the tests.
       - name: Layer check (import-linter)
         run: lint-imports
 
-      # This is deliberately separate from the general test step. The RLS
-      # fixture executes `alembic upgrade head` against PostgreSQL, so a broken
-      # migration cannot hide behind unit tests built from ORM metadata. The
-      # fixture permits a local skip when Docker is absent, but CI=true converts
-      # that condition—and every migration/setup exception—into a hard failure.
       - name: Database migrations, constraints, and tenant isolation
         run: pytest -q -rs tests/integration/test_rls.py tests/integration/test_database_constraints.py
 
-      # -rs keeps any optional local-only skips visible in the general suite.
       - name: Tests
         run: pytest -q -rs
 
-      # Advisory, not blocking — deliberately, and temporarily. There are 31
-      # pre-existing findings in apps/api, none introduced by the change that
-      # added this workflow.
-      #
-      # Making it blocking today would mean either editing 18 files somebody else
-      # is mid-flight in, or shipping a workflow that is red on arrival and can
-      # never be required by branch protection.
-      #
-      # To clear it: `ruff check --fix .` fixes 26 of the 31. Then delete
-      # `--exit-zero` below and add this to the required checks.
       - name: Ruff (advisory — see deployment log Entry 3)
         run: |
           ruff check . --exit-zero --output-format=concise
           echo "---"
           echo "Advisory only. Count: $(ruff check . --exit-zero --output-format=concise | grep -c ':' || true)"
 
-  # ── Model service ──────────────────────────────────────────────────────────
   ml:
     name: ml — tests
     runs-on: ubuntu-latest
@@ -199,44 +141,19 @@ jobs:
       - name: Install
         run: pip install -e ".[dev,training]"
 
-      # The `|| [ $? -eq 5 ]` mask that used to be here treated "no tests
-      # collected" as a pass, back when the suite was empty. Now it would only
-      # hide an accidentally empty suite — the failure most worth seeing.
       - name: Tests
         run: pytest -q -rs
 
       - name: Ruff (advisory)
         run: ruff check . --exit-zero --output-format=concise
 
-  # ── Images ─────────────────────────────────────────────────────────────────
   images:
-    # ⚠️ THIS NAME MUST BE STATIC AND UNIQUE PER MATRIX LEG, and both halves of
-    # that matter to branch protection:
-    #
-    #   STATIC — it used to read `images — build${{ ... 'and publish' ... }}`, so
-    #   the check was called "images — build" on a pull request and "images —
-    #   build and publish" on main. A ruleset requires a check BY NAME, and a
-    #   name that only exists on main can never be satisfied by a pull request.
-    #
-    #   UNIQUE — all three legs shared one name, so "images — build" was three
-    #   check runs called the same thing. When names collide GitHub resolves the
-    #   requirement against one of them, so a failing `ml` build could sit behind
-    #   a passing `web` build and the merge would still be allowed.
-    #
-    # `images — web` / `images — api` / `images — ml` are stable across events
-    # and name the failing folder on sight, like the three jobs above.
     name: images — ${{ matrix.name }}
     runs-on: ubuntu-latest
-    # Do not spend registry space or six minutes of runner time on a commit
-    # whose tests are already red.
     needs: [web, api, ml]
     permissions:
       contents: read
       packages: write
-    # Publish exactly when a deploy job can run: a push to main, or a manual
-    # run on main. A manual run used to build without pushing while the deploy
-    # jobs still ran, so k3s asked GHCR for a `sha-` tag that did not exist and
-    # the migration Job sat in ImagePullBackOff until CI timed out.
     env:
       PUBLISH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
 
@@ -254,11 +171,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Needed for cache-from/to type=gha and for build-args to work the same
-      # way they do locally.
       - uses: docker/setup-buildx-action@v3
 
-      # Only on main. A pull request neither needs nor is allowed to publish.
       - name: Log in to GitHub Container Registry
         if: env.PUBLISH == 'true'
         uses: docker/login-action@v3
@@ -267,9 +181,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Generates tags and OCI labels. It also lowercases the image name, which
-      # matters: the repository is `JPabasara/CodeSage-AI` and GHCR rejects
-      # uppercase, so a hand-written `ghcr.io/${{ github.repository }}` fails.
       - name: Image tags
         id: meta
         uses: docker/metadata-action@v5
@@ -281,10 +192,6 @@ jobs:
             type=ref,event=pr
             type=raw,value=k3s-sha-${{ github.sha }},enable=${{ matrix.name == 'web' }}
 
-      # The fallback cannot use the normal web image: Next.js bakes both the
-      # public API address and the session-cookie name into its browser bundle.
-      # These tags are emitted only for the web matrix leg, but are built on PRs
-      # too so the exact production build is still proven before it is pushed.
       - name: Railway fallback web image tags
         if: matrix.name == 'web'
         id: railway-web-meta
@@ -302,27 +209,12 @@ jobs:
           push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Without this every run reinstalls from scratch. pnpm alone spends
-          # 5m19s on its supply-chain policy check before downloading anything.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          # ⚠️ ONLY MEANINGFUL FOR `web`, and harmless for the other two.
-          # Next.js freezes NEXT_PUBLIC_* into the JavaScript at BUILD time, so
-          # the published web image points at whatever this says — a runtime
-          # environment variable on Railway cannot change it.
-          #
-          # WEB_API_BASE_URL may override the primary API address. Its default
-          # is the canonical public primary API, so the image is usable without
-          # adding a repository variable.
-          #   Settings → Secrets and variables → Actions → Variables
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=${{ vars.WEB_API_BASE_URL || 'https://api.codesageai.dev' }}
             NEXT_PUBLIC_SESSION_COOKIE_NAME=codesage_session
 
-      # A separately built frontend for Railway's permanent fallback domain.
-      # After this image is published, Railway web must use `web:railway`, not
-      # `web:latest`. These defaults are the correct fallback values; repository
-      # variables are available only if the fallback domains ever change.
       - name: Build${{ env.PUBLISH == 'true' && ' and push' || '' }} Railway fallback web
         if: matrix.name == 'web'
         uses: docker/build-push-action@v6
@@ -337,13 +229,6 @@ jobs:
             NEXT_PUBLIC_API_BASE_URL=${{ vars.RAILWAY_WEB_API_BASE_URL || 'https://api.railway.codesageai.dev' }}
             NEXT_PUBLIC_SESSION_COOKIE_NAME=${{ vars.RAILWAY_WEB_SESSION_COOKIE_NAME || 'codesage_session_railway' }}
 
-  # ── Deploy ─────────────────────────────────────────────────────────────────
-  # CI publishes the images, then tells Railway to pull them.
-  #
-  # NOT by pointing Railway at this repository — that would make Railway build the
-  # code itself, discarding the images the job above just built and tested, so
-  # what runs would not be what passed. The artefact CI built is the artefact
-  # that runs.
   deploy-staging:
     name: deploy — Railway staging
     runs-on: ubuntu-latest
@@ -354,8 +239,6 @@ jobs:
     concurrency:
       group: deploy-staging
       cancel-in-progress: false
-    # Scopes the token to this environment and lists every deploy on the
-    # repository's Deployments tab — a free audit trail.
     environment: staging
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -363,19 +246,12 @@ jobs:
       - name: Install the Railway CLI
         run: npm i -g @railway/cli
 
-      # api first, and alone. Its pre-deploy command runs `alembic upgrade head`,
-      # and the schema must be current before a worker reads it. A failure here
-      # stops everything below — which is the point: the live site once returned
-      # 500 for exactly this reason, because a merged migration had never reached
-      # the database.
       - name: Deploy api (runs migrations)
         run: railway redeploy --service api --yes
 
       - name: Deploy ml
         run: railway redeploy --service ml --yes
 
-      # Workers call ML during a scan, so deploy ML successfully before either
-      # worker is restarted against the release's images and variables.
       - name: Deploy worker
         run: railway redeploy --service worker --yes
 
@@ -385,9 +261,6 @@ jobs:
       - name: Deploy web
         run: railway redeploy --service web --yes
 
-  # Public browser smoke testing has to wait for Railway to verify the fallback
-  # domains and issue certificates. It stays an explicit staging Environment
-  # variable so an unverified domain cannot make every main deployment red.
   smoke-staging:
     name: smoke — Railway staging
     runs-on: ubuntu-latest
@@ -484,18 +357,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Railway's browser smoke must have run and passed before this production job
-  # starts. The production opt-in is evaluated in its first step, after GitHub
-  # has loaded the production Environment's variables.
   deploy-production:
     name: deploy — k3s production
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
-      # Lets the Tailscale action exchange this job's GitHub OIDC token for a
-      # short-lived, tagged tailnet node. It does not grant GitHub repository
-      # write access or Kubernetes credentials.
       id-token: write
     needs: [images, smoke-staging]
     if: >-
@@ -538,8 +405,6 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:codesage-ci
-          # Wait for the protected k3s node before running kubectl. This avoids
-          # a transient peer-propagation race immediately after authentication.
           ping: ${{ vars.K3S_API_TAILNET_HOST }}
 
       - name: Install kubectl
@@ -589,9 +454,6 @@ jobs:
         if: steps.gate.outputs.deployed == 'true'
         run: |
           short_sha="${GITHUB_SHA::12}"
-          # A workflow re-run must be able to run the migration check again.
-          # Including the run ID prevents a same-SHA Job collision without
-          # granting the deployer permission to delete historical Jobs.
           job_name="codesage-migrate-$short_sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           job_manifest="$RUNNER_TEMP/$job_name.yaml"
           sed \
@@ -622,9 +484,6 @@ jobs:
         if: steps.gate.outputs.deployed == 'true'
         run: kubectl -n "$K3S_NAMESPACE" get deployments
 
-  # This is enabled only after Phase 20 DNS cutover and Phase 21 production TLS
-  # issuance. Before then the canonical public domains either resolve to
-  # Railway or present the intentionally untrusted staging certificate.
   smoke-production:
     name: smoke — k3s production public edge
     runs-on: ubuntu-latest

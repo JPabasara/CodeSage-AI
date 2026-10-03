@@ -1,13 +1,13 @@
-"""Generate deterministic dashboard volume for the PERF-02/03/06/07 checks (DBR-32/33).
+"""Generate deterministic dashboard volume for the performance checks.
 
 Run only against a disposable database, as its owner or a superuser (row-level
 security would hide the rows being linked otherwise)::
 
-    # DBR-32: one large workspace — 20 repos x 30 snapshots x 500 files x ~20 findings
+    # One large workspace — 20 repos x 30 snapshots x 500 files x ~20 findings
     python scripts/seed_volume.py --workspaces 1 --repositories 20 --snapshots 30 \\
         --files 500 --findings-per-file 20
 
-    # DBR-33: baseline capacity — 50 workspaces, one user each, a few small repos
+    # Baseline capacity — 50 workspaces, one user each, a few small repos
     python scripts/seed_volume.py --workspaces 50 --repositories 3 --snapshots 3 \\
         --files 50 --findings-per-file 4
 

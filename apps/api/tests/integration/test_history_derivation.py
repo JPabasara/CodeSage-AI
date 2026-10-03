@@ -1,4 +1,4 @@
-"""DBR-21: history is stored facts; health, grade and debt are a rebuildable cache."""
+"""History is stored facts; health, grade and debt are a rebuildable cache."""
 
 from __future__ import annotations
 

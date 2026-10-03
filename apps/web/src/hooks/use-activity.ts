@@ -10,14 +10,6 @@ import {
   useWorkspaceEpoch,
 } from "./use-workspace-scope"
 
-// What is running in the workspace right now, whoever started it — for the
-// Activity menu in the top bar.
-//
-// One poll for the whole app, and only while something is listening. It asks
-// often while work is in progress and rarely while the workspace is quiet, and
-// not at all while the tab is hidden: this runs on every page, all day.
-
-/** How often to ask while something is running. */
 export const ACTIVITY_BUSY_MS = 4_000
 /** How often to ask while the workspace is quiet. */
 export const ACTIVITY_IDLE_MS = 20_000
@@ -52,8 +44,7 @@ async function poll() {
   inFlight = true
   try {
     const data = await getActivity()
-    // A workspace switch while the request was out: the answer is about the
-    // workspace we just left.
+    // A workspace switch while the request was out: the answer is about the workspace we just left.
     if (epoch === readWorkspaceEpoch()) {
       state = { epoch, data }
       notify()
@@ -98,7 +89,6 @@ function subscribe(listener: () => void) {
   }
 }
 
-/** Tests only. */
 export function resetActivity() {
   if (timer) clearTimeout(timer)
   timer = undefined
@@ -107,10 +97,7 @@ export function resetActivity() {
   notify()
 }
 
-/**
- * What is running in the active workspace, or undefined before the first
- * answer. An answer about another workspace is never returned.
- */
+// What is running in the active workspace, or undefined before the first answer.
 export function useActivity(): Activity | undefined {
   const epoch = useWorkspaceEpoch()
   const current = useSyncExternalStore(

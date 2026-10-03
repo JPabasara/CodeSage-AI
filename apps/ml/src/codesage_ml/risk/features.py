@@ -15,9 +15,6 @@ cannot silently diverge.
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# Class-level CK product metrics
-# ---------------------------------------------------------------------------
 
 PRODUCT_FEATURES: tuple[str, ...] = (
     "wmc",
@@ -31,9 +28,6 @@ PRODUCT_FEATURES: tuple[str, ...] = (
 )
 
 
-# ---------------------------------------------------------------------------
-# File-level process metrics
-# ---------------------------------------------------------------------------
 
 PROCESS_FEATURES: tuple[str, ...] = (
     "numberOfVersionsUntil",
@@ -52,9 +46,6 @@ PROCESS_FEATURES: tuple[str, ...] = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Complete model input contract
-# ---------------------------------------------------------------------------
 
 FEATURE_ORDER: tuple[str, ...] = (
     PRODUCT_FEATURES + PROCESS_FEATURES

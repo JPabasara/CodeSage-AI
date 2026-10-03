@@ -28,10 +28,9 @@ test("shows a skeleton while the first request is in flight", () => {
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })
 
-test("lists the stored snapshots newest first (FR-19)", async () => {
+test("lists the stored snapshots newest first", async () => {
   render(<ScanHistory repoId={DEMO_REPO_ID} />)
 
-  // One header row plus one row per snapshot.
   const rows = await screen.findAllByRole("row")
   expect(rows.length).toBeGreaterThan(1)
 
@@ -107,8 +106,6 @@ test("a failure reads as an error, not as an empty state", async () => {
 
 test("Retry shows the skeleton, then fills the table in", async () => {
   let failing = true
-  // Hold the retried read open, so the in-between state is a moment the test
-  // can stand in rather than a race it might lose.
   let release!: () => void
   const held = new Promise<void>((resolve) => {
     release = resolve
@@ -130,15 +127,11 @@ test("Retry shows the skeleton, then fills the table in", async () => {
   failing = false
   await userEvent.click(screen.getByRole("button", { name: "Retry" }))
 
-  // The press is VISIBLE. With the old quiet `reload` nothing changed here at
-  // all until the answer landed, so the button read as dead and got pressed
-  // again — which is the whole of #110.
   expect(await screen.findByTestId("scan-history-loading")).toBeInTheDocument()
   expect(
     screen.queryByText(/couldn’t load the scan history/i),
   ).not.toBeInTheDocument()
 
-  // …and Retry re-runs the fetch, not just the message.
   release()
   await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument())
   expect(screen.getByText("a1b2c3d")).toBeInTheDocument()
@@ -158,8 +151,6 @@ const ONE_ROW = [
     delta: 3,
   },
 ]
-
-// ── branch filter (Phase 13D) ───────────────────────────────────────────────
 
 test("All branches by default; each row shows its branch", async () => {
   render(<ScanHistory repoId={DEMO_REPO_ID} />)

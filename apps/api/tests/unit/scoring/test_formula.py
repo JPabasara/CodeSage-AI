@@ -1,8 +1,8 @@
-"""Unit tests for the scoring formula (SRS FR-11).
+"""Unit tests for the scoring formula.
 
 These run with **no database, no broker, no HTTP** — that is the property the
-`scoring is pure` import contract exists to protect, and it is what SP-11 means by
-an exactly testable scoring path.
+`scoring is pure` import contract exists to protect, and it is what makes the
+scoring path exactly testable.
 
 The stubs below are written against the current signatures so they fail loudly
 when `engine.score` is implemented, rather than passing vacuously.
@@ -58,7 +58,7 @@ def test_neither_trust_end_can_silence_a_source() -> None:
 
 
 def test_security_bypasses_the_trust_slider() -> None:
-    """FR-24 mechanism 2: source_trust is pinned at 1.0 for security, at BOTH ends.
+    """Security floor: source_trust is pinned at 1.0 for security, at BOTH ends.
 
     Without this, the "trust the model" end would quietly halve every security
     finding, since all security detection is deterministic.
@@ -132,7 +132,7 @@ def test_file_risk_does_not_control_finding_priority(
 
 
 def test_weights_and_s_are_clamped() -> None:
-    """FR-20: clamping is a server-side rule, and it clamps rather than rejects."""
+    """Clamping is a server-side rule, and it clamps rather than rejects."""
     weights, s = formula.clamp_profile({Category.SECURITY: 99.0, Category.TEST: -5.0}, s=42.0)
     assert weights[Category.SECURITY] == 3.0
     assert weights[Category.TEST] == 0.1
@@ -209,7 +209,7 @@ def test_worked_example(balanced: Profile) -> None:
 
 
 def test_critical_security_survives_minimum_weight(min_security_profile: Profile) -> None:
-    """FR-24 mechanism 3 (SRS TC-24).
+    """Critical security remains first at the minimum weight.
 
     Security weight at its 0.1 floor, every other weight at 3.0: the critical
     security finding must still be at index 0 — present is not sufficient.
@@ -231,8 +231,6 @@ def test_critical_security_survives_minimum_weight(min_security_profile: Profile
     ranked = [item.finding.fingerprint for item in result.findings]
     by_id = {item.finding.fingerprint: item for item in result.findings}
 
-    # Its own priority (8 x 0.1 = 0.8) is far below the heavily weighted
-    # design and documentation findings on the hot file...
     assert by_id["sec-critical"].priority == pytest.approx(0.8)
     assert by_id["sec-critical"].priority < min(by_id["design"].priority, by_id["docs"].priority)
     # ...yet it is first, and flagged so the UI can explain why.

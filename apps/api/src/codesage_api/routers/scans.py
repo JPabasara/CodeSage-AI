@@ -47,8 +47,6 @@ def start_scan(
     return analysis.start(db, workspace_id, repo_id, body.branch, actor_user_id=user_id)
 
 
-# Registered before `/scan/{scan_id}`: that route would otherwise take "active"
-# as a scan id and answer 422.
 @router.get(
     "/scan/active",
     response_model=ScanStatusOut,
@@ -87,7 +85,7 @@ def get_scan_status(
     progress percentage from Redis. The split follows from what each store
     guarantees: Redis is a broker, so losing a percentage on restart costs nothing
     because the next poll produces a new one — whereas losing the fact that a scan
-    failed would break SP-13, which requires the final phase and its error to be
+    failed would break diagnosis, which needs the final phase and its error to be
     recoverable from the database alone.
 
     Polling rather than WebSockets or SSE is a v1.0 decision: it gives continuous
@@ -117,7 +115,7 @@ def stop_scan(
 
     Finalization is outside that window: once the worker has begun writing the
     snapshot it finishes. Terminating mid-write would leave a partial snapshot, and
-    FR-6 requires the previous snapshot to remain intact after a cancellation.
+    the previous snapshot must remain intact after a cancellation.
 
     The cost is response time — a user who presses Stop waits until the current
     stage ends — and the result reaches them through the polling channel they are
@@ -140,7 +138,7 @@ def list_scan_history(
     workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
     branch: Annotated[str | None, Query(min_length=1)] = None,
 ) -> list[ScanSummaryOut]:
-    """Past snapshots for the repository, optionally restricted to one branch (FR-19).
+    """Past snapshots for the repository, optionally restricted to one branch.
 
     Each row: date, commit SHA, health score, grade, delta, finding count. The last
     three are derived under the active profile, not read from a column.

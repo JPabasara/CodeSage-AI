@@ -1,6 +1,3 @@
-# GitHub Actions' k3s identity. This is intentionally namespace-scoped: it can
-# update this application's workloads and create its per-release migration Job,
-# but it cannot read Secrets, change cluster-wide resources, or administer k3s.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

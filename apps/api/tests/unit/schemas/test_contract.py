@@ -49,7 +49,7 @@ def test_openapi_uses_the_contract_title() -> None:
     assert create_app().openapi()["info"]["title"] == "Code Sage AI API"
 
 
-def test_openapi_contains_every_srs_endpoint() -> None:
+def test_openapi_contains_every_product_endpoint() -> None:
     paths = create_app().openapi()["paths"]
     for path, methods in EXPECTED_PRODUCT_PATHS.items():
         assert path in paths, f"{path} is missing"
@@ -74,7 +74,7 @@ def test_activity_matches_the_contract() -> None:
     assert rescoring["properties"]["snapshots_left"]["minimum"] == 1
 
 
-def test_canonical_srs_vocabulary() -> None:
+def test_canonical_product_vocabulary() -> None:
     assert {item.value for item in Source} == {"rule", "satd"}
     assert {item.value for item in Category} == {
         "security",
@@ -102,7 +102,7 @@ def test_profile_request_is_complete_five_weight_shape() -> None:
 
 
 def test_wire_names_are_snake_case() -> None:
-    """Locked decision 1. The contract, the SRS and the database all use
+    """The contract and database both use
     snake_case, so the wire does too — one spelling, no translation layer."""
     branch = BranchOut(name="main", is_default=True, head_commit_sha="a" * 40)
     assert branch.model_dump() == {
@@ -158,9 +158,6 @@ def test_a_provider_that_shares_nothing_still_produces_a_session() -> None:
     assert bare.name is None
     assert bare.avatar_url is None
 
-    # Only the user id is guaranteed now: a signed-in user may legitimately have
-    # no workspace yet, and a required workspace_id would make that state
-    # unrepresentable in the very response that has to report it.
     required = set(SessionOut.model_json_schema()["required"])
     assert required == {"user_id"}
 
@@ -335,6 +332,4 @@ def test_the_connect_guardrail_codes_and_languages_are_in_the_contract() -> None
     assert {"REPOSITORY_TOO_LARGE", "REPOSITORY_HAS_NO_JAVA"} <= set(
         contract["ErrorCode"]["enum"]
     )
-    # `additionalProperties: false` on Error: without this property a client
-    # validating the envelope would reject the no-Java refusal.
     assert contract["Error"]["properties"]["languages"]["items"] == {"type": "string"}

@@ -21,21 +21,12 @@ import { cn } from "@/lib/utils"
 
 export type PickerItem = { value: string; label: string; caption?: string }
 
-/** Above this many choices the menu grows a search field. */
 const SEARCH_THRESHOLD = 6
 
 /** A quiet control on the deep-mint bar: white text, a faint white fill. */
 export const topBarControl =
   "inline-flex h-9 min-w-0 items-center gap-1.5 rounded-md px-2 text-left text-sm text-topbar-foreground outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70 disabled:opacity-60 aria-expanded:bg-white/10"
 
-/**
- * One top-bar picker — the workspace and the project are both this.
- *
- * A popover list rather than a native select: each row carries a caption (the
- * role, the owner), the foot carries actions (settings, manage, create), and
- * past a handful of entries the list can be searched. Arrow keys, Enter and Esc
- * work throughout; the search field adds type-to-find.
- */
 export function TopBarPicker({
   label,
   icon,
@@ -60,10 +51,6 @@ export function TopBarPicker({
   onSelect: (value: string) => void
   busy?: boolean
   emptyMessage: string
-  /**
-   * Actions under the list, as `TopBarPickerAction`s. Receives `close` so an
-   * action can shut the menu before it navigates or opens a dialog.
-   */
   footer?: (close: () => void) => React.ReactNode
   className?: string
   /** Stable anchor used by the optional guided product tour. */

@@ -99,10 +99,6 @@ def rls_database() -> Iterator[tuple[Engine, Engine, uuid.UUID, uuid.UUID]]:
             app_engine.dispose()
             owner_engine.dispose()
     except Exception as exc:
-        # Once PostgreSQL has started, this is a schema, migration or test-setup
-        # failure—not an unavailable Docker daemon. Never turn it into a skip.
-        # CI also promises a database runner, so inability to start one there is
-        # itself a broken required check rather than an optional local condition.
         if postgres_started or os.environ.get("CI") == "true":
             raise
         pytest.skip(f"Docker/PostgreSQL is unavailable: {exc}")

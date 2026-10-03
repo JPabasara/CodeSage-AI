@@ -29,14 +29,6 @@ export function createWorkspaceError(caught: unknown): string {
     : "Couldn't create that workspace."
 }
 
-/**
- * The create-a-workspace form's state and submit, shared by the dialog and the
- * inline form on the Workspace page.
- *
- * The creator becomes its org-admin and the session switches to it. Nobody is
- * navigated anywhere: the page they were on simply fills in, because every read
- * on it was waiting for — or is re-keyed by — the new workspace.
- */
 export function useCreateWorkspace(onCreated?: () => void) {
   const [values, setValues] = useState<WorkspaceFields>(EMPTY)
   const [busy, setBusy] = useState(false)

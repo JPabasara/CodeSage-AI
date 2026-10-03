@@ -1,8 +1,5 @@
 import { defineConfig, devices } from "@playwright/test"
 
-// This configuration deliberately has no `webServer`: it exercises an
-// already-deployed environment, unlike the mocked local E2E suite.
-// Both URLs are required so a workflow cannot accidentally test localhost.
 const webUrl = process.env.DEPLOY_WEB_URL
 const apiUrl = process.env.DEPLOY_API_URL
 

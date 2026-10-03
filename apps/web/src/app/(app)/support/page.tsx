@@ -43,8 +43,8 @@ export default function SupportPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Start with your workspace and connecting a project. Once a project is
-            connected, the tour also covers scanning, results, profiles, and
+            Start with your workspace and connecting a project. Once a project
+            is connected, the tour also covers scanning, results, profiles, and
             history.
           </p>
           <Button onClick={() => startTour("full")}>

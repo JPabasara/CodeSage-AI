@@ -1,7 +1,7 @@
 """ORM models. Importing this package registers every table on Base.metadata,
 which is what makes Alembic's --autogenerate see the full schema.
 
-Grouped to match the four domains of SAD §9 Data View:
+Grouped into four domains:
 
     tenancy.py     — Workspace, User, Membership, SecurityAuditRecord
     repository.py  — Repository, Branch
@@ -24,7 +24,7 @@ performance only.
 `FindingTriage` holds per-snapshot collaboration status ("mark as done"). It is
 a label over immutable facts, not suppression: it never changes scores and
 never carries over to a later scan. There is deliberately no webhook-event
-table (scans are user-initiated only, FR-6). The v2 RBAC catalogue is now stored for DBR-5; API enforcement
+table (scans are user-initiated only). The v2 RBAC catalogue is now stored; API enforcement
 is a separate implementation step.
 """
 

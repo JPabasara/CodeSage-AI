@@ -16,7 +16,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # FR-13 stores the raw commit count used by FR-11's churn factor. Existing
+    # The raw commit count is stored for the churn factor. Existing
     # snapshots predate that fact, so zero is the only honest, neutral backfill.
     # The initial migration currently creates tables from live ORM metadata, so
     # a fresh install may already have this column while an upgrade from main

@@ -1,4 +1,4 @@
-"""DBR-15 finding traceability and REL-10 reproducible fingerprints, end to end."""
+"""Finding traceability and reproducible fingerprints, end to end."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ def test_previous_means_latest_done_snapshot_on_the_same_branch(tenant, monkeypa
 
 
 def test_rescan_of_same_commit_and_engine_yields_identical_fingerprints(tenant, monkeypatch) -> None:
-    """REL-10: same commit, same engine version -> same fingerprints, all unchanged."""
+    """Same commit, same engine version -> same fingerprints, all unchanged."""
     client = api_client(tenant.engine, tenant.session_id, monkeypatch)
     tenant.world.issues = [A, B, C]
     first = run_scan(tenant, "a" * 40)

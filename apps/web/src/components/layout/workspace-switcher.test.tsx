@@ -64,8 +64,6 @@ test("switching changes the session, the projects and the caller's role", async 
   expect(workspaces.find((w) => w.is_active)?.workspace_id).toBe(
     SECOND_WORKSPACE_ID,
   )
-  // Nothing from the workspace we left: different repositories, and not one of
-  // the previous workspace's ids among them.
   const projects = await getProjects()
   expect(projects.map((repo) => repo.id)).toEqual([NIMBUS_REPO_ID])
   expect(projects.map((repo) => repo.id)).not.toContain(DEMO_REPO_ID)
@@ -79,8 +77,6 @@ test("each workspace keeps its own pool of profiles", async () => {
   await waitFor(() => expect(nav.push).toHaveBeenCalled())
 
   const nimbusPool = await getProfiles()
-  // Same three built-ins by name — they are seeded per workspace — but they are
-  // this workspace's rows, with this workspace's default and usage counts.
   expect(nimbusPool.map((p) => p.name)).toEqual(acmePool.map((p) => p.name))
   expect(nimbusPool.filter((p) => p.is_active)).toHaveLength(1)
 })
@@ -98,8 +94,7 @@ test("lands on the project that workspace was last on, when it still exists", as
 })
 
 test("a remembered project the workspace does not have sends you to Projects", async () => {
-  // A repository from the OTHER workspace, stored against this one. Opening it
-  // would be a 404 at best, and a cross-workspace read at worst.
+  // A repository from the OTHER workspace, stored against this one.
   writeSelectedProjectId(DEMO_REPO_ID, SECOND_WORKSPACE_ID)
   await renderSwitcher()
 

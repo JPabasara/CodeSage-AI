@@ -50,15 +50,13 @@ test("marks the active repository", () => {
   expect(activeRow).toHaveTextContent("acme")
 })
 
-test("shows a named empty state naming what is empty and the next action when there are no repositories (U-14)", () => {
+test("shows a named empty state naming what is empty and the next action when there are no repositories", () => {
   render(<ProjectList repos={[]} />)
   expect(screen.getByText(/no repositories connected/i)).toBeInTheDocument()
   expect(
     screen.getByText(/connect a public repository to start building/i),
   ).toBeInTheDocument()
 })
-
-// ── latest health, delete (13F) ────────────────────────────────────────────
 
 const withHealth = (score: number, delta: number) => [
   {

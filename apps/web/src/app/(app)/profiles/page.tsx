@@ -50,11 +50,7 @@ import {
   type UpdateProfileRequest,
 } from "@/lib/types"
 
-/**
- * The permission the API checks for every write on this screen. Disabling a
- * control the caller lacks it for is a courtesy — the API re-checks on every
- * request, and a 403 is still handled below.
- */
+// The permission the API checks for every write on this screen.
 const PROFILE_UPDATE = "profile:update"
 
 const PERMISSION_DETAIL =
@@ -63,11 +59,6 @@ const PERMISSION_DETAIL =
 /** The caption on every main action this role cannot take. */
 const ROLE_LOCKED_REASON = "Only org-admins and managers can change profiles"
 
-/**
- * A refusal, as a sentence. Each code is a different thing for the user to do
- * about it, which is the whole reason the contract gives them separate codes —
- * "409 Conflict" would leave all four looking like the same dead end.
- */
 function messageFor(error: unknown, fallback: string): string {
   if (!(error instanceof ApiRequestError)) {
     return error instanceof Error ? error.message : fallback
@@ -100,7 +91,10 @@ function patchFor(
   if (Math.abs(values.trust_s - profile.trust_s) > 1e-9) {
     patch.trust_s = values.trust_s
   }
-  if (Boolean(values.include_test_findings) !== Boolean(profile.include_test_findings)) {
+  if (
+    Boolean(values.include_test_findings) !==
+    Boolean(profile.include_test_findings)
+  ) {
     patch.include_test_findings = values.include_test_findings
   }
   const weights: Partial<CategoryWeights> = {}
@@ -113,7 +107,6 @@ function patchFor(
   return patch
 }
 
-/** The draft edits to one profile, before Save sends them. */
 interface Draft {
   profileId: string
   name: string
@@ -125,12 +118,6 @@ type PendingSwitch =
   | { kind: "profile"; profileId: string }
   | { kind: "scope"; projectId: string | undefined }
 
-/**
- * Two columns on a desktop, each scrolling on its own only if it must: the
- * heading and the pool with its editor on the left, the scopes in a rail on the
- * right. Below `lg` it is one column in reading order — heading, scopes, pool —
- * and the page scrolls normally.
- */
 const LAYOUT =
   "grid min-w-0 grid-cols-[minmax(0,1fr)] lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[auto_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_20rem]"
 const HEADER_AREA =
@@ -142,8 +129,6 @@ const MAIN_AREA =
 const POOL_GRID = "grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4"
 
 export default function ProfilesPage() {
-  // useSearchParams() needs a Suspense boundary, or the build bails out of
-  // prerendering the whole route.
   return (
     <Suspense fallback={<ProfilesSkeleton />}>
       <ProfilesView />
@@ -206,12 +191,7 @@ function ProfilesView() {
     refetch: refetchRepos,
   } = useProjects()
 
-  // Which scope is being configured: the workspace default, or one project's
-  // own profile. It belongs to this page alone — the app bar's project is the
-  // dashboard's, and here any project can be configured independently. The URL
-  // carries it (`?project=<id>`) so a scope can be linked to and survives a
-  // reload; a change made elsewhere to the URL, such as the rail's Profiles
-  // link, is followed.
+  // Which scope is being configured: the workspace default, or one project's own profile.
   const urlProjectId = searchParams.get("project") ?? undefined
   const [scopeId, setScopeId] = useState(urlProjectId)
   const [seenUrlProjectId, setSeenUrlProjectId] = useState(urlProjectId)
@@ -219,12 +199,9 @@ function ProfilesView() {
     setSeenUrlProjectId(urlProjectId)
     setScopeId(urlProjectId)
   }
-  // Only a connected project is a scope. Anything else — a stale link, a
-  // project since removed — is the workspace default.
+  // Only a connected project is a scope.
   const projectId =
     scopeId && repos?.some((repo) => repo.id === scopeId) ? scopeId : undefined
-  // Until the project list is in, a linked project cannot be told apart from a
-  // stale one, so the page waits rather than opening on the wrong scope.
   const resolvingScope = Boolean(scopeId) && !repos && !reposError
 
   const {
@@ -234,15 +211,11 @@ function ProfilesView() {
     update: updateProjectProfile,
   } = useProjectProfile(projectId)
 
-  // Which card is selected, once the user has touched one. Until then it is
-  // derived from the scope, so the page opens on the profile actually in force
-  // rather than on a client-side guess that could disagree with it.
+  // Which card is selected, once the user has touched one.
   const [touchedId, setTouchedId] = useState<string>()
 
   const [draft, setDraft] = useState<Draft>()
 
-  // A different scope starts fresh: a half-made choice for one project must not
-  // carry over to the next, or to the workspace default.
   const [shownProjectId, setShownProjectId] = useState(projectId)
   if (shownProjectId !== projectId) {
     setShownProjectId(projectId)
@@ -250,8 +223,6 @@ function ProfilesView() {
     setDraft(undefined)
   }
 
-  // Moves after every write that can change what a project is scored with, so
-  // each project card in the rail re-reads its own.
   const [railVersion, setRailVersion] = useState(0)
   const refreshRail = () => setRailVersion((version) => version + 1)
 
@@ -301,8 +272,6 @@ function ProfilesView() {
   )
 
   // The browser's own warning, which is the only one that survives a tab close.
-  // Nothing global is intercepted: in-app navigation away from an edit that has
-  // not been sent loses a draft, not stored data.
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
@@ -334,7 +303,6 @@ function ProfilesView() {
   function editProfile(profileId: string) {
     const asking = dirty && profileId !== selected?.id
     selectProfile(profileId)
-    // With the discard dialog up, focus belongs to the dialog.
     if (asking) return
     requestAnimationFrame(() =>
       document.getElementById("profile-name")?.focus(),
@@ -367,8 +335,6 @@ function ProfilesView() {
         profile.id === saved.id ? saved : profile,
       ),
     )
-    // `usage_count`, and which row carries the default, are facts about the pool
-    // that only the server can recompute.
     reloadPool()
   }
 
@@ -386,8 +352,6 @@ function ProfilesView() {
     setSaving(true)
     try {
       const saved = await updateProfile(selected.id, patch)
-      // The server clamps rather than rejecting, so the draft is replaced by
-      // what was really stored instead of by what we sent.
       adopt(saved)
       setDraft(undefined)
       setPermissionNotice(undefined)
@@ -472,8 +436,6 @@ function ProfilesView() {
       setPermissionNotice(undefined)
       toast.success(`Created ${created.name}`)
     } catch (error) {
-      // Kept in the dialog rather than a toast: the name that clashed is still
-      // on screen and is what has to change.
       setCreateError(messageFor(error, "Couldn't create that profile."))
     } finally {
       setCreating(false)
@@ -495,8 +457,6 @@ function ProfilesView() {
       toast.success(`Deleted ${pendingDelete.name}`)
       setPendingDelete(undefined)
     } catch (error) {
-      // The dialog stays open: an in-use profile is still there, and the next
-      // step is to move the references, not to press Delete again.
       setDeleteError(messageFor(error, "Couldn't delete that profile."))
       if (error instanceof ApiRequestError && error.status === 403) {
         setPermissionNotice(PERMISSION_DETAIL)
@@ -512,7 +472,11 @@ function ProfilesView() {
       name: seed ? `${seed.name} copy` : "",
       values: seed
         ? valuesOf(seed)
-        : (values ?? { weights: DEFAULT_WEIGHTS, trust_s: 0.5, include_test_findings: false }),
+        : (values ?? {
+            weights: DEFAULT_WEIGHTS,
+            trust_s: 0.5,
+            include_test_findings: false,
+          }),
     })
   }
 
@@ -539,8 +503,7 @@ function ProfilesView() {
   const overridden = Boolean(projectProfile && !projectProfile.inherited)
   const isDefault = selected.is_active
   const isProjectChoice = projectProfile?.override?.id === selected.id
-  // The profile in force for this project. For the workspace scope that is the
-  // default, which its own badge already says.
+  // The profile in force for this project.
   const inUseId = projectId ? projectProfile?.effective.id : undefined
 
   const status = !canManage

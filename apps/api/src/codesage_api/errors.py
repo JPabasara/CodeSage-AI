@@ -38,7 +38,7 @@ class PermissionDenied(Forbidden):
     """A 403 that knows who was refused what, so the refusal can be audited.
 
     The response body is identical to `Forbidden`: the caller learns nothing
-    extra. The identifiers exist only for the security audit record (DBR-30).
+    extra. The identifiers exist only for the security audit record.
     """
 
     def __init__(
@@ -189,10 +189,6 @@ class ProfileNameConflict(CodeSageError):
     message = "Another profile in this workspace already uses that name."
 
 
-# There is deliberately no PROFILE_WORKSPACE_MISMATCH. A profile or repository
-# belonging to another workspace is answered with NOT_FOUND, exactly as a
-# non-existent id is, so no caller can tell another tenant's ids apart from
-# nonsense ones.
 
 
 class RateLimited(CodeSageError):
@@ -258,8 +254,6 @@ class MisconfiguredSignIn(CodeSageError):
 def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(CodeSageError)
     async def _handle(request: Request, exc: CodeSageError) -> JSONResponse:
-        # Only the curated `message` crosses the boundary. Stack traces, SQL and
-        # upstream error text stay in the logs (SEC-16).
         return JSONResponse(status_code=exc.status_code, content=exc.body())
 
     @app.exception_handler(NotImplementedError)

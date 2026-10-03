@@ -105,8 +105,6 @@ test("handles zero findings gracefully with 0 total and empty aria label (#113)"
   ).toBeInTheDocument()
 })
 
-// ── pie only, with the details on hover and on the keyboard (13F) ──────────
-
 const fiveCategories: CategoryBreakdownItem[] = [
   { category: "security", count: 2, debt: 10 },
   { category: "code-design", count: 5, debt: 15 },

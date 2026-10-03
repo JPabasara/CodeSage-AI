@@ -1,12 +1,3 @@
-# Code Sage AI — ML inference container.
-#
-# Inference only. The `training` extra is deliberately not installed: training
-# runs offline, which keeps the image small and makes it structurally impossible
-# to train in production.
-#
-# The production ML-1 and ML-2 artifacts are baked in so registry images are
-# self-contained. Local Compose may mount the complete models directory over
-# /models.
 
 FROM python:3.12-slim
 
@@ -15,8 +6,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Runtime dependencies change much less often than application source. Keep them
-# in their own cached layer so editing src/ never redownloads NumPy/SciPy.
 COPY requirements-runtime.lock ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --requirement requirements-runtime.lock

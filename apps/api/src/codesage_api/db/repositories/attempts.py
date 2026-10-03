@@ -1,4 +1,4 @@
-"""Analysis-attempt persistence for the scan lifecycle (SRS FR-6)."""
+"""Analysis-attempt persistence for the scan lifecycle."""
 
 from __future__ import annotations
 
@@ -355,9 +355,6 @@ def begin_for_worker(
     None when the attempt is gone or has already ended; a redelivered message
     must not restart a scan that finished, failed or was expired.
     """
-    # One transaction-scoped lock per workspace, so two workers cannot both see
-    # a free slot and both start. Advisory, so it needs no row the worker's
-    # workspace context might not be allowed to lock.
     session.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
         {"key": f"codesage:scan-slot:{workspace_id}"},

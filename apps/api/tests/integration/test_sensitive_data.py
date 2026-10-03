@@ -1,4 +1,4 @@
-"""DBR-29: no credential is stored in a form that could be replayed."""
+"""No credential is stored in a form that could be replayed."""
 
 from __future__ import annotations
 

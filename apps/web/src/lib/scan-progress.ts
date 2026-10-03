@@ -1,12 +1,4 @@
-// The scan bar's arithmetic (13H.4), kept pure so it can be tested without a
-// clock or a DOM.
-//
-// The worker reports a stage and the percentage where that stage starts. Each
-// stage owns a band of the bar. Inside its band the bar creeps forward on its
-// own, slowing as it nears the band's end, and it never enters the next band
-// until the server says the next stage has begun. A real number (a new stage,
-// or files read) is glided to rather than jumped to, and the bar never moves
-// backwards.
+// The scan bar's arithmetic (13H.4), kept pure so it can be tested without a clock or a DOM.
 import type { ScanStage, ScanStatus } from "@/lib/types"
 
 export const STAGE_ORDER: readonly ScanStage[] = [
@@ -31,42 +23,26 @@ export const STAGE_BANDS: Record<ScanStage, readonly [number, number]> = {
 /** How close to its band's end the creep may get: it must stay visibly short. */
 const BAND_HEADROOM = 1
 
-/** How long a creep takes to cover ~63% of what is left in its band. */
 const CREEP_TIME_MS = 12_000
 
-/** How long a glide takes to cover ~63% of the distance to its target. */
 const GLIDE_TIME_MS = 350
 
-/**
- * One bar for the whole wait: the scan fills it up to here, and calculating
- * the health score fills the rest. The server's percentages are the scan's
- * own (0–100), so they are scaled into this share with {@link toBar}.
- */
 export const SCAN_SHARE = 90
 
 /** How long the score's creep takes to cover ~63% of its section. */
 const SCORE_CREEP_MS = 20_000
 
-/** A scan percentage (0–100) as a position on the whole bar. */
 export function toBar(scanPercent: number) {
   return (scanPercent * SCAN_SHARE) / 100
 }
 
-/**
- * Where the bar heads `msScoring` after the score calculation began. The
- * server gives no percentage for it, so it creeps through the last section,
- * slowing down, and reaches 100 only when the report actually arrives.
- */
+// Where the bar heads `msScoring` after the score calculation began.
 export function scoringTarget(msScoring: number) {
   const ceiling = 100 - BAND_HEADROOM
   const eased = 1 - Math.exp(-Math.max(0, msScoring) / SCORE_CREEP_MS)
   return SCAN_SHARE + (ceiling - SCAN_SHARE) * eased
 }
 
-/**
- * The stage the scan is in. The server's word when it gives one; otherwise
- * inferred from the percentage, so an older API still gets labelled bands.
- */
 export function stageOf(status: Pick<ScanStatus, "stage" | "progress">) {
   if (status.stage) return status.stage
   let found: ScanStage = "cloning"
@@ -83,7 +59,6 @@ export function reportedProgress(
   const stage = stageOf(status)
   const [start, end] = STAGE_BANDS[stage]
   let value = Math.max(start, status.progress)
-  // Files read move the reading band for real.
   if (
     stage === "reading_code" &&
     status.files_total &&
@@ -96,11 +71,6 @@ export function reportedProgress(
   return Math.min(value, 100)
 }
 
-/**
- * Where the bar should be heading `msInStage` after the stage began: the
- * reported value plus a creep that slows toward the band's end and never
- * reaches it.
- */
 export function creepTarget(
   status: Pick<ScanStatus, "stage" | "progress" | "files_done" | "files_total">,
   msInStage: number,
@@ -113,13 +83,7 @@ export function creepTarget(
   return floor + (ceiling - floor) * eased
 }
 
-/**
- * One animation step: glide from `shown` toward `target` over `dtMs`. Under
- * reduced motion there is no glide — the bar steps straight to what the
- * server reported and does not creep.
- *
- * Never returns less than `shown`: the bar only moves forward.
- */
+// One animation step: glide from `shown` toward `target` over `dtMs`.
 export function nextShown(
   shown: number,
   target: number,

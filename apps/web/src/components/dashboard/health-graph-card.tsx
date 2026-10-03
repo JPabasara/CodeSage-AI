@@ -53,12 +53,6 @@ function formatDateTime(iso: string) {
   return Number.isNaN(date.getTime()) ? iso : fullDateTime.format(date)
 }
 
-/**
- * A y-axis that reads: round ticks, at most five of them, padded around the
- * data and kept inside 0–100. A wide spread gets the full 0/25/50/75/100
- * scale; a narrow one zooms in (70/75/80…) so a real change is visible
- * instead of a flat line pinned to one gridline.
- */
 function trendScale(scores: number[]) {
   if (scores.length === 0)
     return { domain: [0, 100], ticks: [0, 25, 50, 75, 100] }
@@ -181,9 +175,6 @@ export function HealthGraphCard({ history }: Readonly<HealthGraphCardProps>) {
               initialDimension={{ width: 320, height: 128 }}
               className={cn(
                 "aspect-auto h-32 w-full rounded-sm",
-                // recharts' own keyboard layer: arrow keys move the tooltip
-                // along the line. Its outline is hidden by the container, so
-                // the focus is shown here instead.
                 "has-[.recharts-surface:focus-visible]:ring-2 has-[.recharts-surface:focus-visible]:ring-ring/50",
               )}
             >
@@ -204,8 +195,7 @@ export function HealthGraphCard({ history }: Readonly<HealthGraphCardProps>) {
                   tickMargin={6}
                   minTickGap={24}
                   interval="preserveStartEnd"
-                  // Inset the first and last points so their date labels are
-                  // never cut off at the edges.
+                  // Inset the first and last points so their date labels are never cut off at the edges.
                   padding={{ left: 12, right: 14 }}
                   tickFormatter={(value: number) =>
                     data[value] ? formatShortDate(data[value].t) : ""

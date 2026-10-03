@@ -21,8 +21,6 @@ def score(
     profile: Profile,
     kloc: float | None = None,
 ) -> ScoringResult:
-    # Compatibility for callers of the old API. Health KLOC is intentionally
-    # derived from the same scoped file facts as debt so the two cannot drift.
     del kloc
     debt_by_file: dict[str, float] = {
         file_path: 0.0 for file_path in file_facts

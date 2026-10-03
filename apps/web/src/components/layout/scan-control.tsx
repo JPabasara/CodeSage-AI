@@ -12,30 +12,15 @@ export type ScanControlProps = {
   progress: number // 0–100
   /** Stop has been requested but the scan has not reached a terminal phase yet. */
   stopping?: boolean
-  /** The scan is done and its health score is being calculated. */
   scoring?: boolean
-  /** Rendered on the deep-mint app bar: light-on-dark buttons. */
   onBar?: boolean
   onScan?: () => void
-  /** Absent while the scan has no id yet (the request is still in flight). */
   onStop?: () => void
-  /** Set when this role cannot start scans: Scan is disabled with this caption. */
   lockedReason?: string
   /** False when Stop lives elsewhere (the dashboard's status strip) or the role cannot stop. */
   showStop?: boolean
 }
 
-/**
- * What a screen reader hears while a scan runs (U-9).
- *
- * Separate from the visible label, and deliberately coarser. The visible text
- * ticks through every percentage the poll returns; announcing each one would
- * read a number aloud that has already changed by the time the sentence ends.
- * Rounding to a quarter turns roughly six updates into four useful ones.
- *
- * `polite`, never `assertive`: progress must wait its turn rather than cut into
- * whatever the user is reading.
- */
 function ScanAnnouncement({
   phase,
   progress,
@@ -77,19 +62,13 @@ export function ScanControl({
   const running = phase === "running" || queued
 
   if (running) {
-    // "Queued" and "running" are different facts. Queued means no worker has
-    // picked the job up, so there is no progress to report — and rendering that
-    // as "Scanning… 0%" claimed work had started and then stalled, which is the
-    // reading that makes someone press Stop on a scan that never began.
+    // "Queued" and "running" are different facts.
     let label: string
     if (stopping) label = "Stopping…"
     else if (scoring) label = "Scoring…"
     else if (queued) label = "Queued…"
     else label = `Scanning… ${progress}%`
 
-    // Stop and the numbers live elsewhere (the dashboard's status strip): here
-    // it is just the button's busy state, the same size as Scan, so the app
-    // bar neither jumps nor crowds while a scan runs.
     if (!showStop) {
       return (
         <>
@@ -118,15 +97,8 @@ export function ScanControl({
 
     return (
       <div className="flex items-center gap-2">
-        {/*
-          Cancellation is cooperative: the worker only checks the flag between
-          pipeline stages, so the phase stays "running" for up to a full stage
-          after Stop is pressed. Saying so is the difference between "working on
-          it" and "that button is broken".
-        */}
         <span className="text-sm tabular-nums">{label}</span>
-        {/* Queued has nothing to fill, and an empty bar reads as 0%, not as
-            "not started". The label carries it alone until work begins. */}
+        {/* Queued has nothing to fill, and an empty bar reads as 0%, not as "not started". */}
         {queued || !showStop ? null : (
           <Progress
             value={progress}
@@ -154,9 +126,6 @@ export function ScanControl({
     )
   }
 
-  // Cancelled is NOT idle. Without this branch it falls through to the plain
-  // Scan button below and a stopped scan looks identical to one that never ran —
-  // the compiler cannot catch it, because nothing here is an exhaustive switch.
   if (phase === "cancelled") {
     return (
       <div className="flex items-center gap-2">
@@ -184,8 +153,6 @@ export function ScanControl({
     )
   }
 
-  // No handler yet (the branch is still loading): disabled for that moment,
-  // rather than a click that silently does nothing.
   return (
     <Button size="sm" className={scanClass} onClick={onScan} disabled={!onScan}>
       <Play className="size-3.5" /> Scan

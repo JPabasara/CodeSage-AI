@@ -1,4 +1,4 @@
-"""Sign-out ends the session here AND at Asgardeo (SEC-10, J3.0).
+"""Sign-out ends the session here AND at Asgardeo.
 
 The bug these lock down: sign-out used to delete our own session row and stop
 there. Asgardeo kept its own SSO cookie, so clicking "Sign in" straight afterwards
@@ -67,8 +67,6 @@ def db(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> FakeDb:
         "end_session",
         lambda _db, raw_cookie: fake.ended_with.append(raw_cookie),
     )
-    # `get_settings` is lru_cached and read by several modules, so patch the
-    # function itself rather than the environment.
     for module in (auth_router, deps):
         monkeypatch.setattr(module, "get_settings", lambda: settings)
     monkeypatch.setattr("codesage_api.main.get_settings", lambda: settings)
@@ -77,8 +75,6 @@ def db(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> FakeDb:
 
 @pytest.fixture
 def client(db: FakeDb) -> TestClient:
-    # `follow_redirects=False` so the 302 itself is the thing under test — with
-    # redirects followed the test would try to reach Asgardeo over the network.
     return TestClient(create_app(), follow_redirects=False)
 
 
@@ -169,16 +165,6 @@ def test_logout_is_mounted_on_the_public_router() -> None:
     assert "/auth/logout" not in paths(auth_router.router)
 
 
-# ── the cookie domain (the redirect loop of 25 Aug) ─────────────────────────
-#
-# Symptom: sign in on the live site, land back on /login, forever. Sign-in was
-# fine and the session row was real. The cookie was set host-only, so it belonged
-# to api.codesageai.dev and nothing else — and `middleware.ts`, which runs on
-# codesageai.dev, could not see it. Every protected route bounced to /login.
-#
-# Both halves are tested. Setting a domain-scoped cookie without also DELETING a
-# domain-scoped one leaves a cookie no sign-out can clear, which is the same
-# class of bug wearing the opposite mask.
 
 
 def test_logout_clears_a_domain_scoped_cookie(
@@ -190,9 +176,6 @@ def test_logout_clears_a_domain_scoped_cookie(
 
     cleared = client.post("/api/auth/logout").headers["set-cookie"]
 
-    # A browser matches a cookie on name, domain AND path. Omit the domain here
-    # and the deletion silently targets a different cookie than the one that
-    # exists, so the user stays signed in with nothing able to clear it.
     assert "Domain=.codesageai.dev" in cleared
     assert "Max-Age=0" in cleared
 

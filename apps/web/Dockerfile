@@ -4,13 +4,13 @@
 # three exist so a lockfile that has not changed does not trigger a reinstall,
 # and so pnpm, the source tree and the dev dependencies never reach production.
 #
-# ⚠️ The API address is fixed when this image is BUILT, not when it runs.
+# The API address is fixed when this image is BUILT, not when it runs.
 # Next.js replaces every `process.env.NEXT_PUBLIC_*` with a string literal during
 # `next build`, so setting it in a compose file or at `docker run` does nothing to
 # an image that is already built. It arrives as a build argument instead, and
 # pointing the frontend at a different backend means building a new image.
 #
-# ⚠️ apps/web is its own pnpm root (it has its own pnpm-lock.yaml and
+# apps/web is its own pnpm root (it has its own pnpm-lock.yaml and
 # pnpm-workspace.yaml, and the repository has no top-level package.json), so the
 # build context is this directory alone. Do not widen it to the repo root.
 

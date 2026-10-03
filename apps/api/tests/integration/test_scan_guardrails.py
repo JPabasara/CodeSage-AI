@@ -192,8 +192,6 @@ def test_the_typical_duration_is_the_median_of_recent_finished_scans(account) ->
         [(AnalysisStatus.DONE, base + timedelta(hours=i)) for i in range(3)]
         + [(AnalysisStatus.ERROR, base), (AnalysisStatus.QUEUED, None)],
     )
-    # 60s, 120s and one slow 900s run: the median ignores the outlier. The
-    # failed scan's hour-long run is not a typical scan at all.
     with Session(engine) as db:
         for attempt_id, seconds in zip(ids, [60, 120, 900, 3600], strict=False):
             attempt = db.get(AnalysisAttempt, attempt_id)
@@ -285,8 +283,6 @@ def test_two_presses_at_once_cannot_both_take_the_last_place(
     from codesage_api.errors import ScanQueueFull
 
     engine, _, user_id, workspace_id, _ = account
-    # Widen the gap between "count the queue" and "add to it", so without the
-    # workspace lock both presses would count four and both be queued.
     real_count = attempts.count_queued_in_workspace
 
     def slow_count(*args):

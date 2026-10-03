@@ -40,8 +40,6 @@ def parse(report: str, repository_path: Path) -> list[PMDViolation]:
     except ElementTree.ParseError as exc:
         raise PMDReportError("PMD produced an invalid XML report.") from exc
 
-    # A config error invalidates the whole run. File-level processing errors do
-    # not: PMD still emits valid violations for every source it could parse.
     if any(_local_name(element.tag) == "configerror" for element in root.iter()):
         raise PMDReportError("PMD report contains configuration errors.")
 

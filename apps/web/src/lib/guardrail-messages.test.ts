@@ -16,8 +16,6 @@ const refused = (
   languages?: string[],
 ) => new ApiRequestError(400, code, detail, languages)
 
-// ── connect ─────────────────────────────────────────────────────────────────
-
 test("a Java-less repository names the languages GitHub did find", () => {
   const message = connectFailureMessage(
     refused("REPOSITORY_HAS_NO_JAVA", "x", ["Python", "Shell"]),
@@ -98,8 +96,6 @@ test("an unknown failure falls back to its own sentence", () => {
     "Couldn't connect that repository.",
   )
 })
-
-// ── scan ────────────────────────────────────────────────────────────────────
 
 const failed = (overrides: Partial<ScanStatus>): ScanStatus => ({
   scan_id: "s",

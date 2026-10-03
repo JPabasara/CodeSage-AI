@@ -40,9 +40,6 @@ import {
   WORKSPACE_ID,
 } from "@/lib/mocks/fixtures"
 
-// Timer-driven (one poll per POLL_MS), so FAKE timers keep it deterministic;
-// assertions follow advanceTimersByTimeAsync rather than waitFor, which polls on
-// real timers that never move while these are faked.
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
@@ -256,11 +253,8 @@ test("a full workspace queue refuses the start with the server's sentence", asyn
   stop()
 
   expect(reasons).toEqual([sentence])
-  // Nothing is left looking queued: the scan was never accepted.
   expect(result.current.scan).toBeUndefined()
 })
-
-// ── the whole job: scanning → scoring → ready ───────────────────────────────
 
 /** The report the dashboard was showing before the scan, as the cache holds it. */
 function cacheShownReport(snapshotId = "snapshot-before-the-scan") {
@@ -311,7 +305,6 @@ test("with results on screen, the job waits at 'ready' until the user looks", as
   )?.data
   expect(latest?.snapshot_id).not.toBe(shown.snapshot_id)
 
-  // "Show them": the job is over.
   act(() => acknowledgeScan(key))
   expect(result.current.scan).toBeUndefined()
 })
@@ -383,8 +376,6 @@ test("a slow score says so, and a score that never comes still ends the job", as
   expect(result.current.scan).toBeUndefined()
 })
 
-// ── the shared bar and line ─────────────────────────────────────────────────
-
 test("the bar lives in the store: leaving and coming back keeps it, forward only", async () => {
   await act(() => startScan(target))
   const first = renderHook(() => useScanLive(key))
@@ -399,8 +390,6 @@ test("the bar lives in the store: leaving and coming back keeps it, forward only
   const left = first.result.current
   first.unmount() // navigated away
 
-  // Coming back picks up exactly where it was: same bar, same line — no
-  // restart from zero, no fresh random pick.
   const back = renderHook(() => useScanLive(key))
   expect(back.result.current?.bar).toBe(left?.bar)
   expect(back.result.current?.line).toBe(left?.line)

@@ -2,12 +2,6 @@ import { test as signedOut, expect } from "@playwright/test"
 
 import { DEMO_REPO_ID, SESSION_COOKIE, test as signedIn } from "./session"
 
-// Route protection.
-//
-// These use the raw Playwright `test`, not the signed-in fixture: the point is
-// to arrive with no session cookie. Every other spec imports from ./session and
-// is signed in before it starts.
-
 const PROTECTED = [
   "/projects",
   "/profiles",
@@ -45,8 +39,6 @@ signedIn("signed in, / and /login both go into the app", async ({ page }) => {
   await page.goto("/")
   await expect(page).toHaveURL(/\/projects$/)
 
-  // /login is sent on by the page after the API confirms the session — the
-  // middleware cannot tell a live cookie from a stale one.
   await page.goto("/login")
   await expect(page).toHaveURL(/\/projects$/)
 })
@@ -95,9 +87,6 @@ signedOut(
   async ({ page }) => {
     await page.goto("/login")
 
-    // A plain link, deliberately: the browser has to leave this page for OIDC,
-    // and a service worker cannot intercept a navigation. This is as far as an
-    // E2E can follow sign-in.
     const signIn = page.getByRole("link", { name: /sign in with asgardeo/i })
     await expect(signIn).toBeVisible()
     await expect(signIn).toHaveAttribute("href", /\/api\/auth\/login$/)
@@ -113,7 +102,7 @@ signedIn(
   },
 )
 
-signedIn("the account menu shows who is signed in (J3.2)", async ({ page }) => {
+signedIn("the account menu shows who is signed in", async ({ page }) => {
   await page.goto("/projects")
   // The mock session's display name. A 401 would have redirected us instead.
   await page.getByRole("button", { name: "Account menu" }).click()
@@ -124,7 +113,6 @@ signedIn(
   "sign-out is a form POST, not a link — a GET must not end a session",
   async ({ page }) => {
     await page.goto("/projects")
-    // Sign out sits at the foot of the rail.
     await page.getByRole("button", { name: /sign out/i }).click()
 
     // Asked once, in a centred dialog; the form only posts from there.
@@ -150,9 +138,6 @@ signedIn(
     await page.goto("/projects")
     await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
 
-    // Exactly what an expiry looks like to the browser: the cookie is gone, so
-    // the next navigation has no session. This used to render a shell with an
-    // error inside it instead of bouncing to sign-in.
     await context.clearCookies({ name: SESSION_COOKIE })
     await page.goto("/projects")
     await expect(page).toHaveURL(/\/login$/)

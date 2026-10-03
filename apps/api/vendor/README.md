@@ -6,7 +6,7 @@ Third-party binaries that are not Python packages, so `pip` cannot fetch them.
 
 ## ck.jar — now fetched by the Dockerfile, not by you
 
-CK measures Java source: lines of code, complexity, nesting depth, method counts (SRS FR-7). It is
+CK measures Java source: lines of code, complexity, nesting depth, method counts. It is
 a Java program the worker runs as a separate process, which is why the image installs a JRE.
 
 **You do not download it any more.** `apps/api/Dockerfile` fetches it during the build, pinned to
@@ -61,7 +61,7 @@ sha256sum ck-<new>-jar-with-dependencies.jar
 ```
 
 Then record the same version string on `AnalysisEngineVersion.ck_version`. A floating version
-silently invalidates historical comparisons — REL-10 claims "same revision, consistent results",
+silently invalidates historical comparisons — the claim is "same revision, consistent results",
 and that claim is only checkable if the engine version is written down next to the results.
 
 ## Do you ever need a jar in here?

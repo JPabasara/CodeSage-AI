@@ -2,7 +2,14 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { BookOpen, ChevronRight, CircleHelp, Play, Search, X } from "lucide-react"
+import {
+  BookOpen,
+  ChevronRight,
+  CircleHelp,
+  Play,
+  Search,
+  X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { searchHelp, helpTrail } from "@/lib/help-navigation"

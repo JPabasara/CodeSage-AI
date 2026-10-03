@@ -115,8 +115,6 @@ function navItems(repoId: string | undefined): NavItem[] {
 
 export function AppRail() {
   const pathname = usePathname()
-  // With no workspace every page is a "create one first" card; the rail says
-  // so up front, but keeps each link so the user can see what is there.
   const locked = useWorkspaceGate() === "none"
   const { data: repos } = useProjects()
   const { selectedProjectId } = useSelectedProject({
@@ -124,10 +122,6 @@ export function AppRail() {
     demoRepoId: DEMO_FALLBACK_ID,
   })
   const nav = navItems(selectedProjectId)
-  // Below `md` the rail is a modal sheet and Next navigates without unmounting
-  // it, so tapping a destination left the sheet covering the new page — and
-  // everything behind a modal is aria-hidden. Closing on click rather than on a
-  // pathname change also covers tapping the row you are already on.
   const { setOpenMobile, state, toggleSidebar } = useSidebar()
   const sidebarCollapsed = state === "collapsed"
   const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
@@ -138,15 +132,13 @@ export function AppRail() {
     serverHydrationSnapshot,
   )
   const { resolvedTheme } = useTheme()
-  // Keep the server and first browser render identical until next-themes resolves.
   const ThemeIcon = themeMounted && resolvedTheme === "dark" ? Moon : Sun
   const sidebarStateLabel = sidebarCollapsed
     ? "Expand sidebar"
     : "Collapse sidebar"
 
   return (
-    // Offset below the fixed app bar on desktop; below `md` the rail is a sheet
-    // and ignores this.
+    // Offset below the fixed app bar on desktop; below `md` the rail is a sheet and ignores this.
     <Sidebar
       collapsible="icon"
       className="top-14 h-[calc(100svh-3.5rem)] border-sidebar-border/80"

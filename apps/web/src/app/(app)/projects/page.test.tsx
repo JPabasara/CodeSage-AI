@@ -32,16 +32,11 @@ vi.mock("next/image", () => ({
   default: () => <span data-testid="mock-next-image" />,
 }))
 
-// The role decides which controls this page offers, so it is a knob: a
-// read-only session has to be renderable in the same file as the org-admin one.
 const session = vi.hoisted(() => ({ current: null as Session | null }))
 vi.mock("@/hooks/use-session", () => ({
   useSession: () => ({ data: session.current, loading: false }),
 }))
 
-// <Toaster> lives in the root layout, not in this page, so rendering the page
-// alone puts no toast in the DOM. Assert on the calls instead: what matters is
-// that the right message is chosen for the right error code.
 const { toastError, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -96,8 +91,6 @@ test("connecting a public URL adds it to the list", async () => {
 
   await connect("https://github.com/octocat/hello-world")
 
-  // The list is a separate read from the write, so this only passes if the page
-  // actually reloads it afterwards.
   const list = await screen.findByRole("list", {
     name: /connected repositories/i,
   })
@@ -259,9 +252,6 @@ test("a running scan prevents repository removal", async () => {
 
   expect(await failureMessage()).toMatch(/queued or running scan/i)
   expect(screen.getByRole("dialog")).toBeInTheDocument()
-  // Radix marks background content aria-hidden while the modal is open, so
-  // accessible queries correctly cannot see the list at this point. Inspect
-  // the already-rendered list node to prove the failed delete kept its row.
   expect(
     document.querySelector('[aria-label="Connected repositories"]'),
   ).toHaveTextContent("acme-payments")
@@ -273,8 +263,6 @@ test("a private repository explains itself instead of failing generically", asyn
 
   await connect("https://github.com/octocat/private-thing")
 
-  // REPOSITORY_NOT_PUBLIC. Someone pasting their own repository has done nothing
-  // wrong and needs to know why it was refused.
   expect(await failureMessage()).toMatch(
     /private repositories cannot be connected yet/i,
   )
@@ -339,10 +327,6 @@ test("the form is locked while a connect is in flight", async () => {
 
   await connect("https://github.com/octocat/hello-world")
 
-  // Whatever the outcome, the form must come back out of the busy state - a
-  // stuck "Connecting…" would make the page look broken after one paste.
-  // The button stays disabled only because submit cleared the input, which is
-  // the empty-URL guard doing its job, so type again to prove it recovers.
   await waitFor(() =>
     expect(
       screen.queryByRole("button", { name: /connecting/i }),
@@ -358,9 +342,7 @@ test("the form is locked while a connect is in flight", async () => {
 })
 
 test("the message is chosen by CODE, not copied from the server's detail", async () => {
-  // A backend that sends a correct code with a useless detail must still produce
-  // a usable message. Without this the earlier tests pass either way, because the
-  // mock's detail text happens to read like the message we want.
+  // A backend that sends a correct code with a useless detail must still produce a usable message.
   server.use(
     http.post("*/api/projects", () =>
       HttpResponse.json(
@@ -396,12 +378,8 @@ test("an unrecognised code still shows the server's sentence rather than nothing
   await ready()
   await connect("https://github.com/octocat/anything")
 
-  // No entry in the message map for this code, so fall back to `detail` - which
-  // is still a sentence, and better than "503 Service Unavailable".
   expect(await failureMessage()).toMatch(/bad day/i)
 })
-
-// ── the two halves of reload vs refetch, on one screen (#110) ────────────────
 
 test("a failed list offers a Retry that actually reloads it", async () => {
   let broken = true
@@ -421,8 +399,6 @@ test("a failed list offers a Retry that actually reloads it", async () => {
     await screen.findByText(/could not load projects/i),
   ).toBeInTheDocument()
 
-  // Before #110 this screen had no Retry at all: a failed load was a dead end
-  // and the only way out was refreshing the browser.
   broken = false
   await userEvent.click(screen.getByRole("button", { name: "Retry" }))
 
@@ -434,8 +410,6 @@ test("a failed list offers a Retry that actually reloads it", async () => {
 })
 
 test("connecting a repository refreshes the list without blanking it", async () => {
-  // Hold the SECOND read open, so "while the refresh is in flight" is a moment
-  // this test can actually stand in rather than a race it might lose.
   let reads = 0
   let release!: () => void
   const held = new Promise<void>((resolve) => {
@@ -455,9 +429,7 @@ test("connecting a repository refreshes the list without blanking it", async () 
   await connect("https://github.com/octocat/hello-world")
   await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
 
-  // The refresh has not answered yet, and the list the user was reading is
-  // still on screen. This is `reload`, and it is why `refetch` had to be a
-  // second function rather than a change to this one.
+  // The refresh has not answered yet, and the list the user was reading is still on screen.
   expect(
     within(
       screen.getByRole("list", { name: /connected repositories/i }),
@@ -468,14 +440,10 @@ test("connecting a repository refreshes the list without blanking it", async () 
   release()
 })
 
-// ── workspace context (#Phase 11) ───────────────────────────────────────────
-
 test("the active workspace is named on the page, not just implied", async () => {
   render(<ProjectsPage />)
   await ready()
 
-  // The same three repositories mean something different depending on which
-  // workspace you are standing in, so the workspace has to be on screen.
   expect(screen.getByText("Acme Engineering")).toBeVisible()
 })
 
@@ -485,8 +453,7 @@ test("a role without connect sees the form locked, and no delete control", async
   render(<ProjectsPage />)
   await ready()
 
-  // Connect is a main action, so it stays visible but locked, with the reason
-  // on hover and focus. Delete is destructive, so it is not offered at all.
+  // Connect is a main action, so it stays visible but locked, with the reason on hover and focus.
   expect(screen.getByLabelText(/repository url/i)).toBeDisabled()
   expect(
     screen.getByRole("button", { name: /^connect repository$/i }),
@@ -518,8 +485,6 @@ test("an empty workspace says so, and says what to do about it", async () => {
   ).toBeVisible()
 })
 
-// ── 13H.1 guardrails: refused before a project exists ───────────────────────
-
 /** The connect form itself, where the inline refusal lives. */
 const connectForm = () =>
   screen.getByRole("region", { name: /connect a github repository/i })
@@ -538,7 +503,6 @@ test("a repository with no Java is refused inline, naming what GitHub found", as
   // The toast says the same thing; the inline copy is what stays on screen.
   expect(await failureMessage()).toBe(inline.textContent)
 
-  // No project was created, and the URL is still there to correct.
   expect(within(list).getAllByRole("listitem")).toHaveLength(rowsBefore)
   expect(screen.queryByText("nojava-site")).not.toBeInTheDocument()
   expect(screen.getByLabelText(/repository url/i)).toHaveValue(

@@ -5,9 +5,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-# ---------------------------------------------------------------------------
-# ML-1: SATD
-# ---------------------------------------------------------------------------
 
 
 class CommentIn(BaseModel):
@@ -23,8 +20,6 @@ class CommentPrediction(BaseModel):
     id: str
     is_debt: bool
 
-    # One of the four predictable categories, or null when is_debt is false.
-    # Never "security" — that is rule-engine territory.
     category: str | None
 
     confidence: float
@@ -35,9 +30,6 @@ class ClassifyResponse(BaseModel):
     model_version: str
 
 
-# ---------------------------------------------------------------------------
-# ML-2: Bug-proneness
-# ---------------------------------------------------------------------------
 
 
 class ClassFeaturesIn(BaseModel):
@@ -73,9 +65,6 @@ class RiskResponse(BaseModel):
     model_version: str
 
 
-# ---------------------------------------------------------------------------
-# Service metadata
-# ---------------------------------------------------------------------------
 
 
 class VersionResponse(BaseModel):

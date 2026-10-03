@@ -49,13 +49,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 HANDSHAKE_COOKIE = "codesage_signin"
 #: How long `state` and the PKCE verifier are honoured.
 HANDSHAKE_SECONDS = 600
-#: How long the browser keeps the handshake cookie, so the `return_to` inside it
-#: outlives a slow email verification. The callback still refuses a handshake
-#: older than HANDSHAKE_SECONDS; only `return_to` is read from an older one.
 RETURN_TO_SECONDS = 3600
-#: Appended to `state` on the one silent retry. `state` is echoed back by the
-#: identity provider, so this marker survives a browser that keeps no cookies at
-#: all, where a cookie-based guard would itself be lost and the retry would loop.
 RETRY_STATE_SUFFIX = ".retry"
 WorkspaceAdmin = Annotated[AuthorizationContext, Depends(require_permission("workspace:update"))]
 WorkspaceDeleter = Annotated[
@@ -112,10 +106,6 @@ def begin_sign_in(
     """
     settings = get_settings()
 
-    # Fail loudly on a half-configured service. Without this, an empty base URL
-    # produces a *relative* redirect to /oauth2/authorize, the browser resolves
-    # it against this host, and the user gets a bare 404 that says nothing about
-    # the real cause — a missing environment variable.
     if not settings.asgardeo_base_url or not settings.asgardeo_client_id:
         raise MisconfiguredSignIn
 
@@ -173,11 +163,6 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
 
     settings = get_settings()
 
-    # A missing, expired or mismatched handshake is usually not an attack: the
-    # user verified their email in another tab, took longer than ten minutes, or
-    # started a second sign-in. Restart once, silently: they already have an
-    # Asgardeo session, so no password is asked. The retry marks its `state`,
-    # and a retry that fails again goes to the login page, so it cannot loop.
     handshake = request.cookies.get(HANDSHAKE_COOKIE)
     if not handshake:
         _record_sign_in_failure("expired_handshake")
@@ -213,9 +198,6 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
     finally:
         db.close()
 
-    # An explicit safe return path (an invitation, for example) always wins.
-    # Otherwise a first-tour user starts at Workspace; returning users resume
-    # at Projects.
     destination = safe_return_to(issued.get("return_to")) or (
         "/workspace" if new_user_tour else "/projects"
     )
@@ -240,9 +222,6 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
 def _retry_or_back_to_login(state: str, reason: str) -> RedirectResponse:
     if state.endswith(RETRY_STATE_SUFFIX):
         return _back_to_login(reason)
-    # Back to our own /login on the host the callback is served from, which is
-    # the configured redirect URI's host. The old handshake cookie is left in
-    # place so the new sign-in can carry its `return_to` forward.
     callback = urlsplit(get_settings().asgardeo_redirect_uri)
     login_path = callback.path.removesuffix("/callback") + "/login"
     return RedirectResponse(

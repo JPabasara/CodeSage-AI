@@ -2,10 +2,6 @@ import { test as base } from "@playwright/test"
 
 import { DEMO_REPO_ID, SESSION_COOKIE, expect, test } from "./session"
 
-// Phase 13E. A scan used to live inside the dashboard: leave the page mid-scan
-// and coming back showed an idle Scan button, with no progress and no Stop.
-// Scans are now followed by the app shell, so they survive navigation.
-
 const railLink = (page: import("@playwright/test").Page, name: string) =>
   page.locator('[data-slot="sidebar"]').getByRole("link", { name, exact: true })
 const strip = (page: import("@playwright/test").Page) =>
@@ -44,7 +40,6 @@ test("leave mid-scan, follow Activity back, and Stop it", async ({
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await page.getByRole("button", { name: /^scan$/i }).click()
 
-  // Acknowledged at once: the toast and the strip.
   await expect(
     page.getByText("Scan queued · acme-payments · main"),
   ).toBeVisible()
@@ -55,7 +50,6 @@ test("leave mid-scan, follow Activity back, and Stop it", async ({
   await expect(page).toHaveURL(/\/projects$/)
   await expect(activity(page)).toHaveText(/Scanning acme-payments/)
 
-  // …and leads straight back to it, still running, with Stop.
   await activity(page).click()
   await page.getByRole("link", { name: "Open acme-payments · main" }).click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}`))
@@ -99,7 +93,6 @@ test("a scan that finishes while you are elsewhere tells you when it is ready", 
 
   await railLink(page, "Profiles").click()
   await expect(page).toHaveURL(/\/profiles$/)
-  // Only once the score is ready too — with the score in it.
   const toast = page.getByText("acme-payments · main is ready")
   await expect(toast).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText(/^Health \d+ \([A-F]\)/)).toBeVisible()

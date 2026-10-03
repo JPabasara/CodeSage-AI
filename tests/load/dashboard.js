@@ -1,30 +1,4 @@
-// Performance Profiling (§3.1.4) and Load Testing (§3.1.5) of the Master Test Plan.
-//
-// One script, two workloads, chosen with MODE:
-//
-//   baseline  1 virtual user for 2 minutes — the single-user reference numbers.
-//   load      ramp to 50 users over 2 minutes, hold 6, ramp down over 2 (PERF-06).
-//
-// Each iteration is one person opening the product: session, projects, branches,
-// the dashboard payload and scan history, then reading for 1 to 3 seconds.
-//
-// Read-only on purpose. Scans are started by hand from the web app during the
-// scan-queue and concurrent-scan tests, so this script never triggers a scan or
-// changes a profile — either would send the dashboard back to SCORE_PENDING and
-// measure the recalculation instead of the read path.
-//
-// Run (the HTML report comes from k6's built-in web dashboard):
-//
-//   K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_EXPORT=load.html \
-//   k6 run -e MODE=load -e CODESAGE_SESSION_FILE=cookie.txt \
-//          --summary-export=load.json tests/load/dashboard.js
-//
-// Environment:
-//   CODESAGE_BASE_URL       default https://api.codesageai.dev/api
-//   CODESAGE_SESSION_FILE   file holding the codesage_session cookie value
-//   CODESAGE_SESSION_TOKEN  the cookie value itself (instead of the file)
-//   CODESAGE_REPOSITORY_ID  optional; default is the first project with a result
-//   CODESAGE_BRANCH         optional; default is that project's default branch
+// Dashboard load test.
 
 import http from "k6/http"
 import { check, fail, sleep } from "k6"
@@ -56,10 +30,9 @@ if (!workloads[MODE]) throw new Error(`MODE must be baseline or load, not ${MODE
 export const options = {
   scenarios: { reading: workloads[MODE] },
   thresholds: {
-    // SRS PERF-11: the dashboard payload within 2 s at p95; PERF-02: everything else within 1 s.
+    // Dashboard requests allow a longer p95 than the supporting endpoints.
     "http_req_duration{endpoint:dashboard}": ["p(95)<2000"],
     "http_req_duration{kind:other}": ["p(95)<1000"],
-    // Listed per endpoint so the summary shows each one, not just the aggregate.
     "http_req_duration{endpoint:session}": ["p(95)<1000"],
     "http_req_duration{endpoint:projects}": ["p(95)<1000"],
     "http_req_duration{endpoint:branches}": ["p(95)<1000"],
@@ -76,8 +49,7 @@ function get(path, endpoint, phase = "measured") {
   return http.get(`${base}${path}`, { cookies, tags: { endpoint, kind, phase } })
 }
 
-// Runs once before the virtual users start. Neon pauses when idle, so the first
-// requests here absorb any cold start and are not part of the measurement.
+// Prepare one scanned project before virtual users start.
 export function setup() {
   if (!token) fail("No session cookie: set CODESAGE_SESSION_FILE or CODESAGE_SESSION_TOKEN.")
 
@@ -93,7 +65,7 @@ export function setup() {
   if (!repo) fail("No scanned project found in this workspace (or CODESAGE_REPOSITORY_ID is not in it).")
   const branch = __ENV.CODESAGE_BRANCH || repo.default_branch
 
-  // Dashboard timings are only meaningful once the scores exist (§3.1.5).
+  // Wait until dashboard data is ready.
   const q = `branch=${encodeURIComponent(branch)}`
   for (let i = 0; i < 12; i++) {
     const health = get(`/repos/${repo.id}/health?${q}`, "warmup", "warmup")
