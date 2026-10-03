@@ -513,6 +513,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
             <div className="min-h-64">
               <FindingDetailPanel
                 finding={selectedFinding}
+                repositoryUrl={repo?.url}
+                commitSha={report.commit_sha}
                 hasFindings={displayedFindings.length > 0}
                 onClose={closeFinding}
                 canTriage={canTriage}
