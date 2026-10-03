@@ -26,15 +26,10 @@ import {
   writeSelectedBranch,
 } from "@/hooks/use-selected-branch"
 
-// The selection lives in the URL, so a container test needs a router that
-// actually re-renders on navigate. This is a miniature one: a query string in a
-// module-level store, with useSearchParams subscribed to it.
 const nav = vi.hoisted(() => {
   let params = new URLSearchParams()
   const listeners = new Set<() => void>()
-  // Every url this view navigates to, in order. The query string is applied to
-  // the store as before; the path is only recorded, since a container test has
-  // no route to change.
+  // Every url this view navigates to, in order.
   const visited: string[] = []
   return {
     read: () => params,
@@ -94,7 +89,6 @@ test("selecting a finding opens the findings and detail view", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
-  // by reason, not symbol: two fixtures share the symbol "charge()"
   await userEvent.click(
     screen.getByRole("button", { name: /hardcoded stripe api key/i }),
   )
@@ -104,7 +98,6 @@ test("selecting a finding opens the findings and detail view", async () => {
   // The detail is beside the still-usable list, not a modal over the dashboard.
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-  // …and the list is still there, so the next finding is one click away
   expect(
     screen.getByRole("heading", { name: /refactor first/i }),
   ).toBeInTheDocument()
@@ -322,12 +315,6 @@ test("agreed triage roles see the action before the API adds its new grant", asy
   ).not.toHaveLength(0)
 })
 
-// ── the never-scanned repository ────────────────────────────────────────────
-// Connect a brand-new repo, open it, and the dashboard used to be blank with no
-// way out. The health endpoint answers 404 for a branch that has never been
-// scanned, and the top nav lived inside the success branch — so the 404 took
-// the Scan button down with it.
-
 test("a snapshot_id URL loads historical mode and can return to latest", async () => {
   const older = mockScanHistory[1]
   nav.navigate(
@@ -419,7 +406,6 @@ test("clicking a tree file with no finding shows feedback", async () => {
 test("a never-scanned repo still gets the top nav, so a scan can be started", async () => {
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
 
-  // the empty state, not the error treatment
   expect(await screen.findByText(/no scans yet/i)).toBeInTheDocument()
   expect(
     screen.queryByText(/couldn’t load this dashboard/i),
@@ -483,8 +469,6 @@ test("finishing the first scan refetches the report, so the empty state fills in
             { status: 404 },
           ),
     ),
-    // Terminal on the first poll: this test is about the refetch, not about
-    // watching the progress bar climb.
     http.get("*/api/repos/:repoId/scan/:scanId", () => {
       scanned = true
       return HttpResponse.json({ scan_id: "s1", phase: "done", progress: 100 })
@@ -496,19 +480,11 @@ test("finishing the first scan refetches the report, so the empty state fills in
 
   await userEvent.click(screen.getByRole("button", { name: /^scan$/i }))
 
-  // Without useScan's onComplete wired to the report's reload(), this never
-  // arrives and the empty state sits there until a manual refresh.
   expect(
     await screen.findByText("Code Health", {}, { timeout: 4000 }),
   ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 })
-
-// ── SCORE_PENDING (#109) ────────────────────────────────────────────────────
-//
-// The API scores a snapshot in a background task, so the read taken the moment a
-// scan finishes answers 503 SCORE_PENDING. Rendering that as a red error is the
-// first thing anyone sees after their first scan, and it is not true.
 
 test("a score still being calculated is a wait, not an error", async () => {
   const scorePending = () =>
@@ -521,9 +497,7 @@ test("a score still being calculated is a wait, not an error", async () => {
       { status: 503 },
     )
 
-  // Branch-aware, so a stray ask for any other branch could never count as
-  // the first ask for `main`. (The report now waits for the branch list, so
-  // there is no empty-branch ask — the test below pins that.)
+  // Branch-aware, so a stray ask for any other branch could never count as the first ask for `main`.
   let asksForMain = 0
   server.use(
     http.get("*/api/repos/:repoId/health", ({ request }) => {
@@ -547,7 +521,6 @@ test("a score still being calculated is a wait, not an error", async () => {
   // Not the never-scanned empty state either — the snapshot does exist.
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
 
-  // Arrives on its own. No Retry pressed, no refresh.
   expect(
     await screen.findByText("Code Health", {}, { timeout: 8000 }),
   ).toBeInTheDocument()
@@ -698,8 +671,6 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
   ).toBeInTheDocument()
 })
 
-// ── the app bar (Phase 13C) ─────────────────────────────────────────────────
-
 test("inside the shell, Branch and Scan render up in the app bar", async () => {
   render(
     <TopBarSlotProvider>
@@ -720,8 +691,6 @@ test("inside the shell, Branch and Scan render up in the app bar", async () => {
   // The project picker is the app bar's own now, not the dashboard's.
   expect(screen.queryByRole("combobox", { name: "Project" })).toBeNull()
 })
-
-// ── remembered branch (Phase 13D) ───────────────────────────────────────────
 
 test("opened without ?branch=, the dashboard returns to the branch last used", async () => {
   writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "develop")
@@ -775,10 +744,6 @@ test("choosing a branch remembers it for this project", async () => {
   )
 })
 
-// ── scans follow you across pages (Phase 13E) ───────────────────────────────
-
-// ── scans while results are on screen ──────────────────────────────────────
-
 /** Where the progress bar is, as the screen reader hears it. */
 const barValue = () =>
   Number(
@@ -811,8 +776,6 @@ test("when it is done, 'Show them' — the page never swaps by itself", async ()
   await ready()
   const analyzed = () =>
     screen.getByTitle(/^Last analyzed/).getAttribute("title")
-  // The report card and its top-bar metadata render through separate paths.
-  // Wait for both instead of assuming the title has committed with the card.
   const before = (await screen.findByTitle(/^Last analyzed/)).getAttribute(
     "title",
   )
@@ -842,8 +805,7 @@ test("leave the dashboard mid-scan, come back: same bar, same line, still runnin
 
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
-  // Not restarted: at least where it was, never back at zero. (That the line
-  // is kept too is pinned in the store's own tests.)
+  // Not restarted: at least where it was, never back at zero.
   expect(barValue()).toBeGreaterThanOrEqual(leftAt)
   expect(screen.getByTestId("scan-panel-line")).not.toBeEmptyDOMElement()
   expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
@@ -915,8 +877,6 @@ test("the report waits for the branch: no empty-branch ask, and no 'No scans yet
   const { container } = render(<DashboardView repoId={DEMO_REPO_ID} />)
   await new Promise((resolve) => setTimeout(resolve, 50))
 
-  // The branch is unknown, so nothing is asked and the page says it is
-  // loading — never that this project has no scans.
   expect(healthAsked).toEqual([])
   expect(scansAsked).toEqual([])
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()

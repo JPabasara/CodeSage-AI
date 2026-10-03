@@ -9,30 +9,19 @@ import { consumeSignedOut } from "@/lib/sign-in"
 
 const noSubscribe = () => () => {}
 
-/**
- * The one sign-in button, and the two things the page says around it.
- *
- * The button is a plain link: the browser must leave for Asgardeo, and a
- * navigation is not something a fetch or a service worker can do for it.
- */
+// The one sign-in button, and the two things the page says around it.
 export function SignInPanel({
   href,
   error,
 }: Readonly<{ href: string; error?: string }>) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
-  // Server snapshot is `false`: storage only exists in the browser, and the
-  // note is decoration — rendering it a beat late is fine, mismatching is not.
   const signedOut = useSyncExternalStore(
     noSubscribe,
     consumeSignedOut,
     () => false,
   )
 
-  // Already signed in? Go in. The middleware cannot make this call: it sees
-  // only that a cookie exists, and a stale one would loop /login → /projects →
-  // 401 → /login. The API answering 200 is the only proof. The button stays
-  // usable while this runs — nothing waits on it.
   useEffect(() => {
     let alive = true
     getSession()
@@ -47,8 +36,6 @@ export function SignInPanel({
     }
   }, [router])
 
-  // Back from Asgardeo restores this page from the back/forward cache with the
-  // button still saying "Redirecting…". Give it back.
   useEffect(() => {
     const onShow = (event: PageTransitionEvent) => {
       if (event.persisted) setPending(false)
@@ -87,8 +74,6 @@ export function SignInPanel({
         href={href}
         aria-disabled={pending || undefined}
         onClick={(event) => {
-          // One handshake per click: a second press would start a second
-          // state/verifier pair and fail whichever returns last.
           if (pending) {
             event.preventDefault()
             return

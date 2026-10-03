@@ -1,10 +1,3 @@
-# Apply this only after DNS, production TLS, and the complete application smoke
-# test are green. It establishes ingress isolation without guessing static IP
-# ranges for Neon, Upstash, GitHub, Asgardeo, or Resend.
-#
-# Native Kubernetes NetworkPolicy cannot safely restrict those services by
-# hostname. Egress is deliberately left non-isolated until a stable egress
-# proxy or provider-maintained IP policy is introduced.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,7 +12,6 @@ spec:
   policyTypes:
     - Ingress
 ---
-# Only the ingress-nginx controller can reach the two public HTTP services.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -78,9 +70,6 @@ spec:
         - protocol: TCP
           port: 8000
 ---
-# API and both queue workers are the only application workloads allowed to
-# reach the internal ML service. There is no public Ingress or ServiceLB route
-# for ML.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -111,9 +100,6 @@ spec:
         - protocol: TCP
           port: 8001
 ---
-# cert-manager creates temporary HTTP-01 solver Pods in this namespace during
-# certificate issuance and renewal. They must stay reachable through
-# ingress-nginx despite the namespace-wide default deny policy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -142,8 +128,6 @@ spec:
         - protocol: TCP
           port: 8089
 ---
-# Only the app workloads that use the Celery queues, and the KEDA operator that
-# reads queue lengths, can reach the in-cluster Redis.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

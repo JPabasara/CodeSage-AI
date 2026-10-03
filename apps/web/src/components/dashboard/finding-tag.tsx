@@ -20,17 +20,7 @@ export const SOURCE_LABELS: Record<Source, string> = {
   rule: "Rule-based",
 }
 
-/**
- * One tag on a finding: its severity, debt type or source.
- *
- * A tint of the tag's own colour, a border in the same colour, and text in a
- * darker (light theme) or lighter (dark theme) shade of it. The text is mixed
- * with `--foreground` in OKLab, which keeps the hue — mixing in OKLCH swings
- * amber towards pink on the way to slate — and clears 4.5:1 on a card for every
- * severity and category colour in both themes (worst case: medium, ~5:1).
- *
- * The label is the value itself, so colour is never the only signal.
- */
+// One tag on a finding: its severity, debt type or source.
 export function FindingTag({
   color,
   className,

@@ -11,13 +11,8 @@ import {
 import { DEMO_REPO_ID, mockHealthReport } from "@/lib/mocks/fixtures"
 import { server } from "@/lib/mocks/server"
 
-// Proves the data path end-to-end: hook → client → MSW handler. No fixture is
-// imported for the happy path — the data arrives over (mocked) fetch, exactly as
-// it will from the real backend.
+// Proves the data path end-to-end: hook → client → MSW handler.
 
-// ── helpers for the SCORE_PENDING tests ─────────────────────────────────────
-
-/** The contract's 503 while a snapshot is being scored. */
 const scorePending = () =>
   HttpResponse.json(
     {
@@ -28,14 +23,7 @@ const scorePending = () =>
     { status: 503 },
   )
 
-/**
- * Wait for a condition while `vi.useFakeTimers()` is in force.
- *
- * Testing Library's own `waitFor` cannot be used here: it decides whether to
- * drive the clock by looking for a `jest` global, finds none under Vitest, and
- * so polls with a real `setInterval` that fake timers have frozen — it would
- * hang rather than fail. This advances the clock we control instead.
- */
+// Wait for a condition while `vi.useFakeTimers()` is in force.
 async function advanceUntil(
   predicate: () => boolean,
   { step = SCORE_POLL_MS, limit = 60 } = {},
@@ -58,8 +46,6 @@ async function withFakeTimers(body: () => Promise<void>) {
     vi.useRealTimers()
   }
 }
-
-// ── the happy path ──────────────────────────────────────────────────────────
 
 test("starts loading, then resolves the report for the branch", async () => {
   const { result } = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
@@ -123,13 +109,6 @@ test("surfaces an error for an unknown repo instead of throwing", async () => {
   expect(result.current.data).toBeUndefined()
 })
 
-// ── SCORE_PENDING (#109) ────────────────────────────────────────────────────
-//
-// The API stores a snapshot first and scores it in a background task, so a read
-// taken straight after a scan answers 503 SCORE_PENDING. That is not a failure
-// and must never render as one; the hook waits it out, and gives up eventually
-// so a dead worker cannot leave the screen spinning forever.
-
 test("pending → ready: waits out SCORE_PENDING and resolves with no help", async () => {
   await withFakeTimers(async () => {
     let asks = 0
@@ -148,7 +127,6 @@ test("pending → ready: waits out SCORE_PENDING and resolves with no help", asy
     expect(result.current.loading).toBe(false)
     expect(result.current.data).toBeUndefined()
 
-    // No reload(), no remount — the hook gets there by itself.
     await advanceUntil(() => result.current.data !== undefined)
     expect(result.current.data?.health_score).toBe(
       mockHealthReport.health_score,
@@ -245,11 +223,9 @@ test("a genuine 500 is an error, not a pending score, and Retry re-runs the read
   broken = false
   act(() => result.current.refetch())
 
-  // Retry blanks the stale error rather than leaving it on screen…
   expect(result.current.loading).toBe(true)
   expect(result.current.error).toBeUndefined()
 
-  // …and resolves.
   await waitFor(() => expect(result.current.data).toBeDefined())
   expect(result.current.error).toBeUndefined()
 })
@@ -279,8 +255,6 @@ test("unmounting stops the polling", async () => {
     expect(asks).toBe(asksAtUnmount)
   })
 })
-
-// ── the dashboard cache (13H.3) ─────────────────────────────────────────────
 
 test("coming back renders the cached report with no skeleton", async () => {
   const first = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
@@ -342,8 +316,6 @@ test("two dashboards on the same branch send one request", async () => {
   expect(calls).toBe(1)
 })
 
-// ── after a scan (13H.4) ────────────────────────────────────────────────────
-
 test("a reload says it is refreshing until the new report lands", async () => {
   const { result } = renderHook(() => useHealthReport(DEMO_REPO_ID, "main"))
   await waitFor(() => expect(result.current.data).toBeDefined())
@@ -356,8 +328,6 @@ test("a reload says it is refreshing until the new report lands", async () => {
 
   await waitFor(() => expect(result.current.refreshing).toBe(false))
 })
-
-// ── the scan store and the dashboard share one cache ────────────────────────
 
 test("one key format for the hook and the scan store", async () => {
   const { healthKey } = await import("./use-health-report")

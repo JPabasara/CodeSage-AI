@@ -9,8 +9,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
-    // Playwright's dev server builds here so it can run alongside `pnpm dev`
-    // (see next.config.ts). It is generated output, not source.
+    // Playwright's dev server builds here so it can run alongside `pnpm dev` (see next.config.ts).
     ".next-e2e/**",
     "out/**",
     "build/**",

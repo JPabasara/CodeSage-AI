@@ -34,9 +34,7 @@ beforeEach(() => {
   })
   updateSourceScopeConfig.mockResolvedValue({
     test_path_patterns: ["**/src/test/**"],
-    production_path_overrides: [
-      "src/test/java/com/acme/ThingTest.java",
-    ],
+    production_path_overrides: ["src/test/java/com/acme/ThingTest.java"],
   })
 })
 
@@ -44,9 +42,7 @@ test("shows saved test matches as checked tree nodes", async () => {
   const user = userEvent.setup()
   render(<SourceScopeSettings repoId="repo-1" nodes={nodes} />)
 
-  await user.click(
-    screen.getByRole("button", { name: "Configure test paths" }),
-  )
+  await user.click(screen.getByRole("button", { name: "Configure test paths" }))
 
   expect(
     await screen.findByRole("checkbox", { name: "ThingTest.java" }),
@@ -58,9 +54,7 @@ test("unchecking a broad glob match saves a production override", async () => {
   const user = userEvent.setup()
   render(<SourceScopeSettings repoId="repo-1" nodes={nodes} />)
 
-  await user.click(
-    screen.getByRole("button", { name: "Configure test paths" }),
-  )
+  await user.click(screen.getByRole("button", { name: "Configure test paths" }))
   const checkbox = await screen.findByRole("checkbox", {
     name: "ThingTest.java",
   })
@@ -70,9 +64,7 @@ test("unchecking a broad glob match saves a production override", async () => {
   await waitFor(() =>
     expect(updateSourceScopeConfig).toHaveBeenCalledWith("repo-1", {
       test_path_patterns: ["**/src/test/**"],
-      production_path_overrides: [
-        "src/test/java/com/acme/ThingTest.java",
-      ],
+      production_path_overrides: ["src/test/java/com/acme/ThingTest.java"],
     }),
   )
 })

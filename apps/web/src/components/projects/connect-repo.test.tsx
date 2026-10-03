@@ -21,7 +21,6 @@ test("offers no private-repository option", () => {
   render(<ConnectRepo />)
 
   // Connecting a private repository is v2 — it needs a GitHub App installation.
-  // This panel is a URL box and a Connect button, nothing else.
   expect(screen.queryByText(/private/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/github app/i)).not.toBeInTheDocument()
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
@@ -58,8 +57,6 @@ test("a refusal is shown under the URL field and tied to it", () => {
   const input = screen.getByLabelText(/repository url/i)
   const message = screen.getByRole("alert")
   expect(message).toHaveTextContent(/couldn't find any java/i)
-  // Read with the field, not only announced once: a screen reader user who
-  // returns to the box hears why it was refused.
   expect(input).toHaveAttribute("aria-invalid", "true")
   expect(input).toHaveAttribute("aria-describedby", message.id)
 })

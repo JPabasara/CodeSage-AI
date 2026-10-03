@@ -34,10 +34,7 @@ export default async function HelpArticlePage({
             <span key={ancestor.slug}>
               {" "}
               /{" "}
-              <Link
-                href={`/help/${ancestor.slug}`}
-                className="hover:underline"
-              >
+              <Link href={`/help/${ancestor.slug}`} className="hover:underline">
                 {ancestor.title}
               </Link>
             </span>
@@ -66,10 +63,7 @@ export default async function HelpArticlePage({
         {helpTrail(article.parent).map((ancestor) => (
           <span key={ancestor.slug} className="inline-flex items-center gap-2">
             <ChevronRight className="size-3.5" aria-hidden="true" />
-            <Link
-              href={`/help/${ancestor.slug}`}
-              className="hover:underline"
-            >
+            <Link href={`/help/${ancestor.slug}`} className="hover:underline">
               {ancestor.title}
             </Link>
           </span>

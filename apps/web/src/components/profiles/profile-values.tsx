@@ -20,11 +20,6 @@ export interface ProfileValues {
   include_test_findings?: boolean
 }
 
-/**
- * The five categories, in the order they are shown. Keyed off CategoryWeights so
- * adding a sixth category to the contract breaks this list at compile time rather
- * than silently rendering four sliders.
- */
 export const WEIGHT_ROWS: {
   key: keyof CategoryWeights
   label: string
@@ -74,22 +69,6 @@ export const valuesOf = (profile: ScoreProfile): ProfileValues => ({
   include_test_findings: profile.include_test_findings ?? false,
 })
 
-/**
- * The five weight sliders and the trust slider.
- *
- * Shared by the editor on the page and by the create dialog, so a weight cannot
- * come to mean one thing in one of them and something else in the other. Both
- * render at once, which is why every id and test id is namespaced by `idPrefix`
- * — two rows called `value-security` in one document is the bug this prevents.
- *
- * `disabled` is how a built-in is shown: its numbers are worth reading and can
- * never be written, so the rows render and do not operate.
- *
- * `compact` is the page's layout: the six sliders in a grid, label and value on
- * one line, and the longer hints moved to the label's tooltip so the whole
- * editor fits beside the pool without scrolling. The dialog keeps the stacked
- * layout, where there is room to say what each category covers.
- */
 export function ProfileValueEditor({
   values,
   onChange,
@@ -219,9 +198,7 @@ export function ProfileValueEditor({
           <span
             className={cn(
               "absolute left-0.5 top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform",
-              values.include_test_findings
-                ? "translate-x-5"
-                : "translate-x-0",
+              values.include_test_findings ? "translate-x-5" : "translate-x-0",
             )}
           />
         </button>
@@ -230,8 +207,6 @@ export function ProfileValueEditor({
   )
 
   if (compact) {
-    // One grid of six. The headings stay for screen readers; on screen the
-    // labels already say which is which.
     return (
       <div className="space-y-6">
         <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">

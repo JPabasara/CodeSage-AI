@@ -4,11 +4,6 @@ import { createContext, useContext, useState } from "react"
 import { createPortal } from "react-dom"
 
 // Places in the top bar that a page can fill with its own controls.
-//
-// The dashboard's branch selector and Scan button belong in the app bar, but
-// their state belongs to the dashboard — it knows the branch, the scan and the
-// report. A portal lets the controls render up there while staying in the
-// dashboard's React tree: same state, same context, no lifting.
 
 export type TopBarSlotName = "context" | "actions"
 
@@ -51,12 +46,7 @@ export function TopBarSlot({
   )
 }
 
-/**
- * Render `children` into a top-bar slot.
- *
- * Outside the app shell — a component test, say — there is no top bar, so the
- * controls render in place instead of disappearing.
- */
+// Render `children` into a top-bar slot.
 export function TopBarPortal({
   name,
   children,

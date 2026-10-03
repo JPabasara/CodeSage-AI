@@ -43,30 +43,13 @@ import {
 } from "./use-workspace-scope"
 
 // Every scan the app is following, held ABOVE the pages.
-//
-// The scan used to live inside the dashboard: leave the page and the poll
-// stopped, the scan id was forgotten, and coming back showed an idle Scan
-// button while the worker was still busy — no progress, no way to Stop. Here a
-// scan survives navigation (module state and timers outlive any page), a
-// refresh (the ids are kept in this tab's sessionStorage) and, through
-// `GET …/scan/active`, a scan this tab never started at all.
-//
-// It follows the whole JOB, not just the worker's part: scanning, then the
-// health score being calculated, then ready. The toast says "ready" only when
-// there is a score to show, and the bar, the stage and the friendly line live
-// here too — so leaving the dashboard and coming back continues exactly where
-// it was instead of starting the animation again.
 
 export const POLL_MS = 600
 const STORAGE_KEY = "codesage.activeScans.v1"
 
-/** How often the shared bar and friendly line are advanced. */
 export const LIVE_TICK_MS = 100
 
-/**
- * The job, from the user's side: the worker scanning, the score being
- * calculated, then ready to show.
- */
+// The job, from the user's side: the worker scanning, the score being calculated, then ready to show.
 export type ScanJob = "scanning" | "scoring" | "ready"
 
 export interface TrackedScan {
@@ -79,17 +62,9 @@ export interface TrackedScan {
   job: ScanJob
   /** Stop has been requested; the worker stops at its next stage boundary. */
   stopping: boolean
-  /** When it started, for the elapsed clock (server time when known). */
   startedAt: number
-  /**
-   * The results the dashboard showed before this scan. It keeps showing them
-   * — fully usable — until the user chooses "Show them". Absent for a branch
-   * that had no results, which switches to the new ones by itself.
-   */
   pinnedSnapshotId?: string
-  /** When the score's wait began (job "scoring"). */
   scoringSince?: number
-  /** The score has been pending longer than usual. */
   scoreSlow?: boolean
   /** The new report's headline numbers, once ready (absent if it came late). */
   health?: { score: number; grade: string; delta: number }
@@ -118,18 +93,12 @@ export interface ScanTarget {
   repoName?: string
 }
 
-/** What the progress UI draws for one job. Kept apart from `TrackedScan`,
- * because it changes ten times a second and only the small progress pieces
- * should redraw that often — never the whole dashboard. */
 export interface ScanLive {
   /** 0–100 on the one bar for scan and score; undefined while queued. */
   bar: number | undefined
-  /** The friendly line under the headline, and when it was chosen. */
   line: string
   lineAt: number
-  /** The pool the line came from: `${mode}:${slow}`. */
   poolKey: string
-  /** The stage the creep clock belongs to, and when it entered it. */
   stageKey: string
   stageAt: number
 }
@@ -154,8 +123,6 @@ export const isActivePhase = (phase: ScanStatus["phase"]) =>
 /** Scanning or scoring: work still going on. A ready job is waiting for a look. */
 export const isJobActive = (scan: Pick<TrackedScan, "job">) =>
   scan.job !== "ready"
-
-// ── store plumbing ──────────────────────────────────────────────────────────
 
 function changed() {
   snapshot = [...scans.values()]
@@ -206,8 +173,6 @@ type Persisted = Pick<
 function persist() {
   const store = storage()
   if (!store) return
-  // A ready job is only waiting for a look; after a refresh the dashboard
-  // simply shows the new results, so it is not worth keeping.
   const saved: Persisted[] = snapshot
     .filter((scan) => scan.status.scan_id && isJobActive(scan))
     .map(
@@ -283,8 +248,6 @@ function forget(key: string) {
   if (scans.delete(key)) changed()
 }
 
-// ── the shared bar and friendly line ────────────────────────────────────────
-
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)"
 
 function prefersReducedMotion() {
@@ -295,7 +258,6 @@ function prefersReducedMotion() {
   )
 }
 
-/** Which headline and pool of lines the job is in right now. */
 export function modeOf(scan: TrackedScan): PanelMode {
   if (scan.job !== "scanning") return "calculating"
   return scan.status.phase === "queued" ? "queued" : stageOf(scan.status)
@@ -314,8 +276,6 @@ function stageKeyOf(scan: TrackedScan) {
     : "scoring"
 }
 
-/** A job gets a line (and a place on the bar) the moment it is tracked, so
- * its first frame is never blank. */
 function ensureLive(scan: TrackedScan) {
   if (live.has(scan.key)) return
   const now = Date.now()
@@ -336,10 +296,6 @@ function notifyLive() {
   for (const listener of liveListeners) listener()
 }
 
-/**
- * One step for every job in progress: advance the bar (creep within the
- * stage, glide to real numbers, never backwards) and rotate the line.
- */
 export function advanceLive(now = Date.now()) {
   const reduced = prefersReducedMotion()
   const dt = lastTick ? now - lastTick : LIVE_TICK_MS
@@ -403,12 +359,7 @@ function syncTicker() {
   }
 }
 
-// ── polling the scan ────────────────────────────────────────────────────────
-
-/**
- * One poll chain per scan, however many screens show it. Chained rather than
- * an interval, so a slow answer can never stack requests.
- */
+// One poll chain per scan, however many screens show it.
 function schedule(key: string, delay = POLL_MS) {
   if (timers.has(key)) return
   timers.set(
@@ -424,8 +375,7 @@ function schedule(key: string, delay = POLL_MS) {
 async function poll(key: string) {
   const scan = scans.get(key)
   if (!scan) return
-  // The session reads one workspace at a time; a scan in another workspace
-  // would answer 404. It waits — `resumeScans` restarts it on the way back.
+  // The session reads one workspace at a time; a scan in another workspace would answer 404.
   if (readActiveWorkspaceId() !== scan.workspaceId) return
 
   let next: ScanStatus
@@ -461,13 +411,7 @@ async function poll(key: string) {
     })
 }
 
-// ── the score's wait ────────────────────────────────────────────────────────
-
-/**
- * The scan is done; the job is not. Keep the results the dashboard was
- * showing reachable under their own snapshot id, drop the stale "latest", and
- * wait for the new report.
- */
+// The scan is done; the job is not.
 function beginScoring(key: string) {
   const scan = scans.get(key)
   if (!scan) return
@@ -510,8 +454,6 @@ async function awaitScore(key: string) {
 
   const epoch = readWorkspaceEpoch()
   try {
-    // `fresh`: never join a read that left before the scan finished — it
-    // would answer with the old report.
     const report = await fetchShared(
       healthKey(epoch, scan.repoId, scan.branch),
       () => getHealthReport(scan.repoId, scan.branch),
@@ -533,8 +475,7 @@ async function awaitScore(key: string) {
       return
     }
     if (caught instanceof ApiRequestError) {
-      // A real answer that is not a report (the project was removed, say):
-      // the scan itself did finish.
+      // A real answer that is not a report (the project was removed, say): the scan itself did finish.
       finishJob(key, undefined)
       return
     }
@@ -555,9 +496,7 @@ function finishJob(key: string, report: HealthReport | undefined) {
         delta: report.delta,
       }
     : undefined
-  // With results on screen from before, the job waits for "Show them". With
-  // none (a first scan), there is nothing to lose: the dashboard just shows
-  // the new results, so the job is done here.
+  // With results on screen from before, the job waits for "Show them".
   const waitsForALook =
     scan.pinnedSnapshotId !== undefined &&
     report !== undefined &&
@@ -569,15 +508,7 @@ function finishJob(key: string, report: HealthReport | undefined) {
   if (finished) emit({ type: "finished", scan: finished, report })
 }
 
-// ── actions ─────────────────────────────────────────────────────────────────
-
-/**
- * Start a scan, acknowledged at once.
- *
- * The button shows "Queued…" before the request returns. If a scan is already
- * running on that branch — started elsewhere, or before a refresh — this joins
- * it instead of reporting an error.
- */
+// Start a scan, acknowledged at once.
 export async function startScan(target: ScanTarget) {
   const key = scanKey(target.workspaceId, target.repoId, target.branch)
   const existing = scans.get(key)
@@ -593,8 +524,7 @@ export async function startScan(target: ScanTarget) {
 
   try {
     const started = await apiStartScan(target.repoId, target.branch)
-    // Nothing new on the branch: the API answers with the last finished scan
-    // instead of queueing one. The results on screen are already current.
+    // Nothing new on the branch: the API answers with the last finished scan instead of queueing one.
     if (started.phase === "done") {
       forget(key)
       emit({ type: "up-to-date", scan: { ...optimistic, status: started } })
@@ -629,11 +559,6 @@ export async function startScan(target: ScanTarget) {
   }
 }
 
-/**
- * Ask the worker to stop. Polling carries on: cancellation is cooperative, and
- * the scan is over only when a poll says `cancelled` (or `done`, if Stop came
- * after finalization had begun).
- */
 export async function stopScan(key: string) {
   const scan = scans.get(key)
   if (!scan?.status.scan_id || scan.job !== "scanning") return
@@ -646,20 +571,12 @@ export async function stopScan(key: string) {
   }
 }
 
-/**
- * "Show them": the user has seen that new results are ready. The dashboard
- * drops the pinned results and shows the new ones.
- */
+// "Show them": the user has seen that new results are ready.
 export function acknowledgeScan(key: string) {
   const scan = scans.get(key)
   if (scan && scan.job === "ready") forget(key)
 }
 
-/**
- * The dashboard is showing these results while a scan of the same branch
- * runs: remember them, so they stay on screen until the user asks for the new
- * ones — even if the cached copy is dropped in the meantime.
- */
 export function pinScanResults(key: string, report: HealthReport) {
   const scan = scans.get(key)
   if (!scan || scan.job !== "scanning" || scan.pinnedSnapshotId) return
@@ -675,10 +592,6 @@ export function pinScanResults(key: string, report: HealthReport) {
   update(key, { pinnedSnapshotId: report.snapshot_id })
 }
 
-/**
- * Find a scan this tab never started — a teammate's, another tab's, one from
- * before the tab was cleared — and follow it. Silent: nothing was asked for.
- */
 export async function discoverScan(target: ScanTarget) {
   const key = scanKey(target.workspaceId, target.repoId, target.branch)
   if (scans.has(key)) return
@@ -690,10 +603,6 @@ export async function discoverScan(target: ScanTarget) {
   schedule(key)
 }
 
-/**
- * Pick up where this tab left off: after a refresh, or on switching back to a
- * workspace whose scans were paused while another one was active.
- */
 export function resumeScans(workspaceId: string) {
   for (const saved of readPersisted()) {
     if (saved.workspaceId !== workspaceId || scans.has(saved.key)) continue
@@ -715,7 +624,6 @@ export function resumeScans(workspaceId: string) {
   }
 }
 
-/** Tests only. */
 export function resetScanCenter() {
   for (const timer of timers.values()) clearTimeout(timer)
   timers.clear()
@@ -730,8 +638,6 @@ export function resetScanCenter() {
   for (const listener of listeners) listener()
   notifyLive()
 }
-
-// ── hooks ───────────────────────────────────────────────────────────────────
 
 const EMPTY: TrackedScan[] = []
 
@@ -767,10 +673,7 @@ export function useScanFor(repoId: string, branch: string, repoName?: string) {
   return { scan, start, stop }
 }
 
-/**
- * The bar and friendly line of one job. Only the small progress pieces call
- * this: it changes ten times a second.
- */
+// The bar and friendly line of one job.
 export function useScanLive(key: string | undefined): ScanLive | undefined {
   return useSyncExternalStore(
     subscribeLive,

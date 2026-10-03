@@ -1,10 +1,7 @@
 import { DEMO_REPO_ID, test, expect } from "./session"
 
-// The happy path, plus finding detail rendering in the page rather than as a
-// slide-over. Keep this one green forever: it is the smoke alarm for the whole
-// demo.
+// The happy path, plus finding detail rendering in the page rather than as a slide-over.
 
-/** The detail panel, matched exactly — "Close finding detail" contains it too. */
 const detailPanel = (page: import("@playwright/test").Page) =>
   page.getByLabel("Finding detail", { exact: true })
 
@@ -13,11 +10,7 @@ const findingCards = (page: import("@playwright/test").Page) =>
     .getByRole("list", { name: /ranked refactor findings/i })
     .getByRole("button")
 
-/**
- * Switch the dashboard to the Findings view. At 1280x720 the Overview gives the
- * health card and trend chart most of the height, so the ranked list has no
- * room for a card to be clicked — a user on a laptop does the same.
- */
+// Switch the dashboard to the Findings view.
 const showFindings = (page: import("@playwright/test").Page) =>
   page
     .getByRole("toolbar", { name: "Dashboard view" })
@@ -38,8 +31,6 @@ test.beforeEach(async ({ page }) => {
 test("the health card shows a derived grade, score and red-issue count", async ({
   page,
 }) => {
-  // 72 / B under Balanced, computed by the mock's scoring engine rather than
-  // typed into a fixture — so this number moving means the FORMULA moved.
   const healthCard = page.locator('[data-slot="card"]').filter({
     hasText: "Code Health",
   })
@@ -92,8 +83,6 @@ test("selecting a finding opens the detail beside the list", async ({
       .getByRole("button", { name: "Findings + detail" }),
   ).toHaveAttribute("aria-pressed", "true")
 
-  // The list stays visible, so the next finding is one click away — no
-  // close-and-reopen, which is the whole reason the slide-over went.
   await expect(
     page.getByRole("heading", { name: /refactor first/i }),
   ).toBeVisible()

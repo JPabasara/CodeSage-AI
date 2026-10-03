@@ -14,15 +14,9 @@ export default function AppLayout({
   return (
     <TooltipProvider>
       <TopBarSlotProvider>
-        {/* A column: the app bar across the top, the rail and the page below
-            it. The rail's desktop container is fixed, so it is offset by the
-            bar's height rather than starting at the top of the window. */}
+        {/* A column: the app bar across the top, the rail and the page below it. */}
         <SidebarProvider className="h-svh min-h-0 flex-col overflow-hidden">
           <ProductTourProvider>
-            {/* Renders nothing. It decides whether this visitor belongs in the
-              app shell at all: signed out goes to /login. Signed in with no
-              workspace stays — WorkspaceGate below shows each page's locked
-              card instead of its content. */}
             <SessionGuard />
             {/* Follows every scan across pages; says when one ends. */}
             <ScanCenter />

@@ -3,12 +3,6 @@ import { test as base } from "@playwright/test"
 import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 
 // Workspaces: the container everything else in the app belongs to.
-//
-// Two journeys matter most here and neither is about a single screen. One is
-// arriving with no workspace at all — a real signed-in state that used to be
-// indistinguishable from signed out. The other is switching: every project,
-// profile and permission on screen has to change together, with nothing from
-// the workspace you left surviving the move.
 
 const SESSION_COOKIE =
   process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "codesage_session"
@@ -28,8 +22,6 @@ const onboarding = base.extend({
 const rail = (page: import("@playwright/test").Page) =>
   page.locator('[data-slot="sidebar"]').first()
 
-/** The page itself. The rail names the workspace too, so "is it on screen?"
- *  has to say where — otherwise every assertion matches twice. */
 const main = (page: import("@playwright/test").Page) =>
   page.locator("#main-content")
 
@@ -50,8 +42,6 @@ async function switchTo(page: import("@playwright/test").Page, name: string) {
   await page.getByRole("option", { name: new RegExp(name) }).click()
 }
 
-// ── arriving with nothing ───────────────────────────────────────────────────
-
 onboarding(
   "a signed-in user with no workspace lands in the app, on a friendly card",
   async ({ page }) => {
@@ -63,8 +53,6 @@ onboarding(
 
     await page.goto("/projects")
 
-    // Not /login (they would sign in again and land here again), and no longer
-    // a separate onboarding screen before the product.
     await expect(page).toHaveURL(/\/projects$/)
     await expect(
       main(page).getByRole("heading", {
@@ -109,7 +97,6 @@ onboarding(
       rail(page).getByRole("link", { name: /create a workspace first/i }),
     ).toHaveCount(0)
 
-    // No repository is created with a workspace.
     await rail(page)
       .getByRole("link", { name: /projects/i })
       .click()
@@ -135,8 +122,6 @@ onboarding(
     await expect(page).toHaveURL(/\/projects$/)
   },
 )
-
-// ── the workspace screen ────────────────────────────────────────────────────
 
 test("the Workspace page shows the workspace, the role and the counts", async ({
   page,
@@ -164,14 +149,10 @@ test("an org-admin edits the workspace, and the new name is used everywhere", as
   await expect(
     page.getByRole("heading", { name: "Acme Platform" }),
   ).toBeVisible()
-  // The rail and the Projects page read the same workspace, so the rename is
-  // visible wherever the workspace is named.
   await expect(topBar(page).getByText("Acme Platform")).toBeVisible()
   await page.goto("/projects")
   await expect(main(page).getByText("Acme Platform")).toBeVisible()
 })
-
-// ── switching ───────────────────────────────────────────────────────────────
 
 test("an org-admin permanently deletes a named workspace", async ({ page }) => {
   await page.goto("/workspace")
@@ -188,8 +169,6 @@ test("an org-admin permanently deletes a named workspace", async ({ page }) => {
     .fill("Acme Engineering")
   await submit.click()
 
-  // Acme and its workspace-owned data are gone; the global signed-in user
-  // remains and can explicitly select a surviving membership.
   await expect(page).toHaveURL(/\/workspace$/)
   await expect(
     main(page).getByRole("heading", { name: "Create your workspace" }),
@@ -197,7 +176,9 @@ test("an org-admin permanently deletes a named workspace", async ({ page }) => {
   await expect(
     main(page).getByRole("heading", { name: "Select an existing workspace" }),
   ).toBeVisible()
-  await main(page).getByRole("button", { name: /Nimbus Labs/ }).click()
+  await main(page)
+    .getByRole("button", { name: /Nimbus Labs/ })
+    .click()
   await expect(
     main(page).getByRole("heading", { name: "Nimbus Labs" }),
   ).toBeVisible()
@@ -213,8 +194,6 @@ test("switching workspace replaces the projects and leaves nothing behind", asyn
 }) => {
   await page.goto("/projects")
   await expect(repoRows(page)).toHaveCount(3)
-  // Scoped to the rows: the header's "Active project" chip names a repository
-  // too, and a bare text match would find both.
   await expect(repoRows(page).getByText("acme-payments")).toBeVisible()
 
   await switchTo(page, "Nimbus Labs")
@@ -223,8 +202,6 @@ test("switching workspace replaces the projects and leaves nothing behind", asyn
   await expect(topBar(page).getByText("Nimbus Labs")).toBeVisible()
   await expect(repoRows(page)).toHaveCount(1)
   await expect(repoRows(page).getByText("nimbus-gateway")).toBeVisible()
-  // Not one row, and not one name, from the workspace we just left — anywhere
-  // on the page, including the header chips.
   await expect(page.getByText("acme-payments")).toHaveCount(0)
   await expect(page.getByText("web-store")).toHaveCount(0)
 })
@@ -238,8 +215,6 @@ test("the role travels with the workspace, and so do the controls", async ({
 
   await switchTo(page, "Nimbus Labs")
 
-  // viewer in Nimbus: the form is still there but locked, and the page says
-  // why rather than failing on the attempt.
   await expect(page.getByLabel(/repository url/i)).toBeDisabled()
   await expect(
     page.getByRole("button", { name: /^connect repository$/i }),
@@ -286,8 +261,6 @@ test("a workspace remembers its own project, and never the other's", async ({
   await expect(page.getByText("Code Health")).toBeVisible()
 
   await switchTo(page, "Nimbus Labs")
-  // Nimbus has never been opened, so it starts at its own Projects page rather
-  // than at a dashboard for a repository it does not have.
   await expect(page).toHaveURL(/\/projects$/)
   await expect(repoRows(page).getByText("nimbus-gateway")).toBeVisible()
 
@@ -295,8 +268,6 @@ test("a workspace remembers its own project, and never the other's", async ({
   // …and Acme comes back to where it was.
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
 })
-
-// ── the project selector ────────────────────────────────────────────────────
 
 test("the dashboard's project selector changes the URL and the data", async ({
   page,
@@ -309,8 +280,6 @@ test("the dashboard's project selector changes the URL and the data", async ({
     .click()
   await page.getByRole("option", { name: /web-store/ }).click()
 
-  // A bare dashboard URL: the snapshot id belonged to the project being left,
-  // and asking this one for it would be asking for another project's row.
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
   await expect(
     topBar(page).getByRole("combobox", { name: "Project: web-store" }),
@@ -328,8 +297,6 @@ test("the project selector offers only the active workspace's projects", async (
   await expect(page.getByRole("option", { name: /web-store/ })).toBeVisible()
   await expect(page.getByRole("option", { name: /nimbus/i })).toHaveCount(0)
 })
-
-// ── layout ──────────────────────────────────────────────────────────────────
 
 for (const [label, width, height] of [
   ["desktop", 1280, 720],

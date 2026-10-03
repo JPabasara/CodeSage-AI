@@ -1,8 +1,5 @@
 import { DEMO_REPO_ID, SECOND_REPO_ID, expect, test } from "./session"
 
-// Page context and memory (Phase 13D): choose a project and a branch once, and
-// every page keeps to them — across pages, a refresh and a workspace switch.
-
 const topBar = (page: import("@playwright/test").Page) =>
   page.getByTestId("app-top-bar")
 const railLink = (page: import("@playwright/test").Page, name: string) =>
@@ -42,7 +39,6 @@ test("a project and branch chosen once are kept everywhere", async ({
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
   await expect(branch).toHaveText(/develop/)
 
-  // A refresh keeps both.
   await page.reload()
   await expect(branch).toHaveText(/develop/)
 

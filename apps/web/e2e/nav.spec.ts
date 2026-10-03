@@ -1,8 +1,5 @@
 import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 
-// The shell: the left rail, and the promise that nothing on screen points at a
-// feature we cannot demonstrate.
-
 test.beforeEach(async ({ page }) => {
   await page.goto("/projects")
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
@@ -38,8 +35,6 @@ test("the rail carries every destination this release has", async ({
 })
 
 test("J3.5 — no Team entry and no v2 badge anywhere", async ({ page }) => {
-  // An evaluator reads a nav item as a promise, and this one pointed at a page
-  // whose entire content was "Coming in v2".
   await expect(page.getByRole("link", { name: "Team" })).toHaveCount(0)
   await expect(page.getByText("v2", { exact: true })).toHaveCount(0)
 })
@@ -97,13 +92,9 @@ test("the desktop rail can be collapsed and expanded visibly", async ({
   ).toBeVisible()
 })
 
-// ── the two navigation bugs a later re-audit found ─────────────────────
-
 test("the dashboard rows follow the project you are looking at", async ({
   page,
 }) => {
-  // The rail used to hardcode the demo repository, so opening any other project
-  // and clicking "Dashboard" silently swapped you back to acme-payments.
   await page.goto(`/dashboard/${SECOND_REPO_ID}`)
 
   await railLink(page, "Scan History").click()
@@ -118,8 +109,6 @@ test("the dashboard rows follow the project you are looking at", async ({
 test("away from a dashboard the rows still lead somewhere", async ({
   page,
 }) => {
-  // /projects has no repository in the URL to read, so the demo id is the
-  // fallback — the rows must not go dead.
   await railLink(page, "Dashboard").click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}$`))
 })
@@ -155,8 +144,6 @@ test("below md the rail is reachable at all", async ({ page }) => {
   await page.goto("/projects")
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
 
-  // At this width the rail is a closed Sheet and Radix has not mounted its
-  // contents, so every destination is genuinely absent from the page.
   await expect(page.getByRole("link", { name: "Profiles" })).toBeHidden()
 
   await page.getByRole("button", { name: "Toggle Sidebar" }).click()

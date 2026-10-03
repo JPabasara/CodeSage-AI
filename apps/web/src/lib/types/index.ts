@@ -1,36 +1,10 @@
-// The data contract — the shapes that flow between the frontend, the mock API
-// and the real backend. Everyone imports from `@/lib/types`.
-//
-// These match the OpenAPI contract exactly: field names, required/optional and
-// nullability. The generated `./api.ts` is the authority; when the two disagree,
-// api.ts wins and this file is wrong.
-//
-// Two things to know before editing:
-//   * snake_case is the name on the wire. Do not "tidy" a field to camelCase.
-//   * `?: T | null` means the backend may omit it OR send null. Both happen, and
-//     both mean the same to the UI: render the fallback.
-//
-// React component props are internal and stay camelCase.
+// The data contract — the shapes that flow between the frontend, the mock API and the real backend.
 
 import type { components } from "./api"
 
-// ── enums ───────────────────────────────────────────────────────────────────
-
-/**
- * How bad the finding is. Assigned by the detector at scan time and stored on the
- * row, never computed here — rules carry a fixed severity, SATD findings default
- * to "medium". The client only maps this to a colour token.
- */
 export type Severity = "critical" | "high" | "medium" | "low"
 
-/**
- * Which detector produced the finding — orthogonal to `Category`, and exactly two
- * values.
- *
- * There is no `security` source: security patterns run inside the rule engine, so
- * a security finding is a `rule` finding categorised `security`. Nor an `ml-risk`
- * one — the risk model scores files, it never emits a finding.
- */
+// Which detector produced the finding — orthogonal to `Category`, and exactly two values.
 export type Source = "rule" | "satd"
 
 /** What type of debt it is — orthogonal to `Source`. Matches the dataset labels. */
@@ -39,28 +13,18 @@ export type Category =
   | "requirement" // SATD
   | "documentation" // SATD
   | "test" // SATD
-  | "security" // rule engine (security patterns: secrets, SQL concat, eval/exec)
+  | "security"
 
-/**
- * A snapshot-local workflow label. Marking a finding done only changes its
- * dashboard visibility; it never changes the stored severity, priority or score.
- */
+// A snapshot-local workflow label.
 export type FindingStatus =
   "open" | "done" | "accepted" | "resolved" | "false-positive"
 export type FindingChangeStatus = "new" | "unchanged"
 
-// A is best, E is worst.
 export type Grade = "A" | "B" | "C" | "D" | "E"
 
-// ── Errors ──────────────────────────────────────────────────────────────────
-
-/**
- * The stable, machine-readable reason a request failed. New members may be added;
- * existing members never change meaning — so it is safe to branch on.
- */
+// The stable, machine-readable reason a request failed.
 export type ErrorCode = components["schemas"]["ErrorCode"]
 
-/** The body of `POST /api/projects`. */
 export interface ConnectRepoRequest {
   url: string // a PUBLIC repository URL
 }
@@ -73,28 +37,13 @@ export interface ApiError {
   errors?: { field: string; detail: string }[] // VALIDATION_FAILED only
 }
 
-// ── Session: who is signed in (GET /api/auth/session) ───────────────────────
-
-/**
- * Only `user_id` is guaranteed. `workspace_id` is null for someone who has
- * signed in but has no workspace yet — a real authenticated state, not a
- * failure. Everything below the identifiers comes from the identity provider
- * and may be absent — render a fallback, never assume.
- */
 export interface Session {
   user_id: string
   /** Null during onboarding. Workspace-bound calls then answer 409 WORKSPACE_REQUIRED. */
   workspace_id?: string | null
-  /** True when the user must create or join a workspace before the app is usable. */
   needs_workspace_setup?: boolean
-  /** True until the first-run tour is finished or explicitly skipped. */
   product_tour_required?: boolean
   role?: Role | null
-  /**
-   * What this caller may do in the active workspace, so the UI can hide controls
-   * it would be refused anyway. A convenience, never the boundary — the API
-   * re-checks every permission on every request.
-   */
   permissions?: string[]
   email?: string | null
   name?: string | null
@@ -102,10 +51,8 @@ export interface Session {
   identity_provider?: string | null
 }
 
-// ── Finding: one row in the Refactor-First list ─────────────────────────────
-
 export interface Finding {
-  fingerprint: string // stable id across scans (deduplication + track a finding over time)
+  fingerprint: string
   source: Source
   category: Category
   severity: Severity
@@ -120,11 +67,6 @@ export interface Finding {
 
   /** Derived on this request under the active profile; the list arrives sorted by it. */
   priority: number
-  /**
-   * True when the critical-security floor is what keeps this row visible, rather
-   * than its computed priority — so the UI can explain why it is still here at
-   * the minimum security weight.
-   */
   pinned_by_floor: boolean
 
   rule_id?: string | null // rule findings: which rule fired
@@ -134,23 +76,12 @@ export interface Finding {
   confidence?: number | null // SATD findings: model confidence in the category, 0–1
 }
 
-// ── Per-file scores: power the heat map + hotspot ranking ───────────────────
-
 export interface FileScore {
   file: string
   /** Σ of the priorities of this file's open findings. Derived, never stored. */
   debt_score: number
-  /**
-   * Bug-proneness, 0–1 — a stored fact, not derived.
-   *
-   * Required but nullable, and the difference matters: `null` means never
-   * assessed, `0.0` means measured and looks safe. Render `null` as "not
-   * assessed", never as a zero-risk badge.
-   */
   risk_score: number | null
 }
-
-// ── File-tree node: heat map now; per-node Card B scope later ───────────────
 
 export interface TreeNode {
   path: string // "src/lib/api/client.ts"
@@ -162,8 +93,6 @@ export interface TreeNode {
   risk_score?: number | null // 0–1; absent when ML was unreachable (degraded mode)
   children?: TreeNode[] | null // folders only
 }
-
-// ── Repo: 1 repo = 1 project in v1 ──────────────────────────────────────────
 
 export interface Repo {
   id: string
@@ -183,8 +112,6 @@ export interface LatestHealth {
   delta: number
 }
 
-// ── Branch ──────────────────────────────────────────────────────────────────
-
 export interface Branch {
   name: string
   is_default: boolean
@@ -192,27 +119,12 @@ export interface Branch {
   head_commit_at?: string | null // ISO
 }
 
-// ── Scan lifecycle: drives the Scan button state machine ────────────────────
-
-/**
- * `idle → queued → running → done | error | cancelled`.
- *
- * `cancelled` is a distinct terminal phase, never `idle`, so a stopped scan is
- * never mistaken for one that finished or one that never ran.
- */
 export type ScanPhase =
   "idle" | "queued" | "running" | "done" | "error" | "cancelled"
 
-/**
- * Why a scan ended in `error`, when the reason is one the user can act on.
- * Absent for an unexpected failure, where `error` alone explains it.
- */
+// Why a scan ended in `error`, when the reason is one the user can act on.
 export type ScanErrorCode = components["schemas"]["ScanErrorCode"]
 
-/**
- * Which pipeline stage a running scan is in (13H.4). Each owns a band of the
- * progress bar — see `STAGE_BANDS` in `lib/scan-progress`.
- */
 export type ScanStage = components["schemas"]["ScanStage"]
 
 /** Work in progress in the active workspace (`GET /api/activity`). */
@@ -223,16 +135,13 @@ export type Rescoring = components["schemas"]["Rescoring"]
 export interface ScanStatus {
   scan_id: string
   phase: ScanPhase
-  progress: number // 0–100 (meaningful when phase === "running")
-  // All nullable in the contract, not merely absent: a queued scan has no
-  // finished_at, and the API sends null rather than omitting the key.
+  progress: number
   branch?: string | null
   commit_sha?: string | null // the commit this scan is analysing
   started_at?: string | null
   finished_at?: string | null
-  error?: string | null // present only when phase === "error"
+  error?: string | null
   error_code?: ScanErrorCode | null // ditto; the message is chosen by this
-  // 13H.4, only while running and all optional: an older API sends none.
   stage?: ScanStage | null
   files_done?: number | null // Java files read so far (reading_code only)
   files_total?: number | null
@@ -253,23 +162,17 @@ export interface ScanSummary {
   delta: number
 }
 
-// ── Trend chart point (repo scope in v1; per-node later) ────────────────────
-
 export interface HealthPoint {
   t: string // ISO timestamp of the scan/commit
   score: number
   commit_sha?: string | null
 }
 
-// ── Category pie slice (health card + category-breakdown view) ──────────────
-
 export interface CategoryBreakdownItem {
   category: Category
   count: number // number of findings in this category
   debt: number // summed debt contribution (for a debt-weighted pie)
 }
-
-// ── Scoring profile ─────────────────────────────────────────────────────────
 
 /** One weight per category — five numbers, each clamped to 0.1–3.0. */
 export interface CategoryWeights {
@@ -280,20 +183,14 @@ export interface CategoryWeights {
   test: number
 }
 
-/**
- * The body of `PUT /api/profiles/active` — the complete profile, six numbers,
- * never a delta. That is what makes the write idempotent.
- */
+// The body of `PUT /api/profiles/active` — the complete profile, six numbers, never a delta.
 export interface ApplyProfileRequest {
   name?: string | null // records which preset the values came from; omit for custom
   weights: CategoryWeights
   trust_s: number
 }
 
-/**
- * The server is the enforcement point — it clamps on write and returns what it
- * stored. These exist so the sliders cannot produce a value it would correct.
- */
+// The server is the enforcement point — it clamps on write and returns what it stored.
 export const WEIGHT_MIN = 0.1
 export const WEIGHT_MAX = 3.0
 export const TRUST_MIN = 0
@@ -301,64 +198,28 @@ export const TRUST_MAX = 1
 
 export interface ScoreProfile {
   id: string
-  name: string // "Balanced" | "Security-first" | "Delivery-speed" | a custom name
+  name: string
   weights: CategoryWeights
-  /**
-   * The trust slider `s`: `0` trusts the model, `1` trusts the rules. Scoring
-   * derives `rule_trust = 0.5 + s` and `ml_trust = 1.5 − s`.
-   *
-   * Security is fixed at 1.0, so no position of this slider de-weights it.
-   */
+  // The trust slider `s`: `0` trusts the model, `1` trusts the rules.
   trust_s: number
   include_test_findings?: boolean
   is_preset: boolean // built-ins are read-only templates that seed the sliders
-  /**
-   * Whether this is the **workspace default** — what every project without an
-   * explicit override is scored with. One row per workspace holds that pointer,
-   * keyed by workspace id, so "exactly one default" is the shape of the table.
-   */
   is_active: boolean
-  /**
-   * Projects that name this profile explicitly. The default is additionally in
-   * force for every project *without* an override, which `is_active` already
-   * says, so those are not counted here.
-   */
+  // Projects that name this profile explicitly.
   usage_count: number
-  editable: boolean // false for the three built-ins, which the database refuses to change
+  editable: boolean
 }
 
-/**
- * A workspace holds at most five custom profiles. The three built-ins do not
- * count toward it, which is why this is a limit on the custom ones alone.
- *
- * The server is the enforcement point — it refuses the sixth with
- * `PROFILE_LIMIT_REACHED`, transaction-safely. This constant only lets the UI
- * say "4 of 5" and stop offering a create it knows would be refused.
- */
+// A workspace holds at most five custom profiles.
 export const MAX_CUSTOM_PROFILES = 5
 
-/**
- * The body of `POST /api/profiles`. `name` is required, unlike on the legacy
- * apply endpoint: a profile that joins a pool has to be tellable apart from the
- * other five.
- */
 export type CreateProfileRequest = components["schemas"]["CreateProfileRequest"]
 
-/**
- * The body of `PATCH /api/profiles/{profile_id}` — only what changed. An omitted
- * field keeps its stored value, which is what makes this safe to send from a
- * form that tracks edits rather than the whole profile.
- */
 export type UpdateProfileRequest = components["schemas"]["UpdateProfileRequest"]
 
-/**
- * The body of both PUTs that choose a profile — the workspace default and a
- * project override. It carries the whole selection, never a delta, so re-sending
- * it changes nothing.
- */
+// The body of both PUTs that choose a profile — the workspace default and a project override.
 export type SelectProfileRequest = components["schemas"]["SelectProfileRequest"]
 
-/** Which profile one project is scored with, and where that came from. */
 export interface ProjectProfile {
   repo_id: string
   inherited: boolean // true when this project has no override of its own
@@ -372,8 +233,6 @@ export interface SourceScopeConfig {
   test_path_patterns: string[]
   production_path_overrides: string[]
 }
-
-// ── HealthReport: the full dashboard payload for one branch snapshot ─────────
 
 export interface FindingPage {
   items: Finding[]
@@ -403,46 +262,16 @@ export interface HealthReport {
   category_breakdown: CategoryBreakdownItem[] // the pie
 }
 
-// ── workspaces, members & roles ──────────────────────────
-//
-// These five are aliases of the generated schemas rather than re-declarations.
-// They were handwritten once, as a v1 sketch of a v2 feature, and by the time
-// the endpoints shipped the sketch was wrong in ways nothing caught: the
-// workspace had an `id` where the wire says `workspace_id`, and it carried its
-// members inline, which no response has ever done. Nothing imported them, so
-// nothing failed — the types simply sat there waiting to mislead whoever built
-// the screens.
-//
-// Aliasing removes that failure mode entirely. There is one definition, it is
-// generated from the contract, and it cannot drift.
-
 /** Who someone is in a workspace. Grants come from the permission matrix. */
 export type Role = components["schemas"]["Role"]
 
-/**
- * One workspace as the switcher and the Workspace screen need it.
- *
- * `project_count` and `member_count` are derived by the API on read, not stored,
- * so they are always current. `is_active` marks the one this session is bound
- * to — exactly one at most, and none at all during onboarding.
- */
 export type Workspace = components["schemas"]["WorkspaceSummary"]
 
-/**
- * The body of `POST /api/auth/workspaces`. Only the name is required — a
- * workspace is identified by what the team calls it, and the rest is decoration
- * the Workspace screen can fill in later.
- */
+// The body of `POST /api/auth/workspaces`.
 export type CreateWorkspaceRequest =
   components["schemas"]["CreateWorkspaceRequest"]
 
-/**
- * The body of `PATCH /api/auth/workspaces/{id}` — only what changed.
- *
- * Omitting `description` leaves it alone; sending `null` clears it. Those are
- * different intentions and the contract keeps them different, so the form has to
- * as well.
- */
+// The body of `PATCH /api/auth/workspaces/{id}` — only what changed.
 export type UpdateWorkspaceRequest =
   components["schemas"]["UpdateWorkspaceRequest"]
 
@@ -450,21 +279,16 @@ export type UpdateWorkspaceRequest =
 export type DeleteWorkspaceRequest =
   components["schemas"]["DeleteWorkspaceRequest"]
 
-/** An existing member. `status` distinguishes active from deactivated. */
 export type Member = components["schemas"]["Member"]
 
-/** An invitation that has been sent but not yet accepted. */
 export type Invitation = components["schemas"]["Invitation"]
 
-/** What `GET /api/members` returns: both lists, in one response. */
 export type MemberList = components["schemas"]["MemberList"]
 
 /** The body of `POST /api/invitations`. The role is stored on the invitation. */
 export type CreateInvitationRequest =
   components["schemas"]["CreateInvitationRequest"]
 
-/** A new invitation, plus the one-time link the email carries — for copying. */
 export type CreatedInvitation = components["schemas"]["CreatedInvitation"]
 
-/** What accepting an invitation activates: a membership, in one workspace. */
 export type AcceptedInvitation = components["schemas"]["AcceptedInvitation"]

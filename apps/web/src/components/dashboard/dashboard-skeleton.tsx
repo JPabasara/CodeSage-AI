@@ -3,11 +3,6 @@ import type { ReactNode } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
-/**
- * The dashboard's grid, shared by the loaded page and its skeleton so the two
- * cannot drift apart: a wide left column (health, trend, then the ranked list)
- * and the file tree on the right. Below `lg` it is one column that scrolls.
- */
 export const DASHBOARD_GRID =
   "grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.18fr)_minmax(19rem,0.82fr)] lg:overflow-hidden"
 export const DASHBOARD_MAIN_COLUMN =
@@ -138,14 +133,6 @@ function TreeSkeleton() {
   )
 }
 
-/**
- * The loading dashboard, in the shape of the loaded one: health and trend
- * cards on top, the ranked list below them, the file tree on the right. The
- * page fills in place rather than jumping from two grey blocks to a layout.
- *
- * `notice` takes the health card's slot — "Calculating your health score…"
- * sits exactly where the score is about to appear.
- */
 export function DashboardSkeleton({
   notice,
 }: Readonly<{ notice?: ReactNode }>) {

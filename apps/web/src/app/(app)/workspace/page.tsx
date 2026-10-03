@@ -61,14 +61,7 @@ const LAYOUT = {
   settings: "flex w-full shrink-0 flex-col gap-8 lg:w-80 xl:w-96",
 } as const
 
-/**
- * One page for "this workspace": who is in it, and what it is called.
- *
- * Membership and settings are different permissions (`member:manage` and
- * `workspace:update`), so each column shows only the controls its own
- * permission grants. The old `?tab=team` address still lands here — the team is
- * the first column, so there is nothing left to switch to.
- */
+// One page for "this workspace": who is in it, and what it is called.
 export default function WorkspacePage() {
   const router = useRouter()
   const members = useMembers()

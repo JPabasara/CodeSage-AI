@@ -57,9 +57,7 @@
 }
 
 :root {
-  /* Phase 13F: a neutral grey base with one accent, mint. Text is a deep
-     slate rather than black, and borders are hairlines — the contrast comes
-     from hierarchy, not from ink. */
+  /* Neutral grey base with a mint accent. */
   --background: oklch(0.99 0.002 255);
   --foreground: oklch(0.27 0.012 255);
   --card: oklch(1 0 0);
@@ -75,8 +73,7 @@
   --accent: oklch(0.956 0.02 160);
   --accent-foreground: oklch(0.32 0.05 160);
   --destructive: oklch(0.56 0.2 25);
-  /* Solid fill for destructive buttons: white text on it clears 4.5:1 in both
-     themes, which the lighter dark-mode --destructive would not. */
+  /* Solid fill keeps destructive text legible. */
   --destructive-solid: oklch(0.55 0.2 26);
   --border: oklch(0.92 0.004 255);
   --input: oklch(0.9 0.005 255);
@@ -88,8 +85,7 @@
   --chart-5: oklch(0.6 0.1 200);
   --radius: 0.375rem;
   --sidebar: oklch(0.984 0.002 255);
-  /* The app bar: deep mint, white text, in both themes (Phase 13C). Darker
-     than any health colour, so it never reads as a score. */
+  /* Keep the app bar distinct from health colours. */
   --topbar: oklch(46.57% 0.08805 166.97);
   --topbar-foreground: oklch(0.99 0.004 165);
   --sidebar-foreground: oklch(0.32 0.012 255);
@@ -119,8 +115,7 @@
 }
 
 .dark {
-  /* A soft dark ground, not black; cards one step lighter; text an off-white
-     so a page of it does not glare. */
+  /* Soft dark surfaces reduce glare. */
   --background: oklch(0.17 0.006 255);
   --foreground: oklch(0.9 0.006 255);
   --card: oklch(0.205 0.006 255);
@@ -162,18 +157,7 @@
   --category-test: #34d399;
   --category-documentation: #fbbf24;
   --category-requirement: #f472b6;
-  /*
-    severity and health, restated for a dark ground.
-
-    These were defined under :root only, so before this they kept their light
-    values in dark mode — and a 600-weight red chosen to read on white sinks
-    into a near-black background. Every value here is the 400-weight of the same
-    hue: same meaning, same order, lifted until it reads.
-
-    The pairs are deliberate and must stay paired: health-bad IS critical and
-    health-mid IS medium, so a file tinted "bad" and a badge marked "critical"
-    can never drift apart.
-  */
+  /* Dark-mode values preserve the same status meanings. */
   --severity-critical: 0 91% 71%; /* red    */
   --severity-high: 27 96% 61%; /* orange */
   --severity-medium: 43 96% 56%; /* amber  */
@@ -189,8 +173,7 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Scores, counts and times line up in every column and never shift as they
-       change (13F). Geist's tabular figures read fine in running text too. */
+    /* Keep changing numbers aligned. */
     font-variant-numeric: tabular-nums;
   }
   html {
@@ -209,9 +192,7 @@
   }
 }
 
-/* Scan feedback (Phase 13E): the strip's sweep while there is no percentage,
-   and the brief highlight on a health score that just changed. Both are only
-   used behind `motion-safe:`. */
+/* Motion-safe feedback for scan progress and score updates. */
 @keyframes scan-sweep {
   from {
     transform: translateX(-100%);
@@ -230,7 +211,7 @@
   }
 }
 
-/* The scan panel (13H.4): a breathing ring, a stage icon that pops in and a friendly line that fades in. All behind `motion-safe:`. */
+/* Motion-safe animations for the scan panel. */
 @keyframes panel-breathe {
   0%,
   100% {

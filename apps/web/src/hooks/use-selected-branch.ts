@@ -3,14 +3,6 @@
 import { useCallback, useSyncExternalStore } from "react"
 
 // The branch last looked at, remembered per project.
-//
-// Keyed by workspace AND repository: a branch name means nothing outside its
-// repository, and the same repository id never appears in two workspaces, but
-// keying by both keeps a switch from ever reading the other workspace's choice.
-//
-// The URL still wins. This only fills in when a dashboard is opened without a
-// `?branch=` — from the rail, the project picker, a workspace switch — so the
-// user lands on the branch they left rather than the default one.
 
 export const SELECTED_BRANCH_KEY = "codesage.selectedBranch.v1"
 const SELECTED_BRANCH_EVENT = "codesage:selected-branch"

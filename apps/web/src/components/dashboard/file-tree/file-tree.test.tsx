@@ -74,8 +74,6 @@ test("selecting a file without a finding calls the feedback path", async () => {
   )
 })
 
-// Detail mode must reveal the finding's file: tinting a row inside a folder the
-// user collapsed earlier would highlight something invisible.
 test("a selected file re-opens the folders that hide it", async () => {
   const { rerender } = render(
     <FileTree nodes={mockTree} colorFor={() => "red"} />,

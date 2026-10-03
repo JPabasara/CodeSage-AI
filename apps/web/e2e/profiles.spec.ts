@@ -1,13 +1,5 @@
 import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 
-// The profiles journey: author a profile, choose what it applies to, and prove
-// the two scopes stay separate — a workspace default every project inherits, and
-// one project's own override that leaves the others alone.
-//
-// The negative half matters as much: a profile change writes no snapshot and
-// starts no scan, and the only way to prove a negative like that is to watch the
-// network and assert the request never happened.
-
 /** Count the requests a journey makes, so "nothing was scanned" is checkable. */
 function watchRequests(page: import("@playwright/test").Page) {
   const seen: string[] = []
@@ -73,7 +65,6 @@ test("the pool opens on the three built-ins, with Balanced the default", async (
   await expect(page.getByTestId("workspace-default-name")).toHaveText(
     "Balanced",
   )
-  // Built-ins do not count toward the five-custom limit.
   await expect(page.getByTestId("custom-count")).toHaveText("0 of 5")
 })
 
@@ -118,8 +109,6 @@ test("a custom profile is created, edited, and made the workspace default", asyn
   const requests = watchRequests(page)
   await createProfile(page, "Release gate")
 
-  // Created, but not in force: authoring a profile and choosing the one that
-  // applies are separate, deliberate acts.
   await expect(page.getByTestId("workspace-default-name")).toHaveText(
     "Balanced",
   )
@@ -145,7 +134,6 @@ test("a custom profile is created, edited, and made the workspace default", asyn
   await expect(
     card(page, "Balanced").getByText("Default", { exact: true }),
   ).toHaveCount(0)
-  // None of it read a line of code.
   expect(requests.scans()).toHaveLength(0)
 })
 
@@ -157,8 +145,6 @@ test("out-of-range values come back clamped, and the sliders adopt what was stor
 
   const slider = page.getByRole("slider", { name: "Security weight" })
   await slider.focus()
-  // Drive it past the 3.0 maximum; the client clamp holds it at the bound and
-  // the server would clamp it again anyway — the server is the enforcement point.
   for (let i = 0; i < 40; i++) await slider.press("ArrowRight")
   await page.getByRole("button", { name: "Save changes" }).click()
 
@@ -236,14 +222,11 @@ test("one project's override leaves every other project inheriting", async ({
   await expect(scope(page, /acme-payments/)).toContainText("Security-first")
   await expect(scope(page, /web-store/)).toContainText("Inherited")
 
-  // The second project is untouched by the first one's choice.
   await scope(page, /web-store/).click()
   await expect(page.getByTestId("effective-summary")).toContainText(
     "Balanced, inherited from the workspace default",
   )
 
-  // And the dashboards agree: the overridden project is scored with
-  // Security-first, its neighbour with the default.
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("36/100")).toBeVisible()
   await page.goto(`/dashboard/${SECOND_REPO_ID}`)
@@ -335,7 +318,6 @@ test("a profile change re-ranks the dashboard with no re-scan (FR-21)", async ({
   const after = await rankings()
   expect(after.sqlInjection).toBeLessThan(after.longFile)
 
-  // …and so does the health score.
   await expect(page.getByText("36/100")).toBeVisible()
   await expect(page.getByText("72/100")).toHaveCount(0)
 
@@ -361,8 +343,6 @@ test("the trust slider cannot de-weight a security finding (FR-24)", async ({
   )
 
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  // source_trust is pinned at 1.0 for the security category, so no position of
-  // this slider can push the critical secret off the top of the list.
   await expect(findingCards(page).first()).toContainText(/hardcoded/i)
 })
 
@@ -390,7 +370,6 @@ test("a read-only role sees the pool and no way to change it", async ({
   await expect(
     page.getByRole("button", { name: /set as workspace default/i }),
   ).toBeDisabled()
-  // Destructive and editing actions are not offered at all.
   await expect(page.getByRole("button", { name: /^Duplicate/ })).toHaveCount(0)
   // Readable, not operable: the numbers are still on screen.
   await expect(

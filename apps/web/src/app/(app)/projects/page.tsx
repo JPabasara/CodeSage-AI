@@ -39,14 +39,10 @@ import { useSession } from "@/hooks/use-session"
 import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
 
 export default function ProjectsPage() {
-  // Project writes update every mounted consumer through useProjects; `refetch`
-  // remains the loud Retry path that returns this screen to its skeletons.
   const { data: repos, loading, error, refetch } = useProjects()
   const { data: session } = useSession()
   const { data: workspaces } = useWorkspaces()
   const activeWorkspace = useActiveWorkspace(workspaces)
-  // Which controls to offer. Hiding one the API would refuse is a courtesy; the
-  // API re-checks every request either way.
   const canConnect =
     session?.permissions?.includes("repository:connect") ?? false
   const canDisconnect =
@@ -58,9 +54,7 @@ export default function ProjectsPage() {
   const { selectedProjectId, selectProject, clearProject } = useSelectedProject(
     {
       availableRepoIds: repos?.map((repo) => repo.id),
-      // This screen has an intentional "None" state after the active repository
-      // is removed. Re-selecting the first stale list item would write the deleted
-      // repository straight back to localStorage before reload() finishes.
+      // This screen has an intentional "None" state after the active repository is removed.
       fallbackToFirstAvailable: false,
     },
   )
@@ -128,9 +122,6 @@ export default function ProjectsPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-4 sm:p-6">
       <PageHeader
         title="Projects"
-        // The workspace name, not the word "Workspace": the same three
-        // repositories mean something different depending on which one you
-        // are standing in.
         context={
           <span className="truncate">
             {activeWorkspace?.name ?? "Workspace"}
@@ -171,9 +162,6 @@ export default function ProjectsPage() {
         }
       />
 
-      {/* One form for every role, so the page reads the same for all of them;
-          a role without repository:connect gets it disabled, with the reason
-          on the button. The API re-checks every request either way. */}
       <ConnectRepo
         className="mx-auto w-full max-w-2xl"
         onConnect={onConnect}
@@ -186,8 +174,6 @@ export default function ProjectsPage() {
       <section className="space-y-3" data-tour="project-list">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 className="text-[15px] font-semibold">Connected repositories</h2>
-          {/* Hidden only once the list is known to be empty — the empty state
-              says what to do instead — so loading does not shift the header. */}
           {repos?.length !== 0 ? (
             <p className="text-sm text-muted-foreground">
               Open the dashboard or scan history for the repository you want to

@@ -76,8 +76,7 @@ test("handles unavailable storage without throwing", () => {
 test("without a workspace nothing is stored, and the caller still gets its id", () => {
   const store = memoryStorage()
 
-  // Onboarding: authenticated, no workspace. There is nothing to key a choice
-  // by, so the choice is simply not remembered — not stored under a wrong key.
+  // Onboarding: authenticated, no workspace.
   expect(writeSelectedProjectId(FIRST_REPO_ID, null, store)).toBe(FIRST_REPO_ID)
   expect(store.getItem(SELECTED_PROJECT_KEY)).toBeNull()
 })
@@ -102,8 +101,6 @@ test("corrupt storage reads as no preference rather than throwing", () => {
   expect(readSelectedProjectId(WORKSPACE_ID, store)).toBeUndefined()
 })
 
-// ── migrating the pre-workspace key ─────────────────────────────────────────
-
 test("a legacy selection moves under the workspace that actually has it", () => {
   const store = memoryStorage()
   store.setItem(LEGACY_SELECTED_PROJECT_KEY, FIRST_REPO_ID)
@@ -121,8 +118,6 @@ test("a legacy selection from another workspace is dropped, not adopted", () => 
 
   migrateLegacySelection(WORKSPACE_ID, [FIRST_REPO_ID], store)
 
-  // Adopting it would hand one workspace a project from another, which is the
-  // bug the key change exists to prevent.
   expect(readSelectedProjectId(WORKSPACE_ID, store)).toBeUndefined()
   expect(store.getItem(LEGACY_SELECTED_PROJECT_KEY)).toBeNull()
 })
@@ -146,8 +141,6 @@ test("a choice already made under the new key wins over the legacy one", () => {
 
   expect(readSelectedProjectId(WORKSPACE_ID, store)).toBe(SECOND_REPO_ID)
 })
-
-// ── resolution ──────────────────────────────────────────────────────────────
 
 test("reads the repo id from dashboard and history paths", () => {
   expect(repoIdFromDashboardPath(`/dashboard/${FIRST_REPO_ID}`)).toBe(

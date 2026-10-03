@@ -20,7 +20,7 @@ CREATE ROLE codesage_app WITH LOGIN PASSWORD 'devpassword'
 **PostgreSQL Row-Level Security is silently bypassed by superusers and by the owner of the table.**
 If the application connected as `postgres`, or as the role that created the tables, every policy
 would be ignored, every cross-tenant query would succeed — and it would all look perfect in
-development. The isolation SRS DBR-3 requires would exist only on paper.
+development. The intended tenant isolation would otherwise exist only on paper.
 
 | Role | Can | Used by |
 |---|---|---|
@@ -46,7 +46,7 @@ CREATE POLICY tenant_isolation ON <t> USING (<predicate>);
 
 **`FORCE` is the line that matters** — `ENABLE` alone still exempts the table's owner.
 
-The predicate is `workspace_id = app_current_workspace_id()` on the five tables that carry a
+The predicate is `workspace_id = app_current_workspace_id()` on the tables that carry a
 workspace directly, and an `EXISTS` join back up to `repository` on the deeper ones. A snapshot has
 no `workspace_id` of its own; its tenancy is inherited through the chain, and the policy says so
 rather than trusting the application to remember.
@@ -76,7 +76,7 @@ docker compose exec postgres psql -U codesage_owner codesage
 ```
 
 ```sql
-\dt                                          -- 27 tables after migration
+\dt                                          -- the tables after migration
 SELECT relname, relrowsecurity, relforcerowsecurity
   FROM pg_class WHERE relrowsecurity;        -- RLS on, and FORCEd
 SELECT tablename, policyname FROM pg_policies;
@@ -85,7 +85,7 @@ SELECT tablename, policyname FROM pg_policies;
 ## Production
 
 **This file never runs on Neon.** Neon gives you `neondb_owner`; `codesage_app` was created there
-**by hand** during Phase 1, and the grants applied manually. The two-role split is identical; only
+**by hand** during setup, and the grants applied manually. The two-role split is identical; only
 the bootstrap differs. If the Neon database is ever recreated, that hand-work must be repeated — it
 is not automated anywhere.
 
@@ -93,5 +93,5 @@ is not automated anywhere.
 
 `tests/integration/test_rls.py` spins up a throwaway Postgres, runs the real migrations, and connects
 as a non-owner role that is `GRANT`ed membership in `codesage_app` — so it inherits exactly what the
-migration grants, rather than keeping a copy that drifts. **8 passing.** They spent a week silently
-skipping because a broken migration chain made the fixture give up; see the deployment log.
+migration grants, rather than keeping a copy that drifts. CI runs these 8 tests, together with the
+database constraint tests, as a separate step before the main suite.

@@ -300,8 +300,6 @@ test("all-done snapshots explain why the list is empty", async () => {
   expect(screen.getByText("critical one")).toBeInTheDocument()
 })
 
-// ── source and severity filters (13F) ──────────────────────────────────────
-
 const mixed: Finding[] = [
   ...findings,
   {

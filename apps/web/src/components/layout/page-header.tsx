@@ -1,13 +1,6 @@
 import { cn } from "@/lib/utils"
 
-/**
- * The one page heading: a title on the page itself, not inside a card.
- *
- * `context` sits right after the title in quieter text — the project a page is
- * about, say — so it reads as part of the heading rather than a second one.
- * `aside` holds what belongs beside the heading: a few figures, or the page's
- * main action.
- */
+// The one page heading: a title on the page itself, not inside a card.
 export function PageHeader({
   title,
   context,

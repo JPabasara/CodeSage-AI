@@ -70,8 +70,6 @@ export function DeleteWorkspaceSection({
       reset()
       onDeleted()
     } catch (caught) {
-      // Keep the dialog and the typed name in place so a scan conflict can be
-      // resolved without making the org-admin repeat the confirmation.
       setError(deletionError(caught))
     } finally {
       setBusy(false)

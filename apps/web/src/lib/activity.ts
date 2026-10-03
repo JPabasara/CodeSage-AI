@@ -1,6 +1,3 @@
-// What the Activity menu lists: the jobs this tab follows (with their live
-// bar), plus everything else the server says is running in the workspace.
-// Kept pure, so the de-duplication rules are tested without a DOM.
 import type { TrackedScan } from "@/hooks/use-scan-center"
 import type { Activity, ScanStatus } from "@/lib/types"
 
@@ -27,11 +24,6 @@ export type ActivityItem =
 
 const inProgress = (scan: TrackedScan) => scan.job !== "ready"
 
-/**
- * One list, no duplicates: a scan this tab follows is shown once, with its
- * live bar; and a project's re-scoring is not listed while this tab follows a
- * job on it — that job's own "calculating" stage already says so.
- */
 export function activityItems(
   tracked: readonly TrackedScan[],
   server: Activity | undefined,
@@ -78,7 +70,6 @@ export function busyCount(items: readonly ActivityItem[]) {
     .length
 }
 
-/** How many jobs are ready and waiting for a look. */
 export function readyCount(items: readonly ActivityItem[]) {
   return items.filter((item) => item.kind === "job" && !inProgress(item.scan))
     .length

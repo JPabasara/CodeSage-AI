@@ -58,8 +58,6 @@ test("shows a named empty state naming what is empty and the next action when th
   ).toBeInTheDocument()
 })
 
-// ── latest health, delete (13F) ────────────────────────────────────────────
-
 const withHealth = (score: number, delta: number) => [
   {
     ...mockRepos[0],

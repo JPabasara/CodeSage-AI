@@ -4,12 +4,7 @@ import { test as signedOut } from "@playwright/test"
 
 import { DEMO_REPO_ID, expect, test as signedIn } from "./session"
 
-// Rules that belong to other open issues, each named with its owner. A suite
-// that is red for a known reason stops being read at all. `keyboard.spec.ts`
-// keeps the same list, for the same reason.
-//
-// `landmark-one-main` is deliberately absent: #140 fixed the duplicate <main>,
-// so the rule now passes and stays on.
+// Rules that belong to other open issues, each named with its owner.
 const OWNED_BY_OTHER_ISSUES = [
   "color-contrast", // #114 - contrast and colour-only meaning
   "region", // the rail header and footer still sit outside any landmark
@@ -22,8 +17,7 @@ const findingCards = (page: Page) =>
     .getByRole("button")
 
 async function checkAxe(page: Page, contextName: string) {
-  // Next streams the route's <title> in after the body. Checking before it
-  // lands reports a missing title that no user ever sees.
+  // Next streams the route's <title> in after the body.
   await expect(page).toHaveTitle(/\S/)
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -145,9 +139,6 @@ signedIn(
   },
 )
 
-// `SidebarInset` used to render a second <main>, which is why
-// `landmark-one-main` sits in LANDMARK_RULES above. That rule is best-practice,
-// so the wcag tags never ran it - this asserts the shape directly instead.
 signedIn(
   "every app page has exactly one main landmark (#140)",
   async ({ page }) => {
@@ -163,8 +154,6 @@ signedIn(
   },
 )
 
-// 13H.4: the scan panel is on screen for a few seconds per scan — long enough
-// to be read, so long enough to be checked.
 for (const theme of ["light", "dark"] as const) {
   signedIn(
     `0 axe violations on the scan panel in ${theme} mode`,

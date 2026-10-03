@@ -40,34 +40,16 @@ export type SnapshotNavigation = {
 export type DashboardTopNavProps = {
   repoName: string
   branches: Branch[]
-  /**
-   * The branch list has answered. With it, an empty list reads "No branches"
-   * rather than "Loading branches…" forever. Omitted, an empty list is taken
-   * to be still loading.
-   */
   branchesLoaded?: boolean
   activeBranch: string
   onBranchChange: (branch: string) => void
-  /**
-   * Snapshot metadata, absent until the branch has been scanned once.
-   *
-   * The nav renders above the report, so it has to survive having no report at
-   * all. A freshly connected repository has no commit and no scan time.
-   */
+  // Snapshot metadata, absent until the branch has been scanned once.
   lastCommitSha?: string
   scannedAt?: string
-  /**
-   * The report is still on its way. The snapshot facts are left out rather
-   * than saying "No commit yet" about a branch that has one.
-   */
   snapshotLoading?: boolean
   scan: ScanControlProps
   snapshotNavigation?: SnapshotNavigation
-  /**
-   * The profile these numbers were scored with. Every score — this one and
-   * every older scan's — is weighed under the profile in force now, so the
-   * page says which one that is.
-   */
+  // The profile these numbers were scored with.
   profileName?: string
 }
 
@@ -84,13 +66,7 @@ export function DashboardTopNav({
   snapshotNavigation,
   profileName,
 }: Readonly<DashboardTopNavProps>) {
-  // The branch list loads on its own clock, and its Select is not rendered
-  // until it has landed.
-  //
-  // Not merely disabled: a Radix Select that starts with no value and acquires
-  // one has switched from uncontrolled to controlled, which React warns about
-  // and which drops a selection made in between. A placeholder that becomes the
-  // real control is honest about the same thing and cannot lose anything.
+  // The branch list loads on its own clock, and its Select is not rendered until it has landed.
   const branchesReady = branches.length > 0 && Boolean(activeBranch)
   const formattedScanTime = scannedAt
     ? new Date(scannedAt).toLocaleString(undefined, {
@@ -101,13 +77,8 @@ export function DashboardTopNav({
   const barButton =
     "text-topbar-foreground hover:bg-white/10 hover:text-topbar-foreground disabled:opacity-40 dark:hover:bg-white/10"
 
-  // No second header row: everything the dashboard used to put in its own bar
-  // now lives in the app bar, beside the project it belongs to. The state stays
-  // here; the portals only decide where it is drawn.
   return (
     <>
-      {/* The project picker already names the repository on screen; the page
-          still needs its heading for screen readers. */}
       <h1 className="sr-only">{repoName}</h1>
 
       <TopBarPortal name="context">
@@ -195,8 +166,7 @@ export function DashboardTopNav({
       <TopBarPortal name="actions">
         {snapshotNavigation ? (
           <div
-            // Phones keep the bar for the workspace name; older scans are one
-            // tap away in Scan History there.
+            // Phones keep the bar for the workspace name; older scans are one tap away in Scan History there.
             className="hidden items-center text-topbar-foreground md:flex"
             aria-label="Scan snapshot navigation"
           >

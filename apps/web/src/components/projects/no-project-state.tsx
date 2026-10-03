@@ -35,17 +35,10 @@ const COPY: Record<
   },
 }
 
-/** The one reason a role cannot connect, said where the button is. */
 export const CONNECT_LOCKED_REASON =
   "Only org-admins and managers can connect repositories"
 
-/**
- * A workspace with no repositories yet, on a page that is about one.
- *
- * Not an error. One sentence on what will be here, and the way to get there. A
- * role that cannot connect sees the button disabled with the reason, rather
- * than a button that fails or no way forward at all.
- */
+// A workspace with no repositories yet, on a page that is about one.
 export function NoProjectState({
   page,
   compact = false,
@@ -91,8 +84,7 @@ export function NoProjectState({
               </Link>
             </Button>
           ) : (
-            // A disabled button takes no pointer or focus, so the caption hangs
-            // on a focusable wrapper instead.
+            // A disabled button takes no pointer or focus, so the caption hangs on a focusable wrapper instead.
             <Tooltip>
               <TooltipTrigger asChild>
                 <span

@@ -8,8 +8,8 @@ that crosses the browser/backend boundary (SRS SP-4, SRS Appendix B).
 | Side | How |
 |---|---|
 | **Frontend** | `apps/web/src/lib/types/api.ts` is **generated** from this file. Never hand-edit it. |
-| **Backend** | Pydantic models must match. CI diffs FastAPI's `/openapi.json` against this file. |
-| **Mocks** | MSW handlers should be validated against these schemas so the fake backend cannot lie. |
+| **Backend** | Pydantic models must match. `apps/api/tests/unit/schemas/test_contract.py` checks that the app serves every endpoint in this file. |
+| **Mocks** | MSW handlers are typed with the generated schemas, so the fake backend cannot return a shape the real one could not. |
 
 ## Regenerating the frontend types
 
@@ -23,8 +23,9 @@ that no longer agrees with the contract — which is the whole point: a backend 
 change the frontend has not absorbed becomes a **compile error**, not a runtime
 surprise at the demo.
 
-`pnpm gen:types:check` generates to nowhere and is the CI-friendly form — it fails if
-the contract is invalid without writing anything.
+`pnpm gen:types:check` regenerates in memory and compares the result with the
+committed `api.ts`. CI runs it on every push, so the contract and the frontend types
+cannot drift apart unnoticed.
 
 ### Using the generated types
 
@@ -48,7 +49,7 @@ python -c "from openapi_spec_validator import validate; from openapi_spec_valida
 
 ## The conventions it encodes
 
-All of these are settled decisions — see [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md).
+All of these are settled decisions.
 
 | Convention | Detail |
 |---|---|
@@ -84,14 +85,13 @@ row's purpose:
 
 | v1.0 path | v1.0 purpose | Actually belongs to |
 |---|---|---|
-| `GET /api/auth/github` | Begin sign-in | ✅ correct |
+| `GET /api/auth/github` | Begin sign-in | correct |
 | `GET /api/auth/github/login` | "GitHub's redirect target…" | the callback |
 | `GET /api/auth/github/callback` | "Return the signed-in user…" | the session endpoint |
 | `POST /api/auth/session` | "End the session…" | logout |
 
-`apps/api/.../routers/auth.py` reproduces the **same** off-by-one, because it was
-implemented faithfully from the table. That is a documentation bug that became a code
-bug — worth remembering next time a table looks slightly wrong.
+The first backend implementation reproduced the same off-by-one, because it was built
+faithfully from the table. It has since been corrected to the contract.
 
 **2. The auth paths are provider-neutral.** `/api/auth/login`, `/api/auth/callback`,
 `/api/auth/session`, `/api/auth/logout` — no `/github/` segment, because which
@@ -106,14 +106,14 @@ product surface.
 Path parameters are **snake_case** on both sides now (`{repo_id}`), matching every
 other field name on the wire.
 
-## What the backend still has to do
+## Implementation status
 
-The contract is finished; the implementation is not. Until these land, the contract
-describes an API that does not yet enforce itself:
+The backend enforces the contract:
 
 - session-cookie authentication, with only `/auth/login`, `/auth/callback` and
   `/healthz` public (`security: []` in the spec marks exactly those three)
-- `{ detail, code }` on every error, with `code` drawn from the `ErrorCode` enum
-- snake_case responses — the Pydantic base still converts to camelCase
+- `{ detail, code, errors[] }` on every error, with `code` drawn from the `ErrorCode` enum
+- snake_case field names on the wire
 
-Steps 3a to 3f of [the work plan and locked decisions](../Project%20Management%20&%20Planning/work-plan-and-locked-decisions-after-progress-eval.md) cover all of it.
+The full endpoint reference is in [ENDPOINTS_README.md](ENDPOINTS_README.md), and a
+rendered view of the contract is in [openapi.html](openapi.html).

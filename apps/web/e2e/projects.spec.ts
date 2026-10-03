@@ -5,13 +5,7 @@ import { DEMO_REPO_ID, SECOND_REPO_ID, test, expect } from "./session"
 const SELECTED_PROJECT_KEY = "codesage.selectedProjectId.v2"
 const WORKSPACE_ID = "1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7"
 
-/**
- * The project this workspace is on, out of storage.
- *
- * The value is a map of workspace id to repository id: one selection per
- * workspace, so switching cannot carry the previous workspace's project — and
- * cannot open it, which before tenant isolation was a cross-workspace read.
- */
+// The project this workspace is on, out of storage.
 const storedProject = (page: import("@playwright/test").Page) =>
   page.evaluate(
     ([key, workspaceId]) => {
@@ -27,11 +21,6 @@ const storedProject = (page: import("@playwright/test").Page) =>
   )
 
 // Connect a repository, and the four ways it can fail.
-//
-// Each failure has its own `code` precisely because each is a different thing
-// for the user to do about it. A bare "400 Bad Request" leaves someone who
-// pasted their own private repository with no idea what went wrong, so these
-// assert the message, not the status.
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/projects")
@@ -42,15 +31,7 @@ test.beforeEach(async ({ page }) => {
   ).toBeVisible()
 })
 
-/**
- * The repository rows, and ONLY those.
- *
- * A bare `getByRole("listitem")` also matches the toast surface, whose <li>
- * reads "Connected octocat/Hello-World" — which contains the repository name a
- * filter is looking for. That made the connect test pass or fail on timing: fast
- * enough and only the toast existed, so the assertion matched the toast and
- * never checked the list at all.
- */
+// The repository rows, and ONLY those.
 const repoRows = (page: import("@playwright/test").Page) =>
   page
     .getByRole("list", { name: /connected repositories/i })
@@ -60,7 +41,6 @@ const repoRows = (page: import("@playwright/test").Page) =>
 const connectForm = (page: import("@playwright/test").Page) =>
   page.getByRole("region", { name: /connect a github repository/i })
 
-/** The connect form: type a URL, press Connect. */
 async function connect(page: import("@playwright/test").Page, url: string) {
   await page.getByLabel(/repository url/i).fill(url)
   await page.getByRole("button", { name: /^connect repository$/i }).click()
@@ -83,8 +63,6 @@ test("the list shows each repository with its visibility and health hint", async
   // Grade + score + signed delta, from the DERIVED latest_health hint.
   await expect(payments.getByText(/\b72\/100\b/)).toBeVisible()
 
-  // Visibility is recorded and displayed even though connecting a private
-  // repository is v2 — so a private row must render.
   const octo = repoRows(page).filter({ hasText: "octo-cli" })
   await expect(octo.getByText("private")).toBeVisible()
 })
@@ -93,8 +71,6 @@ test("a repository that was never scanned says so, instead of showing a zero", a
   page,
 }) => {
   const octo = repoRows(page).filter({ hasText: "octo-cli" })
-  // `latest_health` is ABSENT, not zero. "Not scanned yet" and "scored 0" are
-  // completely different facts and the list has to tell them apart.
   await expect(octo.getByText(/not scanned yet/i)).toBeVisible()
   await expect(octo.getByText("/100")).toHaveCount(0)
 })
@@ -127,9 +103,7 @@ test("each connect failure explains itself in its own words", async ({
 
   for (const [url, message] of cases) {
     await connect(page, url)
-    // Asserted under the URL field (13H.1): the toast says the same thing but
-    // is gone in seconds. `fill` replaces the kept URL, and a new submit
-    // replaces the previous refusal, so a stale message cannot pass the check.
+    // Asserted under the URL field (13H.1): the toast says the same thing but is gone in seconds.
     await expect(connectForm(page).getByRole("alert"), url).toHaveText(message)
   }
 })
@@ -169,9 +143,6 @@ test("the repo id in the URL is the contract's uuid, not a slug", async ({
     .getByRole("link", { name: /go to dashboard/i })
     .click()
 
-  // `Repo.id` is `format: uuid`. Slug ids used to hide a class of bug here —
-  // routing, id comparison and URL building all behave differently for an
-  // opaque 36-character string than for a friendly word.
   await expect(page).toHaveURL(
     /\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
   )
@@ -179,7 +150,6 @@ test("the repo id in the URL is the contract's uuid, not a slug", async ({
 
 test("the rail's fallback demo id matches the fixture", () => {
   // Two copies of a UUID, edited in one place, is a silent 404 on the demo path.
-  // This guard is cheap and it fails the moment they diverge.
   const demo = readFileSync("src/lib/demo.ts", "utf8")
   expect(demo).toContain(DEMO_REPO_ID)
 })

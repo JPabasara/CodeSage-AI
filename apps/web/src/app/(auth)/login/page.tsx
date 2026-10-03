@@ -13,11 +13,7 @@ export const metadata: Metadata = {
     "CodeSage AI ranks technical debt by bug risk, churn, severity, and team scoring priorities.",
 }
 
-/**
- * The one entry screen. `/` redirects here, so a visitor is one click from
- * Asgardeo. It is deliberately not skipped: sign-out lands here, and sending
- * this page straight on to Asgardeo would sign a user silently back in.
- */
+// The one entry screen. `/` redirects here, so a visitor is one click from Asgardeo.
 export default async function LoginPage({
   searchParams,
 }: Readonly<{
@@ -45,8 +41,7 @@ export default async function LoginPage({
             />
           </div>
 
-          {/* The dashboard in miniature, dark like this panel: hover it, but
-              it goes nowhere until you sign in. */}
+          {/* The dashboard in miniature, dark like this panel: hover it, but it goes nowhere until you sign in. */}
           <div className="relative z-10 my-10">
             <LoginPreview />
           </div>

@@ -33,22 +33,14 @@ export type OverallHealthCardProps = {
   delta: number
   redIssueCount: number
   categoryBreakdown: CategoryBreakdownItem[]
-  /**
-   * Play the donut's draw-in. The dashboard turns it off when the report came
-   * from the cache — it was already drawn once. Defaults to `true`.
-   */
   animate?: boolean
 }
 
-// The donut's geometry, in px. The chart box is fixed so the tooltip can be
-// anchored to a slice by arithmetic rather than by asking recharts.
 const CHART_SIZE = 120
 const OUTER_RADIUS = 54
 const INNER_RADIUS = 40
-// Slices run clockwise from twelve o'clock.
 const START_ANGLE = 90
 const END_ANGLE = -270
-// How far the tooltip sits from the pointer.
 const CURSOR_OFFSET = 12
 
 type Slice = CategoryBreakdownItem & {
@@ -77,8 +69,6 @@ export function OverallHealthCard({
   animate = true,
 }: Readonly<OverallHealthCardProps>) {
   const [firstScore] = useState(score)
-  // Draw in once, on the first render only; a revalidation or a new score
-  // after a scan updates the donut in place.
   const [drawIn, setDrawIn] = useState(animate)
   const deltaSummary =
     delta === 0 ? "No change" : delta > 0 ? `Up +${delta}` : `Down ${delta}`
@@ -131,12 +121,6 @@ export function OverallHealthCard({
     [slices],
   )
 
-  // ── the tooltip ────────────────────────────────────────────────────────────
-  //
-  // Drawn here rather than by recharts: its tooltip is confined to the chart's
-  // own box, which is far narrower than "Documentation · 12 findings · 34%".
-  // This one lives in the card's content area, follows the pointer, and is
-  // clamped to that area — so the card's overflow never clips it.
   const [active, setActive] = useState<Active | null>(null)
   const activeSlice = active ? slices[active.index] : undefined
   const areaRef = useRef<HTMLDivElement>(null)
@@ -158,14 +142,12 @@ export function OverallHealthCard({
     let y: number
 
     if (active.via === "pointer" && pointer.current) {
-      // Below-right of the pointer; flipped to the left when that would run
-      // off the card.
+      // Below-right of the pointer; flipped to the left when that would run off the card.
       x = pointer.current.x - box.left + CURSOR_OFFSET
       y = pointer.current.y - box.top + CURSOR_OFFSET
       if (x + width > box.width)
         x = pointer.current.x - box.left - CURSOR_OFFSET - width
     } else {
-      // Keyboard: beside the middle of the active slice, on its outer side.
       const before = slices
         .slice(0, active.index)
         .reduce((sum, slice) => sum + slice.count, 0)
@@ -278,10 +260,6 @@ export function OverallHealthCard({
               >
                 {grade}
               </span>
-              {/* Re-keyed by the score, so a new score after a scan replays a
-                  brief highlight — never on first load, and never under
-                  reduced motion. The API sends a float; people read whole
-                  numbers. */}
               <span
                 key={score}
                 data-testid="health-score"
@@ -307,9 +285,6 @@ export function OverallHealthCard({
                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
             )}
             style={{ width: CHART_SIZE, height: CHART_SIZE }}
-            // Named as an image when there is nothing to explore; a focusable
-            // group when there is — arrow keys step through the slices and
-            // show the same details as hovering.
             role={interactive ? "group" : "img"}
             aria-label={ariaLabel}
             aria-describedby={interactive ? liveId : undefined}
@@ -393,8 +368,6 @@ export function OverallHealthCard({
           ) : null}
         </div>
 
-        {/* The legend, for screen readers only: the donut carries the split
-            visually, and the tooltip carries the numbers on hover and focus. */}
         {slices.length > 0 ? (
           <ul className="sr-only" aria-label="Category breakdown legend">
             {slices.map((slice) => (

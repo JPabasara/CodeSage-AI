@@ -39,11 +39,7 @@ export function initialsOf(name?: string | null, email?: string | null) {
   return letters || "?"
 }
 
-/**
- * The avatar at the right of the top bar: who is signed in, and with what.
- * Theme and Sign out live at the foot of the rail, where they are always one
- * click away rather than hidden behind the avatar.
- */
+// The avatar at the right of the top bar: who is signed in, and with what.
 export function AccountMenu() {
   const { data: session } = useSession()
   const name = session?.name?.trim() || "Signed in"
@@ -78,7 +74,6 @@ export function AccountMenu() {
   )
 }
 
-/** The theme choices, in the order the menu offers them. */
 export const THEME_OPTIONS = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
@@ -100,10 +95,6 @@ export function ThemeRadioItems() {
   )
 }
 
-/**
- * "Sign out of CodeSage?", asked once in a centred dialog, because it is the
- * one action in the shell that cannot be undone with a click.
- */
 export function SignOutDialog({
   open,
   onOpenChange,
@@ -131,11 +122,6 @@ export function SignOutDialog({
             You&apos;ll sign in with Asgardeo again to come back.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {/*
-          A form the browser submits, not a fetch: sign-out has to end the
-          session at the identity provider too, which only a navigation can
-          do. POST, so nothing prefetches it on a guess.
-        */}
         <form
           id="sign-out-form"
           action={`${API_BASE}/api/auth/logout`}

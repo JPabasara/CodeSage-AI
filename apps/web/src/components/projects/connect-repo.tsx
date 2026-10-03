@@ -10,26 +10,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
-// An example URL box and a Connect button with inline validation. There is
-// deliberately no private-repository option; connecting one needs a later
-// installation flow that is outside this PR.
+// An example URL box and a Connect button with inline validation.
 export type ConnectRepoProps = {
-  /**
-   * Resolve `false` when the connect was refused: the URL then stays in the box,
-   * so the message under it still describes what is there.
-   */
   onConnect?: (url: string) => void | Promise<boolean>
   /** A connect request is in flight; the form is locked until it settles. */
   busy?: boolean
-  /** Why the last connect was refused, shown under the URL field. */
   error?: string
-  /** The URL was edited, so the refusal no longer describes it. */
   onErrorClear?: () => void
-  /**
-   * This role cannot connect. The same form is shown, disabled, with this
-   * reason on the button — so the page reads the same for every role and says
-   * why rather than leaving a gap.
-   */
   lockedReason?: string
   className?: string
 }
@@ -112,8 +99,6 @@ export function ConnectRepo({
             aria-describedby={error ? errorId : undefined}
             disabled={locked || busy}
           />
-          {/* Under the field, not only in a toast: a toast is gone in seconds,
-              and this is the one sentence that says why nothing was added. */}
           {error ? (
             <p id={errorId} role="alert" className="text-sm text-destructive">
               {error}

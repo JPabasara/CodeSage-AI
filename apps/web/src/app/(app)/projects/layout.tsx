@@ -1,7 +1,6 @@
 import type { Metadata } from "next"
 
-// The page itself is a Client Component and so cannot export metadata. A layout
-// alongside it can, and costs nothing — it renders its children untouched.
+// The page itself is a Client Component and so cannot export metadata.
 export const metadata: Metadata = { title: "Projects" }
 
 export default function ProjectsLayout({

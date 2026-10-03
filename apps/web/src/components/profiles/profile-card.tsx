@@ -22,22 +22,14 @@ import {
 import { cn } from "@/lib/utils"
 import type { ScoreProfile } from "@/lib/types"
 
-/**
- * An icon per built-in, so the three read apart at a glance. Keyed by name
- * because that is what the contract gives a preset — there is no preset key on
- * the wire.
- */
+// An icon per built-in, so the three read apart at a glance.
 const BUILT_IN_ICON: Record<string, LucideIcon> = {
   Balanced: Scale,
   "Security-first": ShieldCheck,
   "Delivery-speed": Rocket,
 }
 
-/**
- * One small icon action on a card. Its name is the full sentence ("Delete
- * Release gate") for assistive technology; the tooltip is the short word for
- * everyone else.
- */
+// One small icon action on a card.
 function CardAction({
   label,
   hint,
@@ -75,16 +67,6 @@ function CardAction({
   )
 }
 
-/**
- * One profile in the pool: its name, what kind it is, and whether it is the
- * default or in use — nothing the editor below already shows.
- *
- * Selection and the actions are separate controls rather than one clickable
- * card, because a card that is itself a button cannot legally contain the Edit
- * and Delete buttons. The selection button's hit area is stretched over the
- * card, and the actions sit above it, so a click anywhere selects and a click on
- * an action only does that action.
- */
 export function ProfileCard({
   profile,
   selected,
@@ -97,14 +79,11 @@ export function ProfileCard({
 }: Readonly<{
   profile: ScoreProfile
   selected: boolean
-  /** The profile in force for the scope being configured. */
   inUse?: boolean
   onSelect: () => void
-  /** Omitted when this role may not create profiles. */
   onDuplicate?: () => void
   /** Omitted for built-ins, and when this role may not change profiles. */
   onEdit?: () => void
-  /** Omitted for built-ins, and when this role may not change profiles. */
   onDelete?: () => void
   busy?: boolean
 }>) {
@@ -152,9 +131,7 @@ export function ProfileCard({
           {inUse ? <Badge>In use</Badge> : null}
         </span>
 
-        {/* Above the stretched selection area, so these take their own
-            clicks. Built-ins expose no mutation action at all: the database
-            refuses them, so a disabled Edit would only invite the attempt. */}
+        {/* Above the stretched selection area, so these take their own clicks. */}
         {hasActions ? (
           <TooltipProvider>
             <span className="relative z-10 ml-auto flex items-center gap-0.5">

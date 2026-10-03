@@ -122,7 +122,7 @@ test("with no workspace every link stays, marked as locked", async () => {
   const projects = within(nav).getByRole("link", { name: /projects/i })
   expect(projects).toHaveAccessibleName(/create a workspace first/i)
   expect(projects).toHaveAttribute("title", "Create a workspace first")
-  expect(within(nav).getByRole("link", { name: "Support" })).not.toHaveAttribute(
-    "title",
-  )
+  expect(
+    within(nav).getByRole("link", { name: "Support" }),
+  ).not.toHaveAttribute("title")
 })

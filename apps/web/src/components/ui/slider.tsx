@@ -10,9 +10,6 @@ function Slider({
   "aria-label": ariaLabel,
   ...props
 }: React.ComponentProps<typeof SliderPrimitive.Root>) {
-  // A disabled Radix thumb is a <span role="slider">, not a form control, so
-  // `disabled` alone is invisible to assistive technology: it stops responding
-  // and announces nothing about why. aria-disabled is what says so out loud.
   const ariaDisabled = props.disabled ? true : undefined
   return (
     <SliderPrimitive.Root

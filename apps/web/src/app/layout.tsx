@@ -18,10 +18,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  // A template, so each route says where it is and the product name still ends
-  // every tab. Every page used to read "Code Sage AI", which makes a row of
-  // open tabs, a browser history and a screen reader's page announcement all
-  // useless for telling one screen from another (U-9).
+  // A template, so each route says where it is and the product name still ends every tab.
   title: {
     default: "CodeSage AI",
     template: "%s | CodeSage AI",
@@ -45,12 +42,6 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      // next-themes writes `class="dark"` and `style="color-scheme"` onto this
-      // element from an inline script that runs BEFORE React hydrates — that is
-      // what stops the page painting light and then snapping to dark. The
-      // server's HTML therefore cannot match what React finds here, and this
-      // tells React that the difference is intended rather than a bug. It
-      // applies to this element only, not to the tree below it.
       suppressHydrationWarning
       className={cn(
         "h-full",
@@ -65,12 +56,8 @@ export default function RootLayout({
         <ThemeProvider
           // `class`, because globals.css keys its dark palette off `.dark`.
           attribute="class"
-          // Follow the operating system until the user says otherwise. Someone
-          // who runs their machine dark should not be handed a white screen.
           defaultTheme="system"
           enableSystem
-          // Colours swap instantly instead of every transition on the page
-          // animating at once, which looks like a fault rather than a setting.
           disableTransitionOnChange
         >
           <MswProvider>{children}</MswProvider>

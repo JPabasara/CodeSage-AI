@@ -46,8 +46,7 @@ export function useProjects(): MutableQueryState<Repo[]> {
         ])
       }
 
-      // Reconcile every mounted consumer with the server after the immediate
-      // update. This keeps the AppRail and Projects page on one coherent list.
+      // Reconcile every mounted consumer with the server after the immediate update.
       reload()
     }
 

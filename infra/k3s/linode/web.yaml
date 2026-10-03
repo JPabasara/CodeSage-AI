@@ -90,8 +90,6 @@ spec:
       port: 3000
       targetPort: http
 ---
-# One pod is enough for normal traffic; a second starts when average CPU passes
-# 70% of the request. No `replicas` in the Deployment: this HPA owns the count.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

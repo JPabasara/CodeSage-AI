@@ -3,8 +3,6 @@ import * as React from "react"
 const MOBILE_BREAKPOINT = 768
 const MOBILE_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
 
-// Created lazily so this module stays safe to import while server rendering,
-// where `window` does not exist.
 let mediaQueryList: MediaQueryList | null = null
 
 function getMediaQueryList() {
@@ -22,8 +20,7 @@ function getSnapshot() {
   return getMediaQueryList().matches
 }
 
-// The server has no viewport, so assume desktop. This matches the previous
-// behaviour, where the value stayed `false` until the browser measured it.
+// The server has no viewport, so assume desktop.
 function getServerSnapshot() {
   return false
 }
