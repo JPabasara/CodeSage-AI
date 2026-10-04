@@ -31,6 +31,7 @@ import {
   type ProfileValues,
 } from "@/components/profiles/profile-values"
 import { ScopeRail } from "@/components/profiles/scope-rail"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
 import {
   ApiRequestError,
   clearProjectProfile,
@@ -153,7 +154,7 @@ function ProfilesSkeleton() {
           {[0, 1, 2].map((i) => (
             <Skeleton
               key={i}
-              className="h-17.5 w-60 shrink-0 rounded-lg lg:w-full"
+              className="h-17.5 w-60 shrink-0 rounded-md lg:w-full"
             />
           ))}
         </div>
@@ -163,11 +164,11 @@ function ProfilesSkeleton() {
           <Skeleton className="h-7 w-48" />
           <div className={POOL_GRID}>
             {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-20 rounded-lg" />
+              <Skeleton key={i} className="h-20 rounded-md" />
             ))}
           </div>
         </div>
-        <Skeleton className="h-64 w-full rounded-lg" />
+        <Skeleton className="h-64 w-full rounded-md" />
       </div>
     </div>
   )
@@ -482,7 +483,7 @@ function ProfilesView() {
 
   if (poolError) {
     return (
-      <div className="p-6">
+      <div className={PAGE_CONTAINER}>
         <ErrorState
           title="Couldn’t load the profile pool"
           detail={poolError.message}
@@ -561,7 +562,7 @@ function ProfilesView() {
     <div className={LAYOUT}>
       <div className={HEADER_AREA}>
         <PageHeader
-          title="Profiles"
+          title="Scoring profiles"
           description="Decide how much each kind of debt counts toward the health score."
         />
 
@@ -575,11 +576,11 @@ function ProfilesView() {
                   "Reading this project’s profile…"
                 ) : (
                   <>
-                    <strong className="font-semibold text-foreground">
+                    <strong className="font-semibold text-foreground-strong">
                       {projectLabel}
                     </strong>{" "}
                     is scored with{" "}
-                    <strong className="font-semibold text-foreground">
+                    <strong className="font-semibold text-foreground-strong">
                       {projectProfile.effective.name}
                     </strong>
                     {projectProfile.inherited
@@ -604,7 +605,7 @@ function ProfilesView() {
               <Building2 className="size-4 shrink-0" aria-hidden="true" />
               <p className="min-w-0">
                 The workspace default is{" "}
-                <strong className="font-semibold text-foreground">
+                <strong className="font-semibold text-foreground-strong">
                   {workspaceDefault?.name ?? "—"}
                 </strong>
                 .
@@ -628,9 +629,12 @@ function ProfilesView() {
 
       <div className={MAIN_AREA}>
         <section aria-labelledby="pool-heading" className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <h2 id="pool-heading" className="text-base font-semibold">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div className="min-w-0">
+              <h2
+                id="pool-heading"
+                className="text-base font-semibold text-foreground-strong"
+              >
                 Profile pool
               </h2>
               <p className="text-xs text-muted-foreground">
@@ -690,9 +694,9 @@ function ProfilesView() {
 
         <section
           aria-labelledby="editor-heading"
-          className="rounded-lg border bg-card"
+          className="rounded-md border bg-card"
         >
-          <div className="space-y-5 p-4">
+          <div className="space-y-5 px-4.5 pt-4 pb-4.5">
             <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-2">
               {editable ? (
                 <>
@@ -716,7 +720,7 @@ function ProfilesView() {
               ) : (
                 <h2
                   id="editor-heading"
-                  className="min-w-0 truncate text-base font-semibold"
+                  className="min-w-0 truncate text-base font-semibold text-foreground-strong"
                 >
                   {selected.name}
                 </h2>
@@ -736,7 +740,7 @@ function ProfilesView() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t px-4.5 py-3">
             {permissionNotice ? (
               <p
                 role="alert"

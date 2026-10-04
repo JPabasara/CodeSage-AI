@@ -32,7 +32,7 @@ function ScopeButton({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex w-full min-w-0 items-start gap-2.5 rounded-lg border bg-card p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full min-w-0 items-start gap-2.5 rounded-md border bg-card px-3.5 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
         selected
           ? "border-primary ring-1 ring-primary"
           : "hover:border-foreground/20",
@@ -48,7 +48,9 @@ function ScopeButton({
         {icon}
       </span>
       <span className="min-w-0 flex-1 space-y-1">
-        <span className="block truncate text-sm">{title}</span>
+        <span className="block truncate text-sm text-foreground-strong">
+          {title}
+        </span>
         <span className="flex min-h-5 min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           {children}
         </span>
@@ -141,7 +143,10 @@ export function ScopeRail({
   return (
     <section aria-labelledby="apply-to-heading" className={className}>
       <div className="mb-3 space-y-0.5">
-        <h2 id="apply-to-heading" className="text-base font-semibold">
+        <h2
+          id="apply-to-heading"
+          className="text-base font-semibold text-foreground-strong"
+        >
           Apply to
         </h2>
         <p className="text-xs text-muted-foreground">
@@ -187,7 +192,7 @@ export function ScopeRail({
             ? null
             : [0, 1].map((i) => (
                 <li key={i} className="w-60 shrink-0 lg:w-auto">
-                  <Skeleton className="h-17.5 w-full rounded-lg" />
+                  <Skeleton className="h-17.5 w-full rounded-md" />
                 </li>
               ))}
       </ul>
@@ -204,7 +209,7 @@ export function ScopeRail({
         </div>
       ) : repos && repos.length === 0 ? (
         <EmptyState
-          className="mt-3 px-4 py-6"
+          className="mt-3 rounded-md px-4 py-6"
           icon={<FolderGit2 />}
           title="No projects yet"
           description="Connect a repository to give it its own profile."

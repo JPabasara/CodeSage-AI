@@ -60,7 +60,10 @@ export function CreateProfileDialog({
           }}
         >
           <div className="space-y-2">
-            <label htmlFor={nameId} className="text-sm font-semibold">
+            <label
+              htmlFor={nameId}
+              className="text-sm font-semibold text-foreground-strong"
+            >
               Name
             </label>
             <Input

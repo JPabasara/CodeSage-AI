@@ -92,7 +92,7 @@ export function ProfileValueEditor({
       <div className="flex items-baseline justify-between gap-3">
         <label
           htmlFor={`${idPrefix}weight-${key}`}
-          className="min-w-0 truncate text-sm"
+          className="min-w-0 truncate text-sm text-foreground"
           title={compact ? hint : undefined}
         >
           {label}
@@ -101,7 +101,7 @@ export function ProfileValueEditor({
           )}
         </label>
         <span
-          className="text-sm tabular-nums"
+          className="text-sm font-semibold text-foreground-strong tabular-nums"
           data-testid={`${idPrefix}value-${key}`}
         >
           {values.weights[key].toFixed(1)}
@@ -127,7 +127,7 @@ export function ProfileValueEditor({
       <div className="flex items-baseline justify-between gap-3">
         <label
           htmlFor={`${idPrefix}trust-s`}
-          className="min-w-0 truncate text-sm"
+          className="min-w-0 truncate text-sm text-foreground"
           title={compact ? `${TRUST_HINT}. ${TRUST_NOTE}` : undefined}
         >
           Trust
@@ -136,7 +136,7 @@ export function ProfileValueEditor({
           </span>
         </label>
         <span
-          className="text-sm tabular-nums"
+          className="text-sm font-semibold text-foreground-strong tabular-nums"
           data-testid={`${idPrefix}value-trust_s`}
         >
           {values.trust_s.toFixed(2)}
@@ -160,12 +160,14 @@ export function ProfileValueEditor({
 
   const configuration = (
     <section className="space-y-3 border-t pt-5">
-      <h3 className="text-sm font-semibold">Configurations</h3>
-      <div className="flex items-center justify-between gap-4 rounded-md border bg-muted/20 p-3">
+      <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        Configurations
+      </h3>
+      <div className="flex items-center justify-between gap-4 rounded-md border px-3.5 py-3">
         <div className="space-y-1">
           <label
             htmlFor={`${idPrefix}include-test-findings`}
-            className="text-sm font-medium"
+            className="text-sm font-semibold text-foreground-strong"
           >
             Include test-code findings
           </label>
@@ -222,7 +224,9 @@ export function ProfileValueEditor({
   return (
     <div className="space-y-6">
       <section className="space-y-5">
-        <h3 className="text-sm font-semibold">Category weights</h3>
+        <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+          Category weights
+        </h3>
         {weightSliders}
       </section>
       <section>{trustSlider}</section>

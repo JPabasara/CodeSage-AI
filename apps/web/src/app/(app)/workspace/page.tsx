@@ -55,12 +55,18 @@ function patchFor(
   return patch
 }
 
-/** The page's two columns: the team in the middle, settings on the right. */
+/**
+ * One column of cards, read top to bottom: the workspace itself, its team,
+ * then the rarer and riskier actions. Never side by side.
+ */
 const LAYOUT = {
-  page: cn(PAGE_CONTAINER, "gap-8"),
-  columns: "flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-8",
-  team: "min-w-0 flex-1 scroll-mt-6",
-  settings: "flex w-full shrink-0 flex-col gap-8 lg:w-80 xl:w-96",
+  page: PAGE_CONTAINER,
+  stack: "flex w-full max-w-4xl flex-col gap-6",
+  team: "min-w-0 scroll-mt-6",
+  card: "rounded-md border bg-card",
+  cardHead: "px-4.5 pt-4 pb-3",
+  cardTitle: "text-base font-semibold text-foreground-strong",
+  cardDesc: "text-xs text-muted-foreground",
 } as const
 
 // One page for "this workspace": who is in it, and what it is called.
@@ -115,7 +121,7 @@ export default function WorkspacePage() {
 
   if (error) {
     return (
-      <div className="p-6">
+      <div className={LAYOUT.page}>
         <ErrorState
           title="Couldn’t load this workspace"
           detail={error.message}
@@ -150,7 +156,47 @@ export default function WorkspacePage() {
         }
       />
 
-      <div className={LAYOUT.columns}>
+      <div className={LAYOUT.stack}>
+        <section
+          aria-labelledby="workspace-settings-heading"
+          data-tour="workspace-settings"
+          className={LAYOUT.card}
+        >
+          <div className={LAYOUT.cardHead}>
+            <h2 id="workspace-settings-heading" className={LAYOUT.cardTitle}>
+              Workspace settings
+            </h2>
+            <p className={LAYOUT.cardDesc}>
+              Everyone in this workspace sees these.
+            </p>
+          </div>
+          <div className="max-w-xl px-4.5 pt-1 pb-4.5">
+            <WorkspaceForm
+              values={values}
+              onChange={setDraft}
+              onSubmit={onSave}
+              busy={saving}
+              error={saveError}
+              disabled={!canEdit}
+              lockedReason="Only org-admins can change workspace settings"
+              submitLabel="Save changes"
+              busyLabel="Saving…"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setDraft(undefined)
+                  setSaveError(undefined)
+                }}
+                disabled={!draft || saving}
+              >
+                Discard
+              </Button>
+            </WorkspaceForm>
+          </div>
+        </section>
+
         <div id="team" className={LAYOUT.team}>
           <TeamPanel
             query={members}
@@ -160,91 +206,50 @@ export default function WorkspacePage() {
           />
         </div>
 
-        <div className={LAYOUT.settings}>
+        {canEdit ? (
           <section
-            aria-labelledby="workspace-settings-heading"
-            data-tour="workspace-settings"
-            className="space-y-3"
+            aria-labelledby="new-workspace-heading"
+            className={cn(
+              LAYOUT.card,
+              "flex flex-col gap-3 px-4.5 py-4 sm:flex-row sm:items-center sm:justify-between",
+            )}
           >
-            <div className="space-y-0.5">
-              <h2
-                id="workspace-settings-heading"
-                className="text-base font-semibold"
-              >
-                Workspace settings
+            <div className="max-w-xl">
+              <h2 id="new-workspace-heading" className={LAYOUT.cardTitle}>
+                Another workspace
               </h2>
-              <p className="text-sm text-muted-foreground">
-                Everyone in this workspace sees these.
+              <p className={LAYOUT.cardDesc}>
+                Its own projects, profiles and members. It starts empty, and you
+                become its org-admin.
               </p>
             </div>
-            <div className="rounded-lg border bg-card p-4">
-              <WorkspaceForm
-                values={values}
-                onChange={setDraft}
-                onSubmit={onSave}
-                busy={saving}
-                error={saveError}
-                disabled={!canEdit}
-                lockedReason="Only org-admins can change workspace settings"
-                submitLabel="Save changes"
-                busyLabel="Saving…"
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setDraft(undefined)
-                    setSaveError(undefined)
-                  }}
-                  disabled={!draft || saving}
-                >
-                  Discard
-                </Button>
-              </WorkspaceForm>
-            </div>
-          </section>
-
-          {canEdit ? (
-            <section
-              aria-labelledby="new-workspace-heading"
-              className="space-y-3"
+            <Button
+              variant="outline"
+              className="shrink-0 self-start sm:self-auto"
+              onClick={() => setCreatingNew(true)}
             >
-              <div className="space-y-0.5">
-                <h2
-                  id="new-workspace-heading"
-                  className="text-base font-semibold"
-                >
-                  Another workspace
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Its own projects, profiles and members. It starts empty, and
-                  you become its org-admin.
-                </p>
-              </div>
-              <Button variant="outline" onClick={() => setCreatingNew(true)}>
-                <Plus aria-hidden="true" />
-                New workspace
-              </Button>
-            </section>
-          ) : null}
+              <Plus aria-hidden="true" />
+              New workspace
+            </Button>
+          </section>
+        ) : null}
 
-          <CreateWorkspaceDialog
-            open={creatingNew}
-            onOpenChange={setCreatingNew}
-            description={`Creating it also switches you to it. Nothing from ${active.name} comes with you.`}
+        <CreateWorkspaceDialog
+          open={creatingNew}
+          onOpenChange={setCreatingNew}
+          description={`Creating it also switches you to it. Nothing from ${active.name} comes with you.`}
+        />
+
+        {canDelete ? (
+          <DeleteWorkspaceSection
+            workspaceId={active.workspace_id}
+            workspaceName={active.name}
+            onDeleted={() => {
+              leaveDeletedWorkspace(active.workspace_id)
+              router.replace("/workspace")
+            }}
           />
-
-          {canDelete ? (
-            <DeleteWorkspaceSection
-              workspaceId={active.workspace_id}
-              workspaceName={active.name}
-              onDeleted={() => {
-                leaveDeletedWorkspace(active.workspace_id)
-                router.replace("/workspace")
-              }}
-            />
-          ) : null}
-        </div>
+        ) : null}
       </div>
     </div>
   )
@@ -260,7 +265,7 @@ function WorkspaceFigures({
     <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-muted-foreground">
       <span>
         <span
-          className="font-semibold text-foreground tabular-nums"
+          className="font-semibold text-foreground-strong tabular-nums"
           data-testid="workspace-project-count"
         >
           {projects}
@@ -268,14 +273,14 @@ function WorkspaceFigures({
         {projects === 1 ? "project" : "projects"}
       </span>
       <span>
-        <span className="font-semibold text-foreground tabular-nums">
+        <span className="font-semibold text-foreground-strong tabular-nums">
           {members}
         </span>{" "}
         {members === 1 ? "member" : "members"}
       </span>
       <span>
         <span
-          className="font-semibold text-foreground tabular-nums"
+          className="font-semibold text-foreground-strong tabular-nums"
           data-testid="workspace-invitation-count"
         >
           {invited ?? "–"}
@@ -297,18 +302,16 @@ function WorkspaceSkeleton({ canManage }: Readonly<{ canManage: boolean }>) {
         </div>
         <Skeleton className="h-5 w-64 max-w-full" />
       </div>
-      <div className={LAYOUT.columns}>
+      <div className={LAYOUT.stack}>
+        <div className={cn(LAYOUT.card, "space-y-4 px-4.5 py-4")}>
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-3.5 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-64 w-full max-w-xl" />
+        </div>
         <div className={LAYOUT.team}>
           <TeamPanelSkeleton canManage={canManage} />
-        </div>
-        <div className={LAYOUT.settings}>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-56 max-w-full" />
-            </div>
-            <Skeleton className="h-80 w-full rounded-lg" />
-          </div>
         </div>
       </div>
     </div>

@@ -37,6 +37,12 @@ import { cn } from "@/lib/utils"
 import type { Invitation, Member, MemberList, Role } from "@/lib/types"
 import type { MutableQueryState } from "@/hooks/use-query"
 
+// The card frame every section on the page shares.
+const CARD = "rounded-md border bg-card"
+const CARD_HEAD = "px-4.5 pt-4 pb-3"
+const CARD_TITLE = "text-base font-semibold text-foreground-strong"
+const CARD_DESC = "text-xs text-muted-foreground"
+
 // Roles an invitation may carry.
 const INVITE_ROLES: Role[] = ["manager", "developer", "viewer"]
 
@@ -182,6 +188,7 @@ export function TeamPanel({
   if (error) {
     return (
       <ErrorState
+        className={cn(CARD, "px-4.5 py-4")}
         title="Couldn’t load the team"
         detail={error.message}
         onRetry={refetch}
@@ -202,22 +209,25 @@ export function TeamPanel({
   const mode = canManage ? "manage" : "read"
 
   return (
-    <div className="@container flex flex-col gap-8">
+    <div className="@container flex flex-col gap-6">
       {canManage ? <InviteForm onInvited={afterWrite} /> : null}
 
-      <section aria-labelledby="team-members-heading" className="space-y-3">
-        <div className="space-y-0.5">
-          <h2 id="team-members-heading" className="text-base font-semibold">
+      <section
+        aria-labelledby="team-members-heading"
+        className={cn(CARD, "overflow-hidden")}
+      >
+        <div className={CARD_HEAD}>
+          <h2 id="team-members-heading" className={CARD_TITLE}>
             Members
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className={CARD_DESC}>
             {canManage
               ? "Change a role or remove someone from this workspace. Another org-admin manages your own row."
               : "Only org-admins can change members."}
           </p>
         </div>
 
-        <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="border-t @md:border-t-0">
           <ColumnHeader mode={mode} first="Member" />
           <ul className="divide-y" data-testid="member-list">
             {members.map((member) => {
@@ -229,7 +239,7 @@ export function TeamPanel({
                 <li
                   key={member.membership_id}
                   className={cn(
-                    "grid items-center gap-x-4 gap-y-2 px-4 py-3",
+                    "grid items-center gap-x-4 gap-y-2 px-4.5 py-3",
                     COLUMNS[mode],
                   )}
                   data-testid="member-row"
@@ -242,12 +252,12 @@ export function TeamPanel({
                   >
                     <span
                       aria-hidden="true"
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground-strong"
                     >
                       {initials(label)}
                     </span>
                     <div className="min-w-0">
-                      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium">
+                      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-foreground-strong">
                         <span className="truncate" title={label}>
                           {label}
                         </span>
@@ -305,7 +315,7 @@ export function TeamPanel({
                     </>
                   ) : (
                     <>
-                      <span className="justify-self-end text-sm text-muted-foreground @md:justify-self-auto">
+                      <span className="justify-self-end text-sm text-foreground @md:justify-self-auto">
                         {ROLE_LABEL[member.role] ?? member.role}
                       </span>
                       {canManage ? (
@@ -320,13 +330,21 @@ export function TeamPanel({
         </div>
       </section>
 
-      <section aria-labelledby="team-invitations-heading" className="space-y-3">
-        <h2 id="team-invitations-heading" className="text-base font-semibold">
-          Pending invitations
-        </h2>
-        <div className="overflow-hidden rounded-lg border bg-card">
+      <section
+        aria-labelledby="team-invitations-heading"
+        className={cn(CARD, "overflow-hidden")}
+      >
+        <div className={CARD_HEAD}>
+          <h2 id="team-invitations-heading" className={CARD_TITLE}>
+            Pending invitations
+          </h2>
+          <p className={CARD_DESC}>
+            People who have a link to join but haven&apos;t used it yet.
+          </p>
+        </div>
+        <div className="border-t @md:border-t-0">
           {data.pending_invitations.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-muted-foreground">
+            <p className="px-4.5 py-4 text-sm text-muted-foreground @md:border-t">
               No one is waiting to join.
             </p>
           ) : (
@@ -404,7 +422,7 @@ function ColumnHeader({
     <div
       aria-hidden="true"
       className={cn(
-        "hidden gap-x-4 border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground @md:grid",
+        "hidden gap-x-4 border-y bg-muted/50 px-4.5 py-2.5 text-xs font-medium text-muted-foreground @md:grid",
         HEADER_COLUMNS[mode],
       )}
     >
@@ -432,12 +450,15 @@ function InvitationRow({
   return (
     <li
       className={cn(
-        "grid items-center gap-x-4 gap-y-1 px-4 py-3",
+        "grid items-center gap-x-4 gap-y-1 px-4.5 py-3",
         COLUMNS[mode],
       )}
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium" title={invitation.email}>
+        <p
+          className="truncate text-sm font-semibold text-foreground-strong"
+          title={invitation.email}
+        >
           {invitation.email}
         </p>
         <p className="text-xs text-muted-foreground">
@@ -459,9 +480,7 @@ function InvitationRow({
           </time>
         </p>
       </div>
-      <span className="hidden text-sm text-muted-foreground @md:block">
-        {role}
-      </span>
+      <span className="hidden text-sm text-foreground @md:block">{role}</span>
       {onRevoke ? (
         <div className="flex justify-end">
           <Button
@@ -485,24 +504,24 @@ export function TeamPanelSkeleton({
   canManage,
 }: Readonly<{ canManage: boolean }>) {
   return (
-    <div className="flex flex-col gap-8" aria-busy="true">
+    <div className="flex flex-col gap-6" aria-busy="true">
       {canManage ? (
-        <div className="space-y-3">
+        <div className={cn(CARD, "space-y-3 px-4.5 py-4")}>
           <div className="space-y-1.5">
             <Skeleton className="h-5 w-36" />
-            <Skeleton className="h-4 w-72 max-w-full" />
+            <Skeleton className="h-3.5 w-72 max-w-full" />
           </div>
-          <Skeleton className="h-18 w-full rounded-lg" />
+          <Skeleton className="h-9 w-full" />
         </div>
       ) : null}
-      <div className="space-y-3">
-        <div className="space-y-1.5">
+      <div className={cn(CARD, "overflow-hidden")}>
+        <div className={cn(CARD_HEAD, "space-y-1.5")}>
           <Skeleton className="h-5 w-24" />
-          <Skeleton className="h-4 w-64 max-w-full" />
+          <Skeleton className="h-3.5 w-64 max-w-full" />
         </div>
-        <div className="divide-y rounded-lg border bg-card">
+        <div className="divide-y border-t">
           {[0, 1, 2].map((row) => (
-            <div key={row} className="flex items-center gap-3 px-4 py-3">
+            <div key={row} className="flex items-center gap-3 px-4.5 py-3">
               <Skeleton className="size-8 shrink-0 rounded-full" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 <Skeleton className="h-4 w-40 max-w-full" />
@@ -513,9 +532,9 @@ export function TeamPanelSkeleton({
           ))}
         </div>
       </div>
-      <div className="space-y-3">
+      <div className={cn(CARD, "space-y-1.5 px-4.5 py-4")}>
         <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-3.5 w-56 max-w-full" />
       </div>
     </div>
   )
@@ -565,12 +584,12 @@ function InviteForm({ onInvited }: Readonly<{ onInvited: () => void }>) {
   }
 
   return (
-    <section aria-labelledby="team-invite-heading" className="space-y-3">
-      <div className="space-y-0.5">
-        <h2 id="team-invite-heading" className="text-base font-semibold">
+    <section aria-labelledby="team-invite-heading" className={CARD}>
+      <div className={CARD_HEAD}>
+        <h2 id="team-invite-heading" className={CARD_TITLE}>
           Invite a teammate
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <p className={CARD_DESC}>
           They get an email with a one-time link. To make someone an org-admin,
           invite them, then change their role once they join.
         </p>
@@ -578,7 +597,7 @@ function InviteForm({ onInvited }: Readonly<{ onInvited: () => void }>) {
       <form
         noValidate
         onSubmit={onSubmit}
-        className="flex flex-col gap-3 rounded-lg border bg-card p-4 @md:flex-row @md:items-end @md:gap-2"
+        className="flex flex-col gap-3 px-4.5 pt-1 pb-4.5 @md:flex-row @md:items-end @md:gap-2"
       >
         <div className="min-w-0 flex-1 space-y-1.5">
           <label htmlFor={emailId} className="text-sm font-medium">
@@ -625,8 +644,8 @@ function InviteForm({ onInvited }: Readonly<{ onInvited: () => void }>) {
           data-kind={problem.delivery ? "delivery" : "validation"}
           className={
             problem.delivery
-              ? "rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
-              : "text-sm text-destructive"
+              ? "mx-4.5 mb-4.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+              : "mx-4.5 -mt-2 mb-4.5 text-sm text-destructive"
           }
         >
           {problem.message}
