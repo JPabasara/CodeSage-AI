@@ -30,6 +30,17 @@ spec:
         - name: api
           image: ghcr.io/jpabasara/codesage-ai/api:latest
           imagePullPolicy: IfNotPresent
+          # Two processes per pod: request handling is CPU-bound (JSON), and one
+          # process uses one core. `args` keeps tini as the entrypoint.
+          args:
+            - uvicorn
+            - codesage_api.main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --workers
+            - "2"
           ports:
             - name: http
               containerPort: 8000
@@ -61,11 +72,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 250m
-              memory: 384Mi
+              cpu: 300m
+              memory: 512Mi
             limits:
-              cpu: "1"
-              memory: 768Mi
+              cpu: 1500m
+              memory: 1Gi
 ---
 apiVersion: v1
 kind: Service
@@ -101,7 +112,7 @@ spec:
     kind: Deployment
     name: api
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource:
