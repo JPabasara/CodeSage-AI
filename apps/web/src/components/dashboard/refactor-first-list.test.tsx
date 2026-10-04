@@ -47,10 +47,11 @@ const findings: Finding[] = [
   },
 ]
 
+/** The open-finding buttons, not the per-row Mark as done actions. */
 function findingCards() {
   return within(
     screen.getByRole("list", { name: /ranked refactor findings/i }),
-  ).getAllByRole("button")
+  ).getAllByTestId("finding-card")
 }
 
 test("sorts findings by priority, highest first", () => {
@@ -59,12 +60,30 @@ test("sorts findings by priority, highest first", () => {
   expect(findingCards()[0]).toHaveTextContent("critical one")
 })
 
-test("renders explicit rank (#) badge with 1-based sequential rank numbers", () => {
+const rankOf = (card: HTMLElement) =>
+  card.querySelector("[data-slot=rank]")?.textContent
+
+test("search narrows the list by words or file, and Clear filter resets it", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={findings} />)
+
+  await user.type(screen.getByRole("searchbox"), "b.ts")
+  expect(findingCards()).toHaveLength(1)
+  expect(findingCards()[0]).toHaveTextContent("critical one")
+
+  await user.clear(screen.getByRole("searchbox"))
+  await user.type(screen.getByRole("searchbox"), "nothing like this")
+  expect(screen.getByText("No findings match this filter")).toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: /clear filter/i }))
+  expect(findingCards()).toHaveLength(3)
+})
+
+test("renders 1-based sequential rank numbers", () => {
   render(<RefactorFirstList findings={findings} />)
   const cards = findingCards()
-  expect(cards[0]).toHaveTextContent("#1")
-  expect(cards[1]).toHaveTextContent("#2")
-  expect(cards[2]).toHaveTextContent("#3")
+  expect(rankOf(cards[0])).toBe("1")
+  expect(rankOf(cards[1])).toBe("2")
+  expect(rankOf(cards[2])).toBe("3")
 })
 
 test("renders count badge and explanatory ranking subtitle", () => {
@@ -81,8 +100,8 @@ test("cards include source, category and compact location", () => {
   render(<RefactorFirstList findings={findings} />)
 
   const critical = screen.getByRole("button", { name: /critical one/i })
-  expect(critical).toHaveTextContent("security")
-  expect(critical).toHaveTextContent("rule")
+  expect(critical).toHaveTextContent(/security/i)
+  expect(critical).toHaveTextContent(/rule/i)
   expect(critical).toHaveTextContent("b.ts:2")
 })
 
@@ -92,8 +111,8 @@ test("renders full reason in title attribute for hover accessibility", () => {
   expect(reasonText).toHaveAttribute("title", "critical one")
 })
 
-test("paginates findings in groups of 10 with stable global ranks", async () => {
-  const fifteenFindings: Finding[] = Array.from({ length: 15 }, (_, i) => ({
+const manyFindings = (count: number): Finding[] =>
+  Array.from({ length: count }, (_, i) => ({
     fingerprint: `f-${i}`,
     source: "rule",
     category: "code-design",
@@ -103,27 +122,50 @@ test("paginates findings in groups of 10 with stable global ranks", async () => 
     symbol: `func${i}`,
     reason: `Finding number ${i + 1}`,
     status: "open",
-    priority: 15 - i,
+    priority: count - i,
     pinned_by_floor: false,
   }))
 
+test("shows 25 at first and loads 25 more at a time, with stable ranks", async () => {
   const user = userEvent.setup()
-  render(<RefactorFirstList findings={fifteenFindings} />)
+  render(<RefactorFirstList findings={manyFindings(60)} />)
 
-  expect(findingCards()).toHaveLength(10)
-  expect(screen.getByText("Page 1 of 2 · 1–10 of 15")).toBeInTheDocument()
-  expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled()
+  expect(findingCards()).toHaveLength(25)
+  expect(screen.getByText("Showing 1–25 of 60")).toBeInTheDocument()
 
-  await user.click(screen.getByRole("button", { name: "Next" }))
+  await user.click(screen.getByRole("button", { name: "Load 25 more" }))
+  expect(findingCards()).toHaveLength(50)
+  // The list grows; nothing is renumbered.
+  expect(rankOf(findingCards()[25])).toBe("26")
 
-  expect(findingCards()).toHaveLength(5)
-  expect(findingCards()[0]).toHaveTextContent("#11")
-  expect(screen.getByText("Page 2 of 2 · 11–15 of 15")).toBeInTheDocument()
-  expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: "Load 10 more" }))
+  expect(findingCards()).toHaveLength(60)
+  expect(screen.getByText("Showing 1–60 of 60")).toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /^load/i })).toBeNull()
+})
 
-  await user.click(screen.getByRole("button", { name: "Previous" }))
-  expect(findingCards()).toHaveLength(10)
-  expect(findingCards()[0]).toHaveTextContent("#1")
+test("a linked finding further down starts with enough rows to show it", () => {
+  const list = manyFindings(60)
+  render(
+    <RefactorFirstList
+      findings={list}
+      selectedFingerprint={list[40].fingerprint}
+    />,
+  )
+  expect(findingCards()).toHaveLength(50)
+  expect(
+    screen.getByRole("button", { name: /Finding number 41 /, current: true }),
+  ).toBeInTheDocument()
+})
+
+test("changing a filter starts the list at 25 again", async () => {
+  const user = userEvent.setup()
+  render(<RefactorFirstList findings={manyFindings(60)} />)
+  await user.click(screen.getByRole("button", { name: "Load 25 more" }))
+  expect(findingCards()).toHaveLength(50)
+
+  await user.type(screen.getByRole("searchbox"), "Finding")
+  expect(findingCards()).toHaveLength(25)
 })
 
 test("clicking a finding card fires onSelect with that finding", async () => {
@@ -200,6 +242,8 @@ test("a finding card is a tab stop", async () => {
 
   const card = screen.getByRole("button", { name: /critical one/i })
 
+  // The search box, then the filter toolbar's one stop, then the list.
+  await userEvent.tab()
   await userEvent.tab()
   await userEvent.tab()
   expect(card).toHaveFocus()

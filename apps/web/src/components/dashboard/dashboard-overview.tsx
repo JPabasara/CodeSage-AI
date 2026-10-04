@@ -3,7 +3,7 @@
 import { ArrowRight } from "lucide-react"
 
 import { DebtByTypeCard } from "@/components/dashboard/debt-by-type-card"
-import { categoryColor } from "@/components/dashboard/finding-tag"
+import { FindingMeta } from "@/components/dashboard/finding-tag"
 import { HealthGraphCard } from "@/components/dashboard/health-graph-card"
 import { DeltaText, GradeBadge, KpiCard } from "@/components/dashboard/kpi-card"
 import { LearnMore } from "@/components/support/learn-more"
@@ -19,11 +19,6 @@ import type { Finding, HealthReport, Severity, TreeNode } from "@/lib/types"
 import { cn, gradeColor, healthColor, severityColor } from "@/lib/utils"
 
 const numbers = new Intl.NumberFormat("en-US")
-
-function sentenceCase(value: string) {
-  const spaced = value.replace(/-/g, " ")
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
 
 function SeverityCount({
   severity,
@@ -217,31 +212,7 @@ export function DashboardOverview({
                       <span className="block truncate text-sm font-medium text-foreground-strong">
                         {finding.reason}
                       </span>
-                      <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5 font-medium capitalize text-foreground">
-                          <span
-                            aria-hidden="true"
-                            className="size-2 rounded-[2px]"
-                            style={{
-                              backgroundColor: severityColor(finding.severity),
-                            }}
-                          />
-                          {finding.severity}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <span
-                            aria-hidden="true"
-                            className="size-2 rounded-full"
-                            style={{
-                              backgroundColor: categoryColor(finding.category),
-                            }}
-                          />
-                          {sentenceCase(finding.category)}
-                        </span>
-                        <span className="max-w-full truncate font-mono">
-                          {finding.file}:{finding.line}
-                        </span>
-                      </span>
+                      <FindingMeta finding={finding} className="mt-1" />
                     </span>
                     <span className="text-right text-sm font-semibold text-foreground-strong tabular-nums">
                       {Math.round(finding.priority)}
