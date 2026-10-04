@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import PurePosixPath
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session, defer
+from sqlalchemy.orm import Session
 
 from codesage_api.db.models import Finding, Snapshot, SnapshotScore, SourceFile
 from codesage_api.db.repositories import dashboard as dashboard_repository
@@ -19,10 +20,16 @@ from codesage_api.schemas import (
     FindingPageOut,
     HealthPointOut,
     HealthReportOut,
+    LatestHealthOut,
     ScanSummaryOut,
     TreeNodeOut,
 )
-from codesage_api.schemas.health import CalibrationCountsOut, CalibrationRecordOut
+from codesage_api.schemas.health import (
+    CalibrationCountsOut,
+    CalibrationRecordOut,
+    FindingSummaryOut,
+    SeverityCountsOut,
+)
 from codesage_api.scoring import formula
 from codesage_api.scoring.cache import (
     SCORING_ENGINE_VERSION,
@@ -39,6 +46,8 @@ from codesage_api.services.finding_diff import diff_snapshots
 from codesage_api.tasks import progress
 from codesage_api.tasks.app import celery_app
 
+#: Points on a project card's sparkline.
+LATEST_HEALTH_TREND_POINTS = 7
 
 @dataclass(frozen=True, slots=True)
 class _ScoredSnapshot:
@@ -130,7 +139,12 @@ def build_latest_health_hint(
     repository_id: uuid.UUID,
     branch: str,
     profile: Profile,
-) -> tuple[tuple[SnapshotScore, float] | None, list[SnapshotScore]]:
+) -> tuple[LatestHealthOut | None, list[SnapshotScore]]:
+    """The projects-list hint, and any score rows it had to create.
+
+    Costs a fixed handful of small queries per project: the payload is never
+    loaded, only its `red_issue_count` key is read, inside Postgres.
+    """
     refs = dashboard_repository.list_latest_completed_snapshot_refs(
         session, workspace_id, repository_id, branch, limit=2
     )
@@ -144,7 +158,7 @@ def build_latest_health_hint(
         if created:
             pending.append(cached)
     latest = prepared[0]
-    if latest.status != "ready" or latest.health_score is None:
+    if latest.status != "ready" or latest.health_score is None or latest.grade is None:
         return None, pending
     previous = prepared[1] if len(prepared) > 1 else None
     delta = (
@@ -152,7 +166,38 @@ def build_latest_health_hint(
         if previous is not None and previous.status == "ready" and previous.health_score is not None
         else 0.0
     )
-    return (latest, delta), pending
+    red_issue_count = session.scalar(
+        select(SnapshotScore.result_payload["red_issue_count"].astext).where(
+            SnapshotScore.id == latest.id
+        )
+    )
+    # A plain read of ready rows: an older snapshot without a score is left
+    # out of the sparkline, not queued.
+    recent = dashboard_repository.list_recent_ready_scores(
+        session,
+        workspace_id,
+        repository_id,
+        branch,
+        profile_fingerprint=profile_fingerprint(profile),
+        scoring_engine_version=SCORING_ENGINE_VERSION,
+        limit=LATEST_HEALTH_TREND_POINTS,
+    )
+    return (
+        LatestHealthOut(
+            score=latest.health_score,
+            grade=Grade(latest.grade),
+            delta=delta,
+            kloc=latest.kloc,
+            finding_count=refs[0].finding_count,
+            red_issue_count=int(red_issue_count) if red_issue_count is not None else None,
+            scanned_at=refs[0].scan_time.isoformat(),
+            trend=[
+                HealthPointOut(t=scan_time.isoformat(), score=score, commit_sha=commit_sha)
+                for scan_time, commit_sha, score in reversed(recent)
+            ],
+        ),
+        pending,
+    )
 
 
 def _metric_value(source_file: SourceFile, name: str) -> float:
@@ -449,6 +494,35 @@ def build_findings_page(
     status: str | None = None,
 ) -> FindingPageOut:
     """Read one ranked page without transferring the full cached JSON document."""
+    return prepare_findings_page(
+        session,
+        workspace_id,
+        repository_id,
+        branch,
+        snapshot_id,
+        limit=limit,
+        offset=offset,
+        source=source,
+        severity=severity,
+        category=category,
+        status=status,
+    ).build()
+
+
+def prepare_findings_page(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    snapshot_id: uuid.UUID | None,
+    *,
+    limit: int,
+    offset: int,
+    source: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    status: str | None = None,
+) -> PreparedRead[FindingPageOut]:
     profile = profiles.resolve_effective(session, workspace_id, repository_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
         session, workspace_id, repository_id, branch
@@ -460,22 +534,70 @@ def build_findings_page(
         selected = next((item for item in refs if item.id == snapshot_id), None)
     if selected is None:
         raise NotFound
-    cache_id = session.scalar(
-        select(SnapshotScore.id).where(
+    ready = session.execute(
+        select(SnapshotScore.id, SnapshotScore.completed_at).where(
             SnapshotScore.snapshot_id == selected.id,
             SnapshotScore.profile_fingerprint == profile_fingerprint(profile),
             SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
             SnapshotScore.status == "ready",
         )
-    )
-    if cache_id is None:
+    ).first()
+    if ready is None:
         _enqueue_pending_score(session, workspace_id, selected, profile)
         raise ScorePending
+    cache_id, completed_at = ready
+    selected_id = selected.id
+
+    def version() -> tuple[object, ...]:
+        return (
+            "findings",
+            workspace_id,
+            repository_id,
+            branch,
+            cache_id,
+            completed_at,
+            limit,
+            offset,
+            source,
+            severity,
+            category,
+            status,
+            finding_triage.version_for_snapshot(session, selected_id),
+        )
+
+    def build() -> FindingPageOut:
+        return _finish_findings_page(
+            session,
+            cache_id,
+            selected_id,
+            limit=limit,
+            offset=offset,
+            source=source,
+            severity=severity,
+            category=category,
+            status=status,
+        )
+
+    return PreparedRead(version=version, build=build)
+
+
+def _finish_findings_page(
+    session: Session,
+    cache_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+    *,
+    limit: int,
+    offset: int,
+    source: str | None,
+    severity: str | None,
+    category: str | None,
+    status: str | None,
+) -> FindingPageOut:
 
     clauses = []
     params: dict[str, object] = {
         "cache": cache_id,
-        "snapshot": selected.id,
+        "snapshot": snapshot_id,
         "limit": limit,
         "offset": offset,
     }
@@ -513,6 +635,19 @@ def build_findings_page(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedRead[T]:
+    """The cheap, checked half of a dashboard read, and how to finish it.
+
+    `version()` names everything that decides the response's bytes, for its
+    ETag; `build()` does the expensive part. Callers that need no ETag never
+    pay for one.
+    """
+
+    version: Callable[[], tuple[object, ...]]
+    build: Callable[[], T]
+
+
 def build_health_report(
     session: Session,
     workspace_id: uuid.UUID,
@@ -522,6 +657,25 @@ def build_health_report(
     *,
     include_findings: bool = True,
 ) -> HealthReportOut:
+    return prepare_health_report(
+        session,
+        workspace_id,
+        repository_id,
+        branch,
+        snapshot_id,
+        include_findings=include_findings,
+    ).build()
+
+
+def prepare_health_report(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch: str,
+    snapshot_id: uuid.UUID | None = None,
+    *,
+    include_findings: bool = True,
+) -> PreparedRead[HealthReportOut]:
     profile = profiles.resolve_effective(session, workspace_id, repository_id)
     refs = dashboard_repository.list_completed_snapshot_refs(
         session, workspace_id, repository_id, branch
@@ -536,14 +690,14 @@ def build_health_report(
         if selected_index < 0:
             raise NotFound
     fingerprint = profile_fingerprint(profile)
-    cache_statement = select(SnapshotScore).where(
-        SnapshotScore.snapshot_id.in_([item.id for item in refs]),
-        SnapshotScore.profile_fingerprint == fingerprint,
-        SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
-    )
-    if not include_findings:
-        cache_statement = cache_statement.options(defer(SnapshotScore.result_payload))
-    cached_rows = session.scalars(cache_statement).all()
+    # The payload is deferred: history rows bring only their scores.
+    cached_rows = session.scalars(
+        select(SnapshotScore).where(
+            SnapshotScore.snapshot_id.in_([item.id for item in refs]),
+            SnapshotScore.profile_fingerprint == fingerprint,
+            SnapshotScore.scoring_engine_version == SCORING_ENGINE_VERSION,
+        )
+    ).all()
     cached_by_snapshot = {item.snapshot_id: item for item in cached_rows}
     selected_ref = refs[selected_index]
     selected_cache = cached_by_snapshot.get(selected_ref.id)
@@ -551,13 +705,63 @@ def build_health_report(
         _enqueue_pending_score(session, workspace_id, selected_ref, profile)
         raise ScorePending
 
-    payload = selected_cache.result_payload
-    if not include_findings:
-        payload = session.scalar(
-            select(SnapshotScore.result_payload.op("-")("findings")).where(
-                SnapshotScore.id == selected_cache.id
-            )
+    def version() -> tuple[object, ...]:
+        return (
+            "health",
+            workspace_id,
+            repository_id,
+            branch,
+            include_findings,
+            selected_cache.id,
+            selected_cache.completed_at,
+            profile.name,
+            profile.include_test_findings,
+            tuple(
+                (ref.id, cached_by_snapshot[ref.id].health_score)
+                for ref in refs
+                if ref.id in cached_by_snapshot
+            ),
+            finding_triage.version_for_snapshot(session, selected_ref.id),
         )
+
+    def build() -> HealthReportOut:
+        return _finish_health_report(
+            session,
+            repository_id,
+            branch,
+            refs,
+            selected_index,
+            selected_cache,
+            cached_by_snapshot,
+            profile,
+            include_findings=include_findings,
+        )
+
+    return PreparedRead(version=version, build=build)
+
+
+def _finish_health_report(
+    session: Session,
+    repository_id: uuid.UUID,
+    branch: str,
+    refs: list[Snapshot],
+    selected_index: int,
+    selected_cache: SnapshotScore,
+    cached_by_snapshot: dict[uuid.UUID, SnapshotScore],
+    profile: Profile,
+    *,
+    include_findings: bool,
+) -> HealthReportOut:
+    selected_ref = refs[selected_index]
+    # One payload, the selected snapshot's, without its findings unless asked.
+    payload_column = (
+        SnapshotScore.result_payload
+        if include_findings
+        else SnapshotScore.result_payload.op("-")("findings")
+    )
+    payload = session.scalar(
+        select(payload_column).where(SnapshotScore.id == selected_cache.id)
+    )
     if payload is None:
         raise ScorePending
     previous = cached_by_snapshot.get(refs[selected_index - 1].id) if selected_index > 0 else None
@@ -609,6 +813,70 @@ def build_health_report(
         category_breakdown=[
             CategoryBreakdownItemOut.model_validate(item) for item in payload["category_breakdown"]
         ],
+        finding_summary=_finding_summary(
+            session,
+            selected_cache.id,
+            selected_ref.id,
+            include_test_findings=profile.include_test_findings,
+        ),
+        kloc=selected_cache.kloc,
+        # The worker writes one file score per analysed file, in every scope.
+        java_file_count=len(payload["file_scores"]),
+    )
+
+
+def _finding_summary(
+    session: Session,
+    cache_id: uuid.UUID,
+    snapshot_id: uuid.UUID,
+    *,
+    include_test_findings: bool,
+) -> FindingSummaryOut:
+    """Count the Refactor-First list's default view in one aggregate.
+
+    Postgres expands the findings array itself, so this works whether or not
+    the report carries its findings, and none of them travel to Python. Every
+    input (the payload, triage and the profile's test switch) is already in the
+    health report's ETag.
+    """
+    row = session.execute(
+        text(
+            """
+            SELECT
+                count(*) AS total,
+                count(*) FILTER (WHERE actual_status <> 'done') AS open,
+                count(*) FILTER (WHERE actual_status = 'done') AS done,
+                count(*) FILTER (WHERE actual_status <> 'done'
+                    AND item->>'severity' = 'critical') AS critical,
+                count(*) FILTER (WHERE actual_status <> 'done'
+                    AND item->>'severity' = 'high') AS high,
+                count(*) FILTER (WHERE actual_status <> 'done'
+                    AND item->>'severity' = 'medium') AS medium,
+                count(*) FILTER (WHERE actual_status <> 'done'
+                    AND item->>'severity' = 'low') AS low
+            FROM snapshot_score ss
+            CROSS JOIN LATERAL jsonb_array_elements(ss.result_payload->'findings') AS listed(item)
+            LEFT JOIN finding_triage ft ON ft.snapshot_id = :snapshot
+                AND ft.fingerprint = listed.item->>'fingerprint'
+            CROSS JOIN LATERAL (
+                SELECT coalesce(ft.status, listed.item->>'status') AS actual_status
+            ) state
+            WHERE ss.id = :cache
+                AND (:include_test OR coalesce(listed.item->>'source_scope', '') <> 'test')
+            """
+        ),
+        {"cache": cache_id, "snapshot": snapshot_id, "include_test": include_test_findings},
+    ).one()
+    return FindingSummaryOut(
+        total=int(row.total),
+        open=int(row.open),
+        done=int(row.done),
+        open_by_severity=SeverityCountsOut(
+            critical=int(row.critical),
+            high=int(row.high),
+            medium=int(row.medium),
+            low=int(row.low),
+        ),
     )
 
 

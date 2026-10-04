@@ -9,6 +9,7 @@ evidence the team needs.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -78,6 +79,24 @@ def set_status(
         resource_id=f"{snapshot_id}:{fingerprint}",
         detail={"from": previous, "to": status},
     )
+
+
+def version_for_snapshot(
+    session: Session, snapshot_id: uuid.UUID
+) -> tuple[int, int, datetime | None]:
+    """A cheap fingerprint of one snapshot's triage, for a dashboard ETag.
+
+    Every status change upserts a row with a fresh `updated_at`, so a change in
+    either direction moves this value.
+    """
+    total, done, latest = session.execute(
+        select(
+            func.count(),
+            func.count().filter(FindingTriage.status == FindingStatus.DONE.value),
+            func.max(FindingTriage.updated_at),
+        ).where(FindingTriage.snapshot_id == snapshot_id)
+    ).one()
+    return int(total), int(done), latest
 
 
 def statuses_for_snapshot(session: Session, snapshot_id: uuid.UUID) -> dict[str, str]:

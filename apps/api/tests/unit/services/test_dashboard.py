@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import re
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from codesage_api.db.enums import (
@@ -24,6 +28,7 @@ from codesage_api.db.models import (
     Finding,
     ProcessMetric,
     Snapshot,
+    SnapshotScore,
     SourceFile,
     SourceLocation,
     StaticMetric,
@@ -265,14 +270,75 @@ def test_snapshot_scoring_resolves_persisted_pmd_fqcn_with_file_fallback() -> No
 
 
 def _ready_cache(snapshot: Snapshot, profile: Profile) -> SimpleNamespace:
+    """A cache row as the ORM loads it: scores only, the payload deferred."""
     scored = dashboard._score_snapshot(snapshot, profile)
     return SimpleNamespace(
+        id=uuid.uuid4(),
         snapshot_id=snapshot.id,
         status="ready",
         health_score=scored.result.health_score,
         grade=scored.result.grade,
-        result_payload=dashboard._result_payload(scored),
+        kloc=scored.result.health_kloc,
+        stored_payload=dashboard._result_payload(scored),
     )
+
+
+def test_score_rows_load_without_their_payload() -> None:
+    # Every list of score rows (projects, history, trend) reads only the scores.
+    sql = str(select(SnapshotScore).compile(dialect=postgresql.dialect()))
+
+    assert "health_score" in sql
+    assert "result_payload" not in sql
+
+
+def _serve_cache(
+    session: MagicMock,
+    caches: list[SimpleNamespace],
+    triage: dict[str, str] | None = None,
+) -> list[uuid.UUID]:
+    """Answer the row query with `caches`, and the payload query for one row by id.
+
+    The finding-summary aggregate is answered by `_summarise`, the same counts
+    in Python; the real SQL is covered by the integration tests. Returns the
+    ids whose payload was read, so a test can prove history rows never bring
+    theirs.
+    """
+    session.scalars.return_value.all.return_value = caches
+    by_id = {cache.id: cache.stored_payload for cache in caches}
+    read: list[uuid.UUID] = []
+
+    def scalar(statement: object) -> object:
+        cache_id = statement.whereclause.right.value  # type: ignore[attr-defined]
+        read.append(cache_id)
+        return by_id[cache_id]
+
+    def execute(statement: object, params: dict[str, object] | None = None) -> object:
+        if "jsonb_array_elements" in str(statement):
+            assert params is not None
+            payload = by_id[params["cache"]]
+            return MagicMock(one=MagicMock(return_value=_summarise(payload, params, triage or {})))
+        return MagicMock()
+
+    session.scalar.side_effect = scalar
+    session.execute.side_effect = execute
+    return read
+
+
+def _summarise(
+    payload: dict[str, object], params: dict[str, object], triage: dict[str, str]
+) -> SimpleNamespace:
+    """The finding-summary aggregate's answer for one stored payload."""
+    counts = dict.fromkeys(("total", "open", "done", "critical", "high", "medium", "low"), 0)
+    for item in payload["findings"]:  # type: ignore[attr-defined]
+        if not params["include_test"] and item.get("source_scope") == "test":
+            continue
+        counts["total"] += 1
+        if triage.get(item["fingerprint"], item["status"]) == "done":
+            counts["done"] += 1
+        else:
+            counts["open"] += 1
+            counts[item["severity"]] += 1
+    return SimpleNamespace(**counts)
 
 
 def test_snapshot_scoring_reuses_persisted_commits_90d() -> None:
@@ -356,10 +422,8 @@ def test_health_report_reads_cached_result_without_running_scoring(
     current = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
     list_snapshots.return_value = [previous, current]
     session = MagicMock(spec=Session)
-    session.scalars.return_value.all.return_value = [
-        _ready_cache(previous, _profile()),
-        _ready_cache(current, _profile()),
-    ]
+    caches = [_ready_cache(previous, _profile()), _ready_cache(current, _profile())]
+    payloads_read = _serve_cache(session, caches)
     monkeypatch.setattr(
         dashboard,
         "_score_snapshot",
@@ -369,6 +433,9 @@ def test_health_report_reads_cached_result_without_running_scoring(
     report = dashboard.build_health_report(
         session, uuid.uuid4(), uuid.uuid4(), "main"
     )
+
+    # Only the selected snapshot's payload is fetched; the history row's is not.
+    assert payloads_read == [caches[1].id]
 
     assert report.snapshot_id == str(current.id)
     assert report.health_score == 92.0
@@ -396,7 +463,7 @@ def test_health_report_overlays_triage_without_changing_scores(
     current = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
     list_snapshots.return_value = [current]
     session = MagicMock(spec=Session)
-    session.scalars.return_value.all.return_value = [_ready_cache(current, _profile())]
+    _serve_cache(session, [_ready_cache(current, _profile())])
     workspace_id, repository_id = uuid.uuid4(), uuid.uuid4()
     untriaged = dashboard.build_health_report(session, workspace_id, repository_id, "main")
     fingerprint = untriaged.findings[0].fingerprint
@@ -429,18 +496,198 @@ def test_health_can_select_a_past_snapshot(
     )
     list_snapshots.return_value = [previous, current]
     session = MagicMock(spec=Session)
-    session.scalars.return_value.all.return_value = [
-        _ready_cache(previous, _profile()),
-        _ready_cache(current, _profile()),
-    ]
+    caches = [_ready_cache(previous, _profile()), _ready_cache(current, _profile())]
+    payloads_read = _serve_cache(session, caches)
 
     report = dashboard.build_health_report(
         session, uuid.uuid4(), uuid.uuid4(), "main", previous.id
     )
 
+    assert payloads_read == [caches[0].id]
+
     assert report.snapshot_id == str(previous.id)
     assert report.health_score == 100.0
     assert report.delta == 0.0
+
+
+def _with_extra_findings(cache: SimpleNamespace) -> SimpleNamespace:
+    """Add a done-able medium finding and a test-scope high one to the payload."""
+    [critical] = cache.stored_payload["findings"]
+    cache.stored_payload["findings"] = [
+        critical,
+        {**critical, "fingerprint": "medium-1", "severity": "medium"},
+        {**critical, "fingerprint": "test-1", "severity": "high", "source_scope": "test"},
+    ]
+    return cache
+
+
+@pytest.mark.parametrize("include_findings", [True, False])
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_health_report_summarises_the_default_list_view(
+    list_snapshots: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    include_findings: bool,
+) -> None:
+    current = _snapshot(
+        scanned_at=datetime(2026, 8, 25, tzinfo=UTC), commit_sha="b" * 40, with_finding=True
+    )
+    list_snapshots.return_value = [current]
+    profile = _profile()
+    monkeypatch.setattr(dashboard.profiles, "resolve_effective", MagicMock(return_value=profile))
+    session = MagicMock(spec=Session)
+    cache = _with_extra_findings(_ready_cache(current, profile))
+    _serve_cache(session, [cache], triage={"medium-1": "done"})
+
+    report = dashboard.build_health_report(
+        session, uuid.uuid4(), uuid.uuid4(), "main", include_findings=include_findings
+    )
+
+    # The test-scope finding is out of the default view; triage moves medium-1.
+    assert report.finding_summary is not None
+    assert report.finding_summary.model_dump() == {
+        "total": 2,
+        "open": 1,
+        "done": 1,
+        "open_by_severity": {"critical": 1, "high": 0, "medium": 0, "low": 0},
+    }
+    assert report.kloc == cache.kloc == 1.0
+    assert report.java_file_count == 1
+    [summary_call] = [
+        call
+        for call in session.execute.call_args_list
+        if "jsonb_array_elements" in str(call.args[0])
+    ]
+    assert summary_call.args[1] == {
+        "cache": cache.id,
+        "snapshot": current.id,
+        "include_test": False,
+    }
+
+
+@patch("codesage_api.services.dashboard.dashboard_repository.list_completed_snapshot_refs")
+def test_finding_summary_counts_test_findings_when_the_profile_does(
+    list_snapshots: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = _snapshot(
+        scanned_at=datetime(2026, 8, 25, tzinfo=UTC), commit_sha="b" * 40, with_finding=True
+    )
+    list_snapshots.return_value = [current]
+    profile = replace(_profile(), include_test_findings=True)
+    monkeypatch.setattr(dashboard.profiles, "resolve_effective", MagicMock(return_value=profile))
+    session = MagicMock(spec=Session)
+    _serve_cache(session, [_with_extra_findings(_ready_cache(current, profile))])
+
+    report = dashboard.build_health_report(session, uuid.uuid4(), uuid.uuid4(), "main")
+
+    assert report.finding_summary is not None
+    assert report.finding_summary.total == 3
+    assert report.finding_summary.open == 3
+    assert report.finding_summary.done == 0
+    assert report.finding_summary.open_by_severity.high == 1
+
+
+def _whole_payload_selected(sql: str) -> bool:
+    """True when a statement reads `result_payload` itself, not one key of it.
+
+    A bind parameter named after the column (`%(result_payload_1)s`) is not a read.
+    """
+    return re.search(r"result_payload\b(?!\s*->)", sql) is not None
+
+
+def test_latest_health_hint_reads_one_payload_key_and_a_ready_only_trend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 9, 10, tzinfo=UTC)
+    newest = _snapshot(scanned_at=now, commit_sha="b" * 40, with_finding=True)
+    older = _snapshot(scanned_at=now - timedelta(days=1), commit_sha="a" * 40, with_finding=False)
+    monkeypatch.setattr(
+        dashboard.dashboard_repository,
+        "list_latest_completed_snapshot_refs",
+        MagicMock(return_value=[newest, older]),
+    )
+    caches = {
+        newest.id: SimpleNamespace(
+            id=uuid.uuid4(), status="ready", health_score=80.0, grade="B", kloc=2.5
+        ),
+        older.id: SimpleNamespace(
+            id=uuid.uuid4(), status="ready", health_score=75.0, grade="C", kloc=2.4
+        ),
+    }
+    prepare = MagicMock(side_effect=lambda _session, ref, _profile: (caches[ref.id], False))
+    monkeypatch.setattr(dashboard, "prepare_snapshot_score", prepare)
+    # Newest first, as the repository returns them.
+    recent = [(now - timedelta(days=day), f"{day}" * 40, 80.0 - day) for day in range(7)]
+    list_recent = MagicMock(return_value=recent)
+    monkeypatch.setattr(dashboard.dashboard_repository, "list_recent_ready_scores", list_recent)
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = "3"
+    profile = _profile()
+
+    hint, pending = dashboard.build_latest_health_hint(
+        session, uuid.uuid4(), uuid.uuid4(), "main", profile
+    )
+
+    assert pending == []
+    assert hint is not None
+    assert (hint.score, hint.grade, hint.delta) == (80.0, Grade.B, 5.0)
+    assert hint.kloc == 2.5
+    assert hint.finding_count == 1
+    assert hint.red_issue_count == 3
+    assert hint.scanned_at == now.isoformat()
+    assert [point.score for point in hint.trend] == [74.0, 75.0, 76.0, 77.0, 78.0, 79.0, 80.0]
+    assert hint.trend[-1].t == now.isoformat()
+    # The trend is a plain read: scoring is prepared for the two refs only.
+    assert prepare.call_count == 2
+    assert list_recent.call_args.kwargs["limit"] == 7
+    assert list_recent.call_args.kwargs["profile_fingerprint"] == (
+        dashboard.profile_fingerprint(profile)
+    )
+    [statement] = [call.args[0] for call in session.scalar.call_args_list]
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "result_payload ->>" in sql
+    assert not _whole_payload_selected(sql)
+
+
+def test_latest_health_hint_reads_nothing_more_while_the_score_is_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    newest = _snapshot(
+        scanned_at=datetime(2026, 9, 10, tzinfo=UTC), commit_sha="b" * 40, with_finding=True
+    )
+    monkeypatch.setattr(
+        dashboard.dashboard_repository,
+        "list_latest_completed_snapshot_refs",
+        MagicMock(return_value=[newest]),
+    )
+    pending_row = SimpleNamespace(id=uuid.uuid4(), status="pending", health_score=None, grade=None)
+    monkeypatch.setattr(
+        dashboard, "prepare_snapshot_score", MagicMock(return_value=(pending_row, True))
+    )
+    list_recent = MagicMock()
+    monkeypatch.setattr(dashboard.dashboard_repository, "list_recent_ready_scores", list_recent)
+    session = MagicMock(spec=Session)
+
+    hint, pending = dashboard.build_latest_health_hint(
+        session, uuid.uuid4(), uuid.uuid4(), "main", _profile()
+    )
+
+    assert hint is None
+    assert pending == [pending_row]
+    session.scalar.assert_not_called()
+    list_recent.assert_not_called()
+
+
+def test_whole_payload_detection_tells_a_key_read_from_the_column() -> None:
+    key = select(SnapshotScore.result_payload["red_issue_count"].astext)
+    without_findings = select(SnapshotScore.result_payload.op("-")("findings"))
+    whole = select(SnapshotScore.result_payload)
+    compiled = [
+        str(statement.compile(dialect=postgresql.dialect()))
+        for statement in (key, without_findings, whole)
+    ]
+
+    assert [_whole_payload_selected(sql) for sql in compiled] == [False, True, True]
 
 
 @patch("codesage_api.services.dashboard.celery_app.send_task")
