@@ -238,12 +238,12 @@ def test_sign_in_lands_on_return_to(client, signs_in) -> None:
     assert response.headers["location"] == f"{FRONTEND}{INVITE}"
 
 
-def test_sign_in_without_return_to_lands_on_projects(client, signs_in) -> None:
+def test_sign_in_without_return_to_lands_on_overview(client, signs_in) -> None:
     state, _ = _login(client)
 
     response = client.get(f"/api/auth/callback?code=c&state={state}")
 
-    assert response.headers["location"] == f"{FRONTEND}/projects"
+    assert response.headers["location"] == f"{FRONTEND}/overview"
 
 
 def test_a_signed_but_unsafe_return_to_is_still_refused_at_the_callback(
@@ -260,7 +260,7 @@ def test_a_signed_but_unsafe_return_to_is_still_refused_at_the_callback(
 
     response = client.get("/api/auth/callback?code=c&state=s")
 
-    assert response.headers["location"] == f"{FRONTEND}/projects"
+    assert response.headers["location"] == f"{FRONTEND}/overview"
 
 
 def test_the_whole_verification_journey_ends_on_the_invitation(
