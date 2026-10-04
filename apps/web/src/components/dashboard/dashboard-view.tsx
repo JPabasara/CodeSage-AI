@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { FolderX, GitBranch, ScanSearch } from "lucide-react"
+import { FolderX, GitBranch } from "lucide-react"
 import { toast } from "sonner"
 
 import { ProjectHeader } from "@/components/dashboard/project-header"
@@ -26,6 +26,7 @@ import {
 } from "@/components/dashboard/java-scope-banner"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
+import { FirstScanCard } from "@/components/dashboard/first-scan-card"
 import { PAGE_CONTAINER } from "@/components/layout/page-container"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
@@ -42,19 +43,19 @@ import {
   onScanEvent,
   pinScanResults,
   useScanFor,
+  useScanLive,
 } from "@/hooks/use-scan-center"
 import { useSession } from "@/hooks/use-session"
-import { ScanStatusStrip } from "@/components/layout/scan-status-strip"
+import { ScanProgressCard } from "@/components/dashboard/scan-progress-card"
 import { ScanProgressPanel } from "@/components/dashboard/scan-progress-panel"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import { findingSummary, leafFiles } from "@/lib/dashboard-summary"
 import type { Finding, FindingStatus, TreeNode } from "@/lib/types"
-import { SCAN_SHARE, toBar } from "@/lib/scan-progress"
 import { cn, healthColor } from "@/lib/utils"
 
 const numbers = new Intl.NumberFormat("en-US")
 
-/** Tall enough for a working list, short enough that the page keeps its header. */
+/** The code map's tree scrolls inside; tall enough to work in, short enough to keep the header. */
 const PANEL_HEIGHT = "h-[min(46rem,calc(100svh-15rem))] min-h-[26rem]"
 
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
@@ -105,6 +106,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     stop: stopTrackedScan,
   } = useScanFor(repoId, activeBranch, repo?.name)
   const jobActive = Boolean(trackedScan && isJobActive(trackedScan))
+  // The header's "Scanning 41%" reads the same live bar as the progress card.
+  const liveScan = useScanLive(trackedScan?.key)
 
   // Once the scan is done, "latest" is the new snapshot.
   const pinnedSnapshotId =
@@ -357,8 +360,16 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
+    // The first scan, or one on a branch with no results yet: the whole page is its progress.
     if (jobActive && trackedScan && !loading && !report) {
-      return <ScanProgressPanel kind="job" scan={trackedScan} size="full" />
+      return (
+        <ScanProgressCard
+          scan={trackedScan}
+          size="full"
+          canStop={canStopScan}
+          onStop={stopTrackedScan}
+        />
+      )
     }
 
     // A score being recalculated with no scan behind it — after a profile change.
@@ -375,15 +386,12 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
     if (neverScanned) {
       return (
-        <EmptyState
-          className="flex-1"
-          icon={<ScanSearch />}
-          title="No scans yet"
-          description={`${
-            activeBranch
-              ? `Nothing has been analyzed on ${activeBranch} yet.`
-              : "This repository has not been analyzed yet."
-          } Run your first scan to see its health.`}
+        <FirstScanCard
+          repoName={repo?.name ?? "this repository"}
+          branch={activeBranch}
+          otherBranches={(branches?.length ?? 0) > 1}
+          onScan={activeBranch ? startTrackedScan : undefined}
+          lockedReason={canStartScan ? undefined : "Viewers can't start scans"}
         />
       )
     }
@@ -458,8 +466,9 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         {tab === "findings"
           ? panel(
               "findings",
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
-                <div className={PANEL_HEIGHT}>
+              // The list is part of the page, which scrolls as a whole; the detail stays in view.
+              <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+                <div className="min-w-0">
                   <RefactorFirstList
                     findings={displayedFindings}
                     onSelect={openFinding}
@@ -534,39 +543,36 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
         profileName={report?.profile}
         snapshotNavigation={snapshotNavigation}
         loading={!report && !error && !jobActive && !projectGone && !noBranches}
-        scan={{
-          phase:
-            trackedScan && jobActive
-              ? trackedScan.job === "scoring"
-                ? "running"
-                : trackedScan.status.phase
-              : "idle",
-          scoring: trackedScan?.job === "scoring",
-          progress: trackedScan
-            ? trackedScan.job === "scoring"
-              ? SCAN_SHARE
-              : Math.floor(toBar(trackedScan.status.progress))
-            : 0,
-          stopping: trackedScan?.stopping ?? false,
-          branch: activeBranch || undefined,
-          onScan: activeBranch ? startTrackedScan : undefined,
-          // Stop lives in the progress strip under the header.
-          showStop: false,
-          lockedReason: canStartScan ? undefined : "Viewers can't start scans",
-        }}
+        scan={
+          neverScanned && !jobActive
+            ? undefined
+            : {
+                phase:
+                  trackedScan && jobActive
+                    ? trackedScan.job === "scoring"
+                      ? "running"
+                      : trackedScan.status.phase
+                    : "idle",
+                scoring: trackedScan?.job === "scoring",
+                progress: Math.floor(liveScan?.bar ?? 0),
+                stopping: trackedScan?.stopping ?? false,
+                branch: activeBranch || undefined,
+                onScan: activeBranch ? startTrackedScan : undefined,
+                // Stop lives in the progress card under the header.
+                showStop: false,
+                lockedReason: canStartScan
+                  ? undefined
+                  : "Viewers can't start scans",
+              }
+        }
       />
 
-      <ScanStatusStrip
-        scan={trackedScan}
-        canStop={canStopScan}
-        onStop={stopTrackedScan}
-      />
-
+      {/* One card for a running scan: the step, the count, the bar and Stop. */}
       {trackedScan && showJobCard ? (
-        <ScanProgressPanel
-          kind="job"
+        <ScanProgressCard
           scan={trackedScan}
-          size="compact"
+          canStop={canStopScan}
+          onStop={stopTrackedScan}
           onShow={showNewResults}
         />
       ) : null}

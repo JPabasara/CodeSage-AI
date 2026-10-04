@@ -112,7 +112,7 @@ test("selecting a finding opens the findings and detail view", async () => {
   const detail = await screen.findByLabelText("Finding detail")
   expect(within(detail).getByText(CRITICAL.reason)).toBeInTheDocument()
   expect(
-    within(detail).getByRole("link", { name: "View on GitHub ↗" }),
+    within(detail).getByRole("link", { name: /^Open at line \d+ on GitHub$/ }),
   ).toHaveAttribute(
     "href",
     `${mockRepos.find((repo) => repo.id === DEMO_REPO_ID)?.url}/blob/${mockHealthReport.commit_sha}/${CRITICAL.file}#L${CRITICAL.line}`,
@@ -144,7 +144,9 @@ test("GitHub links use a historical snapshot commit instead of branch head", asy
     `/dashboard/${DEMO_REPO_ID}?snapshot_id=${mockScanHistory[0].snapshot_id}&finding=${CRITICAL.fingerprint}`,
   )
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  const link = await screen.findByRole("link", { name: "View on GitHub ↗" })
+  const link = await screen.findByRole("link", {
+    name: /^Open at line \d+ on GitHub$/,
+  })
   expect(link).toHaveAttribute(
     "href",
     `${mockRepos[0].url}/blob/${commit}/${CRITICAL.file}#L${CRITICAL.line}`,
@@ -486,7 +488,7 @@ test("a never-scanned repo still gets its header, so a scan can be started", asy
     </>,
   )
 
-  expect(await screen.findByText(/no scans yet/i)).toBeInTheDocument()
+  expect(await screen.findByTestId("first-scan-card")).toBeInTheDocument()
   expect(
     screen.queryByText(/couldn’t load this dashboard/i),
   ).not.toBeInTheDocument()
@@ -508,7 +510,7 @@ test("an unavailable project shows project guidance instead of a raw uuid", asyn
     "/projects",
   )
   expect(screen.queryByText(UNKNOWN_REPO_ID)).not.toBeInTheDocument()
-  expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
 })
 
 test("with no snapshot the nav reads Never scanned instead of Invalid Date", async () => {
@@ -532,7 +534,7 @@ test("a real failure still reads as an error, not as an empty state", async () =
   expect(
     await screen.findByText(/couldn’t load this dashboard/i),
   ).toBeInTheDocument()
-  expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
   // the nav survives this too — switching branch is the obvious recovery
   expect(screen.getByRole("button", { name: /^scan/i })).toBeInTheDocument()
 })
@@ -558,14 +560,14 @@ test("finishing the first scan refetches the report, so the empty state fills in
   )
 
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
-  await screen.findByText(/no scans yet/i)
+  await screen.findByTestId("first-scan-card")
 
   await userEvent.click(screen.getByRole("button", { name: /^scan/i }))
 
   expect(
     await screen.findByText("Code Health", {}, { timeout: 4000 }),
   ).toBeInTheDocument()
-  expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
 })
 
 test("a score still being calculated is a wait, not an error", async () => {
@@ -601,7 +603,7 @@ test("a score still being calculated is a wait, not an error", async () => {
     screen.queryByText(/couldn’t load this dashboard/i),
   ).not.toBeInTheDocument()
   // Not the never-scanned empty state either — the snapshot does exist.
-  expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
 
   expect(
     await screen.findByText("Code Health", {}, { timeout: 8000 }),
@@ -636,13 +638,19 @@ test("the error state's Retry actually re-runs the read", async () => {
   ).not.toBeInTheDocument()
 })
 
-test("a never-scanned repository displays the empty state with first-scan guidance, not an error state", async () => {
+test("a never-scanned repository offers its first scan, not an error state", async () => {
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
 
-  expect(await screen.findByText("No scans yet")).toBeInTheDocument()
+  const card = await screen.findByTestId("first-scan-card")
   expect(
-    screen.getByText(/run your first scan to see its health/i),
+    within(card).getByRole("heading", { name: /run the first scan of/i }),
   ).toBeInTheDocument()
+  expect(card).toHaveTextContent("Only .java files are analysed.")
+  expect(
+    within(card).getByRole("link", { name: "What is analysed" }),
+  ).toHaveAttribute("href", "/help/what-is-analysed")
+  // One Scan button on the page: the card's, not a second one in the header.
+  expect(screen.getAllByRole("button", { name: /^scan /i })).toHaveLength(1)
 
   // Must not be an error state
   expect(
@@ -825,14 +833,14 @@ const barValue = () =>
       .getAttribute("aria-valuenow") ?? "0",
   )
 
-test("a scan keeps the previous results usable, with a compact card above them", async () => {
+test("a scan keeps the previous results usable, with a progress card above them", async () => {
   const user = userEvent.setup()
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
   await user.click(screen.getByRole("button", { name: /^scan/i }))
 
   const card = await screen.findByTestId("scan-progress-panel")
-  expect(card).toHaveAttribute("data-size", "compact")
+  expect(card).toHaveAttribute("data-size", "card")
   // The results stay on screen and stay usable while it runs.
   expect(screen.getByText("Code Health")).toBeInTheDocument()
   expect(screen.getByRole("list", { name: "Top findings" })).toBeInTheDocument()
@@ -840,7 +848,7 @@ test("a scan keeps the previous results usable, with a compact card above them",
   expect(
     await screen.findByRole("list", { name: /ranked refactor findings/i }),
   ).toBeInTheDocument()
-  expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
+  expect(await screen.findByTestId("scan-progress-panel")).toHaveTextContent(
     /acme-payments on main/,
   )
 })
@@ -868,12 +876,12 @@ test("when it is done, 'Show them' — the page never swaps by itself", async ()
   expect(screen.getByText("Code Health")).toBeInTheDocument()
 }, 20_000)
 
-test("leave the dashboard mid-scan, come back: same bar, same line, still running", async () => {
+test("leave the dashboard mid-scan, come back: same bar, still running", async () => {
   const user = userEvent.setup()
   const first = render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
   await user.click(screen.getByRole("button", { name: /^scan/i }))
-  await screen.findByTestId("scan-status-strip")
+  await screen.findByTestId("scan-progress-panel")
   await waitFor(() => expect(barValue()).toBeGreaterThan(0))
   const leftAt = barValue()
   first.unmount() // navigated away
@@ -882,8 +890,7 @@ test("leave the dashboard mid-scan, come back: same bar, same line, still runnin
   await ready()
   // Not restarted: at least where it was, never back at zero.
   expect(barValue()).toBeGreaterThanOrEqual(leftAt)
-  expect(screen.getByTestId("scan-panel-line")).not.toBeEmptyDOMElement()
-  expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
+  expect(await screen.findByTestId("scan-progress-panel")).toHaveTextContent(
     /acme-payments on main/,
   )
   expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument()
@@ -895,21 +902,23 @@ test("a scan started elsewhere is found when the dashboard opens", async () => {
 
   render(<DashboardView repoId={DEMO_REPO_ID} />)
 
-  expect(await screen.findByTestId("scan-status-strip")).toBeInTheDocument()
   expect(await screen.findByTestId("scan-progress-panel")).toBeInTheDocument()
 })
 
 test("a first scan has nothing to keep: the middle of the page is the job", async () => {
   const user = userEvent.setup()
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
-  await screen.findByText(/no scans yet/i)
-  await user.click(screen.getByRole("button", { name: /^scan/i }))
+  const card = await screen.findByTestId("first-scan-card")
+  await user.click(within(card).getByRole("button", { name: /^scan/i }))
 
   const panel = await screen.findByTestId("scan-progress-panel")
   expect(panel).toHaveAttribute("data-size", "full")
-  expect(panel).toHaveTextContent(
-    /Waiting for a free scan slot|Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there|Calculating your health score/,
+  expect(within(panel).getByRole("status")).toHaveTextContent(
+    /Queued|Cloning the repository|Measuring code|Reading git history|Reading comments|Finding debt|Predicting risk|Saving and scoring/,
   )
+  expect(
+    within(panel).getByRole("list", { name: "Scan steps" }),
+  ).toBeInTheDocument()
 })
 
 test("the dashboard says which profile its numbers are scored with", async () => {
@@ -949,18 +958,18 @@ test("the report loads beside the branch list, for the default branch, once and 
   // Already asked while the branch list is still out, using the project's default.
   expect(healthAsked).toEqual(["main"])
   expect(scansAsked).toEqual(["main"])
-  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
 
   releaseBranches()
   await ready()
   expect(container.querySelector('[aria-busy="true"]')).toBeNull()
-  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
   // The branch list confirmed the guess: still one ask each, never an empty branch.
   expect(healthAsked).toEqual(["main"])
   expect(scansAsked).toEqual(["main"])
 })
 
-test("a remembered branch that no longer exists never flashes 'No scans yet'", async () => {
+test("a remembered branch that no longer exists never flashes the first-scan card", async () => {
   writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "deleted-branch")
   let releaseBranches!: () => void
   const branchesHeld = new Promise<void>((resolve) => {
@@ -990,10 +999,10 @@ test("a remembered branch that no longer exists never flashes 'No scans yet'", a
   await new Promise((resolve) => setTimeout(resolve, 50))
   // The guess missed, but until the branch list confirms it the page keeps loading.
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
-  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
 
   releaseBranches()
   await ready()
-  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+  expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
   expect(healthAsked.at(-1)).toBe("main")
 })

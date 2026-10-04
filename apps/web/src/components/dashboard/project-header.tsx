@@ -42,7 +42,8 @@ export type ProjectHeaderProps = {
   scannedAt?: string
   profileName?: string
   snapshotNavigation?: SnapshotNavigation
-  scan: ScanControlProps
+  /** Absent when the page body carries the one Scan button (a never-scanned branch). */
+  scan?: ScanControlProps
   /** The snapshot is still loading: say nothing yet rather than "Never scanned". */
   loading?: boolean
 }
@@ -73,9 +74,11 @@ export function ProjectHeader({
       ? `${repoUrl.replace(/\/$/, "")}/tree/${commitSha}`
       : repoUrl
 
+  // From lg: title and actions share the first row, and the meta row has the
+  // full width below, so filling it in never wraps it or moves the page.
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-      <div className="min-w-0 space-y-2">
+    <header className="grid gap-x-6 gap-y-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+      <div className="min-w-0">
         <h1 className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 text-xl font-semibold tracking-tight text-foreground-strong">
           <span className="truncate">{repoName}</span>
           {owner ? (
@@ -84,69 +87,69 @@ export function ProjectHeader({
             </span>
           ) : null}
         </h1>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[0.84375rem] text-muted-foreground">
-          {branch ? (
-            <span className={metaItem}>
-              <GitBranch className="size-3.5" aria-hidden="true" />
-              <span className="sr-only">Branch </span>
-              <span className="font-mono">{branch}</span>
-            </span>
-          ) : null}
-          {loading ? (
-            <Skeleton className="h-4 w-44" />
-          ) : (
-            <>
-              <span
-                className={metaItem}
-                title={
-                  scannedAt
-                    ? `Last analyzed ${absoluteTime(scannedAt)}`
-                    : undefined
-                }
-              >
-                <GitCommit className="size-3.5" aria-hidden="true" />
-                <span className="font-mono">
-                  {commitSha ? `#${shortSha(commitSha)}` : "No commit yet"}
-                </span>
-              </span>
-              <span className={metaItem} title={absoluteTime(scannedAt)}>
-                <Clock className="size-3.5" aria-hidden="true" />
-                {scanned ? `Scanned ${scanned}` : "Never scanned"}
-              </span>
-            </>
-          )}
-          {snapshotNavigation?.isHistorical ? (
-            <span className="inline-flex items-center gap-1.5 rounded-sm bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-              <History className="size-3.5" aria-hidden="true" />
-              Historical snapshot
-            </span>
-          ) : null}
-          {profileName ? (
-            <Link
-              href="/profiles"
-              data-testid="scored-with"
-              title="Scores are weighed by this profile. Change it in Scoring profiles."
-              className={metaLink}
+      </div>
+      <div className="order-2 flex min-h-5 flex-wrap items-center gap-x-4 gap-y-1.5 text-[0.84375rem] text-muted-foreground lg:order-3 lg:col-span-2">
+        {branch ? (
+          <span className={metaItem}>
+            <GitBranch className="size-3.5" aria-hidden="true" />
+            <span className="sr-only">Branch </span>
+            <span className="font-mono">{branch}</span>
+          </span>
+        ) : null}
+        {loading ? (
+          <Skeleton className="h-5 w-44" />
+        ) : (
+          <>
+            <span
+              className={metaItem}
+              title={
+                scannedAt
+                  ? `Last analyzed ${absoluteTime(scannedAt)}`
+                  : undefined
+              }
             >
-              <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-              Scored with {profileName}
-            </Link>
-          ) : null}
-          {sourceUrl ? (
-            <a
-              href={sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={metaLink}
-            >
-              <ExternalLink className="size-3.5" aria-hidden="true" />
-              View on GitHub
-            </a>
-          ) : null}
-        </div>
+              <GitCommit className="size-3.5" aria-hidden="true" />
+              <span className="font-mono">
+                {commitSha ? `#${shortSha(commitSha)}` : "No commit yet"}
+              </span>
+            </span>
+            <span className={metaItem} title={absoluteTime(scannedAt)}>
+              <Clock className="size-3.5" aria-hidden="true" />
+              {scanned ? `Scanned ${scanned}` : "Never scanned"}
+            </span>
+          </>
+        )}
+        {snapshotNavigation?.isHistorical ? (
+          <span className="inline-flex items-center gap-1.5 rounded-sm bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+            <History className="size-3.5" aria-hidden="true" />
+            Historical snapshot
+          </span>
+        ) : null}
+        {profileName ? (
+          <Link
+            href="/profiles"
+            data-testid="scored-with"
+            title="Scores are weighed by this profile. Change it in Scoring profiles."
+            className={metaLink}
+          >
+            <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+            Scored with {profileName}
+          </Link>
+        ) : null}
+        {sourceUrl ? (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={metaLink}
+          >
+            <ExternalLink className="size-3.5" aria-hidden="true" />
+            View on GitHub
+          </a>
+        ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="order-3 mt-2 flex flex-wrap items-center gap-2.5 lg:order-2 lg:mt-0">
         {snapshotNavigation ? (
           <div
             role="group"
@@ -198,9 +201,11 @@ export function ProjectHeader({
             Latest scan
           </Button>
         ) : null}
-        <div data-tour="scan-action">
-          <ScanControl {...scan} size="lg" />
-        </div>
+        {scan ? (
+          <div data-tour="scan-action">
+            <ScanControl {...scan} size="lg" />
+          </div>
+        ) : null}
       </div>
     </header>
   )
