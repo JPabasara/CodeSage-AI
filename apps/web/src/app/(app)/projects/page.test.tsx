@@ -17,6 +17,8 @@ import {
 } from "@/lib/mocks/fixtures"
 import type { Session } from "@/lib/types"
 import { AppRail } from "@/components/layout/app-rail"
+import { javaOnlyAckKey } from "@/components/projects/java-only-dialog"
+import type { ScanTarget } from "@/hooks/use-scan-center"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import ProjectsPage from "./page"
@@ -45,12 +47,24 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: toastError, success: toastSuccess }),
 }))
 
+// The scan itself is the scan center's job; here it is enough that it was asked for.
+const { startScanMock } = vi.hoisted(() => ({
+  startScanMock: vi.fn<
+    (target: ScanTarget, options?: { quiet?: boolean }) => Promise<void>
+  >(async () => {}),
+}))
+vi.mock("@/hooks/use-scan-center", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/use-scan-center")>()),
+  startScan: startScanMock,
+}))
+
 beforeEach(() => {
   session.current = mockSession
   localStorage.clear()
   pushMock.mockClear()
   toastError.mockClear()
   toastSuccess.mockClear()
+  startScanMock.mockClear()
 })
 
 /** Wait for the projects list to finish its first load. */
@@ -62,10 +76,31 @@ async function ready() {
   return list
 }
 
-async function connect(url: string) {
+type DialogChoice = "Connect only" | "Connect and scan" | "Cancel" | null
+
+/** Types a URL and submits it; a well-formed one is then answered in the Java-only dialog. */
+async function connect(url: string, choice: DialogChoice = "Connect only") {
   await userEvent.type(screen.getByLabelText(/repository url/i), url)
-  await userEvent.click(screen.getByRole("button", { name: /connect/i }))
+  await userEvent.click(
+    screen.getByRole("button", { name: /^connect repository$/i }),
+  )
+  if (choice && url.startsWith("https://github.com/")) {
+    const dialog = await screen.findByRole("alertdialog")
+    await userEvent.click(within(dialog).getByRole("button", { name: choice }))
+  }
 }
+
+/** Opens the remove dialog from a row's ⋯ menu. */
+async function askToRemove(repoLabel: string) {
+  await userEvent.click(
+    screen.getByRole("button", { name: `More actions for ${repoLabel}` }),
+  )
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Remove repository…" }),
+  )
+}
+
+const ackKey = () => javaOnlyAckKey(mockSession.user_id, WORKSPACE_ID)
 
 function renderWithAppRail() {
   return render(
@@ -128,11 +163,7 @@ test("removing the active project confirms its name and selects a safe remaining
   render(<ProjectsPage />)
   await ready()
 
-  await userEvent.click(
-    screen.getByRole("button", {
-      name: /delete acme\/acme-payments repository/i,
-    }),
-  )
+  await askToRemove("acme/acme-payments")
   expect(screen.getByRole("dialog")).toHaveTextContent("acme/acme-payments")
   await userEvent.click(
     screen.getByRole("button", { name: /^remove repository$/i }),
@@ -164,11 +195,7 @@ test("the page and AppRail cannot restore a deleted active project", async () =>
     ),
   )
 
-  await userEvent.click(
-    screen.getByRole("button", {
-      name: /delete acme\/acme-payments repository/i,
-    }),
-  )
+  await askToRemove("acme/acme-payments")
   await userEvent.click(
     screen.getByRole("button", { name: /^remove repository$/i }),
   )
@@ -200,11 +227,7 @@ test("removing the last project clears storage and hides the rail's project page
   renderWithAppRail()
   await ready()
 
-  await userEvent.click(
-    screen.getByRole("button", {
-      name: /delete acme\/acme-payments repository/i,
-    }),
-  )
+  await askToRemove("acme/acme-payments")
   await userEvent.click(
     screen.getByRole("button", { name: /^remove repository$/i }),
   )
@@ -236,11 +259,7 @@ test("a running scan prevents repository removal", async () => {
   render(<ProjectsPage />)
   await ready()
 
-  await userEvent.click(
-    screen.getByRole("button", {
-      name: /delete acme\/acme-payments repository/i,
-    }),
-  )
+  await askToRemove("acme/acme-payments")
   await userEvent.click(
     screen.getByRole("button", { name: /^remove repository$/i }),
   )
@@ -442,7 +461,7 @@ test("the active workspace is named on the page, not just implied", async () => 
   expect(screen.getByText("Acme Engineering")).toBeVisible()
 })
 
-test("a role without connect sees the form locked, and no delete control", async () => {
+test("a role without connect sees the form locked, and remove and scan locked", async () => {
   session.current = mockSessionViewer
 
   render(<ProjectsPage />)
@@ -458,9 +477,21 @@ test("a role without connect sees the form locked, and no delete control", async
       "Only org-admins and managers can connect repositories",
     ),
   ).toBeInTheDocument()
+  // Remove is locked the same way, in the row's ⋯ menu.
   expect(
-    screen.queryByRole("button", { name: /delete acme\/acme-payments/i }),
-  ).not.toBeInTheDocument()
+    screen.getByRole("button", {
+      name: "More actions for acme/acme-payments",
+    }),
+  ).toBeDisabled()
+  expect(
+    screen.getAllByLabelText(
+      "Only org-admins and managers can remove repositories",
+    ).length,
+  ).toBeGreaterThan(0)
+  // And a viewer cannot start the first scan of an unscanned repository.
+  expect(
+    screen.getByRole("button", { name: "Run first scan of acme/octo-cli" }),
+  ).toBeDisabled()
   expect(screen.getByText(/needs the manager or org-admin role/i)).toBeVisible()
 })
 
@@ -534,4 +565,196 @@ test("editing the URL clears the inline refusal, and a success leaves none", asy
   )
   expect(within(connectForm()).queryByRole("alert")).not.toBeInTheDocument()
   expect(input).toHaveValue("")
+})
+
+// The Java-only dialog (6.1), Connect and scan (6.2) and opening a row (6.4).
+
+test("a well-formed URL asks first, and Cancel connects nothing", async () => {
+  let posts = 0
+  server.use(
+    http.post("*/api/projects", () => {
+      posts += 1
+      return HttpResponse.json(
+        { detail: "x", code: "INTERNAL_ERROR" },
+        { status: 500 },
+      )
+    }),
+  )
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/octocat/hello-world", null)
+  const dialog = await screen.findByRole("alertdialog")
+  expect(dialog).toHaveTextContent("Connect octocat/hello-world?")
+
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+
+  await waitFor(() =>
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+  )
+  expect(posts).toBe(0)
+  expect(toastSuccess).not.toHaveBeenCalled()
+  expect(toastError).not.toHaveBeenCalled()
+  // The URL waits in the box for a second try.
+  expect(screen.getByLabelText(/repository url/i)).toHaveValue(
+    "https://github.com/octocat/hello-world",
+  )
+  expect(screen.getByLabelText(/repository url/i)).toBeEnabled()
+})
+
+test("a malformed URL is refused before the dialog", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("not-a-url")
+
+  expect(await failureMessage()).toMatch(/valid GitHub repository link/i)
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+})
+
+test("Connect only adds the row and stays on the page, without a scan", async () => {
+  render(<ProjectsPage />)
+  const list = await ready()
+
+  await connect("https://github.com/octocat/hello-world", "Connect only")
+
+  expect(await within(list).findByText("hello-world")).toBeInTheDocument()
+  expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world")
+  expect(startScanMock).not.toHaveBeenCalled()
+  expect(pushMock).not.toHaveBeenCalled()
+  // Freshly connected and never scanned: its row offers the first scan.
+  expect(
+    within(list).getByRole("button", {
+      name: "Run first scan of octocat/hello-world",
+    }),
+  ).toBeInTheDocument()
+})
+
+test("Connect and scan selects the project, queues its first scan and opens its dashboard", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/octocat/hello-world", "Connect and scan")
+
+  await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1))
+  const repoId = readSelectedProjectId(WORKSPACE_ID)
+  expect(repoId).toBeDefined()
+  expect(mockRepos.some((repo) => repo.id === repoId)).toBe(false)
+  // Its own toast already says "scan queued", so the scan center stays quiet.
+  expect(startScanMock).toHaveBeenCalledExactlyOnceWith(
+    {
+      workspaceId: WORKSPACE_ID,
+      repoId,
+      branch: "main",
+      repoName: "hello-world",
+    },
+    { quiet: true },
+  )
+  expect(pushMock).toHaveBeenCalledWith(`/dashboard/${repoId}`)
+  expect(toastSuccess).toHaveBeenCalledWith(
+    "Connected octocat/hello-world · scan queued on main",
+  )
+})
+
+test("a refusal closes the dialog first, then shows under the URL field", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/acme/huge-monorepo", "Connect and scan")
+
+  expect(await within(connectForm()).findByRole("alert")).toHaveTextContent(
+    /larger than 300 MB/i,
+  )
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  expect(startScanMock).not.toHaveBeenCalled()
+  expect(pushMock).not.toHaveBeenCalled()
+})
+
+test("a remembered choice skips the dialog in this workspace", async () => {
+  localStorage.setItem(ackKey(), "scan")
+  render(<ProjectsPage />)
+  await ready()
+
+  await connect("https://github.com/octocat/hello-world", null)
+
+  await waitFor(() => expect(startScanMock).toHaveBeenCalledTimes(1))
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  expect(pushMock).toHaveBeenCalledWith(
+    `/dashboard/${readSelectedProjectId(WORKSPACE_ID)}`,
+  )
+})
+
+test("ticking Don't show this again is what the next connect remembers", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await userEvent.type(
+    screen.getByLabelText(/repository url/i),
+    "https://github.com/octocat/hello-world",
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: /^connect repository$/i }),
+  )
+  const dialog = await screen.findByRole("alertdialog")
+  await userEvent.click(within(dialog).getByRole("checkbox"))
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Connect only" }),
+  )
+  await waitFor(() =>
+    expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world"),
+  )
+
+  await connect("https://github.com/octocat/another", null)
+  await waitFor(() =>
+    expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/another"),
+  )
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  expect(startScanMock).not.toHaveBeenCalled()
+})
+
+test("clicking a row selects that project and opens its dashboard", async () => {
+  render(<ProjectsPage />)
+  const list = await ready()
+
+  const row = within(list).getByText("web-store").closest("li")!
+  await userEvent.click(within(row).getAllByText("public")[0])
+
+  expect(readSelectedProjectId(WORKSPACE_ID)).toBe(mockRepos[1].id)
+  expect(pushMock).toHaveBeenCalledExactlyOnceWith(
+    `/dashboard/${mockRepos[1].id}`,
+  )
+})
+
+test("the selected project wears the Current chip", async () => {
+  writeSelectedProjectId(mockRepos[1].id, WORKSPACE_ID)
+  render(<ProjectsPage />)
+  const list = await ready()
+
+  await waitFor(() =>
+    expect(within(list).getByText("Current").closest("li")).toHaveTextContent(
+      "web-store",
+    ),
+  )
+  expect(screen.queryByRole("button", { name: /^select/i })).toBeNull()
+})
+
+test("Run first scan on an unscanned row scans its default branch and opens the dashboard", async () => {
+  render(<ProjectsPage />)
+  await ready()
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "Run first scan of acme/octo-cli" }),
+  )
+
+  expect(startScanMock).toHaveBeenCalledExactlyOnceWith(
+    {
+      workspaceId: WORKSPACE_ID,
+      repoId: mockRepos[2].id,
+      branch: "trunk",
+      repoName: "octo-cli",
+    },
+    { quiet: false },
+  )
+  expect(readSelectedProjectId(WORKSPACE_ID)).toBe(mockRepos[2].id)
+  expect(pushMock).toHaveBeenCalledWith(`/dashboard/${mockRepos[2].id}`)
 })
