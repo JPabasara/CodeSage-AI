@@ -33,3 +33,36 @@ export function severityColor(severity: string) {
 export function shortSha(sha: string) {
   return sha.slice(0, 7)
 }
+
+const relativeFormat = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
+
+/** "2 hours ago", "yesterday": how a person reads a recent time. */
+export function relativeTime(iso: string | null | undefined, now = Date.now()) {
+  if (!iso) return undefined
+  const parsed = Date.parse(iso)
+  if (Number.isNaN(parsed)) return undefined
+  let value = Math.round((parsed - now) / 1000)
+  const steps: [number, Intl.RelativeTimeFormatUnit][] = [
+    [60, "second"],
+    [60, "minute"],
+    [24, "hour"],
+    [30, "day"],
+    [12, "month"],
+  ]
+  for (const [size, unit] of steps) {
+    if (Math.abs(value) < size) return relativeFormat.format(value, unit)
+    value = Math.round(value / size)
+  }
+  return relativeFormat.format(value, "year")
+}
+
+/** "Saturday, 4 October 2026 at 11:42": the exact time, for a title. */
+export function absoluteTime(iso: string | null | undefined) {
+  if (!iso) return undefined
+  const parsed = new Date(iso)
+  if (Number.isNaN(parsed.getTime())) return undefined
+  return parsed.toLocaleString(undefined, {
+    dateStyle: "full",
+    timeStyle: "short",
+  })
+}

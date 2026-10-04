@@ -111,6 +111,12 @@ export interface LatestHealth {
   score: number
   grade: Grade
   delta: number
+  // The rest feed the workspace overview; absent from older API builds.
+  kloc?: number | null
+  finding_count?: number | null
+  red_issue_count?: number | null
+  scanned_at?: string | null
+  trend?: { t: string; score: number }[] | null
 }
 
 export interface Branch {
@@ -260,7 +266,18 @@ export interface HealthReport {
   tree: TreeNode[] // heat-map file tree
   file_scores: FileScore[]
   findings: Finding[] // Refactor-First list
-  category_breakdown: CategoryBreakdownItem[] // the pie
+  category_breakdown: CategoryBreakdownItem[] // debt by type
+  // Counts in the list's default view (done and, unless the profile includes them, test findings set apart).
+  finding_summary?: FindingSummary | null
+  kloc?: number | null // thousands of Java lines analysed
+  java_file_count?: number | null
+}
+
+export interface FindingSummary {
+  total: number
+  open: number
+  done: number
+  open_by_severity: Record<Severity, number>
 }
 
 /** Who someone is in a workspace. Grants come from the permission matrix. */
