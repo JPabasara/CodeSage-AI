@@ -12,8 +12,12 @@ CS3203 Software Engineering Project · Group 16 · Project ID 7
 
 ## What it does
 
-- **Connects public GitHub repositories** and scans any branch on demand, with live progress and a
-  Stop control.
+- **Connects public GitHub repositories** and scans any branch on demand, with step-by-step live
+  progress (seven steps, with file and commit counts) and a Stop control. Only `.java` files are
+  analysed; the connect dialog says so before anything is added.
+- **Opens on a workspace Overview**: one size-weighted health score across the workspace, the
+  projects that need attention, and every project's latest grade and trend. Each project then has
+  its own dashboard with Overview, Findings and Code map tabs.
 - **Finds technical debt** with a rule engine and PMD (design and security rules), and with an ML
   classifier that reads code comments for self-admitted technical debt (SATD).
 - **Predicts bug-prone files** with a second ML model trained on class metrics and change history.

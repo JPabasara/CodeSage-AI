@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -203,12 +204,8 @@ def _run_claimed(
             "Java sources are within the scan limits",
             extra={"java_files": inventory.files, "java_lines": inventory.lines},
         )
-        progress.publish_stage(
-            attempt_id,
-            ScanStage.READING_CODE,
-            25,
-            files_total=inventory.files,
-        )
+        # The file count belongs to the `reading_comments` step, not the stage.
+        progress.publish_stage(attempt_id, ScanStage.READING_CODE, 25)
         cancel.check(attempt_id)
 
         stage = "extraction"
@@ -217,7 +214,8 @@ def _run_claimed(
             cloned.commit_sha,
             cloned.committer_date,
             on_file=_file_reporter(attempt_id),
-            progress_callback=lambda percent: progress.publish_progress(attempt_id, percent),
+            on_step=partial(progress.publish_step, attempt_id),
+            on_commit=lambda done, _total: progress.publish_commits_done(attempt_id, done),
         )
         progress.publish_stage(attempt_id, ScanStage.FINDING_DEBT, 60)
         cancel.check(attempt_id)

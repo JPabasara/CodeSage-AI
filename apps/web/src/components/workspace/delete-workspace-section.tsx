@@ -77,25 +77,28 @@ export function DeleteWorkspaceSection({
   }
 
   return (
-    <section aria-labelledby="danger-zone-heading" className="space-y-3">
-      <div className="space-y-0.5">
+    <section
+      aria-labelledby="danger-zone-heading"
+      className="rounded-md border border-destructive/30 bg-card"
+    >
+      <div className="px-4.5 pt-4 pb-3">
         <h2
           id="danger-zone-heading"
-          className="text-[15px] font-semibold text-destructive"
+          className="text-base font-semibold text-destructive"
         >
           Danger zone
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Permanently delete this workspace and everything it owns.
         </p>
       </div>
-      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4">
-        <p className="text-sm leading-6 text-muted-foreground">
+      <div className="flex flex-col gap-3 border-t border-destructive/20 px-4.5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="max-w-xl text-sm text-foreground">
           Projects, scans, findings, profiles, invitations and memberships will
           be deleted. Member accounts and their other workspaces are unchanged.
         </p>
         <Button
-          className="mt-4"
+          className="shrink-0 self-start sm:self-auto"
           variant="destructive"
           onClick={() => setOpen(true)}
         >

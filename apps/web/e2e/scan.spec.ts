@@ -2,16 +2,17 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 
 // The scan state machine: idle → running → done | cancelled.
 
+// The page header's main action, named for the branch it scans.
 const scanButton = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: /^scan$/i })
+  page.getByRole("button", { name: "Scan main", exact: true })
 
-// The VISIBLE "Scanning… NN%" label.
+// The same button while busy: "Scanning 41%" (or "Scanning…" before a number).
 const scanningLabel = (page: import("@playwright/test").Page) =>
-  page.getByText(/scanning…/i)
+  page.getByRole("button", { name: /^Scanning/ })
 
-/** The visible "Stopping…" label, for the same reason. */
 const stoppingLabel = (page: import("@playwright/test").Page) =>
-  page.getByTestId("app-top-bar").getByText("Stopping…", { exact: true })
+  // The header button first; the progress strip says the same.
+  page.getByRole("button", { name: "Stopping…", exact: true }).first()
 
 const cancelledLabel = (page: import("@playwright/test").Page) =>
   page.getByText(/^Scan stopped · /)
@@ -57,7 +58,7 @@ test("a cancelled scan leaves the previous results intact", async ({
 
   // Cancelling must never leave a half-written snapshot, so the dashboard still shows the last good one.
   await expect(page.getByText("Code Health")).toBeVisible()
-  await expect(page.getByText("72/100")).toBeVisible()
+  await expect(page.getByTestId("health-score")).toHaveText("72")
 })
 
 test("a scan can be started again after being cancelled", async ({ page }) => {
@@ -87,7 +88,7 @@ test("the card says the score is being calculated, then waits for 'Show them'", 
   const card = page.getByTestId("scan-progress-panel")
 
   // A wait, not a failure — and the previous results stay on screen.
-  await expect(card).toContainText(/calculating your health score/i, {
+  await expect(card).toContainText(/saving and scoring/i, {
     timeout: 15_000,
   })
   await expect(page.getByText("Code Health")).toBeVisible()
@@ -109,12 +110,15 @@ test("a running scan shows a stage label and a bar that only moves forward", asy
 
   const panel = page.getByTestId("scan-progress-panel")
   await expect(panel).toBeVisible()
-  // This project has results already: the job is a compact card above them.
-  await expect(panel).toHaveAttribute("data-size", "compact")
+  // This project has results already: the job is a card above them.
+  await expect(panel).toHaveAttribute("data-size", "card")
   await expect(panel.getByRole("status")).toHaveText(
-    /Waiting for a free scan slot|Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there|Calculating your health score/,
+    /Queued|Cloning the repository|Measuring code|Reading git history|Reading comments|Finding debt|Predicting risk|Saving and scoring/,
   )
-  await expect(page.getByTestId("scan-panel-line")).not.toBeEmpty()
+  // The stepper names all seven steps.
+  await expect(
+    panel.getByRole("list", { name: "Scan steps" }).getByRole("listitem"),
+  ).toHaveCount(7)
 
   const seen: number[] = []
   for (let i = 0; i < 100; i += 1) {

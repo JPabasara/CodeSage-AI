@@ -134,3 +134,11 @@ export function typicalLabel(typicalSeconds?: number | null) {
   const minutes = Math.round(typicalSeconds / 60)
   return `Usually about ${minutes} min`
 }
+
+/** "1m 12s" — minutes and seconds, the way a person reads a wait. */
+export function formatElapsed(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+}

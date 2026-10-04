@@ -41,9 +41,20 @@ const repoRows = (page: import("@playwright/test").Page) =>
 const connectForm = (page: import("@playwright/test").Page) =>
   page.getByRole("region", { name: /connect a github repository/i })
 
-async function connect(page: import("@playwright/test").Page, url: string) {
+/** Submits a URL; a well-formed one is then answered in the Java-only dialog. */
+async function connect(
+  page: import("@playwright/test").Page,
+  url: string,
+  choice: "Connect only" | "Connect and scan" = "Connect only",
+) {
   await page.getByLabel(/repository url/i).fill(url)
   await page.getByRole("button", { name: /^connect repository$/i }).click()
+  if (url.startsWith("https://github.com/")) {
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: choice })
+      .click()
+  }
 }
 
 async function removeRepository(
@@ -51,7 +62,8 @@ async function removeRepository(
   repositoryName: string,
 ) {
   const row = repoRows(page).filter({ hasText: repositoryName })
-  await row.getByRole("button", { name: /delete .* repository/i }).click()
+  await row.getByRole("button", { name: /^more actions for /i }).click()
+  await page.getByRole("menuitem", { name: "Remove repository…" }).click()
   await page.getByRole("button", { name: /^remove repository$/i }).click()
 }
 
@@ -75,8 +87,24 @@ test("a repository that was never scanned says so, instead of showing a zero", a
   await expect(octo.getByText("/100")).toHaveCount(0)
 })
 
-test("connecting a public repository adds it to the list", async ({ page }) => {
-  await connect(page, "https://github.com/octocat/Hello-World")
+test("Connect only, after the Java-only dialog, adds the repository to the list", async ({
+  page,
+}) => {
+  await page
+    .getByLabel(/repository url/i)
+    .fill("https://github.com/octocat/Hello-World")
+  await page.getByRole("button", { name: /^connect repository$/i }).click()
+
+  const dialog = page.getByRole("alertdialog")
+  await expect(
+    dialog.getByRole("heading", { name: "Connect octocat/Hello-World?" }),
+  ).toBeVisible()
+  await expect(dialog.getByText(/java source code only/i)).toBeVisible()
+  await expect(
+    dialog.getByRole("button", { name: "Connect and scan" }),
+  ).toBeFocused()
+  await dialog.getByRole("button", { name: "Connect only" }).click()
+  await expect(dialog).toHaveCount(0)
 
   await expect(page.getByText(/connected octocat\/Hello-World/i)).toBeVisible()
   await expect(repoRows(page).filter({ hasText: "Hello-World" })).toBeVisible()
@@ -86,6 +114,50 @@ test("connecting a public repository adds it to the list", async ({ page }) => {
       .filter({ hasText: "Hello-World" })
       .getByText(/not scanned yet/i),
   ).toBeVisible()
+  // It stays on this page and offers the first scan from its row.
+  await expect(page).toHaveURL(/\/projects$/)
+  await expect(
+    repoRows(page)
+      .filter({ hasText: "Hello-World" })
+      .getByRole("button", { name: /run first scan/i }),
+  ).toBeVisible()
+})
+
+test("Connect and scan lands on the new project's dashboard with its first scan running", async ({
+  page,
+}) => {
+  await connect(
+    page,
+    "https://github.com/octocat/Hello-World",
+    "Connect and scan",
+  )
+
+  await expect(
+    page.getByText("Connected octocat/Hello-World · scan queued on main"),
+  ).toBeVisible()
+  await expect(page).toHaveURL(
+    /\/dashboard\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  )
+  await expect(page.getByTestId("scan-progress-panel").first()).toBeVisible()
+})
+
+test("Cancel in the Java-only dialog connects nothing", async ({ page }) => {
+  const rowsBefore = await repoRows(page).count()
+
+  await page
+    .getByLabel(/repository url/i)
+    .fill("https://github.com/octocat/Hello-World")
+  await page.getByRole("button", { name: /^connect repository$/i }).click()
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Cancel" })
+    .click()
+
+  await expect(page.getByRole("alertdialog")).toHaveCount(0)
+  await expect(repoRows(page)).toHaveCount(rowsBefore)
+  await expect(page.getByLabel(/repository url/i)).toHaveValue(
+    "https://github.com/octocat/Hello-World",
+  )
 })
 
 test("each connect failure explains itself in its own words", async ({
@@ -135,6 +207,36 @@ test("selecting a project opens its dashboard", async ({ page }) => {
   await expect(page.getByText("Code Health")).toBeVisible()
 })
 
+test("clicking a row selects that project and opens its dashboard", async ({
+  page,
+}) => {
+  await repoRows(page).filter({ hasText: "web-store" }).locator("time").click()
+
+  await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
+  await expect.poll(() => storedProject(page)).toBe(SECOND_REPO_ID)
+})
+
+test("the selected project wears the Current chip, and there is no Select button", async ({
+  page,
+}) => {
+  await expect(
+    repoRows(page).filter({ hasText: "acme-payments" }).getByText("Current"),
+  ).toBeVisible()
+  await expect(repoRows(page).getByText("Current")).toHaveCount(1)
+  await expect(page.getByRole("button", { name: /^select/i })).toHaveCount(0)
+})
+
+test("the connect card says Java only and links to what is analysed", async ({
+  page,
+}) => {
+  await expect(
+    connectForm(page).getByText(/java only\. other files are ignored\./i),
+  ).toBeVisible()
+  await expect(
+    connectForm(page).getByRole("link", { name: "What is analysed" }),
+  ).toHaveAttribute("href", "/help/what-is-analysed")
+})
+
 test("the repo id in the URL is the contract's uuid, not a slug", async ({
   page,
 }) => {
@@ -169,7 +271,7 @@ test("deleting the active project selects a remaining project everywhere", async
     page.getByRole("link", { name: "Dashboard", exact: true }),
   ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}`)
   await expect(
-    page.getByRole("link", { name: "Scan History", exact: true }),
+    page.getByRole("link", { name: "Scan history", exact: true }),
   ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}/history`)
 })
 

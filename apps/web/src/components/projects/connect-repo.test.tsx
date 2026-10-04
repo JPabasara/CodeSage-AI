@@ -26,6 +26,32 @@ test("offers no private-repository option", () => {
   expect(screen.queryByRole("tab")).not.toBeInTheDocument()
 })
 
+test("says only Java is analysed, and links to the article that explains it", () => {
+  render(<ConnectRepo />)
+
+  const note = screen.getByText(/java only\. other files are ignored\./i)
+  const link = screen.getByRole("link", { name: "What is analysed" })
+  expect(link).toHaveAttribute("href", "/help/what-is-analysed")
+  expect(note).toContainElement(link)
+  // The note is read with the field, not only seen next to it.
+  expect(screen.getByLabelText(/repository url/i)).toHaveAttribute(
+    "aria-describedby",
+    note.id,
+  )
+})
+
+test("a refusal and the Java note both describe the field", () => {
+  render(<ConnectRepo error="Too large." />)
+
+  const describedBy =
+    screen.getByLabelText(/repository url/i).getAttribute("aria-describedby") ??
+    ""
+  expect(describedBy.split(" ")).toEqual([
+    screen.getByRole("alert").id,
+    screen.getByText(/java only/i).id,
+  ])
+})
+
 test("will not submit an empty or whitespace-only URL", async () => {
   const onConnect = vi.fn()
   render(<ConnectRepo onConnect={onConnect} />)
@@ -58,7 +84,7 @@ test("a refusal is shown under the URL field and tied to it", () => {
   const message = screen.getByRole("alert")
   expect(message).toHaveTextContent(/couldn't find any java/i)
   expect(input).toHaveAttribute("aria-invalid", "true")
-  expect(input).toHaveAttribute("aria-describedby", message.id)
+  expect(input.getAttribute("aria-describedby")).toContain(message.id)
 })
 
 test("no refusal, no message and no invalid state", () => {

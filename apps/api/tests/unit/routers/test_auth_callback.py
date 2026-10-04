@@ -231,9 +231,9 @@ def test_the_refusal_is_logged_without_leaking_the_body(
 
 @pytest.mark.parametrize(
     ("tour_required", "destination"),
-    [(True, "/workspace"), (False, "/projects")],
+    [(True, "/workspace"), (False, "/overview")],
 )
-def test_sign_in_lands_at_the_tour_or_projects(
+def test_sign_in_lands_at_the_tour_or_overview(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     tour_required: bool,

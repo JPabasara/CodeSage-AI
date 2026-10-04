@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Building2, Plus, Settings } from "lucide-react"
+import { Plus, Settings } from "lucide-react"
 import { toast } from "sonner"
 
 import { Skeleton } from "@/components/ui/skeleton"
@@ -10,10 +10,9 @@ import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-d
 import {
   TopBarPicker,
   TopBarPickerAction,
+  topBarCaption,
   topBarControl,
 } from "@/components/layout/top-bar-picker"
-import { getProjects } from "@/lib/api/client"
-import { readSelectedProjectId } from "@/hooks/use-selected-project"
 import { useActiveWorkspace, useWorkspaceSwitch } from "@/hooks/use-workspace"
 import { ROLE_LABEL } from "@/lib/roles"
 import type { Workspace } from "@/lib/types"
@@ -35,11 +34,8 @@ export function WorkspaceSwitcher({
     if (workspaceId === active?.workspace_id) return
     try {
       const workspace = await switchTo(workspaceId)
-
-      const remembered = readSelectedProjectId(workspace.workspace_id)
-      const projects = await getProjects().catch(() => [])
-      const target = projects.find((repo) => repo.id === remembered)
-      router.push(target ? `/dashboard/${target.id}` : "/projects")
+      // The new workspace's home, never a dashboard that may not be scanned.
+      router.push("/overview")
       toast.success(`Switched to ${workspace.name}`)
     } catch {
       toast.error("Couldn't switch workspace.")
@@ -51,9 +47,7 @@ export function WorkspaceSwitcher({
   )
 
   if (loading && !workspaces) {
-    return (
-      <Skeleton className="h-9 min-w-0 flex-1 bg-white/15 md:w-40 md:flex-none" />
-    )
+    return <Skeleton className="h-9 w-36 bg-tb-hover" />
   }
 
   if (!workspaces) return null
@@ -64,14 +58,12 @@ export function WorkspaceSwitcher({
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className={`${topBarControl} min-w-0 flex-1 md:w-auto md:max-w-52 md:flex-none`}
+          className={topBarControl}
         >
-          <Plus className="size-4 shrink-0 opacity-80" aria-hidden="true" />
-          <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate font-medium">No workspace</span>
-            <span className="block truncate text-[0.6875rem] opacity-75">
-              Create workspace
-            </span>
+          <span className={topBarCaption}>No workspace</span>
+          <span className="flex items-center gap-1.5 text-[0.90625rem] leading-tight font-semibold">
+            <Plus className="size-3.5 text-tb-muted" aria-hidden="true" />
+            Create workspace
           </span>
         </button>
         {dialog}
@@ -84,8 +76,8 @@ export function WorkspaceSwitcher({
       <TopBarPicker
         tourTarget="workspace-switcher"
         label="Workspace"
-        icon={<Building2 className="size-4" />}
-        className="min-w-0 flex-1 md:w-auto md:max-w-52 md:flex-none"
+        heading="Switch workspace"
+        className="max-w-64"
         items={workspaces.map((workspace) => ({
           value: workspace.workspace_id,
           label: workspace.name,

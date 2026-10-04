@@ -64,7 +64,7 @@ function AcceptInvitation() {
         try {
           await switchTo(accepted.workspace_id)
           toast.success("You joined the workspace")
-          router.replace("/projects")
+          router.replace("/overview")
         } catch {
           // Joined, but the switch did not land — offer it as one action.
           setOutcome({ kind: "joined", workspaceId: accepted.workspace_id })
@@ -94,7 +94,7 @@ function AcceptInvitation() {
         body="Open the link from your invitation email again. If it still does not work, ask the person who invited you for a new one."
       >
         <Button asChild variant="outline">
-          <Link href="/projects">Go to CodeSage</Link>
+          <Link href="/overview">Go to CodeSage</Link>
         </Button>
       </Shell>
     )
@@ -129,7 +129,7 @@ function AcceptInvitation() {
         body="It may have expired, been revoked or already been used, or it was sent to a different email address than the one you signed in with. Ask the person who invited you to send a new one."
       >
         <Button asChild variant="outline">
-          <Link href="/projects">Go to CodeSage</Link>
+          <Link href="/overview">Go to CodeSage</Link>
         </Button>
       </Shell>
     )
@@ -165,7 +165,7 @@ function AcceptInvitation() {
         <Button
           onClick={() =>
             switchTo(workspaceId)
-              .then(() => router.replace("/projects"))
+              .then(() => router.replace("/overview"))
               .catch(() => toast.error("Couldn't switch to that workspace."))
           }
         >

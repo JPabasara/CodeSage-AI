@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     max_queued_scans_per_workspace: int = Field(default=5, ge=1)
     # How often a waiting scan checks for a free slot.
     scan_queue_retry_seconds: int = Field(default=15, ge=1)
+    # Finished dashboard responses kept in each API process; 0 turns it off.
+    response_cache_megabytes: int = Field(default=48, ge=0)
 
     log_level: str = "INFO"
 

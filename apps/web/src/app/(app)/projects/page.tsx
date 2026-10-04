@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { ApiRequestError, connectRepo, removeProject } from "@/lib/api/client"
@@ -11,6 +12,13 @@ import {
 } from "@/lib/guardrail-messages"
 import type { Repo } from "@/lib/types"
 import { ConnectRepo } from "@/components/projects/connect-repo"
+import {
+  JavaOnlyDialog,
+  javaOnlyAckKey,
+  readJavaOnlyAck,
+  repositoryLabel,
+  type ConnectMode,
+} from "@/components/projects/java-only-dialog"
 import { ErrorState } from "@/components/error-state"
 import { PageHeader } from "@/components/layout/page-header"
 import { CONNECT_LOCKED_REASON } from "@/components/projects/no-project-state"
@@ -34,21 +42,37 @@ import {
   publishProjectRemoved,
   useProjects,
 } from "@/hooks/use-projects"
+import { startScan } from "@/hooks/use-scan-center"
 import { useSelectedProject } from "@/hooks/use-selected-project"
 import { useSession } from "@/hooks/use-session"
 import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
+import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
+import { cancelProjectPrefetch, prefetchProject } from "@/lib/prefetch-project"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
+import { cn } from "@/lib/utils"
+
+const REMOVE_LOCKED_REASON =
+  "Only org-admins and managers can remove repositories"
+const SCAN_LOCKED_REASON = "Viewers can't start scans"
 
 export default function ProjectsPage() {
+  const router = useRouter()
   const { data: repos, loading, error, refetch } = useProjects()
   const { data: session } = useSession()
   const { data: workspaces } = useWorkspaces()
   const activeWorkspace = useActiveWorkspace(workspaces)
-  const canConnect =
-    session?.permissions?.includes("repository:connect") ?? false
-  const canDisconnect =
-    session?.permissions?.includes("repository:disconnect") ?? false
+  const workspaceId = useActiveWorkspaceId()
+  const permissions = session?.permissions ?? []
+  const canConnect = permissions.includes("repository:connect")
+  const canDisconnect = permissions.includes("repository:disconnect")
+  const canScan = permissions.includes("scan:start")
   const [connecting, setConnecting] = useState(false)
   const [connectError, setConnectError] = useState<string>()
+  // The URL waiting on the Java-only dialog, and the form's promise for it.
+  const [pendingUrl, setPendingUrl] = useState<string>()
+  const settlePending = useRef<((connected: boolean) => void) | undefined>(
+    undefined,
+  )
   const [pendingRemoval, setPendingRemoval] = useState<Repo>()
   const [removingRepoId, setRemovingRepoId] = useState<string>()
   const { selectedProjectId, selectProject, clearProject } = useSelectedProject(
@@ -60,22 +84,49 @@ export default function ProjectsPage() {
   )
   const projectCount = repos?.length ?? 0
   const scannedCount = repos?.filter((repo) => repo.latest_health).length ?? 0
-  const activeProject = repos?.find((repo) => repo.id === selectedProjectId)
+  const ackKey =
+    session?.user_id && workspaceId
+      ? javaOnlyAckKey(session.user_id, workspaceId)
+      : undefined
 
-  /** Resolves false when refused, so the form keeps the URL under its message. */
-  async function onConnect(url: string): Promise<boolean> {
-    if (!isGitHubRepositoryUrl(url)) {
-      setConnectError(INVALID_REPOSITORY_URL_MESSAGE)
-      toast.error(INVALID_REPOSITORY_URL_MESSAGE)
-      return false
+  const openDashboard = (repo: Repo) => {
+    selectProject(repo.id)
+    router.push(`/dashboard/${repo.id}`)
+  }
+
+  /** The first scan runs while the dashboard shows its progress. */
+  const scanAndOpen = (repo: Repo, quiet = false) => {
+    if (workspaceId) {
+      void startScan(
+        {
+          workspaceId,
+          repoId: repo.id,
+          branch: repo.default_branch,
+          repoName: repo.name,
+        },
+        // Connect and scan already said "scan queued" in its own toast.
+        { quiet },
+      )
     }
+    openDashboard(repo)
+  }
+
+  async function connect(url: string, mode: ConnectMode): Promise<boolean> {
     setConnecting(true)
     setConnectError(undefined)
     try {
       const repo = await connectRepo(url)
       publishProjectConnected(repo)
       selectProject(repo.id)
-      toast.success(`Connected ${repo.owner}/${repo.name}`)
+      const label = `${repo.owner}/${repo.name}`
+      if (mode === "scan" && workspaceId) {
+        toast.success(
+          `Connected ${label} · scan queued on ${repo.default_branch}`,
+        )
+        scanAndOpen(repo, true)
+      } else {
+        toast.success(`Connected ${label}`)
+      }
       return true
     } catch (err) {
       const message = connectFailureMessage(err)
@@ -85,6 +136,41 @@ export default function ProjectsPage() {
     } finally {
       setConnecting(false)
     }
+  }
+
+  /** Resolves false when refused or cancelled, so the form keeps the URL. */
+  async function onConnect(url: string): Promise<boolean> {
+    if (!isGitHubRepositoryUrl(url)) {
+      setConnectError(INVALID_REPOSITORY_URL_MESSAGE)
+      toast.error(INVALID_REPOSITORY_URL_MESSAGE)
+      return false
+    }
+    setConnectError(undefined)
+    const remembered = readJavaOnlyAck(ackKey)
+    if (remembered) return connect(url, remembered)
+    return new Promise<boolean>((resolve) => {
+      settlePending.current = resolve
+      setPendingUrl(url)
+    })
+  }
+
+  // The dialog closes first, so a refusal lands under the URL field.
+  function takePending() {
+    const url = pendingUrl
+    const settle = settlePending.current
+    settlePending.current = undefined
+    setPendingUrl(undefined)
+    return { url, settle }
+  }
+
+  async function onConfirmConnect(mode: ConnectMode) {
+    const { url, settle } = takePending()
+    if (!url) return
+    settle?.(await connect(url, mode))
+  }
+
+  function onCancelConnect() {
+    takePending().settle?.(false)
   }
 
   async function onRemove() {
@@ -119,51 +205,42 @@ export default function ProjectsPage() {
   const workspaceName = activeWorkspace?.name ?? "This workspace"
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-4 sm:p-6">
+    <div className={cn(PAGE_CONTAINER, "gap-5")}>
       <PageHeader
         title="Projects"
-        context={
-          <span className="truncate">
-            {activeWorkspace?.name ?? "Workspace"}
-          </span>
+        description={
+          <>
+            Repositories connected to{" "}
+            <span className="text-foreground">
+              {activeWorkspace?.name ?? "this workspace"}
+            </span>
+            . Open one to see its dashboard.
+          </>
         }
-        description="Connect repositories and open their dashboard or scan history."
         aside={
           repos ? (
-            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
               <span>
-                <span className="font-medium text-foreground tabular-nums">
+                <span className="font-semibold text-foreground-strong tabular-nums">
                   {projectCount}
                 </span>{" "}
                 connected
               </span>
               <span aria-hidden="true">·</span>
               <span>
-                <span className="font-medium text-foreground tabular-nums">
+                <span className="font-semibold text-foreground-strong tabular-nums">
                   {scannedCount}
                 </span>{" "}
                 scanned
               </span>
-              <span aria-hidden="true">·</span>
-              {activeProject ? (
-                <span className="inline-flex min-w-0 items-center gap-1">
-                  Active
-                  <span className="max-w-48 truncate font-medium text-foreground">
-                    {activeProject.name}
-                  </span>
-                </span>
-              ) : (
-                <span>No project selected</span>
-              )}
             </p>
           ) : loading ? (
-            <Skeleton className="h-5 w-64" />
+            <Skeleton className="h-5 w-40" />
           ) : null
         }
       />
 
       <ConnectRepo
-        className="mx-auto w-full max-w-2xl"
         onConnect={onConnect}
         busy={connecting}
         error={connectError}
@@ -171,13 +248,22 @@ export default function ProjectsPage() {
         lockedReason={canConnect ? undefined : CONNECT_LOCKED_REASON}
       />
 
-      <section className="space-y-3" data-tour="project-list">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 className="text-[15px] font-semibold">Connected repositories</h2>
+      <section
+        aria-labelledby="connected-repositories-heading"
+        className="flex flex-col gap-3"
+        data-tour="project-list"
+      >
+        <div>
+          <h2
+            id="connected-repositories-heading"
+            className="text-base font-semibold text-foreground-strong"
+          >
+            Connected repositories
+          </h2>
           {repos?.length !== 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Open the dashboard or scan history for the repository you want to
-              review.
+            <p className="text-xs text-muted-foreground">
+              Click a row to open its dashboard. The highlighted row is the
+              project the rail and top bar point at.
             </p>
           ) : null}
         </div>
@@ -199,17 +285,31 @@ export default function ProjectsPage() {
                 ? `${workspaceName} is empty. Connect a public repository above and it becomes this workspace's first project.`
                 : `${workspaceName} has no repositories yet.`
             }
-            onSelect={(repo) => {
-              selectProject(repo.id)
-            }}
-            onHistory={(repo) => {
-              selectProject(repo.id)
-            }}
+            onSelect={(repo) => selectProject(repo.id)}
+            onOpen={openDashboard}
+            onHistory={(repo) => selectProject(repo.id)}
+            onFirstScan={scanAndOpen}
+            scanLockedReason={canScan ? undefined : SCAN_LOCKED_REASON}
             onRemove={canDisconnect ? setPendingRemoval : undefined}
+            removeLockedReason={
+              canDisconnect ? undefined : REMOVE_LOCKED_REASON
+            }
+            onIntent={(repo) =>
+              repo
+                ? prefetchProject(repo, router.prefetch)
+                : cancelProjectPrefetch()
+            }
             removingRepoId={removingRepoId}
           />
         )}
       </section>
+
+      <JavaOnlyDialog
+        repository={pendingUrl ? repositoryLabel(pendingUrl) : undefined}
+        ackKey={ackKey}
+        onConfirm={(mode) => void onConfirmConnect(mode)}
+        onCancel={onCancelConnect}
+      />
 
       <Dialog
         open={Boolean(pendingRemoval)}

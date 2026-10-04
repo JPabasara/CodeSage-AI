@@ -1,0 +1,19 @@
+# Helm values for the ingress-nginx controller (the public entry point).
+#
+# Compress responses at the edge: the dashboard's JSON shrinks about 8–10x, and
+# the work happens in nginx instead of the single-threaded API workers. Next.js
+# already compresses its own responses, and nginx leaves those untouched.
+#
+# Apply on the node (keeps every other value the release already has):
+#   helm upgrade ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx \
+#     --reuse-values -f infra/k3s/linode/ingress-nginx-values.yaml
+controller:
+  config:
+    use-gzip: "true"
+    gzip-level: "5"
+    gzip-min-length: "1024"
+    gzip-types: "application/json application/javascript text/css text/plain image/svg+xml"
+    enable-brotli: "true"
+    brotli-level: "5"
+    brotli-min-length: "1024"
+    brotli-types: "application/json application/javascript text/css text/plain image/svg+xml"

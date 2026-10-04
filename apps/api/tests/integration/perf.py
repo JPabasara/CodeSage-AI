@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import statistics
 import sys
 import time
@@ -125,6 +126,18 @@ def captured_sql(engine: Engine) -> Iterator[list[tuple[str, Any]]]:
         yield statements
     finally:
         event.remove(engine, "before_cursor_execute", record)
+
+
+def reads_whole_payload(sql: str) -> bool:
+    """Whether a statement brings `snapshot_score.result_payload` itself back.
+
+    Reading one key (`result_payload ->> 'red_issue_count'`) or expanding it
+    inside Postgres (`result_payload -> 'findings'`) sends no document to Python.
+    `result_payload - 'findings'` is still nearly the whole document, so it
+    counts. A bind parameter named after the column (`%(result_payload_1)s`) is
+    not a read.
+    """
+    return re.search(r"result_payload\b(?!\s*->)", sql) is not None
 
 
 def sequential_scans(plan: Any, tables: set[str]) -> list[str]:

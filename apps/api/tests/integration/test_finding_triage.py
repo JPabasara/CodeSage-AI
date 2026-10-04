@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -61,6 +62,63 @@ def test_mark_done_is_a_label_that_leaves_scores_and_facts_alone(tenant, monkeyp
     assert audit.actor_identity == str(tenant.user_id)
     assert audit.affected_resource == f"finding:{before['snapshot_id']}:{target}"
     assert audit.detail == {"from": "open", "to": "done"}
+
+
+def test_finding_summary_follows_triage_while_every_score_stays_put(
+    tenant, monkeypatch
+) -> None:
+    test_file = "src/test/java/AppTest.java"
+    tenant.world.files = ["src/App.java", "src/Util.java", test_file]
+    tenant.world.issues = [
+        Issue("src/App.java", "run"),
+        Issue("src/Util.java", "parse"),
+        Issue(test_file, "setUp"),
+    ]
+    run_scan(tenant, "1" * 40)
+    client = api_client(tenant.engine, tenant.session_id, monkeypatch)
+    before = health(client, tenant)
+    scope = {item["fingerprint"]: item["source_scope"] for item in before["findings"]}
+    # src/App.java is "unknown" scope: counted, like production.
+    counted = [fp for fp, value in scope.items() if value != "test"]
+    [in_tests] = [fp for fp, value in scope.items() if value == "test"]
+    assert len(counted) == 2
+
+    # The default view leaves the test finding out; all three are medium.
+    assert before["finding_summary"] == {
+        "total": 2,
+        "open": 2,
+        "done": 0,
+        "open_by_severity": {"critical": 0, "high": 0, "medium": 2, "low": 0},
+    }
+    assert health(client, tenant, include_findings=False)["finding_summary"] == (
+        before["finding_summary"]
+    )
+    assert before["java_file_count"] == 3
+    assert before["kloc"] == pytest.approx(0.24)  # two production files of 120 lines
+
+    for fingerprint in (counted[0], in_tests):
+        response = client.put(
+            _status_url(before["snapshot_id"], fingerprint), json={"status": "done"}
+        )
+        assert response.status_code == 204, response.text
+    after = health(client, tenant)
+    summary = health(client, tenant, include_findings=False)
+
+    expected = {
+        "total": 2,
+        "open": 1,
+        "done": 1,
+        "open_by_severity": {"critical": 0, "high": 0, "medium": 1, "low": 0},
+    }
+    assert after["finding_summary"] == expected
+    assert summary["finding_summary"] == expected
+    unchanged = (
+        "health_score", "grade", "delta", "red_issue_count", "resolved_finding_count",
+        "category_breakdown", "file_scores", "tree", "history", "kloc", "java_file_count",
+    )
+    for key in unchanged:
+        assert after[key] == before[key], key
+        assert summary[key] == before[key], key
 
 
 def test_reopen_and_repeat_requests_are_idempotent(tenant, monkeypatch) -> None:

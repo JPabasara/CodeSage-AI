@@ -16,7 +16,7 @@ Workloads:
 | Workload | Image | Pods | Scaled by |
 | --- | --- | --- | --- |
 | `web` | `ghcr.io/jpabasara/codesage-ai/web` | 1–2 | HPA, CPU 70% |
-| `api` | `ghcr.io/jpabasara/codesage-ai/api` | 1–2 | HPA, CPU 70% |
+| `api` | `ghcr.io/jpabasara/codesage-ai/api` | 1–3, two uvicorn workers each | HPA, CPU 70% |
 | `ml` | `ghcr.io/jpabasara/codesage-ai/ml` | 1 | — |
 | `worker` | `api` image, queue `scans` | 1–3 | KEDA |
 | `score-worker` | `api` image, queue `scoring` | 1–2 | KEDA |
@@ -56,6 +56,21 @@ kubectl apply -f infra/k3s/linode/keda-score-worker.yaml
 ```
 
 Apply `networkpolicy.yaml` last, after the app works.
+
+## Response compression
+
+The ingress compresses responses with Brotli or gzip (`ingress-nginx-values.yaml`).
+Apply it once, and again after any reinstall of the controller:
+
+```bash
+helm upgrade ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx   --reuse-values -f infra/k3s/linode/ingress-nginx-values.yaml
+```
+
+Check it with a signed-in cookie. The answer must carry `content-encoding: br`:
+
+```bash
+curl -s -o /dev/null -D - -H "Accept-Encoding: br, gzip"   -b "codesage_session=<cookie>" "https://api.codesageai.dev/api/projects" | grep -i content-encoding
+```
 
 ## Changing a manifest on the running cluster
 

@@ -52,7 +52,9 @@ async function createProfile(
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/profiles")
-  await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Scoring profiles" }),
+  ).toBeVisible()
 })
 
 test("the pool opens on the three built-ins, with Balanced the default", async ({
@@ -301,7 +303,8 @@ test("a profile change re-ranks the dashboard with no re-scan", async ({
 
   // Under Balanced, the HIGH code-design finding outranks the MEDIUM security one.
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await expect(page.getByText("72/100")).toBeVisible()
+  await expect(page.getByTestId("health-score")).toHaveText("72")
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   const before = await rankings()
   expect(before.longFile).toBeLessThan(before.sqlInjection)
 
@@ -312,14 +315,14 @@ test("a profile change re-ranks the dashboard with no re-scan", async ({
     "Security-first",
   )
 
-  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
 
   // Every score is recomputed on read, so the ORDER inverts…
   const after = await rankings()
   expect(after.sqlInjection).toBeLessThan(after.longFile)
 
-  await expect(page.getByText("36/100")).toBeVisible()
-  await expect(page.getByText("72/100")).toHaveCount(0)
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=overview`)
+  await expect(page.getByTestId("health-score")).toHaveText("36")
 
   // All of that, and the code was never re-read.
   expect(requests.scans()).toHaveLength(0)
@@ -342,7 +345,7 @@ test("the trust slider cannot de-weight a security finding", async ({
     "Trust the model",
   )
 
-  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   await expect(findingCards(page).first()).toContainText(/hardcoded/i)
 })
 

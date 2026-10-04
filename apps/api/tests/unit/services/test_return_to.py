@@ -12,6 +12,8 @@ from codesage_api.services.return_to import safe_return_to
     [
         "/invitations/accept?token=abc123",
         "/invitations/accept",
+        "/overview",
+        "/overview?project=1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",
         "/projects",
         "/dashboard",
         "/dashboard/1e2f3a4b-5c6d-4e7f-8091-a2b3c4d5e6f7",

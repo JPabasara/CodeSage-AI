@@ -56,7 +56,8 @@ export interface paths {
          *     On first sign-in this also creates **My Workspace**, its org-admin
          *     Membership, the built-in profile pool, and a Spring PetClinic starter
          *     project. The browser lands on Workspace so the guided trial starts with
-         *     the container those later screens belong to.
+         *     the container those later screens belong to. A returning user, with no
+         *     `return_to`, lands on Overview (`/overview`).
          *
          *     A `SecurityAuditRecord` is written for both success and failure.
          *     A failed sign-in has no established actor, which is exactly the event most
@@ -1176,6 +1177,14 @@ export interface components {
          */
         ScanStage: "cloning" | "reading_code" | "finding_debt" | "predicting_risk" | "scoring" | "finishing";
         /**
+         * @description The sub-step of `reading_code`, in order. Each owns a part of that
+         *     stage's band: measuring_code 25–37, reading_history 37–52,
+         *     reading_comments 52–60. New members may be added; a client that does
+         *     not know one falls back to `stage` and `progress`.
+         * @enum {string}
+         */
+        ScanStep: "measuring_code" | "reading_history" | "reading_comments";
+        /**
          * @description Why a scan ended in `error` (13H.1). New members may be added; existing
          *     members never change meaning.
          *
@@ -1444,6 +1453,27 @@ export interface components {
             grade: components["schemas"]["Grade"];
             /** @description Change since the previous snapshot, both scored under the active profile. */
             delta: number;
+            /** @description Thousands of lines of code behind `score`, under the active profile. */
+            kloc?: number | null;
+            /**
+             * @description Every finding stored for the latest snapshot, test findings included
+             *     and triage ignored.
+             */
+            finding_count?: number | null;
+            /** @description Critical + high in the latest snapshot, as on the health card. */
+            red_issue_count?: number | null;
+            /**
+             * Format: date-time
+             * @description When the latest snapshot was scanned.
+             */
+            scanned_at?: string | null;
+            /**
+             * @description The most recent scores on the default branch, **oldest first**, ending
+             *     with `score`. Only scores already calculated under the active profile
+             *     are included: reading the projects list never queues a calculation
+             *     for an older snapshot.
+             */
+            trend?: components["schemas"]["HealthPoint"][];
         };
         Branch: {
             /** @example main */
@@ -1499,9 +1529,25 @@ export interface components {
              *     Additive: a client that ignores it still has `progress`.
              */
             stage?: components["schemas"]["ScanStage"] | null;
-            /** @description Java files read so far. Only during `reading_code`. */
+            /**
+             * @description Which sub-step of `reading_code` a running scan is in. Present only
+             *     while `stage` is `reading_code`, and null when the worker has not
+             *     reported one (an older worker reports only `stage`).
+             */
+            step?: components["schemas"]["ScanStep"] | null;
+            /**
+             * @description Commits read from the history so far. Only during `reading_history`:
+             *     0 when the step starts, null when `commits_total` is unknown.
+             */
+            commits_done?: number | null;
+            /**
+             * @description Commits in the history up to the scanned commit. Only during
+             *     `reading_history`; null when the worker could not count them.
+             */
+            commits_total?: number | null;
+            /** @description Java files read so far. Only during `reading_comments`. */
             files_done?: number | null;
-            /** @description Java files this scan will read. Only during `reading_code`. */
+            /** @description Java files this scan will read. Only during `reading_comments`. */
             files_total?: number | null;
             /**
              * @description Median duration of this repository's last few finished scans, for
@@ -1755,6 +1801,44 @@ export interface components {
             /** @description The Refactor-First list, already sorted by `priority` descending. */
             findings: components["schemas"]["Finding"][];
             category_breakdown: components["schemas"]["CategoryBreakdownItem"][];
+            /**
+             * @description Counts for the summary cards, in the Refactor-First list's default
+             *     view: test findings are left out unless `include_test_findings` is
+             *     true, and statuses include triage. Present even when the request set
+             *     `include_findings=false`. Null only in a response cached before this
+             *     field existed.
+             */
+            finding_summary?: components["schemas"]["FindingSummary"] | null;
+            /**
+             * @description Thousands of lines of code behind `health_score`: the files that
+             *     count toward health under the active profile.
+             */
+            kloc?: number | null;
+            /**
+             * @description How many Java files this snapshot analysed, in every source scope
+             *     (production, test, generated, example and unknown).
+             */
+            java_file_count?: number | null;
+        };
+        /**
+         * @description Finding counts in the Refactor-First list's default view. `done` is a
+         *     triage status; `open` is every other finding, the same split the list
+         *     uses. Triage never changes a score, so these move while every score
+         *     stays put.
+         */
+        FindingSummary: {
+            /** @description `open` + `done`. */
+            total: number;
+            open: number;
+            done: number;
+            /** @description Open findings only. */
+            open_by_severity: components["schemas"]["SeverityCounts"];
+        };
+        SeverityCounts: {
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
         };
         FindingPage: {
             items: components["schemas"]["Finding"][];
@@ -1932,6 +2016,15 @@ export interface components {
         };
     };
     responses: {
+        /** @description The copy named by `If-None-Match` is current. No body. */
+        NotModified: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "Cache-Control": components["headers"]["CacheControl"];
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
         /** @description No valid session. The client should redirect to `/api/auth/login`. */
         NotAuthenticated: {
             headers: {
@@ -2067,6 +2160,12 @@ export interface components {
         };
     };
     parameters: {
+        /**
+         * @description The `ETag` of a copy the client already holds. When it is still current
+         *     the answer is `304 Not Modified` with no body. Browsers send this on their
+         *     own for responses they have cached.
+         */
+        IfNoneMatch: string;
         WorkspaceId: string;
         /** @description The connected repository's identifier. */
         RepoId: string;
@@ -2078,7 +2177,16 @@ export interface components {
         ScanId: string;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /**
+         * @description Names everything that decides the response's bytes: the scored snapshot,
+         *     the profile, the scoring engine, triage and the scan history. Send it back
+         *     as `If-None-Match`.
+         */
+        ETag: string;
+        /** @description `private, no-cache`: a browser may keep it, but revalidates every use. */
+        CacheControl: string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -2088,8 +2196,8 @@ export interface operations {
             query?: {
                 /**
                  * @description A relative path to open after sign-in. Only `/invitations/accept`,
-                 *     `/projects`, `/dashboard` and paths under `/dashboard/`, `/profiles`
-                 *     and `/workspace` are accepted, with an optional query. Anything else
+                 *     `/overview`, `/projects`, `/dashboard` and paths under `/dashboard/`,
+                 *     `/profiles` and `/workspace` are accepted, with an optional query. Anything else
                  *     (an absolute URL, `//host`, a backslash, an encoded `//` or `..`, an
                  *     unlisted path) is **ignored, not refused**, so there is no open
                  *     redirect and no error page.
@@ -2724,7 +2832,14 @@ export interface operations {
                 /** @description Set false to omit findings and fetch them through the paginated endpoint. */
                 include_findings?: boolean;
             };
-            header?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of a copy the client already holds. When it is still current
+                 *     the answer is `304 Not Modified` with no body. Browsers send this on their
+                 *     own for responses they have cached.
+                 */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
             path: {
                 /** @description The connected repository's identifier. */
                 repo_id: components["parameters"]["RepoId"];
@@ -2736,12 +2851,15 @@ export interface operations {
             /** @description The dashboard payload. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReport"];
                 };
             };
+            304: components["responses"]["NotModified"];
             401: components["responses"]["NotAuthenticated"];
             403: components["responses"]["Forbidden"];
             /**
@@ -2771,7 +2889,14 @@ export interface operations {
                 category?: components["schemas"]["Category"];
                 status?: "open" | "done";
             };
-            header?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of a copy the client already holds. When it is still current
+                 *     the answer is `304 Not Modified` with no body. Browsers send this on their
+                 *     own for responses they have cached.
+                 */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
             path: {
                 /** @description The connected repository's identifier. */
                 repo_id: components["parameters"]["RepoId"];
@@ -2783,12 +2908,15 @@ export interface operations {
             /** @description A stable slice of the snapshot's score-ranked findings. */
             200: {
                 headers: {
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["FindingPage"];
                 };
             };
+            304: components["responses"]["NotModified"];
             401: components["responses"]["NotAuthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

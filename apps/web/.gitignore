@@ -22,6 +22,8 @@
 /.next/
 # the isolated build dir Playwright's dev server uses (see next.config.ts)
 /.next-e2e/
+# any other NEXT_DIST_DIR; unignored, Tailwind scans its compiled chunks for classes
+/.next-*/
 /out/
 
 # production

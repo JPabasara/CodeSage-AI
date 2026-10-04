@@ -3,8 +3,9 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { GitBranch, History } from "lucide-react"
+import { ArrowRight, GitBranch, History } from "lucide-react"
 
+import { DeltaText, GradeBadge } from "@/components/dashboard/kpi-card"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { GitHubMark } from "@/components/icons/github-mark"
@@ -18,20 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { useBranches } from "@/hooks/use-branches"
 import { useProjectProfile } from "@/hooks/use-profiles"
 import { useProjects } from "@/hooks/use-projects"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { ScanSummary } from "@/lib/types"
-import { gradeColor, shortSha } from "@/lib/utils"
+import { gradeColor, healthColor, shortSha } from "@/lib/utils"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
 
 function dashboardSnapshotHref(repoId: string, scan: ScanSummary) {
   const qs = new URLSearchParams({
@@ -72,11 +66,7 @@ function Delta({ value }: Readonly<{ value: number }>) {
       </span>
     )
   }
-  return (
-    <span className="text-muted-foreground tabular-nums">
-      {delta > 0 ? `▲ +${delta}` : `▼ −${Math.abs(delta)}`}
-    </span>
-  )
+  return <DeltaText value={delta} />
 }
 
 /** The project this page is about, named beside the title. */
@@ -109,7 +99,7 @@ function ScanRow({
   const scannedAt = new Date(scan.scanned_at)
 
   return (
-    <TableRow
+    <tr
       tabIndex={0}
       onClick={open}
       onKeyDown={(event) => {
@@ -118,67 +108,84 @@ function ScanRow({
           open()
         }
       }}
-      className="cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+      className="cursor-pointer border-b transition-colors last:border-b-0 hover:bg-muted/50 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
       aria-label={`Open scan from ${scannedAt.toLocaleString()}`}
     >
-      <TableCell className="tabular-nums">
-        <time dateTime={scan.scanned_at} title={fullDateTime.format(scannedAt)}>
+      <td className="px-4 py-3 align-middle whitespace-nowrap">
+        <time
+          dateTime={scan.scanned_at}
+          title={fullDateTime.format(scannedAt)}
+          className="font-medium text-foreground-strong tabular-nums"
+        >
           {shortDateTime.format(scannedAt)}
         </time>
-      </TableCell>
-      <TableCell>
-        <span className="inline-flex max-w-40 items-center gap-1 rounded-sm border bg-muted/40 px-1.5 py-0.5 font-mono text-xs">
+      </td>
+      <td className="px-4 py-3 align-middle">
+        <span className="inline-flex h-6 max-w-40 items-center gap-1.5 rounded-sm border bg-card px-2 font-mono text-xs text-foreground">
           <GitBranch
             className="size-3 shrink-0 text-muted-foreground"
             aria-hidden="true"
           />
           <span className="truncate">{scan.branch}</span>
         </span>
-      </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">
+      </td>
+      <td className="hidden px-4 py-3 align-middle font-mono text-xs text-muted-foreground sm:table-cell">
         {shortSha(scan.commit_sha)}
-      </TableCell>
-      <TableCell className="text-right font-medium tabular-nums">
-        {Math.round(scan.health_score)}
-      </TableCell>
-      <TableCell>
-        {/* The same colour rule as the dashboard's health card, from the same helper. */}
-        <span
-          className="font-semibold"
-          style={{ color: gradeColor(scan.grade) }}
-        >
-          {scan.grade}
+      </td>
+      <td className="px-4 py-3 align-middle">
+        {/* The same grade colours, bar and helpers as the workspace overview. */}
+        <span className="flex items-center gap-2.5">
+          <GradeBadge
+            grade={scan.grade}
+            color={gradeColor(scan.grade)}
+            size="sm"
+          />
+          <span className="w-7 text-right font-semibold text-foreground-strong tabular-nums">
+            {Math.round(scan.health_score)}
+          </span>
+          <span
+            aria-hidden="true"
+            className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted md:block"
+          >
+            <span
+              className="block h-full rounded-full"
+              style={{
+                width: `${Math.max(2, scan.health_score)}%`,
+                backgroundColor: healthColor(scan.health_score),
+              }}
+            />
+          </span>
         </span>
-      </TableCell>
-      <TableCell className="text-right">
+      </td>
+      <td className="px-4 py-3 align-middle">
         <Delta value={scan.delta} />
-      </TableCell>
-      <TableCell className="text-right text-xs font-medium text-primary">
-        Open
-      </TableCell>
-    </TableRow>
+      </td>
+      <td className="px-4 py-3 text-right align-middle">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+          Open
+          <ArrowRight className="size-3.5" aria-hidden="true" />
+        </span>
+      </td>
+    </tr>
   )
 }
 
-/** The table's frame and row rhythm, so nothing jumps when the rows land. */
+/** The table's row rhythm, so nothing jumps when the rows land. */
 function ScanHistorySkeleton() {
   return (
-    <div
-      className="overflow-hidden rounded-lg border bg-card"
-      data-testid="scan-history-loading"
-    >
-      <div className="h-9 border-b bg-muted/40" />
+    <div data-testid="scan-history-loading" aria-busy="true">
+      <div className="h-9 border-y bg-muted/50" />
       {Array.from({ length: 4 }, (_, i) => (
         <div
           key={i}
-          className="flex h-11 items-center gap-6 border-b px-4 last:border-0"
+          className="flex h-12 items-center gap-6 border-b px-4 last:border-0"
         >
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-5 w-16" />
           <Skeleton className="h-4 w-14" />
-          <Skeleton className="ml-auto h-4 w-8" />
-          <Skeleton className="h-4 w-6" />
-          <Skeleton className="h-4 w-10" />
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-8" />
+          <Skeleton className="ml-auto h-4 w-10" />
         </div>
       ))}
     </div>
@@ -201,12 +208,9 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
   const profileName = projectProfile?.effective.name
 
   return (
-    <div
-      className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6"
-      data-tour="scan-history"
-    >
+    <div className={PAGE_CONTAINER} data-tour="scan-history">
       <PageHeader
-        title="Scan History"
+        title="Scan history"
         context={<ProjectContext repoId={repoId} />}
         description={
           profileName ? (
@@ -216,7 +220,11 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
                 {profileName}
               </strong>{" "}
               profile —{" "}
-              <Link href="/profiles" className="underline underline-offset-2">
+              {/* Underlined: a link inside a sentence can't rely on colour alone. */}
+              <Link
+                href="/profiles"
+                className="text-primary underline underline-offset-4"
+              >
                 change it in Profiles
               </Link>
               .
@@ -225,10 +233,38 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
             "Every stored snapshot for this repository, newest first, scored under the profile in force now."
           )
         }
-        aside={
-          <>
+      />
+
+      <section
+        aria-labelledby="history-snapshots"
+        className="rounded-md border bg-card"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3 px-4.5 pt-4 pb-3">
+          <div>
+            <h2
+              id="history-snapshots"
+              className="text-base font-semibold text-foreground-strong"
+            >
+              Snapshots
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {scans && scans.length > 0
+                ? `${scans.length} stored ${branch === ALL ? "across all branches" : `on ${branch}`}. Open one to see the dashboard as it was.`
+                : "Open one to see the dashboard as it was."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {scans && scans.length > 0 ? (
+              <Link
+                href={dashboardLatestHref(repoId, scans[0]?.branch)}
+                className="inline-flex items-center gap-1 rounded-sm text-[0.84375rem] font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Open latest scan
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            ) : null}
             <Select value={branch} onValueChange={setBranch}>
-              <SelectTrigger className="w-44" aria-label="Filter by branch">
+              <SelectTrigger className="h-8 w-44" aria-label="Filter by branch">
                 <GitBranch
                   className="size-4 text-muted-foreground"
                   aria-hidden="true"
@@ -244,80 +280,77 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
                 ))}
               </SelectContent>
             </Select>
-            {scans && scans.length > 0 ? (
-              <Button asChild variant="outline">
-                <Link href={dashboardLatestHref(repoId, scans[0]?.branch)}>
-                  Open latest scan
+          </div>
+        </div>
+
+        {error ? (
+          <ErrorState
+            className="border-t px-4.5 py-5"
+            title="Couldn’t load the scan history"
+            detail={error.message}
+            onRetry={refetch}
+          />
+        ) : loading ? (
+          <ScanHistorySkeleton />
+        ) : scans && scans.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-y bg-muted/50 text-left text-xs text-muted-foreground">
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Scanned
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Branch
+                  </th>
+                  <th
+                    scope="col"
+                    className="hidden px-4 py-2.5 font-medium sm:table-cell"
+                  >
+                    Commit
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Health
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium">
+                    Change
+                  </th>
+                  <th scope="col" className="px-4 py-2.5">
+                    <span className="sr-only">Open</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {scans.map((scan) => (
+                  <ScanRow key={scan.snapshot_id} repoId={repoId} scan={scan} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            className="rounded-none border-0 border-t border-solid"
+            icon={<History />}
+            title={
+              branch === ALL ? "No scans yet" : `No scans on ${branch} yet`
+            }
+            description="Run one from the dashboard."
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={
+                    branch === ALL
+                      ? `/dashboard/${repoId}`
+                      : `/dashboard/${repoId}?${new URLSearchParams({ branch })}`
+                  }
+                >
+                  Go to dashboard
                 </Link>
               </Button>
-            ) : null}
-          </>
-        }
-      />
-
-      {error ? (
-        <ErrorState
-          title="Couldn’t load the scan history"
-          detail={error.message}
-          onRetry={refetch}
-        />
-      ) : loading ? (
-        <ScanHistorySkeleton />
-      ) : scans && scans.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border bg-card">
-          <Table className="text-sm [&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
-            <TableHeader className="bg-muted/40">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="h-9 text-xs text-muted-foreground">
-                  Scanned
-                </TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">
-                  Branch
-                </TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">
-                  Commit
-                </TableHead>
-                <TableHead className="h-9 text-right text-xs text-muted-foreground">
-                  Score
-                </TableHead>
-                <TableHead className="h-9 text-xs text-muted-foreground">
-                  Grade
-                </TableHead>
-                <TableHead className="h-9 text-right text-xs text-muted-foreground">
-                  Change
-                </TableHead>
-                <TableHead className="h-9 text-right text-xs text-muted-foreground">
-                  Open
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scans.map((scan) => (
-                <ScanRow key={scan.snapshot_id} repoId={repoId} scan={scan} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <EmptyState
-          icon={<History />}
-          title={branch === ALL ? "No scans yet" : `No scans on ${branch} yet`}
-          description="Run one from the dashboard."
-          action={
-            <Button asChild variant="outline">
-              <Link
-                href={
-                  branch === ALL
-                    ? `/dashboard/${repoId}`
-                    : `/dashboard/${repoId}?${new URLSearchParams({ branch })}`
-                }
-              >
-                Go to dashboard
-              </Link>
-            </Button>
-          }
-        />
-      )}
+            }
+          />
+        )}
+      </section>
     </div>
   )
 }

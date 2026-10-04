@@ -31,9 +31,6 @@ export const metadata: Metadata = {
   },
 }
 
-// Authentication state is cookie-backed and therefore request-specific.
-export const dynamic = "force-dynamic"
-
 export default function RootLayout({
   children,
 }: Readonly<{

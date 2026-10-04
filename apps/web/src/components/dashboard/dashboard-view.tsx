@@ -3,35 +3,36 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { FolderX, GitBranch, ScanSearch } from "lucide-react"
+import { FolderX, GitBranch } from "lucide-react"
 import { toast } from "sonner"
 
-import { DashboardTopNav } from "@/components/layout/dashboard-topnav"
-import { OverallHealthCard } from "@/components/dashboard/overall-health-card"
-import { HealthGraphCard } from "@/components/dashboard/health-graph-card"
+import { ProjectHeader } from "@/components/dashboard/project-header"
+import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 import { RefactorFirstList } from "@/components/dashboard/refactor-first-list"
 import { FindingDetailPanel } from "@/components/dashboard/finding-detail-panel"
+import { FileDetailPanel } from "@/components/dashboard/file-detail-panel"
 import {
-  DashboardViewModeBar,
-  dashboardViewPreferenceKey,
-  isDashboardViewMode,
-  type DashboardViewMode,
-} from "@/components/dashboard/dashboard-view-mode-bar"
+  DashboardTabs,
+  dashboardPanelId,
+  dashboardTabId,
+  isDashboardTab,
+  readStoredDashboardTab,
+  storeDashboardTab,
+  type DashboardTab,
+} from "@/components/dashboard/dashboard-tabs"
+import {
+  javaBannerKey,
+  JavaScopeBanner,
+} from "@/components/dashboard/java-scope-banner"
 import { FileTree } from "@/components/dashboard/file-tree/file-tree"
-import {
-  DASHBOARD_GRID,
-  DASHBOARD_LIST_SLOT,
-  DASHBOARD_MAIN_COLUMN,
-  DASHBOARD_TOP_ROW,
-  DASHBOARD_TREE_SLOT,
-  DashboardSkeleton,
-} from "@/components/dashboard/dashboard-skeleton"
+import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
+import { FirstScanCard } from "@/components/dashboard/first-scan-card"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
 import { EmptyState } from "@/components/empty-state"
 import { ErrorState } from "@/components/error-state"
 import { Button } from "@/components/ui/button"
 import { ApiRequestError, setFindingStatus } from "@/lib/api/client"
-import { useBranches } from "@/hooks/use-branches"
-import { useSelectedBranch } from "@/hooks/use-selected-branch"
+import { useActiveBranch } from "@/hooks/use-active-branch"
 import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
 import { useHealthReport } from "@/hooks/use-health-report"
 import { useProjects } from "@/hooks/use-projects"
@@ -42,66 +43,54 @@ import {
   onScanEvent,
   pinScanResults,
   useScanFor,
+  useScanLive,
 } from "@/hooks/use-scan-center"
 import { useSession } from "@/hooks/use-session"
-import { ScanStatusStrip } from "@/components/layout/scan-status-strip"
+import { ScanProgressCard } from "@/components/dashboard/scan-progress-card"
 import { ScanProgressPanel } from "@/components/dashboard/scan-progress-panel"
 import { useScanHistory } from "@/hooks/use-scan-history"
+import { findingSummary, leafFiles } from "@/lib/dashboard-summary"
 import type { Finding, FindingStatus, TreeNode } from "@/lib/types"
-import { SCAN_SHARE, toBar } from "@/lib/scan-progress"
-import { healthColor } from "@/lib/utils"
+import { cn, healthColor } from "@/lib/utils"
+
+const numbers = new Intl.NumberFormat("en-US")
+
+/** The code map's tree scrolls inside; tall enough to work in, short enough to keep the header. */
+const PANEL_HEIGHT = "h-[min(46rem,calc(100svh-15rem))] min-h-[26rem]"
 
 export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
-  const { data: branches, error: branchesError } = useBranches(repoId)
-
   const { data: repos } = useProjects()
   const repo = repos?.find((r) => r.id === repoId)
   const reposLoaded = repos !== undefined
   const repoName = repo
-    ? `${repo.owner}/${repo.name}`
+    ? repo.name
     : reposLoaded
       ? "Project unavailable"
       : "Loading project"
 
-  // A user pick wins; until then fall back to the repo's default branch, then the first available one.
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const branchFromUrl = searchParams.get("branch") ?? undefined
   const snapshotId = searchParams.get("snapshot_id") ?? undefined
-  const [pickedBranch, setPickedBranch] = useState<string>()
-  const branchNames = branches?.map((branch) => branch.name)
-  const branchIsAvailable = (branch: string | undefined) =>
-    Boolean(branch && (!branchNames || branchNames.includes(branch)))
-  const fallbackBranch =
-    branches?.find((branch) => branch.is_default)?.name ?? branches?.[0]?.name
-  // The branch this project was last looked at.
   const workspaceId = useActiveWorkspaceId()
-  const { storedBranch, rememberBranch } = useSelectedBranch(
-    workspaceId,
-    repoId,
-  )
-  const rememberedBranch =
-    branchNames && storedBranch && branchNames.includes(storedBranch)
-      ? storedBranch
-      : undefined
-  // The URL wins, then a pick made here, then the remembered one, then the repository's default.
-  const activeBranch =
-    (branchIsAvailable(branchFromUrl)
-      ? branchFromUrl
-      : branchIsAvailable(pickedBranch)
-        ? pickedBranch
-        : (rememberedBranch ?? fallbackBranch)) ?? ""
+  const {
+    branches,
+    branchesError,
+    activeBranch,
+    settledOnRealBranch,
+    rememberBranch,
+  } = useActiveBranch(repoId)
 
   // Remember whatever the page settled on, once it is a real branch.
-  const settledOnRealBranch = Boolean(branchNames?.includes(activeBranch))
   useEffect(() => {
     if (settledOnRealBranch) rememberBranch(activeBranch)
   }, [activeBranch, settledOnRealBranch, rememberBranch])
 
   const noBranches = branches !== undefined && branches.length === 0
   const branchResolved =
-    settledOnRealBranch || (branchesError !== undefined && !branches)
+    settledOnRealBranch ||
+    (branches === undefined && Boolean(activeBranch)) ||
+    (branchesError !== undefined && !branches)
   const projectGone = reposLoaded && !repo
   const readsEnabled = branchResolved && !projectGone
 
@@ -117,6 +106,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     stop: stopTrackedScan,
   } = useScanFor(repoId, activeBranch, repo?.name)
   const jobActive = Boolean(trackedScan && isJobActive(trackedScan))
+  // The header's "Scanning 41%" reads the same live bar as the progress card.
+  const liveScan = useScanLive(trackedScan?.key)
 
   // Once the scan is done, "latest" is the new snapshot.
   const pinnedSnapshotId =
@@ -135,7 +126,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
   } = useHealthReport(repoId, activeBranch, readSnapshotId, {
     enabled: readsEnabled,
   })
-  const [animateCharts] = useState(() => report === undefined)
 
   const { data: session } = useSession()
   const permissions = session?.permissions ?? []
@@ -154,29 +144,21 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     Record<string, FindingStatus>
   >({})
   const [statusBusyFingerprint, setStatusBusyFingerprint] = useState<string>()
-  const viewPreferenceKey =
-    session?.user_id && workspaceId
-      ? dashboardViewPreferenceKey(session.user_id, workspaceId)
+
+  // The view: the URL first, a finding link means Findings, then the last choice.
+  const selectedFingerprint = searchParams.get("finding") ?? undefined
+  const viewFromUrl = searchParams.get("view")
+  const userId = session?.user_id
+  const storedTab =
+    userId && workspaceId && typeof window !== "undefined"
+      ? readStoredDashboardTab(userId, workspaceId)
       : undefined
-  const [chosenView, setChosenView] = useState<{
-    key: string | undefined
-    mode: DashboardViewMode
-  }>(() => ({
-    key: undefined,
-    mode: searchParams.get("finding") ? "findings-detail" : "overview",
-  }))
-  const storedView =
-    viewPreferenceKey && typeof window !== "undefined"
-      ? window.localStorage.getItem(viewPreferenceKey)
-      : null
-  const viewMode =
-    chosenView.key === viewPreferenceKey
-      ? chosenView.mode
-      : searchParams.get("finding")
-        ? "findings-detail"
-        : isDashboardViewMode(storedView)
-          ? storedView
-          : "overview"
+  const tab: DashboardTab = isDashboardTab(viewFromUrl)
+    ? viewFromUrl
+    : selectedFingerprint
+      ? "findings"
+      : (storedTab ?? "overview")
+  const selectedFilePath = searchParams.get("file") ?? undefined
 
   const trackedKey = trackedScan?.key
   const trackedJob = trackedScan?.job
@@ -200,16 +182,6 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     trackedScan &&
     (trackedScan.job === "ready" || (jobActive && (loading || report))),
   )
-  const showNewResults = () => {
-    if (!trackedScan) return
-    acknowledgeScan(trackedScan.key)
-    // Viewing an older snapshot? The new results are the latest one.
-    if (snapshotId) {
-      router.push(dashboardHref({ snapshot_id: null, finding: null }), {
-        scroll: false,
-      })
-    }
-  }
 
   useEffect(
     () =>
@@ -236,14 +208,10 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       })) ?? [],
     [report, findingStatusOverrides],
   )
-  const selectedFingerprint = searchParams.get("finding") ?? undefined
   const selectedFinding: Finding | null =
     displayedFindings.find((f) => f.fingerprint === selectedFingerprint) ?? null
   // The file tree writes the hovered node here.
   const [, setHoveredNode] = useState<TreeNode | null>(null)
-  const [treeSelectionNotice, setTreeSelectionNotice] = useState<string | null>(
-    null,
-  )
 
   const dashboardHref = (
     updates: Record<string, string | undefined | null>,
@@ -260,35 +228,33 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     return query ? `${pathname}?${query}` : pathname
   }
 
-  const rememberViewMode = (next: DashboardViewMode) => {
-    setChosenView({ key: viewPreferenceKey, mode: next })
-    if (viewPreferenceKey) window.localStorage.setItem(viewPreferenceKey, next)
+  const go = (updates: Record<string, string | undefined | null>) =>
+    router.push(dashboardHref(updates), { scroll: false })
+
+  const chooseTab = (next: DashboardTab) => {
+    if (userId && workspaceId) storeDashboardTab(userId, workspaceId, next)
+    go({ view: next })
+  }
+
+  const showNewResults = () => {
+    if (!trackedScan) return
+    acknowledgeScan(trackedScan.key)
+    // Viewing an older snapshot? The new results are the latest one.
+    if (snapshotId) go({ snapshot_id: null, finding: null })
   }
 
   const openFinding = (finding: Finding) => {
-    setTreeSelectionNotice(null)
-    rememberViewMode("findings-detail")
-    router.push(dashboardHref({ finding: finding.fingerprint }), {
-      scroll: false,
-    })
+    if (userId && workspaceId)
+      storeDashboardTab(userId, workspaceId, "findings")
+    go({ view: "findings", finding: finding.fingerprint })
   }
 
-  const closeFinding = () => {
-    setTreeSelectionNotice(null)
-    rememberViewMode("findings")
-    router.push(dashboardHref({ finding: null }), { scroll: false })
-  }
+  // Closing the detail stays on Findings, with the list in full view.
+  const closeFinding = () => go({ view: "findings", finding: null })
 
-  const chooseViewMode = (next: DashboardViewMode) => {
-    if (
-      next === "findings-detail" &&
-      !selectedFinding &&
-      displayedFindings[0]
-    ) {
-      openFinding(displayedFindings[0])
-      return
-    }
-    rememberViewMode(next)
+  const openFile = (node: TreeNode) => {
+    if (userId && workspaceId) storeDashboardTab(userId, workspaceId, "code")
+    go({ view: "code", file: node.path })
   }
 
   const changeFindingStatus = async (
@@ -324,17 +290,8 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
   }
 
-  const openSnapshot = (snapshot_id: string | null) => {
-    setTreeSelectionNotice(null)
-    router.push(
-      dashboardHref({
-        branch: activeBranch,
-        snapshot_id,
-        finding: null,
-      }),
-      { scroll: false },
-    )
-  }
+  const openSnapshot = (snapshot_id: string | null) =>
+    go({ branch: activeBranch, snapshot_id, finding: null })
 
   const currentSnapshotId = snapshotId ?? report?.snapshot_id
   const currentScanIndex =
@@ -347,7 +304,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
           isLatest: currentScanIndex === 0,
           positionLabel:
             currentScanIndex >= 0
-              ? `${scanHistory.length - currentScanIndex}/${scanHistory.length}`
+              ? `Scan ${scanHistory.length - currentScanIndex} of ${scanHistory.length}`
               : snapshotId
                 ? "History"
                 : "Latest",
@@ -379,7 +336,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     if (projectGone) {
       return (
         <EmptyState
-          className="m-4 flex-1"
+          className="flex-1"
           icon={<FolderX />}
           title="Choose a project"
           description="This project is not connected to your workspace anymore. Select an available repository to open its dashboard."
@@ -395,7 +352,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     if (noBranches) {
       return (
         <EmptyState
-          className="m-4 flex-1"
+          className="flex-1"
           icon={<GitBranch />}
           title="No scans yet"
           description="This repository has no branches yet. Push a branch, then run your first scan to see its health."
@@ -403,8 +360,16 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       )
     }
 
+    // The first scan, or one on a branch with no results yet: the whole page is its progress.
     if (jobActive && trackedScan && !loading && !report) {
-      return <ScanProgressPanel kind="job" scan={trackedScan} size="full" />
+      return (
+        <ScanProgressCard
+          scan={trackedScan}
+          size="full"
+          canStop={canStopScan}
+          onStop={stopTrackedScan}
+        />
+      )
     }
 
     // A score being recalculated with no scan behind it — after a profile change.
@@ -412,21 +377,21 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
       return <ScanProgressPanel kind="calculating" slow={scorePendingSlow} />
     }
 
-    if (!reposLoaded || loading) {
+    // An early guess at the branch can miss; wait for the list before saying so.
+    const guessUnconfirmed =
+      Boolean(error) && branches === undefined && branchesError === undefined
+    if (!reposLoaded || loading || guessUnconfirmed) {
       return <DashboardSkeleton />
     }
 
     if (neverScanned) {
       return (
-        <EmptyState
-          className="m-4 flex-1"
-          icon={<ScanSearch />}
-          title="No scans yet"
-          description={`${
-            activeBranch
-              ? `Nothing has been analyzed on ${activeBranch} yet.`
-              : "This repository has not been analyzed yet."
-          } Run your first scan to see its health.`}
+        <FirstScanCard
+          repoName={repo?.name ?? "this repository"}
+          branch={activeBranch}
+          otherBranches={(branches?.length ?? 0) > 1}
+          onScan={activeBranch ? startTrackedScan : undefined}
+          lockedReason={canStartScan ? undefined : "Viewers can't start scans"}
         />
       )
     }
@@ -443,182 +408,176 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     }
 
     if (!report) return null
+
+    const summary = findingSummary(report, displayedFindings)
+    const files = leafFiles(report.tree)
+    const fileCount = report.java_file_count ?? files.length
     const findingFiles = new Set(
       displayedFindings.map((finding) => finding.file),
     )
-    const findingPanel = () => (
-      <RefactorFirstList
-        findings={displayedFindings}
-        onSelect={openFinding}
-        selectedFingerprint={selectedFinding?.fingerprint}
-        canTriage={canTriage}
-        statusBusyFingerprint={statusBusyFingerprint}
-        onStatusChange={changeFindingStatus}
-        includeTestFindingsByDefault={report.include_test_findings ?? false}
-        repoId={repoId}
-        treeNodes={report.tree}
-      />
-    )
-    const treePanel = () => (
-      <FileTree
-        nodes={report.tree}
-        colorFor={(node) => healthColor(node.health_score)}
-        hasFinding={(node) => findingFiles.has(node.path)}
-        onHoverNode={setHoveredNode}
-        onSelectNodeWithoutFinding={(node) => {
-          const message = `${node.name} has no findings in this snapshot.`
-          setTreeSelectionNotice(message)
-          toast(message)
-        }}
-        selectionNotice={treeSelectionNotice}
-        selectedPath={selectedFinding?.file}
-        onSelectNode={(node) => {
-          const match = displayedFindings.find((f) => f.file === node.path)
-          if (match) openFinding(match)
-        }}
-      />
-    )
-    const viewBar = (
-      <DashboardViewModeBar value={viewMode} onChange={chooseViewMode} />
-    )
+    const selectedFile =
+      files.find((file) => file.path === selectedFilePath) ?? null
 
-    if (viewMode === "findings") {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:overflow-hidden">
-            {findingPanel()}
-          </div>
-          {viewBar}
-        </div>
-      )
-    }
-
-    if (viewMode === "findings-tree") {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
-          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(19rem,0.65fr)] lg:overflow-hidden">
-            <div className="min-h-0">{findingPanel()}</div>
-            <div className="h-[32rem] min-h-0 lg:h-auto">{treePanel()}</div>
-          </div>
-          {viewBar}
-        </div>
-      )
-    }
-
-    if (viewMode === "findings-detail") {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
-          <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:overflow-hidden">
-            <div className="min-h-0">{findingPanel()}</div>
-            <div className="min-h-64">
-              <FindingDetailPanel
-                finding={selectedFinding}
-                repositoryUrl={repo?.url}
-                commitSha={report.commit_sha}
-                hasFindings={displayedFindings.length > 0}
-                onClose={closeFinding}
-                canTriage={canTriage}
-                statusBusy={
-                  statusBusyFingerprint === selectedFinding?.fingerprint
-                }
-                onStatusChange={changeFindingStatus}
-              />
-            </div>
-          </div>
-          {viewBar}
-        </div>
-      )
-    }
+    const panel = (id: DashboardTab, content: React.ReactNode) => (
+      <div
+        role="tabpanel"
+        id={dashboardPanelId(id)}
+        aria-labelledby={dashboardTabId(id)}
+        data-view-mode={id}
+        className="min-w-0"
+      >
+        {content}
+      </div>
+    )
 
     return (
-      <div className="flex min-h-0 flex-1 flex-col" data-view-mode={viewMode}>
-        <div className={DASHBOARD_GRID}>
-          <div className={DASHBOARD_MAIN_COLUMN}>
-            {/* Overview keeps the health summary above the ranked list. */}
-            <div className={DASHBOARD_TOP_ROW}>
-              <OverallHealthCard
-                score={report.health_score}
-                grade={report.grade}
-                delta={report.delta}
-                redIssueCount={report.red_issue_count}
-                categoryBreakdown={report.category_breakdown}
-                animate={animateCharts}
-              />
-              <HealthGraphCard history={report.history} />
-            </div>
+      <div className="flex min-w-0 flex-col gap-4">
+        {userId && workspaceId ? (
+          <JavaScopeBanner
+            storageKey={javaBannerKey(userId, workspaceId, repoId)}
+            fileCount={fileCount}
+            kloc={report.kloc}
+          />
+        ) : null}
 
-            <div className={DASHBOARD_LIST_SLOT}>{findingPanel()}</div>
-          </div>
+        <DashboardTabs
+          value={tab}
+          onChange={chooseTab}
+          counts={{
+            findings: summary ? numbers.format(summary.open) : undefined,
+            code: `${numbers.format(fileCount)} ${fileCount === 1 ? "file" : "files"}`,
+          }}
+        />
 
-          <div className={DASHBOARD_TREE_SLOT}>{treePanel()}</div>
-        </div>
-        {viewBar}
+        {tab === "overview"
+          ? panel(
+              "overview",
+              <DashboardOverview
+                report={report}
+                findings={displayedFindings}
+                onOpenFinding={openFinding}
+                onOpenFile={openFile}
+                onShowFindings={() => chooseTab("findings")}
+                onShowCodeMap={() => chooseTab("code")}
+              />,
+            )
+          : null}
+
+        {tab === "findings"
+          ? panel(
+              "findings",
+              // The list is part of the page, which scrolls as a whole; the detail stays in view.
+              <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+                <div className="min-w-0">
+                  <RefactorFirstList
+                    findings={displayedFindings}
+                    onSelect={openFinding}
+                    selectedFingerprint={selectedFinding?.fingerprint}
+                    canTriage={canTriage}
+                    statusBusyFingerprint={statusBusyFingerprint}
+                    onStatusChange={changeFindingStatus}
+                    includeTestFindingsByDefault={
+                      report.include_test_findings ?? false
+                    }
+                    repoId={repoId}
+                    treeNodes={report.tree}
+                  />
+                </div>
+                <div className="min-h-64 lg:sticky lg:top-4 lg:self-start">
+                  <FindingDetailPanel
+                    finding={selectedFinding}
+                    repositoryUrl={repo?.url}
+                    commitSha={report.commit_sha}
+                    hasFindings={displayedFindings.length > 0}
+                    onClose={closeFinding}
+                    canTriage={canTriage}
+                    statusBusy={
+                      statusBusyFingerprint === selectedFinding?.fingerprint
+                    }
+                    onStatusChange={changeFindingStatus}
+                  />
+                </div>
+              </div>,
+            )
+          : null}
+
+        {tab === "code"
+          ? panel(
+              "code",
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
+                <div className={PANEL_HEIGHT}>
+                  <FileTree
+                    nodes={report.tree}
+                    colorFor={(node) => healthColor(node.health_score)}
+                    hasFinding={(node) => findingFiles.has(node.path)}
+                    onHoverNode={setHoveredNode}
+                    onSelectNode={openFile}
+                    onSelectNodeWithoutFinding={openFile}
+                    selectionNotice={null}
+                    selectedPath={selectedFile?.path}
+                  />
+                </div>
+                <div className="lg:sticky lg:top-4 lg:self-start">
+                  <FileDetailPanel
+                    node={selectedFile}
+                    findings={displayedFindings}
+                    onOpenFinding={openFinding}
+                  />
+                </div>
+              </div>,
+            )
+          : null}
       </div>
     )
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <DashboardTopNav
+    <div className={cn(PAGE_CONTAINER, "gap-4")}>
+      <ProjectHeader
         repoName={repoName}
-        branches={branches ?? []}
-        branchesLoaded={branches !== undefined}
-        activeBranch={activeBranch}
-        onBranchChange={(branch) => {
-          setTreeSelectionNotice(null)
-          setPickedBranch(branch)
-          router.push(
-            dashboardHref({
-              branch,
-              snapshot_id: null,
-              finding: null,
-            }),
-            { scroll: false },
-          )
-        }}
-        lastCommitSha={report?.commit_sha}
+        owner={repo?.owner}
+        repoUrl={repo?.url}
+        branch={activeBranch}
+        commitSha={report?.commit_sha}
         scannedAt={report?.scanned_at}
-        snapshotLoading={!report && !error}
-        snapshotNavigation={snapshotNavigation}
         profileName={report?.profile}
-        scan={{
-          phase:
-            trackedScan && jobActive
-              ? trackedScan.job === "scoring"
-                ? "running"
-                : trackedScan.status.phase
-              : "idle",
-          scoring: trackedScan?.job === "scoring",
-          // Only the screen-reader summary reads this, in quarters: the bar itself lives in the panel.
-          progress: trackedScan
-            ? trackedScan.job === "scoring"
-              ? SCAN_SHARE
-              : Math.floor(toBar(trackedScan.status.progress))
-            : 0,
-          stopping: trackedScan?.stopping ?? false,
-          onScan: activeBranch ? startTrackedScan : undefined,
-          // Stop lives in the status strip below the bar.
-          showStop: false,
-          lockedReason: canStartScan ? undefined : "Viewers can't start scans",
-        }}
+        snapshotNavigation={snapshotNavigation}
+        loading={!report && !error && !jobActive && !projectGone && !noBranches}
+        scan={
+          neverScanned && !jobActive
+            ? undefined
+            : {
+                phase:
+                  trackedScan && jobActive
+                    ? trackedScan.job === "scoring"
+                      ? "running"
+                      : trackedScan.status.phase
+                    : "idle",
+                scoring: trackedScan?.job === "scoring",
+                progress: Math.floor(liveScan?.bar ?? 0),
+                stopping: trackedScan?.stopping ?? false,
+                branch: activeBranch || undefined,
+                onScan: activeBranch ? startTrackedScan : undefined,
+                // Stop lives in the progress card under the header.
+                showStop: false,
+                lockedReason: canStartScan
+                  ? undefined
+                  : "Viewers can't start scans",
+              }
+        }
       />
 
-      <ScanStatusStrip
-        scan={trackedScan}
-        canStop={canStopScan}
-        onStop={stopTrackedScan}
-      />
-
+      {/* One card for a running scan: the step, the count, the bar and Stop. */}
       {trackedScan && showJobCard ? (
-        <ScanProgressPanel
-          kind="job"
+        <ScanProgressCard
           scan={trackedScan}
-          size="compact"
+          canStop={canStopScan}
+          onStop={stopTrackedScan}
           onShow={showNewResults}
         />
       ) : null}
 
-      <div className="flex min-h-0 flex-1" data-tour="dashboard-results">
+      <div className="flex min-w-0 flex-col" data-tour="dashboard-results">
         {body()}
       </div>
     </div>

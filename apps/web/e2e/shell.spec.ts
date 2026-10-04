@@ -4,6 +4,7 @@ const topBar = (page: import("@playwright/test").Page) =>
   page.getByTestId("app-top-bar")
 
 const PAGES = [
+  ["/overview", false],
   ["/workspace", false],
   ["/projects", false],
   [`/dashboard/${DEMO_REPO_ID}`, true],
@@ -28,7 +29,7 @@ for (const [path, aboutOneProject] of PAGES) {
   })
 }
 
-test("on the dashboard, Branch and Scan sit in the app bar", async ({
+test("on the dashboard, Branch sits in the app bar and Scan is the page's own action", async ({
   page,
 }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
@@ -36,8 +37,41 @@ test("on the dashboard, Branch and Scan sit in the app bar", async ({
     topBar(page).getByRole("combobox", { name: "Branch" }),
   ).toBeVisible()
   await expect(
-    topBar(page).getByRole("button", { name: /^scan$/i }),
+    page.getByRole("main").getByRole("button", { name: "Scan main" }),
   ).toBeVisible()
+  await expect(
+    topBar(page).getByRole("button", { name: /^scan/i }),
+  ).toHaveCount(0)
+})
+
+test("the app bar keeps its place and height on every page, so nothing jumps", async ({
+  page,
+}) => {
+  const boxes: { y: number; height: number }[] = []
+  for (const [path] of PAGES) {
+    await page.goto(path)
+    await expect(
+      topBar(page).getByRole("combobox", { name: /^Workspace:/ }),
+    ).toBeVisible()
+    const box = await topBar(page).boundingBox()
+    expect(box).toBeTruthy()
+    boxes.push({ y: box!.y, height: box!.height })
+  }
+  for (const box of boxes) expect(box).toEqual(boxes[0])
+})
+
+test("every page's title starts at the same place, so switching pages never jumps", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const xs: number[] = []
+  for (const path of [...PAGES.map(([path]) => path), "/support", "/help"]) {
+    await page.goto(path)
+    const title = page.locator("#main-content h1").first()
+    await expect(title).toBeVisible()
+    xs.push(Math.round((await title.boundingBox())!.x))
+  }
+  expect(new Set(xs).size, `title x per page: ${xs.join(", ")}`).toBe(1)
 })
 
 test("the rail starts below the app bar, not under it", async ({ page }) => {
@@ -84,7 +118,7 @@ test.describe("mobile", () => {
       .getByRole("button", { name: /toggle sidebar/i })
       .click()
     await expect(
-      page.getByRole("link", { name: "Profiles", exact: true }),
+      page.getByRole("link", { name: "Scoring profiles", exact: true }),
     ).toBeVisible()
   })
 })

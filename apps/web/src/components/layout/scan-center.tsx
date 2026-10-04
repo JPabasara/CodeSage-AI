@@ -50,6 +50,7 @@ export function ScanCenter() {
     return onScanEvent((event) => {
       switch (event.type) {
         case "queued":
+          if (event.quiet) return
           toast(`Scan queued · ${nameOf(event.scan)} · ${event.scan.branch}`)
           return
         case "attached":

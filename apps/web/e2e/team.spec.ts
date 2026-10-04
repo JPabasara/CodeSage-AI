@@ -81,7 +81,7 @@ test("accepting an invitation joins and enters the new workspace", async ({
   page,
 }) => {
   await page.goto(`/invitations/accept?token=${MOCK_INVITATION_TOKEN}`)
-  await expect(page).toHaveURL(/\/projects$/)
+  await expect(page).toHaveURL(/\/overview$/)
 
   await page.goto("/workspace")
   await expect(

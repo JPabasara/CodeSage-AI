@@ -126,7 +126,7 @@ test.each([
       onClose={vi.fn()}
     />,
   )
-  const link = screen.getByRole("link", { name: "View on GitHub ↗" })
+  const link = screen.getByRole("link", { name: "Open at line 7 on GitHub" })
   expect(link).toHaveAttribute(
     "href",
     `https://github.com/acme/private-repo/blob/${analyzedCommit}/src/A%20%23%C3%A9.java${anchor}`,
@@ -156,7 +156,39 @@ test.each([
       />,
     )
     expect(
-      screen.queryByRole("link", { name: "View on GitHub ↗" }),
+      screen.queryByRole("link", { name: /on GitHub/ }),
     ).not.toBeInTheDocument()
   },
 )
+
+test("shows the lines the finding points at, read from the analysed commit", async () => {
+  render(
+    <FindingDetailPanel
+      finding={{ ...mockFindings[0], file: "src/Excerpt.java", line: 9 }}
+      repositoryUrl="https://github.com/acme/repo"
+      commitSha={analyzedCommit}
+      onClose={vi.fn()}
+    />,
+  )
+
+  const excerpt = await screen.findByRole("figure", {
+    name: "Code at lines 7 to 11",
+  })
+  const marked = excerpt.querySelectorAll("[data-marked]")
+  expect(marked).toHaveLength(1)
+  expect(marked[0]).toHaveTextContent("9")
+})
+
+test("without trustworthy GitHub metadata there is no excerpt to fetch", () => {
+  render(<FindingDetailPanel finding={mockFindings[0]} onClose={vi.fn()} />)
+  expect(screen.queryByRole("figure")).not.toBeInTheDocument()
+})
+
+test("Copy link puts the page address, with this finding, on the clipboard", async () => {
+  const user = userEvent.setup()
+  const writeText = vi.spyOn(navigator.clipboard, "writeText")
+  render(<FindingDetailPanel finding={mockFindings[0]} onClose={vi.fn()} />)
+
+  await user.click(screen.getByRole("button", { name: "Copy link" }))
+  expect(writeText).toHaveBeenCalledWith(window.location.href)
+})

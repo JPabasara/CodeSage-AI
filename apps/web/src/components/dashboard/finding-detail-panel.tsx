@@ -2,16 +2,20 @@
 
 import { LearnMore } from "@/components/support/learn-more"
 
-import { CheckCircle2, Loader2, RotateCcw, X } from "lucide-react"
-
 import {
-  CategoryTag,
-  SeverityTag,
-  SourceTag,
-} from "@/components/dashboard/finding-tag"
+  CheckCircle2,
+  ExternalLink,
+  Link2,
+  Loader2,
+  RotateCcw,
+  X,
+} from "lucide-react"
+import { toast } from "sonner"
+
+import { CodeExcerpt } from "@/components/dashboard/code-excerpt"
+import { FindingMeta } from "@/components/dashboard/finding-tag"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { getPmdRuleGuidance } from "@/lib/pmd-rule-guidance"
 import type { Finding, FindingStatus } from "@/lib/types"
 
@@ -26,11 +30,12 @@ export type FindingDetailPanelProps = {
   onStatusChange?: (finding: Finding, status: FindingStatus) => void
 }
 
-function githubFindingUrl(
+/** The file at the analysed commit, or null when the metadata can't be trusted. */
+function githubLocation(
   repositoryUrl: string | undefined,
   commitSha: string | undefined,
   finding: Finding,
-): string | null {
+) {
   if (!repositoryUrl || !commitSha || !/^[a-f0-9]{40}$/i.test(commitSha)) {
     return null
   }
@@ -50,13 +55,47 @@ function githubFindingUrl(
   }
   const repoName = repository[2].replace(/\.git$/, "")
   if (!repoName || repoName === "." || repoName === "..") return null
+  return {
+    owner: repository[1],
+    repo: repoName,
+    commitSha,
+    path: segments.map(encodeURIComponent).join("/"),
+  }
+}
+
+function githubFindingUrl(
+  location: NonNullable<ReturnType<typeof githubLocation>>,
+  finding: Finding,
+) {
   const end = finding.end_line
   const range =
     end != null && Number.isSafeInteger(end) && end > finding.line
       ? `-L${end}`
       : ""
-  const path = segments.map(encodeURIComponent).join("/")
-  return `https://github.com/${repository[1]}/${repoName}/blob/${commitSha}/${path}#L${finding.line}${range}`
+  return `https://github.com/${location.owner}/${location.repo}/blob/${location.commitSha}/${location.path}#L${finding.line}${range}`
+}
+
+function githubRawUrl(
+  location: NonNullable<ReturnType<typeof githubLocation>>,
+) {
+  return `https://raw.githubusercontent.com/${location.owner}/${location.repo}/${location.commitSha}/${location.path}`
+}
+
+function SectionTitle({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <h3 className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      {children}
+    </h3>
+  )
+}
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(window.location.href)
+    toast.success("Link to this finding copied.")
+  } catch {
+    toast.error("Could not copy the link. Copy it from the address bar.")
+  }
 }
 
 export function FindingDetailPanel({
@@ -69,101 +108,128 @@ export function FindingDetailPanel({
   statusBusy = false,
   onStatusChange,
 }: Readonly<FindingDetailPanelProps>) {
+  const closeButton = (
+    <Button
+      variant="ghost"
+      size="icon-lg"
+      className="-mt-1 -mr-1.5 shrink-0 text-muted-foreground"
+      aria-label="Close finding detail"
+      onClick={onClose}
+    >
+      <X />
+    </Button>
+  )
+
   if (!finding) {
     return (
-      <Card
+      <section
         aria-label="Finding detail"
-        className="h-full min-h-0 gap-0 border ring-0"
+        className="flex items-start justify-between gap-2 rounded-md border bg-card px-5 py-4.5"
       >
-        <CardHeader className="flex-row items-start justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold">
-              {hasFindings ? "Select a finding" : "No findings to show"}
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {hasFindings
-                ? "Choose a finding from the list to open its details here."
-                : "There are no findings in this snapshot. Try another scan or choose a different branch."}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Close finding detail"
-            onClick={onClose}
-          >
-            <X />
-          </Button>
-        </CardHeader>
-      </Card>
+        <div>
+          <h2 className="text-base font-semibold text-foreground-strong">
+            {hasFindings ? "Select a finding" : "No findings to show"}
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {hasFindings
+              ? "Choose a finding from the list to open its details here."
+              : "There are no findings in this snapshot. Try another scan or choose a different branch."}
+          </p>
+        </div>
+        {closeButton}
+      </section>
     )
   }
 
   const pmdGuidance = getPmdRuleGuidance(finding.rule_id)
-  const githubUrl = githubFindingUrl(repositoryUrl, commitSha, finding)
+  const location = githubLocation(repositoryUrl, commitSha, finding)
+  const done = finding.status === "done"
+  const hasEvidence =
+    finding.metric_value !== undefined &&
+    finding.metric_value !== null &&
+    finding.threshold !== undefined &&
+    finding.threshold !== null
 
+  // Pinned beside a long list: never taller than the space under the top bar.
   return (
-    <Card
+    <section
       aria-label="Finding detail"
-      className="h-full min-h-0 gap-0 border ring-0"
+      className="flex min-h-0 flex-col rounded-md border bg-card lg:max-h-[calc(100svh-6rem)]"
     >
-      <CardHeader className="gap-0">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <SeverityTag severity={finding.severity} />
-            <CategoryTag category={finding.category} />
-            {finding.source ? <SourceTag source={finding.source} /> : null}
-            <Badge variant="outline">
-              {finding.status === "done" ? "Done" : "Open"}
-            </Badge>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Close finding detail"
-            onClick={onClose}
-          >
-            <X />
-          </Button>
+      <header className="flex items-start justify-between gap-3 px-5 pt-4.5">
+        <div className="min-w-0">
+          <FindingMeta finding={finding} location={false}>
+            <span className="tabular-nums">
+              Priority {Math.round(finding.priority)}
+            </span>
+            {done ? <Badge variant="outline">Done</Badge> : null}
+          </FindingMeta>
+          <h2 className="mt-2 text-[1.0625rem] leading-snug font-semibold wrap-break-word text-foreground-strong">
+            {finding.reason}
+          </h2>
         </div>
-        <h2 className="mt-2 font-mono text-sm font-semibold break-all tabular-nums">
-          {finding.file}:{finding.line}
-        </h2>
-        {githubUrl ? (
-          <a
-            className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
-            href={githubUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View on GitHub ↗
-          </a>
-        ) : null}
-        {finding.symbol ? (
-          <p className="text-sm text-muted-foreground">{finding.symbol}</p>
-        ) : null}
-      </CardHeader>
+        {closeButton}
+      </header>
 
-      <CardContent className="min-h-0 flex-1 space-y-4 overflow-y-auto pt-4 text-sm">
-        <section>
-          <h3 className="mb-1 text-xs font-medium text-muted-foreground">
-            {pmdGuidance ? "What PMD found" : "Why this matters"}
-          </h3>
-          <p>{finding.reason}</p>
-        </section>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pt-3 pb-5 text-sm">
+        <p className="font-mono text-[0.8125rem] break-all text-muted-foreground tabular-nums">
+          <span>
+            {finding.file}:{finding.line}
+          </span>
+          {finding.symbol ? (
+            <span className="font-sans"> · {finding.symbol}</span>
+          ) : null}
+        </p>
+
+        {location ? (
+          <div className="space-y-2.5">
+            <CodeExcerpt
+              rawUrl={githubRawUrl(location)}
+              line={finding.line}
+              endLine={finding.end_line}
+            />
+            <a
+              className="inline-flex items-center gap-1.5 rounded-sm text-[0.84375rem] font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              href={githubFindingUrl(location, finding)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open at line {finding.line} on GitHub
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+            </a>
+          </div>
+        ) : null}
 
         {pmdGuidance ? (
           <>
             <section>
-              <h3 className="mb-1 text-xs font-medium text-muted-foreground">
-                Why this matters
-              </h3>
+              <SectionTitle>What PMD found</SectionTitle>
+              <p>
+                Rule{" "}
+                <span className="font-mono text-[0.8125rem]">
+                  {finding.rule_id?.slice(4)}
+                </span>
+                {hasEvidence ? (
+                  <>
+                    {" "}
+                    · measured{" "}
+                    <span className="font-semibold tabular-nums">
+                      {finding.metric_value}
+                    </span>
+                    , limit{" "}
+                    <span className="font-semibold tabular-nums">
+                      {finding.threshold}
+                    </span>
+                  </>
+                ) : null}
+              </p>
+            </section>
+            <section>
+              <SectionTitle>Why it matters</SectionTitle>
               <p>{pmdGuidance.impact}</p>
             </section>
             <section>
-              <h3 className="mb-1 text-xs font-medium text-muted-foreground">
-                How to fix it
-              </h3>
+              <SectionTitle>How to fix it</SectionTitle>
               <p>{pmdGuidance.recommendation}</p>
               <a
                 className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
@@ -175,7 +241,39 @@ export function FindingDetailPanel({
               </a>
             </section>
           </>
-        ) : null}
+        ) : (
+          <>
+            {finding.comment_text ? (
+              <section>
+                <SectionTitle>What the comment says</SectionTitle>
+                <blockquote className="border-l-2 pl-3 text-foreground italic">
+                  {finding.comment_text}
+                </blockquote>
+              </section>
+            ) : null}
+            {hasEvidence ? (
+              <section>
+                <SectionTitle>Evidence</SectionTitle>
+                <p>
+                  Measured{" "}
+                  <span className="font-semibold tabular-nums">
+                    {finding.metric_value}
+                  </span>
+                  , limit{" "}
+                  <span className="font-semibold tabular-nums">
+                    {finding.threshold}
+                  </span>
+                  {finding.rule_id ? (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · rule {finding.rule_id}
+                    </span>
+                  ) : null}
+                </p>
+              </section>
+            ) : null}
+          </>
+        )}
 
         <LearnMore
           article={
@@ -184,59 +282,36 @@ export function FindingDetailPanel({
           about="how this finding was detected"
         />
 
-        {finding.metric_value !== undefined &&
-        finding.metric_value !== null &&
-        finding.threshold !== undefined &&
-        finding.threshold !== null ? (
-          <section>
-            <h3 className="mb-1 text-xs font-medium text-muted-foreground">
-              Evidence
-            </h3>
-            <p>
-              Measured{" "}
-              <span className="font-semibold tabular-nums">
-                {finding.metric_value}
-              </span>
-              , limit{" "}
-              <span className="font-semibold tabular-nums">
-                {finding.threshold}
-              </span>
-              {finding.rule_id ? (
-                <span className="text-muted-foreground">
-                  {" "}
-                  · rule {finding.rule_id}
-                </span>
-              ) : null}
-            </p>
-          </section>
-        ) : null}
-
-        {canTriage ? (
-          <div className="border-t pt-4">
+        <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+          {canTriage ? (
             <Button
               type="button"
-              variant={finding.status === "done" ? "outline" : "default"}
-              size="sm"
+              variant="outline"
+              className="h-9 px-3.5 text-sm"
               disabled={statusBusy}
-              onClick={() =>
-                onStatusChange?.(
-                  finding,
-                  finding.status === "done" ? "open" : "done",
-                )
-              }
+              onClick={() => onStatusChange?.(finding, done ? "open" : "done")}
             >
               {statusBusy ? (
                 <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : finding.status === "done" ? (
+              ) : done ? (
                 <RotateCcw aria-hidden="true" />
               ) : (
                 <CheckCircle2 aria-hidden="true" />
               )}
-              {finding.status === "done" ? "Reopen" : "Mark as done"}
+              {done ? "Reopen" : "Mark as done"}
             </Button>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 px-3 text-sm"
+            onClick={() => void copyLink()}
+          >
+            <Link2 aria-hidden="true" />
+            Copy link
+          </Button>
+        </div>
+      </div>
+    </section>
   )
 }

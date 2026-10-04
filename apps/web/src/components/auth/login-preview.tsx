@@ -210,7 +210,7 @@ export function LoginPreview() {
                   x={LEFT - 6}
                   y={y(tick) + 3}
                   textAnchor="end"
-                  className="fill-zinc-500 text-[9px] tabular-nums"
+                  className="fill-zinc-500 text-[0.625rem] tabular-nums"
                 >
                   {tick}
                 </text>
@@ -253,7 +253,7 @@ export function LoginPreview() {
                     x={Math.min(Math.max(x(i), 34), W - 34)}
                     y={y(point.score) - 16}
                     textAnchor="middle"
-                    className="fill-white text-[10px] tabular-nums"
+                    className="fill-white text-[0.6875rem] tabular-nums"
                   >
                     {point.label} · {point.score}
                   </text>
@@ -263,7 +263,7 @@ export function LoginPreview() {
                     x={x(i)}
                     y={H - 4}
                     textAnchor="middle"
-                    className="fill-zinc-500 text-[9px]"
+                    className="fill-zinc-500 text-[0.625rem]"
                   >
                     {point.label}
                   </text>

@@ -257,6 +257,47 @@ export const extraHelpArticles: HelpArticle[] = [
     related: ["run-and-stop-scans"],
   },
   {
+    slug: "what-is-analysed",
+    parent: "scanning",
+    category: "Help",
+    title: "What CodeSage analyses: Java only",
+    description:
+      "A scan reads the Java source on one branch. Build files are read only to detect the Java version, and every other file is left alone.",
+    intro:
+      "A scan reads the Java source on one branch. Build files are read only to detect the Java version, and every other file is left alone.",
+    sections: [
+      {
+        heading: "Analysed",
+        paragraphs: [
+          "Only .java files are parsed, measured and scored. Every .java file on the branch you scan is measured, checked against the rules and PMD, and read for self-admitted technical debt in its comments. Test code is analysed too, and tagged so the findings list can show or hide it.",
+          "The git history of those files is read for change frequency, which feeds the bug-risk model.",
+        ],
+      },
+      {
+        heading: "Read, but never scored",
+        paragraphs: [
+          "pom.xml, build.gradle, build.gradle.kts and gradle.properties are read only to find the Java version, so PMD parses the code correctly. They never produce findings and never count toward health.",
+        ],
+      },
+      {
+        heading: "Not analysed",
+        paragraphs: [
+          "Markdown and other documentation (.md), resources, XML, properties and YAML files, and code in other languages such as Kotlin, JavaScript or Python are cloned with the repository but never read. They are not in the file tree, not in the line count health is measured against, and never produce findings. A TODO in a Markdown file is not self-admitted debt; one in a Java comment is.",
+          "Files over 1 MB and binaries are not downloaded at all. The clone is deleted as soon as the scan ends.",
+        ],
+        note: "A branch with no Java files at all ends with a clear No Java files message instead of an empty report.",
+      },
+      {
+        heading: "When you connect a repository",
+        paragraphs: [
+          "Before a repository is connected, CodeSage shows this same list and asks you to confirm. Connect only adds it to the workspace; Connect and scan also starts its first scan on the default branch and opens its dashboard.",
+          "Tick Don't show this again to skip the question for later repositories in this workspace. CodeSage then repeats the choice you made, on this browser only.",
+        ],
+      },
+    ],
+    related: ["scan-failures", "stored-data"],
+  },
+  {
     slug: "scan-failures",
     parent: "scanning",
     category: "Help",

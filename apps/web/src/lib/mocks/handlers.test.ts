@@ -98,7 +98,7 @@ test("GET /projects returns contract-shaped repos", async () => {
       expectShape(
         repo.latest_health,
         ["score", "grade", "delta"],
-        [],
+        ["kloc", "finding_count", "red_issue_count", "scanned_at", "trend"],
         "LatestHealth",
       )
     }
@@ -244,7 +244,7 @@ test("GET /repos/:id/health returns the whole dashboard payload", async () => {
       "findings",
       "category_breakdown",
     ],
-    ["model_version"],
+    ["model_version", "finding_summary", "kloc", "java_file_count"],
     "HealthReport",
   )
   expect(report.snapshot_id).toMatch(UUID)
@@ -447,12 +447,10 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
   }
 
   const times = history.map((s) => Date.parse(s.scanned_at))
-  expect(times, "newest first").toEqual(
-    [...times].sort((a, b) => b - a),
-  )
+  expect(times, "newest first").toEqual([...times].sort((a, b) => b - a))
 })
 
-/** Every optional ScanStatus key the contract defines, 13H.4's stage included. */
+/** Every optional ScanStatus key the contract defines, stage and sub-step included. */
 const SCAN_STATUS_OPTIONAL = [
   "branch",
   "commit_sha",
@@ -461,6 +459,9 @@ const SCAN_STATUS_OPTIONAL = [
   "error",
   "error_code",
   "stage",
+  "step",
+  "commits_done",
+  "commits_total",
   "files_done",
   "files_total",
   "typical_seconds",

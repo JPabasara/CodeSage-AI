@@ -209,6 +209,9 @@ export function getBranches(repoId: string): Promise<Branch[]> {
   }).then(json<Branch[]>)
 }
 
+// The API's largest page; most repositories fit in one.
+export const FINDINGS_PAGE_SIZE = 500
+
 export async function getHealthReport(
   repoId: string,
   branch: string,
@@ -216,14 +219,10 @@ export async function getHealthReport(
 ): Promise<HealthReport> {
   const qs = new URLSearchParams({ branch, include_findings: "false" })
   if (snapshotId) qs.set("snapshot_id", snapshotId)
-  const report = await fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
-    credentials: "include",
-  }).then(json<HealthReport>)
-  const pageSize = 100
   const findingsQuery = (offset: number) => {
     const page = new URLSearchParams({
       branch,
-      limit: String(pageSize),
+      limit: String(FINDINGS_PAGE_SIZE),
       offset: String(offset),
     })
     if (snapshotId) page.set("snapshot_id", snapshotId)
@@ -231,13 +230,21 @@ export async function getHealthReport(
       credentials: "include",
     }).then(json<FindingPage>)
   }
-  const first = await findingsQuery(0)
-  const offsets = Array.from(
-    { length: Math.max(0, Math.ceil(first.total / pageSize) - 1) },
-    (_, index) => (index + 1) * pageSize,
-  )
-  const rest = await Promise.all(offsets.map(findingsQuery))
-  return { ...report, findings: [first, ...rest].flatMap((page) => page.items) }
+  // The summary and the first page together; later pages one at a time, so a
+  // large repository never fires a burst of requests at the database.
+  const [report, first] = await Promise.all([
+    fetch(`${API_BASE}/api/repos/${repoId}/health?${qs}`, {
+      credentials: "include",
+    }).then(json<HealthReport>),
+    findingsQuery(0),
+  ])
+  const findings = [...first.items]
+  while (findings.length < first.total) {
+    const page = await findingsQuery(findings.length)
+    if (page.items.length === 0) break
+    findings.push(...page.items)
+  }
+  return { ...report, findings }
 }
 
 // Change only the workflow state of one finding in one immutable snapshot.

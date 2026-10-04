@@ -47,7 +47,7 @@ test("a valid token joins, switches to that workspace and enters it", async () =
   await waitFor(() =>
     expect(nav.replace).toHaveBeenCalledWith("/invitations/accept"),
   )
-  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/projects"))
+  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/overview"))
   expect(accept).toHaveBeenCalledTimes(1)
   expect(readPendingInvitation()).toBeNull()
 
@@ -66,7 +66,7 @@ test("an unusable token gets one plain answer, whatever the reason", async () =>
       name: /this invitation can.t be used/i,
     }),
   ).toBeVisible()
-  expect(nav.replace).not.toHaveBeenCalledWith("/projects")
+  expect(nav.replace).not.toHaveBeenCalledWith("/overview")
   expect(readPendingInvitation()).toBeNull()
 })
 
@@ -97,7 +97,7 @@ test("back from sign-in, the kept token is accepted without the URL", async () =
   sessionStorage.setItem("codesage.pendingInvitation", MOCK_INVITATION_TOKEN)
   render(<AcceptInvitationPage />)
 
-  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/projects"))
+  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/overview"))
 })
 
 test("no token at all says the link is incomplete", async () => {

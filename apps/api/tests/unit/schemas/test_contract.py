@@ -327,6 +327,21 @@ def test_scan_error_codes_match_the_contract() -> None:
     assert "error_code" in contract["ScanStatus"]["properties"]
 
 
+def test_scan_steps_and_their_counts_match_the_contract() -> None:
+    """Scan progress v2. The web labels the bar by `step`, so the two lists of
+    steps must be the same list, and every new field must be optional."""
+    from codesage_api.scoring.enums import ScanStep
+
+    contract = _contract()["components"]["schemas"]
+    assert set(contract["ScanStep"]["enum"]) == {step.value for step in ScanStep}
+
+    served = create_app().openapi()["components"]["schemas"]["ScanStatusOut"]
+    new_fields = {"step", "commits_done", "commits_total"}
+    assert new_fields <= set(served["properties"])
+    assert not new_fields & set(served.get("required", []))
+    assert set(served["properties"]) == set(contract["ScanStatus"]["properties"])
+
+
 def test_the_connect_guardrail_codes_and_languages_are_in_the_contract() -> None:
     contract = _contract()["components"]["schemas"]
     assert {"REPOSITORY_TOO_LARGE", "REPOSITORY_HAS_NO_JAVA"} <= set(

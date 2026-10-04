@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CircleCheck, Loader2 } from "lucide-react"
+import { CircleCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -15,7 +15,6 @@ import { dashboardHrefFor } from "@/components/layout/scan-center"
 import { refreshActivity, useActivity } from "@/hooks/use-activity"
 import {
   acknowledgeScan,
-  modeOf,
   onScanEvent,
   useActiveScans,
   useScanLive,
@@ -27,8 +26,13 @@ import {
   readyCount,
   type ActivityItem,
 } from "@/lib/activity"
-import { headlineFor } from "@/lib/scan-messages"
-import { reportedProgress, stageOf, toBar } from "@/lib/scan-progress"
+import {
+  labelFor,
+  reportedProgress,
+  stepInfo,
+  stepOf,
+  toBar,
+} from "@/lib/scan-progress"
 import { cn } from "@/lib/utils"
 
 export function ActivityMenu() {
@@ -67,15 +71,18 @@ export function ActivityMenu() {
           type="button"
           data-testid="activity-trigger"
           aria-label={`Activity: ${busy} running${ready ? `, ${ready} ready` : ""}`}
-          className="inline-flex h-8 max-w-52 items-center gap-2 rounded-md border border-white/25 px-3 text-xs font-medium text-topbar-foreground outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+          className="inline-flex h-8.5 max-w-56 items-center gap-2 rounded-full bg-tb-pill px-3 text-[0.8125rem] font-medium text-tb-fg outline-none transition-colors hover:bg-tb-hover focus-visible:ring-2 focus-visible:ring-tb-focus"
         >
           {busy > 0 ? (
-            <Loader2
+            <span
               aria-hidden="true"
-              className="size-3.5 shrink-0 motion-safe:animate-spin"
+              className="size-2 shrink-0 rounded-full bg-tb-dot motion-safe:animate-pulse"
             />
           ) : (
-            <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
+            <CircleCheck
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-tb-muted"
+            />
           )}
           <span className="truncate">{summary}</span>
         </button>
@@ -129,9 +136,7 @@ function ActivityRow({
         detail={
           queued
             ? "Queued · waiting for a free slot"
-            : `${headlineFor(stageOf(item.status), {
-                total: item.status.files_total,
-              })} · ${Math.floor(bar ?? 0)}%`
+            : `${labelFor(stepOf(item.status), item.status)} · ${Math.floor(bar ?? 0)}%`
         }
         bar={bar}
         href={dashboardHrefFor(item.repoId, item.branch)}
@@ -200,7 +205,11 @@ function JobRow({
       detail={`${
         scan.stopping
           ? "Stopping the scan"
-          : headlineFor(modeOf(scan), { total: scan.status.files_total })
+          : scan.job === "scoring"
+            ? stepInfo("score").title
+            : scan.status.phase === "queued"
+              ? "Queued · waiting for a free slot"
+              : labelFor(stepOf(scan.status), scan.status)
       }${bar !== undefined ? ` · ${Math.floor(bar)}%` : ""}`}
       bar={bar}
       href={href}

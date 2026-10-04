@@ -1,82 +1,91 @@
 "use client"
 
+import { Suspense } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { AccountMenu } from "@/components/layout/account-menu"
+import { BranchSwitcher } from "@/components/layout/branch-switcher"
 import {
   isProjectPage,
   ProjectSwitcher,
 } from "@/components/layout/project-switcher"
-import { TopBarSlot } from "@/components/layout/top-bar-slot"
+import { TopBarSeparator } from "@/components/layout/top-bar-picker"
 import { ActivityMenu } from "@/components/layout/activity-menu"
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher"
-import { useWorkspaces } from "@/hooks/use-workspace"
+import { repoIdFromDashboardPath } from "@/hooks/use-selected-project"
+import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
 import { useWorkspaceGate } from "@/hooks/use-workspace-scope"
 
+/**
+ * Where you are, never what you do: the brand, the context path
+ * (Workspace / Project / Branch), work in progress and the account. Page
+ * actions live in each page's header, so this bar is the same on every page.
+ */
 export function AppTopBar() {
   const pathname = usePathname()
   const { data: workspaces, loading } = useWorkspaces()
+  const workspace = useActiveWorkspace(workspaces)
   const ready = useWorkspaceGate() === "ready"
+  const repoId = repoIdFromDashboardPath(pathname)
   const showProject = ready && isProjectPage(pathname)
+  // The branch belongs to the dashboard; Scan History filters branches itself.
+  const showBranch = showProject && repoId && !pathname.endsWith("/history")
 
   return (
     <header
       data-testid="app-top-bar"
-      className="z-20 shrink-0 bg-topbar text-topbar-foreground"
+      className="z-20 shrink-0 bg-tb-bg text-tb-fg shadow-[inset_0_-1px_0_var(--tb-line)]"
     >
-      <div className="flex min-h-14 flex-wrap items-center gap-x-2 gap-y-2 px-3 py-2.5 md:h-14 md:flex-nowrap md:py-0">
-        <div className="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
-          <SidebarTrigger className="text-topbar-foreground hover:bg-white/15 hover:text-topbar-foreground md:hidden" />
+      <div className="flex min-h-15 flex-wrap items-stretch md:h-15 md:flex-nowrap">
+        {/* The brand zone lines up with the rail below it. */}
+        <div className="order-1 flex h-15 shrink-0 items-center gap-1 pr-1 pl-2 md:w-(--sidebar-width) md:bg-tb-brand md:px-3 md:shadow-[inset_-1px_0_0_var(--tb-line)]">
+          <SidebarTrigger className="text-tb-fg hover:bg-tb-hover hover:text-tb-fg md:hidden" />
           <Link
-            href="/projects"
-            className="flex shrink-0 items-center gap-2 rounded-md px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            href="/overview"
+            className="flex items-center gap-2.5 rounded-md px-1.5 py-1 outline-none focus-visible:ring-2 focus-visible:ring-tb-focus"
           >
             <Image
               src="/codesage-refactor-branch-mark.svg"
               alt=""
-              width={28}
-              height={28}
-              className="size-7"
+              width={30}
+              height={30}
+              className="size-7.5"
+              priority
             />
-            <span className="hidden text-sm font-semibold tracking-tight sm:inline">
+            <span className="hidden text-base font-semibold tracking-tight sm:inline">
               CodeSage
             </span>
           </Link>
-          <span
-            className="mx-1 hidden h-5 w-px bg-white/20 sm:block"
-            aria-hidden="true"
-          />
+        </div>
+
+        <nav
+          aria-label="Context"
+          className="order-1 flex h-15 min-w-0 flex-1 items-center pl-1 md:flex-none md:pl-3"
+        >
           <WorkspaceSwitcher workspaces={workspaces} loading={loading} />
-        </div>
+        </nav>
 
-        {/* Row two on phones, inline from `md` up. */}
-        <div className="order-3 flex w-full min-w-0 items-center gap-2 md:order-2 md:w-auto">
-          {showProject ? (
-            <>
-              <span
-                className="hidden text-topbar-foreground/35 md:inline"
-                aria-hidden="true"
-              >
-                /
-              </span>
-              <ProjectSwitcher />
-            </>
-          ) : null}
-          <TopBarSlot
-            name="context"
-            className="flex min-w-0 flex-1 items-center gap-2 empty:hidden md:flex-none"
-          />
-        </div>
+        {/* The project and branch: a second row on phones, the same path from md up. */}
+        {showProject ? (
+          <div className="order-3 flex w-full min-w-0 items-center border-t border-tb-line px-1 pb-1 md:order-2 md:w-auto md:border-0 md:p-0">
+            <TopBarSeparator className="hidden md:inline" />
+            <ProjectSwitcher workspaceName={workspace?.name} />
+            {showBranch ? (
+              <>
+                <TopBarSeparator />
+                <Suspense fallback={null}>
+                  <BranchSwitcher repoId={repoId} />
+                </Suspense>
+              </>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="order-2 flex shrink-0 items-center gap-2 md:order-3 md:ml-auto">
+        <div className="order-2 ml-auto flex h-15 shrink-0 items-center gap-2 pr-3 pl-2 md:order-3 md:pr-4">
           {ready ? <ActivityMenu /> : null}
-          <TopBarSlot
-            name="actions"
-            className="flex items-center gap-2 empty:hidden"
-          />
           <AccountMenu />
         </div>
       </div>

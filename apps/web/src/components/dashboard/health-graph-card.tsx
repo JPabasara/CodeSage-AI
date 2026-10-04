@@ -1,6 +1,13 @@
 "use client"
 
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceArea,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 import {
   Card,
@@ -152,9 +159,9 @@ export function HealthGraphCard({ history }: Readonly<HealthGraphCardProps>) {
       : undefined
 
   return (
-    <Card className="h-full gap-3 border ring-0">
+    <Card className="h-full gap-3 rounded-md border ring-0">
       <CardHeader>
-        <CardTitle className="text-[15px] font-semibold">
+        <CardTitle className="text-base font-semibold text-foreground-strong">
           Health trend
         </CardTitle>
         <CardDescription>
@@ -165,16 +172,16 @@ export function HealthGraphCard({ history }: Readonly<HealthGraphCardProps>) {
       </CardHeader>
       <CardContent className="flex-1">
         {data.length === 0 ? (
-          <div className="flex h-32 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+          <div className="flex h-52 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
             No trend yet. Scores appear here after each scan.
           </div>
         ) : (
           <>
             <ChartContainer
               config={chartConfig}
-              initialDimension={{ width: 320, height: 128 }}
+              initialDimension={{ width: 560, height: 208 }}
               className={cn(
-                "aspect-auto h-32 w-full rounded-sm",
+                "aspect-auto h-52 w-full rounded-sm",
                 "has-[.recharts-surface:focus-visible]:ring-2 has-[.recharts-surface:focus-visible]:ring-ring/50",
               )}
             >
@@ -182,6 +189,21 @@ export function HealthGraphCard({ history }: Readonly<HealthGraphCardProps>) {
                 data={data}
                 margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
               >
+                {/* Faint grade bands: A–B at the top, D–E at the bottom. */}
+                <ReferenceArea
+                  y1={70}
+                  y2={100}
+                  fill="hsl(var(--health-good))"
+                  fillOpacity={0.07}
+                  ifOverflow="hidden"
+                />
+                <ReferenceArea
+                  y1={0}
+                  y2={40}
+                  fill="hsl(var(--health-bad))"
+                  fillOpacity={0.06}
+                  ifOverflow="hidden"
+                />
                 <CartesianGrid
                   vertical={false}
                   stroke="var(--border)"

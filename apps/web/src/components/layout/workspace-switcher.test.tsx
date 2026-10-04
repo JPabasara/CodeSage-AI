@@ -81,34 +81,23 @@ test("each workspace keeps its own pool of profiles", async () => {
   expect(nimbusPool.filter((p) => p.is_active)).toHaveLength(1)
 })
 
-test("lands on the project that workspace was last on, when it still exists", async () => {
-  // Nimbus Labs was last looking at its own repository.
+test("switching lands on the new workspace's overview, even with a remembered project", async () => {
+  // Nimbus Labs was last looking at its own repository; its overview still comes first.
   writeSelectedProjectId(NIMBUS_REPO_ID, SECOND_WORKSPACE_ID)
   await renderSwitcher()
 
   await choose("Nimbus Labs")
 
-  await waitFor(() =>
-    expect(nav.push).toHaveBeenCalledWith(`/dashboard/${NIMBUS_REPO_ID}`),
-  )
+  await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/overview"))
+  expect(nav.push).not.toHaveBeenCalledWith(`/dashboard/${NIMBUS_REPO_ID}`)
 })
 
-test("a remembered project the workspace does not have sends you to Projects", async () => {
-  // A repository from the OTHER workspace, stored against this one.
-  writeSelectedProjectId(DEMO_REPO_ID, SECOND_WORKSPACE_ID)
+test("switching keeps each workspace's remembered project for later", async () => {
   await renderSwitcher()
 
   await choose("Nimbus Labs")
 
-  await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/projects"))
-})
-
-test("a workspace with no remembered project opens Projects", async () => {
-  await renderSwitcher()
-
-  await choose("Nimbus Labs")
-
-  await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/projects"))
+  await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/overview"))
   expect(writeSelectedProjectId(DEMO_REPO_ID, WORKSPACE_ID)).toBe(DEMO_REPO_ID)
 })
 

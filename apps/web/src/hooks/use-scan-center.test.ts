@@ -175,6 +175,19 @@ test("a scan this tab never started is discovered and followed", async () => {
   expect(result.current.scan?.status.scan_id).toBe(running.scan_id)
 })
 
+test("a page that asks twice in a row sends one request", async () => {
+  let asked = 0
+  server.use(
+    http.get("*/api/repos/:repoId/scan/active", () => {
+      asked += 1
+      return undefined
+    }),
+  )
+  await act(() => Promise.all([discoverScan(target), discoverScan(target)]))
+  await act(() => discoverScan(target))
+  expect(asked).toBe(1)
+})
+
 test("nothing running: discovery finds nothing and adds nothing", async () => {
   const { result } = renderHook(() => useScanFor(DEMO_REPO_ID, "main"))
   await act(() => discoverScan(target))

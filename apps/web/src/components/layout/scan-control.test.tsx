@@ -119,11 +119,28 @@ test("a role that cannot start scans sees Scan disabled, with the reason", async
   )
 })
 
-test("with Stop elsewhere, the running state is a compact busy button", () => {
+test("with Stop elsewhere, the running state is a busy button that shows the progress", () => {
   render(<ScanControl phase="running" progress={40} showStop={false} />)
-  expect(screen.getByRole("button", { name: "Scanning…" })).toBeDisabled()
-  expect(screen.queryByText(/40%/)).toBeNull() // the strip carries the number
+  expect(screen.getByRole("button", { name: "Scanning 40%" })).toBeDisabled()
   expect(screen.queryByRole("button", { name: /stop/i })).toBeNull()
+})
+
+test("before any progress arrives, the busy button says Scanning…", () => {
+  render(<ScanControl phase="running" progress={0} showStop={false} />)
+  expect(screen.getByRole("button", { name: "Scanning…" })).toBeDisabled()
+})
+
+test("the header button names the branch it scans", () => {
+  render(
+    <ScanControl
+      phase="idle"
+      progress={0}
+      branch="main"
+      size="lg"
+      onScan={() => {}}
+    />,
+  )
+  expect(screen.getByRole("button", { name: "Scan main" })).toBeEnabled()
 })
 
 test("after the scan, the busy button says Scoring… while the score is calculated", () => {

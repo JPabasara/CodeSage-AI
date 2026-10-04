@@ -37,10 +37,10 @@ signedOut(
 
 signedIn("signed in, / and /login both go into the app", async ({ page }) => {
   await page.goto("/")
-  await expect(page).toHaveURL(/\/projects$/)
+  await expect(page).toHaveURL(/\/overview$/)
 
   await page.goto("/login")
-  await expect(page).toHaveURL(/\/projects$/)
+  await expect(page).toHaveURL(/\/overview$/)
 })
 
 for (const [code, message] of [

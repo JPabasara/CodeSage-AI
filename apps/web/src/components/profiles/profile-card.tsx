@@ -97,7 +97,7 @@ export function ProfileCard({
       data-testid={`profile-card-${profile.id}`}
       data-selected={selected ? "true" : undefined}
       className={cn(
-        "relative flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 transition-colors",
+        "relative flex min-w-0 flex-col gap-2 rounded-md border bg-card px-3.5 py-3 transition-colors",
         selected
           ? "border-primary ring-1 ring-primary"
           : "hover:border-foreground/20",
@@ -108,7 +108,7 @@ export function ProfileCard({
         onClick={onSelect}
         aria-pressed={selected}
         title={profile.name}
-        className="flex min-w-0 items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
+        className="flex min-w-0 items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring"
       >
         <Icon
           className={cn(
@@ -117,18 +117,22 @@ export function ProfileCard({
           )}
           aria-hidden="true"
         />
-        <span className="truncate text-sm font-semibold">{profile.name}</span>
+        <span className="truncate text-sm font-semibold text-foreground-strong">
+          {profile.name}
+        </span>
       </button>
 
       <div className="flex min-h-6 flex-wrap items-center gap-x-1 gap-y-1.5">
         <span className="flex min-w-0 flex-wrap gap-1">
-          <Badge variant="outline">
+          <Badge variant="outline" className="bg-card dark:bg-card">
             {profile.is_preset ? "Built-in" : "Custom"}
           </Badge>
           {profile.is_active ? (
             <Badge variant="secondary">Default</Badge>
           ) : null}
-          {inUse ? <Badge>In use</Badge> : null}
+          {inUse ? (
+            <Badge className="bg-accent text-accent-foreground">In use</Badge>
+          ) : null}
         </span>
 
         {/* Above the stretched selection area, so these take their own clicks. */}

@@ -12,7 +12,14 @@ from urllib.parse import unquote, urlsplit
 
 #: Exact paths, plus everything under /dashboard/.
 ALLOWED_PATHS = frozenset(
-    {"/invitations/accept", "/projects", "/dashboard", "/profiles", "/workspace"}
+    {
+        "/invitations/accept",
+        "/overview",
+        "/projects",
+        "/dashboard",
+        "/profiles",
+        "/workspace",
+    }
 )
 ALLOWED_PREFIXES = ("/dashboard/",)
 MAX_LENGTH = 2048

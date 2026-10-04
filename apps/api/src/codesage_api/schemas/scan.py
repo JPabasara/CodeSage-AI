@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from codesage_api.schemas.base import ApiModel
-from codesage_api.scoring.enums import Grade, ScanErrorCode, ScanPhase, ScanStage
+from codesage_api.scoring.enums import Grade, ScanErrorCode, ScanPhase, ScanStage, ScanStep
 
 
 class StartScanIn(ApiModel):
@@ -24,6 +24,10 @@ class ScanStatusOut(ApiModel):
     error: str | None = None
     error_code: ScanErrorCode | None = None
     stage: ScanStage | None = None
+    # Only while `stage` is `reading_code`; the counts only in their own step.
+    step: ScanStep | None = None
+    commits_done: int | None = Field(default=None, ge=0)
+    commits_total: int | None = Field(default=None, ge=0)
     files_done: int | None = Field(default=None, ge=0)
     files_total: int | None = Field(default=None, ge=0)
     typical_seconds: int | None = Field(default=None, ge=0)

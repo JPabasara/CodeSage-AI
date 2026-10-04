@@ -22,6 +22,8 @@ from codesage_api.errors import (
     RepositoryTooLarge,
 )
 from codesage_api.integrations.github import GitHubBranch, GitHubRepository
+from codesage_api.schemas import LatestHealthOut
+from codesage_api.scoring.enums import Grade
 from codesage_api.services import repositories
 
 
@@ -137,7 +139,7 @@ def test_list_projects_uses_cached_latest_health(monkeypatch) -> None:
         repositories.dashboard,
         "build_latest_health_hint",
         lambda *_args: (
-            (SimpleNamespace(health_score=83.0, grade="A"), 4.0),
+            LatestHealthOut(score=83.0, grade=Grade.A, delta=4.0, kloc=1.5),
             [],
         ),
     )
@@ -147,6 +149,7 @@ def test_list_projects_uses_cached_latest_health(monkeypatch) -> None:
     assert result[0].latest_health is not None
     assert result[0].latest_health.score == 83.0
     assert result[0].latest_health.delta == 4.0
+    assert result[0].latest_health.kloc == 1.5
 
 
 def test_project_without_default_branch_does_not_hide_valid_projects(monkeypatch) -> None:

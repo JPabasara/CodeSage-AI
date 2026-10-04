@@ -36,7 +36,8 @@ class SnapshotScore(UUIDPrimaryKey, Base):
     grade: Mapped[str | None] = mapped_column(String(1))
     debt_score: Mapped[float | None] = mapped_column(Double)
     kloc: Mapped[float | None] = mapped_column(Double)
-    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    # Deferred: about 1 MB per snapshot, read only for the one report being served.
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, deferred=True)
     failure_information: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

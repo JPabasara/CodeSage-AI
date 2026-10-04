@@ -199,7 +199,7 @@ def complete_sign_in(code: str, state: str, request: Request) -> RedirectRespons
         db.close()
 
     destination = safe_return_to(issued.get("return_to")) or (
-        "/workspace" if new_user_tour else "/projects"
+        "/workspace" if new_user_tour else "/overview"
     )
     response = RedirectResponse(
         f"{settings.frontend_base_url.rstrip('/')}{destination}",

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useTheme } from "next-themes"
 import { usePathname } from "next/navigation"
 import {
-  Building2,
+  ChartColumn,
   CircleHelp,
   FolderGit2,
   LayoutDashboard,
@@ -17,6 +17,7 @@ import {
   Sun,
   PanelLeftClose,
   PanelLeftOpen,
+  Users,
   type LucideIcon,
 } from "lucide-react"
 // shadcn/ui components are already Client Components.
@@ -26,6 +27,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -65,23 +67,40 @@ const subscribeToHydration = () => () => {}
 const clientHydrationSnapshot = () => true
 const serverHydrationSnapshot = () => false
 
-// Workspace first: it is the container everything below it belongs to.
-function navItems(repoId: string | undefined): NavItem[] {
+// What the whole workspace holds, then what one project shows.
+const WORKSPACE_ITEMS: NavItem[] = [
+  {
+    href: "/overview",
+    label: "Overview",
+    icon: ChartColumn,
+    isActive: (p) => p.startsWith("/overview"),
+    tourTarget: "overview-nav",
+  },
+  {
+    href: "/projects",
+    label: "Projects",
+    icon: FolderGit2,
+    isActive: (p) => p.startsWith("/projects"),
+    tourTarget: "projects-nav",
+  },
+  {
+    href: "/profiles",
+    label: "Scoring profiles",
+    icon: SlidersHorizontal,
+    isActive: (p) => p.startsWith("/profiles"),
+    tourTarget: "profiles-nav",
+  },
+  {
+    href: "/workspace",
+    label: "Team & settings",
+    icon: Users,
+    isActive: (p) => p.startsWith("/workspace"),
+    tourTarget: "workspace-nav",
+  },
+]
+
+function projectItems(repoId: string | undefined): NavItem[] {
   return [
-    {
-      href: "/workspace",
-      label: "Workspace",
-      icon: Building2,
-      isActive: (p) => p.startsWith("/workspace"),
-      tourTarget: "workspace-nav",
-    },
-    {
-      href: "/projects",
-      label: "Projects",
-      icon: FolderGit2,
-      isActive: (p) => p.startsWith("/projects"),
-      tourTarget: "projects-nav",
-    },
     {
       // With no project to name, the index says how to get one.
       href: repoId ? `/dashboard/${repoId}` : "/dashboard",
@@ -91,27 +110,24 @@ function navItems(repoId: string | undefined): NavItem[] {
     },
     {
       href: repoId ? `/dashboard/${repoId}/history` : "/dashboard/history",
-      label: "Scan History",
+      label: "Scan history",
       icon: History,
       isActive: (p) => p.endsWith("/history"),
     },
-    {
-      href: "/profiles",
-      label: "Profiles",
-      icon: SlidersHorizontal,
-      isActive: (p) => p.startsWith("/profiles"),
-      tourTarget: "profiles-nav",
-    },
-    {
-      href: "/help",
-      label: "Support",
-      icon: CircleHelp,
-      isActive: (p) => p.startsWith("/help"),
-      requiresWorkspace: false,
-      tourTarget: "support-nav",
-    },
   ]
 }
+
+const SUPPORT_ITEM: NavItem = {
+  href: "/help",
+  label: "Support",
+  icon: CircleHelp,
+  isActive: (p) => p.startsWith("/help"),
+  requiresWorkspace: false,
+  tourTarget: "support-nav",
+}
+
+const groupLabel =
+  "h-7 px-2 pt-2 text-[0.75rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase"
 
 export function AppRail() {
   const pathname = usePathname()
@@ -121,7 +137,7 @@ export function AppRail() {
     availableRepoIds: repos?.map((repo) => repo.id),
     demoRepoId: DEMO_FALLBACK_ID,
   })
-  const nav = navItems(selectedProjectId)
+  const selectedRepo = repos?.find((repo) => repo.id === selectedProjectId)
   const { setOpenMobile, state, toggleSidebar } = useSidebar()
   const sidebarCollapsed = state === "collapsed"
   const SidebarStateIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose
@@ -141,60 +157,65 @@ export function AppRail() {
     // Offset below the fixed app bar on desktop; below `md` the rail is a sheet and ignores this.
     <Sidebar
       collapsible="icon"
-      className="top-14 h-[calc(100svh-3.5rem)] border-sidebar-border/80"
+      className="top-15 h-[calc(100svh-3.75rem)] border-sidebar-border/80"
     >
       <SidebarContent className="pt-2">
         <nav aria-label="Main navigation">
           <SidebarGroup>
+            <SidebarGroupLabel className={groupLabel}>
+              Workspace
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {nav.map((item) => {
-                  const Icon = item.icon
-                  const itemLocked = locked && item.requiresWorkspace !== false
-                  return (
-                    <SidebarMenuItem key={item.label}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={item.isActive(pathname)}
-                        tooltip={item.label}
-                        className="h-9 text-sm"
-                      >
-                        <Link
-                          href={item.href}
-                          data-tour={item.tourTarget}
-                          onClick={() => setOpenMobile(false)}
-                          title={
-                            itemLocked ? "Create a workspace first" : undefined
-                          }
-                        >
-                          <Icon />
-                          <span className="group-data-[collapsible=icon]:hidden">
-                            {item.label}
-                          </span>
-                          {itemLocked ? (
-                            <>
-                              <Lock
-                                className="ml-auto size-3.5! text-muted-foreground group-data-[collapsible=icon]:hidden"
-                                aria-hidden="true"
-                              />
-                              <span className="sr-only">
-                                (create a workspace first)
-                              </span>
-                            </>
-                          ) : null}
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  )
-                })}
+                {WORKSPACE_ITEMS.map((item) => (
+                  <RailItem
+                    key={item.label}
+                    item={item}
+                    pathname={pathname}
+                    locked={locked}
+                    onNavigate={() => setOpenMobile(false)}
+                  />
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          {/* A project's own pages, once there is a project to show. */}
+          {selectedProjectId || locked ? (
+            <SidebarGroup>
+              <SidebarGroupLabel className={groupLabel}>
+                <span>Project</span>
+                {selectedRepo ? (
+                  <span className="ml-1.5 truncate font-medium tracking-normal text-sidebar-foreground normal-case">
+                    · {selectedRepo.name}
+                  </span>
+                ) : null}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {projectItems(selectedProjectId).map((item) => (
+                    <RailItem
+                      key={item.label}
+                      item={item}
+                      pathname={pathname}
+                      locked={locked}
+                      onNavigate={() => setOpenMobile(false)}
+                    />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ) : null}
         </nav>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border/70">
         <SidebarMenu>
+          <RailItem
+            item={SUPPORT_ITEM}
+            pathname={pathname}
+            locked={locked}
+            onNavigate={() => setOpenMobile(false)}
+          />
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -248,5 +269,51 @@ export function AppRail() {
         <SignOutDialog open={signingOut} onOpenChange={setSigningOut} />
       </SidebarFooter>
     </Sidebar>
+  )
+}
+
+function RailItem({
+  item,
+  pathname,
+  locked,
+  onNavigate,
+}: Readonly<{
+  item: NavItem
+  pathname: string
+  locked: boolean
+  onNavigate: () => void
+}>) {
+  const Icon = item.icon
+  const itemLocked = locked && item.requiresWorkspace !== false
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        asChild
+        isActive={item.isActive(pathname)}
+        tooltip={item.label}
+        className="h-9.5 text-sm data-[active=true]:font-semibold"
+      >
+        <Link
+          href={item.href}
+          data-tour={item.tourTarget}
+          onClick={onNavigate}
+          title={itemLocked ? "Create a workspace first" : undefined}
+        >
+          <Icon />
+          <span className="group-data-[collapsible=icon]:hidden">
+            {item.label}
+          </span>
+          {itemLocked ? (
+            <>
+              <Lock
+                className="ml-auto size-3.5! text-muted-foreground group-data-[collapsible=icon]:hidden"
+                aria-hidden="true"
+              />
+              <span className="sr-only">(create a workspace first)</span>
+            </>
+          ) : null}
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   )
 }

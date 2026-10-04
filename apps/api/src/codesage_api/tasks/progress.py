@@ -4,7 +4,7 @@
 
     PostgreSQL  phase          done | error | cancelled must survive a restart
     Redis       progress %     losing it costs nothing; the next poll recomputes
-    Redis       stage details  the same: stage, files read, typical duration
+    Redis       stage details  the same: stage, step, commits/files read, typical duration
     Redis       cancel flag    transient by nature; a restart cancels nothing
 
 Losing a percentage on a broker restart is harmless. Losing the fact that a scan
@@ -67,9 +67,16 @@ class ProgressReading:
 
     percent: int = 0
     stage: str | None = None
+    step: str | None = None
+    commits_done: int | None = None
+    commits_total: int | None = None
     files_done: int | None = None
     files_total: int | None = None
     typical_seconds: int | None = None
+
+
+#: Fields that belong to one sub-step of `reading_code` and must not outlive it.
+_STEP_FIELDS = ("step", "commits_done", "commits_total", "files_done", "files_total")
 
 
 def _count(value: str | None) -> int | None:
@@ -89,8 +96,9 @@ def publish_stage(
 ) -> None:
     """Enter a pipeline stage: its name and the percentage where its band starts.
 
-    Entering a stage resets the file counter, so a count from reading code never
-    shows under a later stage. Never raises — progress is decoration.
+    Entering a stage resets the sub-step and its counters, so a count from
+    reading code never shows under a later stage. Never raises — progress is
+    decoration.
     """
     fields: dict[Any, Any] = {"stage": stage}
     if files_total is not None:
@@ -101,8 +109,7 @@ def publish_stage(
     key = STAGE_KEY.format(attempt_id=attempt_id)
     try:
         pipe = _client().pipeline(transaction=False)
-        if files_total is None:
-            pipe.hdel(key, "files_done", "files_total")
+        pipe.hdel(key, *(name for name in _STEP_FIELDS if name not in fields))
         pipe.hset(key, mapping=fields)
         pipe.expire(key, KEY_TTL_SECONDS)
         pipe.set(
@@ -115,8 +122,57 @@ def publish_stage(
         return
 
 
+def publish_step(
+    attempt_id: str,
+    step: str,
+    percent: int,
+    *,
+    files_total: int | None = None,
+    commits_total: int | None = None,
+) -> None:
+    """Enter a sub-step of `reading_code`, with the percentage where its band starts.
+
+    A step carries only its own counter, starting at 0: the others are dropped,
+    so "340 of 1,212 commits" never shows while comments are being read. Never
+    raises — progress is decoration.
+    """
+    fields: dict[Any, Any] = {"step": step}
+    if commits_total is not None:
+        fields["commits_total"] = max(0, int(commits_total))
+        fields["commits_done"] = 0
+    if files_total is not None:
+        fields["files_total"] = max(0, int(files_total))
+        fields["files_done"] = 0
+    key = STAGE_KEY.format(attempt_id=attempt_id)
+    try:
+        pipe = _client().pipeline(transaction=False)
+        pipe.hdel(key, *(name for name in _STEP_FIELDS if name not in fields))
+        pipe.hset(key, mapping=fields)
+        pipe.expire(key, KEY_TTL_SECONDS)
+        pipe.set(
+            PROGRESS_KEY.format(attempt_id=attempt_id),
+            max(0, min(100, int(percent))),
+            ex=KEY_TTL_SECONDS,
+        )
+        pipe.execute()
+    except RedisError:
+        return
+
+
+def publish_commits_done(attempt_id: str, commits_done: int) -> None:
+    """How many commits have been read so far, inside `reading_history`."""
+    try:
+        _client().hset(
+            STAGE_KEY.format(attempt_id=attempt_id),
+            "commits_done",
+            max(0, int(commits_done)),
+        )
+    except RedisError:
+        return
+
+
 def publish_files_done(attempt_id: str, files_done: int) -> None:
-    """How many Java files have been read so far, inside `reading_code`."""
+    """How many Java files have been read so far, inside `reading_comments`."""
     try:
         _client().hset(
             STAGE_KEY.format(attempt_id=attempt_id),
@@ -142,6 +198,9 @@ def read_status(attempt_id: str) -> ProgressReading:
     return ProgressReading(
         percent=min(100, percent) if percent is not None else 0,
         stage=details.get("stage") or None,
+        step=details.get("step") or None,
+        commits_done=_count(details.get("commits_done")),
+        commits_total=_count(details.get("commits_total")),
         files_done=_count(details.get("files_done")),
         files_total=_count(details.get("files_total")),
         typical_seconds=_count(details.get("typical_seconds")),

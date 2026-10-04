@@ -30,7 +30,7 @@ describe("middleware", () => {
     const response = middleware(requestFor("/", "codesage_session=abc123"))
 
     expect(response.headers.get("location")).toBe(
-      "http://localhost:3000/projects",
+      "http://localhost:3000/overview",
     )
   })
 
