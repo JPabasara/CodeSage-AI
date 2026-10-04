@@ -522,5 +522,8 @@ export function buildHealthReport(input: ReportInput): HealthReport {
     file_scores: fileScores,
     findings,
     category_breakdown: categoryBreakdown(findings),
+    // Size, so the workspace overview can weigh projects as the API does.
+    kloc: Math.round(fileScores.length * 16 * debtScale) / 10,
+    java_file_count: fileScores.length,
   }
 }

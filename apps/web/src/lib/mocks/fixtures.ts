@@ -347,6 +347,14 @@ function latestHealthFor(repoId: string) {
     score: report.health_score,
     grade: report.grade,
     delta: report.delta,
+    // What the workspace overview needs, as the API reports it.
+    kloc: report.kloc ?? null,
+    finding_count: report.findings.length,
+    red_issue_count: report.red_issue_count,
+    scanned_at: report.scanned_at,
+    trend: report.history
+      .slice(-7)
+      .map((point) => ({ t: point.t, score: point.score })),
   }
 }
 
