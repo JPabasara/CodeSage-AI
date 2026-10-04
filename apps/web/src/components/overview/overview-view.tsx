@@ -118,7 +118,7 @@ function RunningCell({
       >
         {value !== undefined ? (
           <span
-            className="block h-full rounded-full bg-primary transition-[width] duration-300"
+            className="block h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
             style={{ width: `${value}%` }}
           />
         ) : (

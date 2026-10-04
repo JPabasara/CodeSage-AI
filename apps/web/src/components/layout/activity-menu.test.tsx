@@ -80,7 +80,8 @@ test("a teammate's scan and a re-score show up for everyone", async () => {
   const rows = within(list).getAllByRole("listitem")
   expect(rows).toHaveLength(2)
   expect(rows[0]).toHaveTextContent("acme/billing · develop")
-  expect(rows[0]).toHaveTextContent("Finding debt · 54%")
+  // The same step words and the same bar as the dashboard's progress card.
+  expect(rows[0]).toHaveTextContent("Finding debt · 60%")
   expect(
     within(rows[0]!).getByRole("link", {
       name: "Open acme/billing · develop",

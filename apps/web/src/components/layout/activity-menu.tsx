@@ -15,7 +15,6 @@ import { dashboardHrefFor } from "@/components/layout/scan-center"
 import { refreshActivity, useActivity } from "@/hooks/use-activity"
 import {
   acknowledgeScan,
-  modeOf,
   onScanEvent,
   useActiveScans,
   useScanLive,
@@ -27,8 +26,13 @@ import {
   readyCount,
   type ActivityItem,
 } from "@/lib/activity"
-import { headlineFor } from "@/lib/scan-messages"
-import { reportedProgress, stageOf, toBar } from "@/lib/scan-progress"
+import {
+  labelFor,
+  reportedProgress,
+  stepInfo,
+  stepOf,
+  toBar,
+} from "@/lib/scan-progress"
 import { cn } from "@/lib/utils"
 
 export function ActivityMenu() {
@@ -132,9 +136,7 @@ function ActivityRow({
         detail={
           queued
             ? "Queued · waiting for a free slot"
-            : `${headlineFor(stageOf(item.status), {
-                total: item.status.files_total,
-              })} · ${Math.floor(bar ?? 0)}%`
+            : `${labelFor(stepOf(item.status), item.status)} · ${Math.floor(bar ?? 0)}%`
         }
         bar={bar}
         href={dashboardHrefFor(item.repoId, item.branch)}
@@ -203,7 +205,11 @@ function JobRow({
       detail={`${
         scan.stopping
           ? "Stopping the scan"
-          : headlineFor(modeOf(scan), { total: scan.status.files_total })
+          : scan.job === "scoring"
+            ? stepInfo("score").title
+            : scan.status.phase === "queued"
+              ? "Queued · waiting for a free slot"
+              : labelFor(stepOf(scan.status), scan.status)
       }${bar !== undefined ? ` · ${Math.floor(bar)}%` : ""}`}
       bar={bar}
       href={href}
