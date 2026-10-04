@@ -17,6 +17,8 @@ import type { Finding, FindingStatus } from "@/lib/types"
 
 export type FindingDetailPanelProps = {
   finding: Finding | null
+  repositoryUrl?: string
+  commitSha?: string
   hasFindings?: boolean
   onClose: () => void
   canTriage?: boolean
@@ -24,8 +26,43 @@ export type FindingDetailPanelProps = {
   onStatusChange?: (finding: Finding, status: FindingStatus) => void
 }
 
+function githubFindingUrl(
+  repositoryUrl: string | undefined,
+  commitSha: string | undefined,
+  finding: Finding,
+): string | null {
+  if (!repositoryUrl || !commitSha || !/^[a-f0-9]{40}$/i.test(commitSha)) {
+    return null
+  }
+  const repository = repositoryUrl.match(
+    /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)\/?$/,
+  )
+  const segments = finding.file.split("/")
+  if (
+    !repository ||
+    !Number.isSafeInteger(finding.line) ||
+    finding.line < 1 ||
+    segments.some(
+      (part) => !part || part === "." || part === ".." || part.includes("\\"),
+    )
+  ) {
+    return null
+  }
+  const repoName = repository[2].replace(/\.git$/, "")
+  if (!repoName || repoName === "." || repoName === "..") return null
+  const end = finding.end_line
+  const range =
+    end != null && Number.isSafeInteger(end) && end > finding.line
+      ? `-L${end}`
+      : ""
+  const path = segments.map(encodeURIComponent).join("/")
+  return `https://github.com/${repository[1]}/${repoName}/blob/${commitSha}/${path}#L${finding.line}${range}`
+}
+
 export function FindingDetailPanel({
   finding,
+  repositoryUrl,
+  commitSha,
   hasFindings = false,
   onClose,
   canTriage = false,
@@ -63,6 +100,7 @@ export function FindingDetailPanel({
   }
 
   const pmdGuidance = getPmdRuleGuidance(finding.rule_id)
+  const githubUrl = githubFindingUrl(repositoryUrl, commitSha, finding)
 
   return (
     <Card
@@ -91,6 +129,16 @@ export function FindingDetailPanel({
         <h2 className="mt-2 font-mono text-sm font-semibold break-all tabular-nums">
           {finding.file}:{finding.line}
         </h2>
+        {githubUrl ? (
+          <a
+            className="mt-2 inline-block text-xs font-medium text-primary underline-offset-4 hover:underline"
+            href={githubUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on GitHub ↗
+          </a>
+        ) : null}
         {finding.symbol ? (
           <p className="text-sm text-muted-foreground">{finding.symbol}</p>
         ) : null}

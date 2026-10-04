@@ -16,6 +16,7 @@ import {
   WORKSPACE_ID,
   mockFindings,
   mockHealthReport,
+  mockRepos,
   mockSession,
   mockSessionViewer,
   mockScanHistory,
@@ -95,6 +96,12 @@ test("selecting a finding opens the findings and detail view", async () => {
 
   const detail = await screen.findByLabelText("Finding detail")
   expect(within(detail).getByText(CRITICAL.reason)).toBeInTheDocument()
+  expect(
+    within(detail).getByRole("link", { name: "View on GitHub ↗" }),
+  ).toHaveAttribute(
+    "href",
+    `${mockRepos.find((repo) => repo.id === DEMO_REPO_ID)?.url}/blob/${mockHealthReport.commit_sha}/${CRITICAL.file}#L${CRITICAL.line}`,
+  )
   // The detail is beside the still-usable list, not a modal over the dashboard.
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
@@ -109,6 +116,24 @@ test("detail mode is driven by ?finding=, so a refresh restores it", async () =>
 
   expect(await screen.findByLabelText("Finding detail")).toBeInTheDocument()
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
+})
+
+test("GitHub links use a historical snapshot commit instead of branch head", async () => {
+  const commit = "f".repeat(40)
+  server.use(
+    http.get("*/api/repos/:repoId/health", () =>
+      HttpResponse.json({ ...mockHealthReport, commit_sha: commit }),
+    ),
+  )
+  nav.navigate(
+    `/dashboard/${DEMO_REPO_ID}?snapshot_id=${mockScanHistory[0].snapshot_id}&finding=${CRITICAL.fingerprint}`,
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  const link = await screen.findByRole("link", { name: "View on GitHub ↗" })
+  expect(link).toHaveAttribute(
+    "href",
+    `${mockRepos[0].url}/blob/${commit}/${CRITICAL.file}#L${CRITICAL.line}`,
+  )
 })
 
 test("switching to findings and files keeps the selected file highlighted", async () => {

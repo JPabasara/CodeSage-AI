@@ -59,6 +59,7 @@ export interface Finding {
   file: string
   source_scope?: "production" | "test" | "generated" | "example" | "unknown"
   line: number
+  end_line?: number | null
   symbol?: string | null // the function/class it sits on; null for file-scoped rules
   reason: string // one-line templated explanation of why this fired
 

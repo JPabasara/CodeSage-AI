@@ -136,7 +136,7 @@ def _snapshot(
             source_file_id=source_file.id,
             code_symbol_id=None,
             start_line=7,
-            end_line=7,
+            end_line=12,
             start_column=0,
             end_column=0,
         )
@@ -377,6 +377,7 @@ def test_health_report_reads_cached_result_without_running_scoring(
     assert report.red_issue_count == 1
     assert len(report.history) == 2
     assert report.findings[0].line == 7
+    assert report.findings[0].end_line == 12
     assert report.findings[0].pinned_by_floor is True
     assert report.tree[0].path == "src"
     assert report.tree[0].children is not None

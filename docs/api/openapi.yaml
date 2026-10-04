@@ -2349,6 +2349,7 @@ components:
           enum: [production, test, generated, example, unknown]
           default: unknown
         line: { type: integer, minimum: 1 }
+        end_line: { type: [integer, 'null'], minimum: 1 }
         symbol:
           type: [string, 'null']
           description: The method or class the finding sits on. Null for file-scoped rules.
