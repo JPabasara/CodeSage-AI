@@ -122,7 +122,7 @@ function ListPanel({
       <div className="shrink-0 space-y-3 border-b px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <div className="flex items-center gap-2">
-            <h2 className="text-[15px] font-semibold">Refactor first</h2>
+            <h2 className="text-base font-semibold">Refactor first</h2>
             <Badge variant="outline" className="tabular-nums">
               {badgeLabel}
             </Badge>
@@ -535,7 +535,7 @@ export function RefactorFirstList({
                     className="group w-full p-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="min-w-6 font-mono text-[11px] font-medium text-muted-foreground tabular-nums">
+                      <span className="min-w-6 font-mono text-[0.75rem] font-medium text-muted-foreground tabular-nums">
                         #{pageStart + index + 1}
                       </span>
                       <SeverityTag severity={finding.severity} />
@@ -547,7 +547,7 @@ export function RefactorFirstList({
                         <Badge variant="outline">Done</Badge>
                       ) : null}
                       <span
-                        className="ml-auto font-mono text-[11px] text-muted-foreground tabular-nums"
+                        className="ml-auto font-mono text-[0.75rem] text-muted-foreground tabular-nums"
                         title="Priority"
                       >
                         P{priority}

@@ -121,11 +121,11 @@ type PendingSwitch =
 const LAYOUT =
   "grid min-w-0 grid-cols-[minmax(0,1fr)] lg:h-full lg:grid-cols-[minmax(0,1fr)_18rem] lg:grid-rows-[auto_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_20rem]"
 const HEADER_AREA =
-  "min-w-0 space-y-3 px-4 pt-5 sm:px-6 lg:col-start-1 lg:row-start-1"
+  "min-w-0 space-y-3 px-4 pt-5 sm:px-7 sm:pt-6 lg:col-start-1 lg:row-start-1"
 const RAIL_AREA =
   "min-w-0 px-4 py-4 sm:px-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:px-4 lg:py-5"
 const MAIN_AREA =
-  "flex min-w-0 flex-col gap-5 px-4 pb-6 sm:px-6 lg:col-start-1 lg:row-start-2 lg:min-h-0 lg:overflow-y-auto lg:py-5"
+  "flex min-w-0 flex-col gap-5 px-4 pb-6 sm:px-7 lg:col-start-1 lg:row-start-2 lg:min-h-0 lg:overflow-y-auto lg:py-5"
 const POOL_GRID = "grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4"
 
 export default function ProfilesPage() {
@@ -630,7 +630,7 @@ function ProfilesView() {
         <section aria-labelledby="pool-heading" className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <h2 id="pool-heading" className="text-[15px] font-semibold">
+              <h2 id="pool-heading" className="text-base font-semibold">
                 Profile pool
               </h2>
               <p className="text-xs text-muted-foreground">
@@ -710,13 +710,13 @@ function ProfilesView() {
                     onChange={(event) =>
                       editDraft({ name: event.target.value })
                     }
-                    className="h-8 max-w-xs text-[15px] font-semibold md:text-[15px]"
+                    className="h-8 max-w-xs text-base font-semibold md:text-base"
                   />
                 </>
               ) : (
                 <h2
                   id="editor-heading"
-                  className="min-w-0 truncate text-[15px] font-semibold"
+                  className="min-w-0 truncate text-base font-semibold"
                 >
                   {selected.name}
                 </h2>

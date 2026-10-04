@@ -69,7 +69,7 @@ export function NoProjectState({
         <Heading
           className={cn(
             "font-semibold tracking-tight",
-            compact ? "text-[15px]" : "text-xl",
+            compact ? "text-base" : "text-xl",
           )}
         >
           {heading}

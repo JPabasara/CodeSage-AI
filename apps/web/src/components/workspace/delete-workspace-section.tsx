@@ -81,7 +81,7 @@ export function DeleteWorkspaceSection({
       <div className="space-y-0.5">
         <h2
           id="danger-zone-heading"
-          className="text-[15px] font-semibold text-destructive"
+          className="text-base font-semibold text-destructive"
         >
           Danger zone
         </h2>

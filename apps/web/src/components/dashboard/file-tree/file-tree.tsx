@@ -153,7 +153,7 @@ export function FileTree({
               />
             ) : null}
             <span
-              className="ml-1 inline-flex h-5 min-w-11 shrink-0 items-center justify-end gap-1 rounded-sm px-1 text-[11px] text-muted-foreground tabular-nums"
+              className="ml-1 inline-flex h-5 min-w-11 shrink-0 items-center justify-end gap-1 rounded-sm px-1 text-[0.75rem] text-muted-foreground tabular-nums"
               aria-hidden="true"
             >
               <span className="font-semibold text-foreground">
@@ -199,7 +199,7 @@ export function FileTree({
     >
       <div className="shrink-0 space-y-2 border-b px-4 py-3">
         <div>
-          <h2 className="text-[15px] font-semibold">File health map</h2>
+          <h2 className="text-base font-semibold">File health map</h2>
           <p className="text-xs text-muted-foreground">
             Scores are shown per file and folded up through folders.
           </p>

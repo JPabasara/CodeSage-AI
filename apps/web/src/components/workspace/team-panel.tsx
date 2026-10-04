@@ -207,7 +207,7 @@ export function TeamPanel({
 
       <section aria-labelledby="team-members-heading" className="space-y-3">
         <div className="space-y-0.5">
-          <h2 id="team-members-heading" className="text-[15px] font-semibold">
+          <h2 id="team-members-heading" className="text-base font-semibold">
             Members
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -321,7 +321,7 @@ export function TeamPanel({
       </section>
 
       <section aria-labelledby="team-invitations-heading" className="space-y-3">
-        <h2 id="team-invitations-heading" className="text-[15px] font-semibold">
+        <h2 id="team-invitations-heading" className="text-base font-semibold">
           Pending invitations
         </h2>
         <div className="overflow-hidden rounded-lg border bg-card">
@@ -567,7 +567,7 @@ function InviteForm({ onInvited }: Readonly<{ onInvited: () => void }>) {
   return (
     <section aria-labelledby="team-invite-heading" className="space-y-3">
       <div className="space-y-0.5">
-        <h2 id="team-invite-heading" className="text-[15px] font-semibold">
+        <h2 id="team-invite-heading" className="text-base font-semibold">
           Invite a teammate
         </h2>
         <p className="text-sm text-muted-foreground">

@@ -29,7 +29,7 @@ export function FindingTag({
   return (
     <span
       className={cn(
-        "inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 text-[11px] leading-none font-medium whitespace-nowrap",
+        "inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 text-[0.75rem] leading-none font-medium whitespace-nowrap",
         "border-[color-mix(in_oklab,var(--tag)_40%,transparent)] bg-[color-mix(in_oklab,var(--tag)_13%,transparent)] text-[color-mix(in_oklab,var(--tag)_50%,var(--foreground))]",
         "dark:border-[color-mix(in_oklab,var(--tag)_45%,transparent)] dark:bg-[color-mix(in_oklab,var(--tag)_22%,transparent)] dark:text-[color-mix(in_oklab,var(--tag)_70%,var(--foreground))]",
         className,

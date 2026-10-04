@@ -61,7 +61,7 @@ export function ConnectRepo({
           <GitHubMark className="size-5" />
         </span>
         <div className="min-w-0 space-y-0.5">
-          <h2 id="connect-repo-heading" className="text-[15px] font-semibold">
+          <h2 id="connect-repo-heading" className="text-base font-semibold">
             Connect a GitHub repository
           </h2>
           <p className="text-sm text-muted-foreground">

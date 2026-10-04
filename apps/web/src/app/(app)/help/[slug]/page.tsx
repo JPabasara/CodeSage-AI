@@ -99,7 +99,7 @@ export default async function HelpArticlePage({
                   {section.paragraphs.map((paragraph) => (
                     <p
                       key={paragraph}
-                      className="text-[15px] leading-7 text-muted-foreground"
+                      className="text-base leading-7 text-muted-foreground"
                     >
                       {paragraph}
                     </p>
@@ -108,10 +108,7 @@ export default async function HelpArticlePage({
                 {section.steps ? (
                   <ol className="mt-5 space-y-4">
                     {section.steps.map((step, index) => (
-                      <li
-                        key={step}
-                        className="flex gap-4 text-[15px] leading-7"
-                      >
+                      <li key={step} className="flex gap-4 text-base leading-7">
                         <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                           {index + 1}
                         </span>

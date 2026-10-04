@@ -141,7 +141,7 @@ export function ScopeRail({
   return (
     <section aria-labelledby="apply-to-heading" className={className}>
       <div className="mb-3 space-y-0.5">
-        <h2 id="apply-to-heading" className="text-[15px] font-semibold">
+        <h2 id="apply-to-heading" className="text-base font-semibold">
           Apply to
         </h2>
         <p className="text-xs text-muted-foreground">
