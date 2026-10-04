@@ -32,6 +32,7 @@ from .perf import (
     migrated_database,
     open_session,
     p95_seconds,
+    reads_whole_payload,
     scale,
     sequential_scans,
 )
@@ -129,6 +130,47 @@ def test_dashboard_queries_avoid_sequential_scans(volume, client) -> None:
     assert offenders == {}
 
 
+def test_list_reads_never_fetch_score_payloads(volume, client) -> None:
+    """Projects, history and trend need one score per snapshot, not its ~1 MB payload.
+
+    Reading one key of it inside Postgres (`->>`), as the projects list does for
+    `red_issue_count`, is allowed: no document travels.
+    """
+    engine, workspace = volume
+    repo = workspace.repository_ids[0]
+    ws = workspace.workspace_id
+    actions = {
+        "project list": lambda db: repositories.list_projects(db, ws),
+        "scan history": lambda db: dashboard.build_scan_history(db, ws, repo, "main"),
+        "trend": lambda db: dashboard.build_trend(db, ws, repo, "main"),
+    }
+    for name, action in actions.items():
+        with captured_sql(engine) as statements:
+            db = app_session(engine)
+            set_workspace_context(db, ws)
+            action(db)
+            db.rollback()
+            db.close()
+        payload_reads = [sql for sql, _ in statements if reads_whole_payload(sql)]
+        assert payload_reads == [], name
+
+
+def test_health_summary_reads_one_payload(volume, client) -> None:
+    """A report with many scans behind it reads the selected snapshot's payload only."""
+    engine, workspace = volume
+    repo = workspace.repository_ids[0]
+    ws = workspace.workspace_id
+    for include_findings in (False, True):
+        with captured_sql(engine) as statements:
+            db = app_session(engine)
+            set_workspace_context(db, ws)
+            dashboard.build_health_report(db, ws, repo, "main", include_findings=include_findings)
+            db.rollback()
+            db.close()
+        payload_reads = [sql for sql, _ in statements if reads_whole_payload(sql)]
+        assert len(payload_reads) == 1, payload_reads
+
+
 def test_findings_are_paginated_without_changing_rank_order(volume, client) -> None:
     _, workspace = volume
     repo = workspace.repository_ids[0]
@@ -187,3 +229,30 @@ def test_scan_submission_meets_perf_03(volume, client, monkeypatch) -> None:
     seconds = p95_seconds(submit)
     print(f"Scan submission: p95 {seconds * 1000:.0f} ms over 20 runs")
     assert seconds < PERF_03_SECONDS
+
+
+def test_dashboard_reads_revalidate_and_follow_triage(volume, client) -> None:
+    """A current copy gets 304; marking a finding done gives the report a new ETag."""
+    _, workspace = volume
+    repo = workspace.repository_ids[0]
+    url = f"/api/repos/{repo}/health"
+    first = client.get(url, params={"branch": "main"})
+    assert first.status_code == 200, first.text
+    etag = first.headers["etag"]
+
+    unchanged = client.get(url, params={"branch": "main"}, headers={"If-None-Match": etag})
+    assert unchanged.status_code == 304
+    assert unchanged.content == b""
+
+    finding = first.json()["findings"][0]
+    marked = client.put(
+        f"/api/snapshots/{first.json()['snapshot_id']}/findings/{finding['fingerprint']}/status",
+        json={"status": "done"},
+    )
+    assert marked.status_code == 204, marked.text
+
+    after = client.get(url, params={"branch": "main"}, headers={"If-None-Match": etag})
+    assert after.status_code == 200
+    assert after.headers["etag"] != etag
+    statuses = {item["fingerprint"]: item["status"] for item in after.json()["findings"]}
+    assert statuses[finding["fingerprint"]] == "done"
