@@ -102,11 +102,12 @@ onboarding(
       .click()
     await expect(page.getByText(/no repositories connected/i)).toBeVisible()
 
-    // A page about one project says how to get one, rather than erroring.
-    await rail(page)
-      .getByRole("link", { name: "Dashboard", exact: true })
-      .click()
-    await expect(page).toHaveURL(/\/dashboard$/)
+    // With no project the rail keeps its project pages out of the way…
+    await expect(
+      rail(page).getByRole("link", { name: "Dashboard", exact: true }),
+    ).toHaveCount(0)
+    // …and a page about one project says how to get one, rather than erroring.
+    await page.goto("/dashboard")
     await expect(
       main(page).getByRole("heading", {
         name: /connect a repository to see its dashboard/i,
@@ -119,7 +120,7 @@ onboarding(
   "the old onboarding addresses forward into the app",
   async ({ page }) => {
     await page.goto("/onboarding/workspace")
-    await expect(page).toHaveURL(/\/projects$/)
+    await expect(page).toHaveURL(/\/overview$/)
   },
 )
 
@@ -198,8 +199,11 @@ test("switching workspace replaces the projects and leaves nothing behind", asyn
 
   await switchTo(page, "Nimbus Labs")
 
-  await expect(page).toHaveURL(/\/projects$/)
+  // A switch lands on the new workspace's overview.
+  await expect(page).toHaveURL(/\/overview$/)
   await expect(topBar(page).getByText("Nimbus Labs")).toBeVisible()
+  await rail(page).getByRole("link", { name: "Projects", exact: true }).click()
+  await expect(page).toHaveURL(/\/projects$/)
   await expect(repoRows(page)).toHaveCount(1)
   await expect(repoRows(page).getByText("nimbus-gateway")).toBeVisible()
   await expect(page.getByText("acme-payments")).toHaveCount(0)
@@ -261,11 +265,16 @@ test("a workspace remembers its own project, and never the other's", async ({
   await expect(page.getByText("Code Health")).toBeVisible()
 
   await switchTo(page, "Nimbus Labs")
-  await expect(page).toHaveURL(/\/projects$/)
-  await expect(repoRows(page).getByText("nimbus-gateway")).toBeVisible()
+  await expect(page).toHaveURL(/\/overview$/)
+  await expect(
+    main(page).getByRole("link", { name: "nimbus-gateway", exact: true }),
+  ).toBeVisible()
+  await expect(main(page).getByText("web-store")).toHaveCount(0)
 
   await switchTo(page, "Acme Engineering")
-  // …and Acme comes back to where it was.
+  await expect(page).toHaveURL(/\/overview$/)
+  // …and Acme still remembers its project: the rail's Dashboard opens it.
+  await rail(page).getByRole("link", { name: "Dashboard", exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
 })
 

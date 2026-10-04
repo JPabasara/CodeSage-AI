@@ -2,16 +2,17 @@ import { DEMO_REPO_ID, test, expect } from "./session"
 
 // The scan state machine: idle → running → done | cancelled.
 
+// The page header's main action, named for the branch it scans.
 const scanButton = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: /^scan$/i })
+  page.getByRole("button", { name: "Scan main", exact: true })
 
-// The VISIBLE "Scanning… NN%" label.
+// The same button while busy: "Scanning 41%" (or "Scanning…" before a number).
 const scanningLabel = (page: import("@playwright/test").Page) =>
-  page.getByText(/scanning…/i)
+  page.getByRole("button", { name: /^Scanning/ })
 
-/** The visible "Stopping…" label, for the same reason. */
 const stoppingLabel = (page: import("@playwright/test").Page) =>
-  page.getByTestId("app-top-bar").getByText("Stopping…", { exact: true })
+  // The header button first; the progress strip says the same.
+  page.getByRole("button", { name: "Stopping…", exact: true }).first()
 
 const cancelledLabel = (page: import("@playwright/test").Page) =>
   page.getByText(/^Scan stopped · /)
@@ -57,7 +58,7 @@ test("a cancelled scan leaves the previous results intact", async ({
 
   // Cancelling must never leave a half-written snapshot, so the dashboard still shows the last good one.
   await expect(page.getByText("Code Health")).toBeVisible()
-  await expect(page.getByText("72/100")).toBeVisible()
+  await expect(page.getByTestId("health-score")).toHaveText("72")
 })
 
 test("a scan can be started again after being cancelled", async ({ page }) => {

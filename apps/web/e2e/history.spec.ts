@@ -4,7 +4,7 @@ test("clicking Scan History in the rail shows real snapshots", async ({
   page,
 }) => {
   await page.goto("/projects")
-  await page.getByRole("link", { name: "Scan History", exact: true }).click()
+  await page.getByRole("link", { name: "Scan history", exact: true }).click()
 
   await expect(
     page.getByRole("heading", { name: "Scan History" }),
@@ -20,7 +20,7 @@ test("clicking Scan History in the rail shows real snapshots", async ({
 
 test("clicking a history row opens the exact snapshot", async ({ page }) => {
   await page.goto("/projects")
-  await page.getByRole("link", { name: "Scan History", exact: true }).click()
+  await page.getByRole("link", { name: "Scan history", exact: true }).click()
 
   const rows = page.getByRole("row")
   await expect(rows).toHaveCount(6)
@@ -34,11 +34,13 @@ test("clicking a history row opens the exact snapshot", async ({ page }) => {
 
 test("scan history exposes a latest-scan return link", async ({ page }) => {
   await page.goto("/projects")
-  await page.getByRole("link", { name: "Scan History", exact: true }).click()
+  await page.getByRole("link", { name: "Scan history", exact: true }).click()
 
   await page.getByRole("link", { name: /open latest scan/i }).click()
   await expect(page).toHaveURL(/\/dashboard\/[^?]+\?branch=main$/)
-  await expect(page.getByText("Live dashboard")).toBeVisible()
+  await expect(page.getByText("Code Health")).toBeVisible()
+  await expect(page.getByText("Historical snapshot")).toHaveCount(0)
+  await expect(page.getByText("Latest", { exact: true })).toBeVisible()
 })
 
 test("an unscanned repository says so instead of showing an empty table", async ({

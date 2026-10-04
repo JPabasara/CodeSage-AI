@@ -39,8 +39,8 @@ test("tab from a cold load reaches skip to content link first (#140)", async ({
 })
 
 test("the top finding opens with the keyboard alone", async ({ page }) => {
-  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await expect(page.getByText("Code Health")).toBeVisible()
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
+  await expect(findingCards(page).first()).toBeVisible()
 
   const topFinding = findingCards(page).first()
   await tabTo(page, topFinding)
@@ -59,8 +59,8 @@ test("the top finding opens with the keyboard alone", async ({ page }) => {
 test("Space opens a finding too, and does not scroll the page instead", async ({
   page,
 }) => {
-  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await expect(page.getByText("Code Health")).toBeVisible()
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
+  await expect(findingCards(page).first()).toBeVisible()
 
   const topFinding = findingCards(page).first()
   await tabTo(page, topFinding)
@@ -75,11 +75,12 @@ test("Space opens a finding too, and does not scroll the page instead", async ({
 test("the demo path's controls are all reachable by keyboard, in order", async ({
   page,
 }) => {
-  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await expect(page.getByText("Code Health")).toBeVisible()
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
+  await expect(findingCards(page).first()).toBeVisible()
 
-  const branch = page.getByLabel("Branch")
-  const scan = page.getByRole("button", { name: /^scan$/i })
+  // Top bar, then the page header, then the list.
+  const branch = page.getByRole("combobox", { name: "Branch", exact: true })
+  const scan = page.getByRole("button", { name: "Scan main", exact: true })
   const filter = page.getByRole("combobox", { name: /filter by debt type/i })
   const topFinding = findingCards(page).first()
 
@@ -96,14 +97,13 @@ test("the demo path's controls are all reachable by keyboard, in order", async (
 test("the file tree is reachable and shows where the focus is", async ({
   page,
 }) => {
-  await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await expect(page.getByText("Code Health")).toBeVisible()
+  await page.goto(`/dashboard/${DEMO_REPO_ID}?view=code`)
+  await expect(page.getByLabel("File health tree")).toBeVisible()
 
   const firstNode = page
     .getByLabel("File health tree")
     .getByRole("button")
     .first()
-  // The ranked list and its "Mark as done" buttons come before the tree.
   await tabTo(page, firstNode, 80)
   await expect(firstNode).toBeFocused()
 

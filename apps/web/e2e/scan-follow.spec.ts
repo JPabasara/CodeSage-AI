@@ -38,7 +38,7 @@ test("leave mid-scan, follow Activity back, and Stop it", async ({
 }) => {
   await slowScans(page, baseURL)
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await page.getByRole("button", { name: /^scan$/i }).click()
+  await page.getByRole("button", { name: "Scan main", exact: true }).click()
 
   await expect(
     page.getByText("Scan queued · acme-payments · main"),
@@ -68,7 +68,7 @@ test("coming back to the dashboard continues the bar — it never restarts", asy
 }) => {
   await slowScans(page, baseURL)
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await page.getByRole("button", { name: /^scan$/i }).click()
+  await page.getByRole("button", { name: "Scan main", exact: true }).click()
   await expect(strip(page)).toBeVisible()
   await expect.poll(() => barValue(page)).toBeGreaterThan(0)
   const leftAt = await barValue(page)
@@ -88,10 +88,10 @@ test("a scan that finishes while you are elsewhere tells you when it is ready", 
 }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
-  await page.getByRole("button", { name: /^scan$/i }).click()
+  await page.getByRole("button", { name: "Scan main", exact: true }).click()
   await expect(strip(page)).toBeVisible()
 
-  await railLink(page, "Profiles").click()
+  await railLink(page, "Scoring profiles").click()
   await expect(page).toHaveURL(/\/profiles$/)
   const toast = page.getByText("acme-payments · main is ready")
   await expect(toast).toBeVisible({ timeout: 20_000 })
@@ -119,7 +119,7 @@ const asViewer = base.extend({
 
 asViewer("a viewer sees Scan disabled, and why", async ({ page }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  const scan = page.getByRole("button", { name: /^scan$/i })
+  const scan = page.getByRole("button", { name: "Scan main", exact: true })
   await expect(scan).toBeDisabled()
 
   await page.getByLabel("Viewers can't start scans").focus()

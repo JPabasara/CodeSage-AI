@@ -35,15 +35,19 @@ test("dark mode reaches the dashboard's own colours, not just the chrome", async
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
   await expect(page.getByText("Code Health")).toBeVisible()
 
-  // The grade letter is painted from --health-*, which lived under :root only.
-  const grade = page.locator('[style*="color"]').filter({ hasText: /^[A-E]$/ })
-  const light = await grade.first().evaluate((el) => getComputedStyle(el).color)
+  // The grade badge is filled from --health-*, which must change with the theme.
+  const grade = page
+    .getByTestId("kpi-health")
+    .locator('[style*="background-color"]')
+    .filter({ hasText: /^[A-E]$/ })
+  const fill = () =>
+    grade.first().evaluate((el) => getComputedStyle(el).backgroundColor)
+  const light = await fill()
 
   await chooseTheme(page, "Dark")
   await expect(html(page)).toHaveClass(/dark/)
 
-  const dark = await grade.first().evaluate((el) => getComputedStyle(el).color)
-  expect(dark).not.toBe(light)
+  expect(await fill()).not.toBe(light)
 })
 
 test("switching back to light really goes back", async ({ page }) => {

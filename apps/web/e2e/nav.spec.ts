@@ -20,11 +20,12 @@ test("the rail carries every destination this release has", async ({
   page,
 }) => {
   for (const label of [
+    "Overview",
     "Projects",
+    "Scoring profiles",
+    "Team & settings",
     "Dashboard",
-    "Scan History",
-    "Profiles",
-    "Workspace",
+    "Scan history",
     "Support",
   ]) {
     await expect(railLink(page, label)).toBeVisible()
@@ -35,7 +36,9 @@ test("the rail carries every destination this release has", async ({
 })
 
 test("J3.5 — no Team entry and no v2 badge anywhere", async ({ page }) => {
-  await expect(page.getByRole("link", { name: "Team" })).toHaveCount(0)
+  await expect(
+    page.getByRole("link", { name: "Team", exact: true }),
+  ).toHaveCount(0)
   await expect(page.getByText("v2", { exact: true })).toHaveCount(0)
 })
 
@@ -46,7 +49,7 @@ test("/team no longer exists as a route", async ({ page }) => {
 })
 
 test("each rail link reaches its screen", async ({ page }) => {
-  await railLink(page, "Profiles").click()
+  await railLink(page, "Scoring profiles").click()
   await expect(page).toHaveURL(/\/profiles$/)
   await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
 
@@ -54,7 +57,7 @@ test("each rail link reaches its screen", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`/dashboard/${DEMO_REPO_ID}$`))
   await expect(page.getByText("Code Health")).toBeVisible()
 
-  await railLink(page, "Scan History").click()
+  await railLink(page, "Scan history").click()
   await expect(page).toHaveURL(/\/history$/)
 
   await railLink(page, "Projects").click()
@@ -67,8 +70,8 @@ test("the rail marks the screen you are actually on", async ({ page }) => {
     "true",
   )
 
-  await railLink(page, "Profiles").click()
-  await expect(railLink(page, "Profiles")).toHaveAttribute(
+  await railLink(page, "Scoring profiles").click()
+  await expect(railLink(page, "Scoring profiles")).toHaveAttribute(
     "data-active",
     "true",
   )
@@ -97,7 +100,7 @@ test("the dashboard rows follow the project you are looking at", async ({
 }) => {
   await page.goto(`/dashboard/${SECOND_REPO_ID}`)
 
-  await railLink(page, "Scan History").click()
+  await railLink(page, "Scan history").click()
   await expect(page).toHaveURL(
     new RegExp(`/dashboard/${SECOND_REPO_ID}/history$`),
   )
@@ -122,18 +125,18 @@ test("the selected project survives profiles, dashboard, refresh and history", a
     .click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
 
-  await railLink(page, "Profiles").click()
+  await railLink(page, "Scoring profiles").click()
   await expect(page).toHaveURL(/\/profiles$/)
 
   await railLink(page, "Dashboard").click()
   await expect(page).toHaveURL(new RegExp(`/dashboard/${SECOND_REPO_ID}$`))
 
-  await railLink(page, "Profiles").click()
+  await railLink(page, "Scoring profiles").click()
   await expect(page).toHaveURL(/\/profiles$/)
   await page.reload()
   await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
 
-  await railLink(page, "Scan History").click()
+  await railLink(page, "Scan history").click()
   await expect(page).toHaveURL(
     new RegExp(`/dashboard/${SECOND_REPO_ID}/history$`),
   )
@@ -144,10 +147,12 @@ test("below md the rail is reachable at all", async ({ page }) => {
   await page.goto("/projects")
   await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible()
 
-  await expect(page.getByRole("link", { name: "Profiles" })).toBeHidden()
+  await expect(
+    page.getByRole("link", { name: "Scoring profiles" }),
+  ).toBeHidden()
 
   await page.getByRole("button", { name: "Toggle Sidebar" }).click()
-  await page.getByRole("link", { name: "Profiles" }).click()
+  await page.getByRole("link", { name: "Scoring profiles" }).click()
   await expect(page).toHaveURL(/\/profiles$/)
   await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
 })

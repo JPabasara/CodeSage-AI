@@ -42,7 +42,7 @@ test("Dashboard → Projects → Dashboard shows the report without the skeleton
   page,
 }) => {
   await page.goto(`/dashboard/${DEMO_REPO_ID}`)
-  await expect(page.getByTestId("health-score")).toHaveText("72/100")
+  await expect(page.getByTestId("health-score")).toHaveText("72")
 
   await page.getByRole("link", { name: "Projects", exact: true }).click()
   await expect(page).toHaveURL(/\/projects$/)
@@ -62,7 +62,7 @@ test("Dashboard → Projects → Dashboard shows the report without the skeleton
   })
 
   await page.getByRole("link", { name: "Dashboard", exact: true }).click()
-  await expect(page.getByTestId("health-score")).toHaveText("72/100")
+  await expect(page.getByTestId("health-score")).toHaveText("72")
   await page.waitForLoadState("networkidle")
   expect(
     await page.evaluate(

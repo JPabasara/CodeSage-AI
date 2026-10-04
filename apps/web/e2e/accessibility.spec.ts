@@ -94,10 +94,9 @@ signedIn(
     await page.goto(`/dashboard/${DEMO_REPO_ID}`)
     await expect(page.getByText("Code Health")).toBeVisible()
 
-    // The Overview leaves the ranked list no room at 1280x720.
     await page
-      .getByRole("toolbar", { name: "Dashboard view" })
-      .getByRole("button", { name: "Findings", exact: true })
+      .getByRole("tablist", { name: "Dashboard view" })
+      .getByRole("tab", { name: /^Findings/ })
       .click()
     await findingCards(page)
       .filter({ hasText: /hardcoded/i })
@@ -110,6 +109,18 @@ signedIn(
 
     await setDarkMode(page)
     await checkAxe(page, "finding detail (dark)")
+  },
+)
+
+signedIn(
+  "0 axe violations on /overview in light and dark mode",
+  async ({ page }) => {
+    await page.goto("/overview")
+    await expect(page.getByRole("table")).toBeVisible()
+    await checkAxe(page, "/overview (light)")
+
+    await setDarkMode(page)
+    await checkAxe(page, "/overview (dark)")
   },
 )
 
@@ -161,7 +172,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.goto(`/dashboard/${DEMO_REPO_ID}`)
       await expect(page.getByText("Code Health")).toBeVisible()
       if (theme === "dark") await setDarkMode(page)
-      await page.getByRole("button", { name: /^scan$/i }).click()
+      await page.getByRole("button", { name: "Scan main", exact: true }).click()
       await expect(page.getByTestId("scan-progress-panel")).toBeVisible()
       await checkAxe(page, `the scan panel (${theme})`)
     },

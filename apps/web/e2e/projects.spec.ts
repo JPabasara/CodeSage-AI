@@ -169,7 +169,7 @@ test("deleting the active project selects a remaining project everywhere", async
     page.getByRole("link", { name: "Dashboard", exact: true }),
   ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}`)
   await expect(
-    page.getByRole("link", { name: "Scan History", exact: true }),
+    page.getByRole("link", { name: "Scan history", exact: true }),
   ).toHaveAttribute("href", `/dashboard/${SECOND_REPO_ID}/history`)
 })
 
