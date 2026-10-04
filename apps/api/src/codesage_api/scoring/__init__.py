@@ -18,6 +18,7 @@ from codesage_api.scoring.enums import (
     Grade,
     ScanPhase,
     ScanStage,
+    ScanStep,
     Severity,
     Source,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "Profile",
     "ScanPhase",
     "ScanStage",
+    "ScanStep",
     "ScoredFile",
     "ScoredFinding",
     "ScoringFinding",

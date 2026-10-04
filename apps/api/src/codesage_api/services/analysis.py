@@ -19,7 +19,7 @@ from codesage_api.schemas import (
     ScanStatusOut,
     ScanSummaryOut,
 )
-from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage, ScanStep
 from codesage_api.services import audit, dashboard
 from codesage_api.tasks import progress
 
@@ -39,6 +39,11 @@ def _status_out(
         reading = progress.read_status(str(attempt.id))
         percent = reading.percent
 
+    stage = _stage(reading.stage)
+    step = _step(reading.step) if stage is ScanStage.READING_CODE else None
+    in_history = step is ScanStep.READING_HISTORY
+    # Without a step (an older worker) the file count is shown as it always was.
+    files_shown = step is None or step is ScanStep.READING_COMMENTS
     return ScanStatusOut(
         scan_id=str(attempt.id),
         phase=phase,
@@ -49,9 +54,12 @@ def _status_out(
         finished_at=(attempt.completion_time.isoformat() if attempt.completion_time else None),
         error=(attempt.failure_information if failed else None),
         error_code=_error_code(attempt.failure_code) if failed else None,
-        stage=_stage(reading.stage),
-        files_done=reading.files_done,
-        files_total=reading.files_total,
+        stage=stage,
+        step=step,
+        commits_done=reading.commits_done if in_history else None,
+        commits_total=reading.commits_total if in_history else None,
+        files_done=reading.files_done if files_shown else None,
+        files_total=reading.files_total if files_shown else None,
         typical_seconds=reading.typical_seconds,
     )
 
@@ -60,6 +68,14 @@ def _stage(stored: str | None) -> ScanStage | None:
     """An unknown stage from a newer worker reads as "not reported"."""
     try:
         return ScanStage(stored) if stored else None
+    except ValueError:
+        return None
+
+
+def _step(stored: str | None) -> ScanStep | None:
+    """An unknown step reads as "not reported", like an unknown stage."""
+    try:
+        return ScanStep(stored) if stored else None
     except ValueError:
         return None
 

@@ -84,6 +84,18 @@ class ScanStage(StrEnum):
     FINISHING = "finishing"
 
 
+class ScanStep(StrEnum):
+    """Which sub-step of `reading_code` a running scan is in.
+
+    Reported next to `stage` so the client can say which part of reading the
+    code is slow, and show the count that belongs to it.
+    """
+
+    MEASURING_CODE = "measuring_code"
+    READING_HISTORY = "reading_history"
+    READING_COMMENTS = "reading_comments"
+
+
 class ScanErrorCode(StrEnum):
     """Why a scan ended in `error`, for the failures a user can act on.
 

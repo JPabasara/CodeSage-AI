@@ -9,7 +9,7 @@ import pytest
 from codesage_api.db.enums import AnalysisStatus
 from codesage_api.errors import NotFound, ScanQueueFull
 from codesage_api.integrations.github import GitHubBranch
-from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage
+from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage, ScanStep
 from codesage_api.services import analysis
 from codesage_api.tasks import progress
 
@@ -389,6 +389,94 @@ def test_an_unknown_stage_reads_as_not_reported_never_a_500(
 
     assert result.stage is None
     assert result.progress == 40
+
+
+# ── scan progress v2: the sub-steps of reading_code ─────────────────────────
+
+# Every count set at once, as a stale or buggy worker might leave them: the
+# status must still show only the count that belongs to the step.
+_EVERY_COUNT = {"commits_done": 340, "commits_total": 1212, "files_done": 214, "files_total": 329}
+
+
+def _running_status(reading: progress.ProgressReading):
+    running = _attempt(AnalysisStatus.RUNNING)
+    attempts = Mock()
+    attempts.get_for_repository.return_value = running
+    with (
+        patch("codesage_api.services.analysis.attempts", attempts),
+        patch("codesage_api.services.analysis.progress.read_status", return_value=reading),
+    ):
+        return analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
+
+
+@pytest.mark.parametrize(
+    ("step", "commits", "files"),
+    [
+        ("measuring_code", (None, None), (None, None)),
+        ("reading_history", (340, 1212), (None, None)),
+        ("reading_comments", (None, None), (214, 329)),
+    ],
+)
+def test_each_step_shows_only_its_own_count(
+    step: str, commits: tuple[int | None, int | None], files: tuple[int | None, int | None]
+) -> None:
+    result = _running_status(
+        progress.ProgressReading(percent=40, stage="reading_code", step=step, **_EVERY_COUNT)
+    )
+
+    assert result.step is ScanStep(step)
+    assert (result.commits_done, result.commits_total) == commits
+    assert (result.files_done, result.files_total) == files
+
+
+def test_a_step_outside_reading_code_is_not_reported() -> None:
+    result = _running_status(
+        progress.ProgressReading(
+            percent=62,
+            stage="finding_debt",
+            step="reading_history",
+            commits_done=3,
+            commits_total=9,
+        )
+    )
+
+    assert result.stage is ScanStage.FINDING_DEBT
+    assert result.step is None
+    assert (result.commits_done, result.commits_total) == (None, None)
+
+
+def test_an_unknown_step_reads_as_not_reported_never_a_500() -> None:
+    result = _running_status(
+        progress.ProgressReading(
+            percent=40, stage="reading_code", step="a_step_from_the_future", **_EVERY_COUNT
+        )
+    )
+
+    assert result.stage is ScanStage.READING_CODE
+    assert result.step is None
+    assert (result.commits_done, result.commits_total) == (None, None)
+
+
+def test_an_uncounted_history_reports_the_step_without_counts() -> None:
+    result = _running_status(
+        progress.ProgressReading(percent=37, stage="reading_code", step="reading_history")
+    )
+
+    assert result.step is ScanStep.READING_HISTORY
+    assert (result.commits_done, result.commits_total) == (None, None)
+
+
+def test_the_step_fields_are_on_the_wire_in_snake_case() -> None:
+    result = _running_status(
+        progress.ProgressReading(
+            percent=40, stage="reading_code", step="reading_history", **_EVERY_COUNT
+        )
+    )
+
+    payload = result.model_dump(mode="json")
+    assert payload["step"] == "reading_history"
+    assert (payload["commits_done"], payload["commits_total"]) == (340, 1212)
+    assert (payload["files_done"], payload["files_total"]) == (None, None)
 
 
 # ── the per-workspace queue cap ─────────────────────────────────────────────
