@@ -4,6 +4,7 @@ import { useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import {
   Building2,
+  ChartColumn,
   FolderGit2,
   Gauge,
   History,
@@ -24,12 +25,17 @@ import { useWorkspaceGate } from "@/hooks/use-workspace-scope"
 import { ROLE_LABEL } from "@/lib/roles"
 
 type LockedPage =
-  "workspace" | "projects" | "dashboard" | "history" | "profiles"
+  "overview" | "workspace" | "projects" | "dashboard" | "history" | "profiles"
 
 const COPY: Record<
   LockedPage,
   { icon: LucideIcon; heading: string; body: string }
 > = {
+  overview: {
+    icon: ChartColumn,
+    heading: "Create a workspace to see your projects' health",
+    body: "The overview compares every repository in a workspace: their health, what changed and where to look first.",
+  },
   workspace: {
     icon: Building2,
     heading: "Create your workspace",
@@ -58,6 +64,7 @@ const COPY: Record<
 }
 
 export function lockedPageFor(pathname: string): LockedPage {
+  if (pathname.startsWith("/overview")) return "overview"
   if (pathname.startsWith("/workspace")) return "workspace"
   if (pathname.startsWith("/profiles")) return "profiles"
   if (pathname.startsWith("/dashboard")) {

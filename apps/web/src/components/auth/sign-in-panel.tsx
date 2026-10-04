@@ -26,7 +26,7 @@ export function SignInPanel({
     let alive = true
     getSession()
       .then(() => {
-        if (alive) router.replace("/projects")
+        if (alive) router.replace("/overview")
       })
       .catch(() => {
         // 401 is the expected answer here; anything else leaves the button.

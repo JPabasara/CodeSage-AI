@@ -74,7 +74,7 @@ test("a live session skips the page", async () => {
   )
   render(<SignInPanel href={HREF} />)
 
-  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/projects"))
+  await waitFor(() => expect(nav.replace).toHaveBeenCalledWith("/overview"))
 })
 
 test("no live session: the page stays", async () => {
