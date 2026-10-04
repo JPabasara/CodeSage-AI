@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CircleCheck, Loader2 } from "lucide-react"
+import { CircleCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -67,15 +67,18 @@ export function ActivityMenu() {
           type="button"
           data-testid="activity-trigger"
           aria-label={`Activity: ${busy} running${ready ? `, ${ready} ready` : ""}`}
-          className="inline-flex h-8 max-w-52 items-center gap-2 rounded-md border border-white/25 px-3 text-xs font-medium text-topbar-foreground outline-none transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+          className="inline-flex h-8.5 max-w-56 items-center gap-2 rounded-full bg-tb-pill px-3 text-[0.8125rem] font-medium text-tb-fg outline-none transition-colors hover:bg-tb-hover focus-visible:ring-2 focus-visible:ring-tb-focus"
         >
           {busy > 0 ? (
-            <Loader2
+            <span
               aria-hidden="true"
-              className="size-3.5 shrink-0 motion-safe:animate-spin"
+              className="size-2 shrink-0 rounded-full bg-tb-dot motion-safe:animate-pulse"
             />
           ) : (
-            <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
+            <CircleCheck
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-tb-muted"
+            />
           )}
           <span className="truncate">{summary}</span>
         </button>

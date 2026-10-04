@@ -49,7 +49,7 @@ export function AccountMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Account menu"
-        className="grid size-9 shrink-0 place-items-center rounded-full border border-white/25 bg-white/15 text-xs font-semibold text-topbar-foreground outline-none transition-colors hover:bg-white/25 focus-visible:ring-2 focus-visible:ring-white/70"
+        className="grid size-8.5 shrink-0 place-items-center rounded-full bg-tb-pill text-xs font-semibold tracking-wide text-tb-fg outline-none transition-colors hover:bg-tb-hover focus-visible:ring-2 focus-visible:ring-tb-focus"
       >
         {initialsOf(session?.name, session?.email)}
       </DropdownMenuTrigger>
