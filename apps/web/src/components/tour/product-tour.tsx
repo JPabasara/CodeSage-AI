@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -181,13 +182,25 @@ function routeFor(step: TourStep, repoId?: string) {
     : `/dashboard/${repoId}`
 }
 
+/** Reports `?project=`; the only part of the shell that waits for the URL. */
+function ProfileProjectParam({
+  onChange,
+}: Readonly<{ onChange: (value: { id: string | undefined }) => void }>) {
+  const id = useSearchParams().get("project") ?? undefined
+  useEffect(() => onChange({ id }), [id, onChange])
+  return null
+}
+
 export function ProductTourProvider({
   children,
 }: Readonly<{ children: ReactNode }>) {
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const profileProjectId = searchParams.get("project") ?? undefined
+  // Read below, inside its own Suspense, so the shell can still be prerendered.
+  const [profileProject, setProfileProject] = useState<{
+    id: string | undefined
+  }>()
+  const profileProjectId = profileProject?.id
   const { data: session } = useSession()
   const userId = session?.user_id
   const tourRequired = session?.product_tour_required
@@ -234,10 +247,17 @@ export function ProductTourProvider({
     const [targetPath, targetQuery = ""] = route.split("?")
     const targetProjectId =
       new URLSearchParams(targetQuery).get("project") ?? undefined
+    // Until the query has been read, the scope is unknown, not wrong.
+    if (
+      step.section === "profiles" &&
+      pathname === targetPath &&
+      !profileProject
+    )
+      return
     const wrongProfileScope =
       step.section === "profiles" && profileProjectId !== targetProjectId
     if (pathname !== targetPath || wrongProfileScope) router.push(route)
-  }, [pathname, profileProjectId, repoId, router, step])
+  }, [pathname, profileProject, profileProjectId, repoId, router, step])
 
   useEffect(() => {
     if (!step) return
@@ -330,6 +350,9 @@ export function ProductTourProvider({
 
   return (
     <TourContext.Provider value={{ active: Boolean(step), startTour }}>
+      <Suspense fallback={null}>
+        <ProfileProjectParam onChange={setProfileProject} />
+      </Suspense>
       {children}
       {step && !confirmClose ? (
         <TourCard
