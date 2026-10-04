@@ -29,6 +29,8 @@ import { useMembers } from "@/hooks/use-members"
 import { useSession } from "@/hooks/use-session"
 import { ROLE_LABEL } from "@/lib/roles"
 import type { UpdateWorkspaceRequest, Workspace } from "@/lib/types"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
+import { cn } from "@/lib/utils"
 
 const fieldsOf = (workspace: Workspace): WorkspaceFields => ({
   name: workspace.name,
@@ -55,7 +57,7 @@ function patchFor(
 
 /** The page's two columns: the team in the middle, settings on the right. */
 const LAYOUT = {
-  page: "mx-auto flex max-w-6xl flex-col gap-8 p-6",
+  page: cn(PAGE_CONTAINER, "gap-8"),
   columns: "flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-8",
   team: "min-w-0 flex-1 scroll-mt-6",
   settings: "flex w-full shrink-0 flex-col gap-8 lg:w-80 xl:w-96",
@@ -167,7 +169,7 @@ export default function WorkspacePage() {
             <div className="space-y-0.5">
               <h2
                 id="workspace-settings-heading"
-                className="text-[15px] font-semibold"
+                className="text-base font-semibold"
               >
                 Workspace settings
               </h2>
@@ -210,7 +212,7 @@ export default function WorkspacePage() {
               <div className="space-y-0.5">
                 <h2
                   id="new-workspace-heading"
-                  className="text-[15px] font-semibold"
+                  className="text-base font-semibold"
                 >
                   Another workspace
                 </h2>

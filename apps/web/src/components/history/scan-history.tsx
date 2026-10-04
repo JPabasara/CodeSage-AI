@@ -32,6 +32,7 @@ import { useProjects } from "@/hooks/use-projects"
 import { useScanHistory } from "@/hooks/use-scan-history"
 import type { ScanSummary } from "@/lib/types"
 import { gradeColor, shortSha } from "@/lib/utils"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
 
 function dashboardSnapshotHref(repoId: string, scan: ScanSummary) {
   const qs = new URLSearchParams({
@@ -201,10 +202,7 @@ export function ScanHistory({ repoId }: Readonly<{ repoId: string }>) {
   const profileName = projectProfile?.effective.name
 
   return (
-    <div
-      className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6"
-      data-tour="scan-history"
-    >
+    <div className={PAGE_CONTAINER} data-tour="scan-history">
       <PageHeader
         title="Scan History"
         context={<ProjectContext repoId={repoId} />}

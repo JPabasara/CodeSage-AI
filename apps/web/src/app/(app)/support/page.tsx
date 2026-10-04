@@ -18,6 +18,7 @@ import {
 } from "@/components/tour/product-tour"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
 
 const SECTION_ICONS: Record<TourSection, typeof LayoutDashboard> = {
   workspace: CircleHelp,
@@ -31,7 +32,7 @@ export default function SupportPage() {
   const { startTour } = useProductTour()
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6">
+    <div className={PAGE_CONTAINER}>
       <PageHeader
         title="New User Trial"
         description="Replay the complete guided tour, or learn only the part you need."
