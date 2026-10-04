@@ -370,7 +370,8 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
 
     clone.assert_called_once()
     extract.assert_called_once()
-    assert callable(extract.call_args.kwargs["progress_callback"])
+    assert callable(extract.call_args.kwargs["on_step"])
+    assert callable(extract.call_args.kwargs["on_commit"])
     detect.assert_called_once()
     predict.assert_called_once()
     classify.assert_called_once_with([comment])
@@ -566,6 +567,8 @@ class _Run:
             "cancel.cleanup": Mock(),
             "progress.publish_stage": Mock(),
             "progress.publish_files_done": Mock(),
+            "progress.publish_step": Mock(),
+            "progress.publish_commits_done": Mock(),
             "progress.is_cancel_requested": Mock(return_value=False),
             "progress.clear": Mock(),
         }
@@ -733,11 +736,34 @@ def test_every_stage_is_published_in_order_with_its_band_start(scan: _Run) -> No
         ("scoring", 85),
         ("finishing", 97),
     ]
-    # The typical duration rides on the first stage; the file total on reading.
+    # The typical duration rides on the first stage. The file total no longer
+    # rides on reading_code: it belongs to the reading_comments step.
     assert calls[0].kwargs == {"typical_seconds": 130}
-    assert calls[1].kwargs == {"files_total": 1240}
+    assert calls[1].kwargs == {}
     # Extraction was handed a file reporter.
     assert callable(scan["extract"].call_args.kwargs["on_file"])
+
+
+def test_extraction_steps_and_commit_counts_are_published_for_this_attempt(
+    scan: _Run,
+) -> None:
+    scan()
+
+    # `extract` is a mock here, so call the callbacks it was handed.
+    # The run's patches are gone by now, so put the same mocks back for the call.
+    kwargs = scan["extract"].call_args.kwargs
+    with (
+        patch(f"{_PIPELINE}.progress.publish_step", scan["progress.publish_step"]),
+        patch(f"{_PIPELINE}.progress.publish_commits_done", scan["progress.publish_commits_done"]),
+    ):
+        kwargs["on_step"]("reading_history", 37, commits_total=1212)
+        kwargs["on_commit"](340, 1212)
+
+    attempt_id = str(scan.attempt_id)
+    scan["progress.publish_step"].assert_called_once_with(
+        attempt_id, "reading_history", 37, commits_total=1212
+    )
+    scan["progress.publish_commits_done"].assert_called_once_with(attempt_id, 340)
 
 
 def test_the_file_reporter_publishes_about_fifty_counts_and_always_the_last() -> None:

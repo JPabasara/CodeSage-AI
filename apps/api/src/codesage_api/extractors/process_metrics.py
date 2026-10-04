@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -7,11 +10,18 @@ from time import perf_counter
 
 from pydriller import Repository
 
+from codesage_api.config import get_settings
 from codesage_api.logging import get_logger
 
 logger = get_logger(__name__)
 
 SECONDS_PER_WEEK = 7 * 24 * 60 * 60
+
+#: Called as `on_commit(commits_inspected, commits_total)` while the history is read.
+CommitProgress = Callable[[int, int], None]
+
+#: About one report per 2% of the history, plus the last commit.
+COMMIT_REPORTS_PER_SCAN = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,10 +101,38 @@ def _mean(values: list[int]) -> float:
     return sum(values) / len(values)
 
 
+def count_commits(repository_path: Path, commit_sha: str) -> int | None:
+    """How many commits the history walk will visit, or None if git cannot say.
+
+    Only feeds the progress count, so a failure is logged and swallowed: the
+    scan goes on without "340 of 1,212 commits".
+    """
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository_path), "rev-list", "--count", commit_sha],
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=get_settings().git_timeout_seconds,
+        )
+        return max(0, int(completed.stdout.strip()))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        logger.warning("Could not count the commits to read; history progress is not reported")
+        return None
+
+
 def extract_process_metrics(
     repository_path: Path,
     commit_sha: str,
     anchor_date: datetime,
+    on_commit: CommitProgress | None = None,
+    *,
+    commits_total: int | None = None,
 ) -> list[FileProcessMetrics]:
     """
     Extract D'Ambros/Moser-style process metrics for Java files.
@@ -106,8 +144,18 @@ def extract_process_metrics(
 
     age_with_respect_to and weighted_age_with_respect_to are expressed
     in weeks.
+
+    `on_commit` hears `(commits_inspected, commits_total)` every ~2% of the
+    history and on the last commit. `commits_total` is counted here unless the
+    caller already has it; when it cannot be counted, nothing is reported.
     """
     started = perf_counter()
+    if on_commit is not None and commits_total is None:
+        commits_total = count_commits(repository_path, commit_sha)
+    report = on_commit if commits_total is not None else None
+    total = commits_total or 0
+    report_every = max(1, total // COMMIT_REPORTS_PER_SCAN)
+    last_reported = 0
     recent_cutoff = anchor_date - timedelta(days=90)
 
     files = _java_files(repository_path)
@@ -129,6 +177,11 @@ def extract_process_metrics(
         to_commit=commit_sha,
     ).traverse_commits():
         commits_inspected += 1
+        if report is not None and (
+            commits_inspected == total or commits_inspected % report_every == 0
+        ):
+            report(commits_inspected, total)
+            last_reported = commits_inspected
 
         changed_at = commit.committer_date
 
@@ -195,6 +248,11 @@ def extract_process_metrics(
                 or changed_at < history.first_change
             ):
                 history.first_change = changed_at
+
+    # The walk can end short of the count (or past it); the last commit is
+    # always reported, so the count never stalls below where the walk stopped.
+    if report is not None and last_reported != commits_inspected:
+        report(commits_inspected, total)
 
     results: list[FileProcessMetrics] = []
 

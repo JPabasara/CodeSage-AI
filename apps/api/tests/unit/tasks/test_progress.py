@@ -56,6 +56,7 @@ def test_read_status_reads_percent_and_stage_in_one_round_trip(client: Mock) -> 
     assert reading == progress.ProgressReading(
         percent=31,
         stage="reading_code",
+        step=None,
         files_done=120,
         files_total=1240,
         typical_seconds=130,
@@ -90,7 +91,14 @@ def test_entering_a_stage_without_files_drops_the_old_file_count(client: Mock) -
 
     progress.publish_stage("scan-id", "finding_debt", 60)
 
-    pipe.hdel.assert_called_once_with("codesage:scan:scan-id:stage", "files_done", "files_total")
+    pipe.hdel.assert_called_once_with(
+        "codesage:scan:scan-id:stage",
+        "step",
+        "commits_done",
+        "commits_total",
+        "files_done",
+        "files_total",
+    )
     pipe.hset.assert_called_once_with(
         "codesage:scan:scan-id:stage", mapping={"stage": "finding_debt"}
     )
@@ -100,12 +108,14 @@ def test_entering_a_stage_without_files_drops_the_old_file_count(client: Mock) -
 
 
 @patch("codesage_api.tasks.progress._client")
-def test_reading_code_starts_its_file_count_at_zero(client: Mock) -> None:
+def test_a_stage_with_a_file_total_starts_its_count_at_zero(client: Mock) -> None:
     pipe = client.return_value.pipeline.return_value
 
     progress.publish_stage("scan-id", "reading_code", 25, files_total=1240, typical_seconds=130)
 
-    pipe.hdel.assert_not_called()
+    pipe.hdel.assert_called_once_with(
+        "codesage:scan:scan-id:stage", "step", "commits_done", "commits_total"
+    )
     pipe.hset.assert_called_once_with(
         "codesage:scan:scan-id:stage",
         mapping={
@@ -123,6 +133,165 @@ def test_publishing_a_stage_never_raises_when_redis_is_down(client: Mock) -> Non
 
     progress.publish_stage("scan-id", "cloning", 5)
     progress.publish_files_done("scan-id", 3)
+
+
+@patch("codesage_api.tasks.progress._client")
+def test_a_step_with_a_commit_total_drops_the_file_count_in_one_round_trip(
+    client: Mock,
+) -> None:
+    pipe = client.return_value.pipeline.return_value
+
+    progress.publish_step("scan-id", "reading_history", 37, commits_total=1212)
+
+    client.return_value.pipeline.assert_called_once_with(transaction=False)
+    pipe.hdel.assert_called_once_with("codesage:scan:scan-id:stage", "files_done", "files_total")
+    pipe.hset.assert_called_once_with(
+        "codesage:scan:scan-id:stage",
+        mapping={"step": "reading_history", "commits_total": 1212, "commits_done": 0},
+    )
+    pipe.set.assert_called_once_with(
+        "codesage:scan:scan-id:progress", 37, ex=progress.KEY_TTL_SECONDS
+    )
+    pipe.execute.assert_called_once()
+
+
+@patch("codesage_api.tasks.progress._client")
+def test_a_step_without_totals_drops_every_counter(client: Mock) -> None:
+    pipe = client.return_value.pipeline.return_value
+
+    progress.publish_step("scan-id", "measuring_code", 25)
+
+    pipe.hdel.assert_called_once_with(
+        "codesage:scan:scan-id:stage",
+        "commits_done",
+        "commits_total",
+        "files_done",
+        "files_total",
+    )
+    pipe.hset.assert_called_once_with(
+        "codesage:scan:scan-id:stage", mapping={"step": "measuring_code"}
+    )
+
+
+@patch("codesage_api.tasks.progress._client")
+def test_publishing_a_step_or_a_count_never_raises_when_redis_is_down(client: Mock) -> None:
+    client.return_value.pipeline.return_value.execute.side_effect = ConnectionError
+    client.return_value.hset.side_effect = ConnectionError
+
+    progress.publish_step("scan-id", "reading_comments", 52, files_total=10)
+    progress.publish_commits_done("scan-id", 3)
+    progress.publish_files_done("scan-id", 3)
+
+
+class _FakeRedis:
+    """Just enough of a `decode_responses=True` Redis for a publish/read round trip."""
+
+    def __init__(self) -> None:
+        self.strings: dict[str, str] = {}
+        self.hashes: dict[str, dict[str, str]] = {}
+
+    def pipeline(self, transaction: bool = True) -> "_FakePipeline":
+        return _FakePipeline(self)
+
+    def get(self, key: str) -> str | None:
+        return self.strings.get(key)
+
+    def set(self, key: str, value: object, ex: int | None = None) -> bool:
+        self.strings[key] = str(value)
+        return True
+
+    def hset(
+        self,
+        key: str,
+        field: str | None = None,
+        value: object = None,
+        mapping: dict[str, object] | None = None,
+    ) -> int:
+        stored = self.hashes.setdefault(key, {})
+        if field is not None:
+            stored[field] = str(value)
+        for name, item in (mapping or {}).items():
+            stored[name] = str(item)
+        return 1
+
+    def hdel(self, key: str, *fields: str) -> int:
+        stored = self.hashes.get(key, {})
+        return sum(stored.pop(name, None) is not None for name in fields)
+
+    def hgetall(self, key: str) -> dict[str, str]:
+        return dict(self.hashes.get(key, {}))
+
+    def expire(self, key: str, seconds: int) -> bool:
+        return True
+
+
+class _FakePipeline:
+    def __init__(self, redis: _FakeRedis) -> None:
+        self._redis = redis
+        self._queued: list[tuple[str, tuple, dict]] = []
+
+    def __getattr__(self, name: str):
+        def queue(*args, **kwargs):
+            self._queued.append((name, args, kwargs))
+            return self
+
+        return queue
+
+    def execute(self) -> list:
+        queued, self._queued = self._queued, []
+        return [getattr(self._redis, name)(*args, **kwargs) for name, args, kwargs in queued]
+
+
+def test_each_step_reads_back_with_only_its_own_count() -> None:
+    """The whole `reading_code` stage, published and read back through one fake
+    Redis: each count shows in its own step and nowhere else."""
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        progress.publish_stage("scan-id", "reading_code", 25, typical_seconds=130)
+        progress.publish_step("scan-id", "measuring_code", 25)
+        measuring = progress.read_status("scan-id")
+
+        progress.publish_step("scan-id", "reading_history", 37, commits_total=1212)
+        progress.publish_commits_done("scan-id", 340)
+        history = progress.read_status("scan-id")
+
+        progress.publish_step("scan-id", "reading_comments", 52, files_total=329)
+        progress.publish_files_done("scan-id", 214)
+        comments = progress.read_status("scan-id")
+
+        progress.publish_stage("scan-id", "finding_debt", 60)
+        debt = progress.read_status("scan-id")
+
+    assert measuring == progress.ProgressReading(
+        percent=25, stage="reading_code", step="measuring_code", typical_seconds=130
+    )
+    assert history == progress.ProgressReading(
+        percent=37,
+        stage="reading_code",
+        step="reading_history",
+        commits_done=340,
+        commits_total=1212,
+        typical_seconds=130,
+    )
+    assert comments == progress.ProgressReading(
+        percent=52,
+        stage="reading_code",
+        step="reading_comments",
+        files_done=214,
+        files_total=329,
+        typical_seconds=130,
+    )
+    assert debt == progress.ProgressReading(percent=60, stage="finding_debt", typical_seconds=130)
+
+
+def test_an_uncounted_history_reads_back_without_commit_counts() -> None:
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        progress.publish_step("scan-id", "reading_history", 37, commits_total=None)
+        reading = progress.read_status("scan-id")
+
+    assert reading.step == "reading_history"
+    assert (reading.commits_done, reading.commits_total) == (None, None)
 
 
 @patch("codesage_api.tasks.progress._client")
