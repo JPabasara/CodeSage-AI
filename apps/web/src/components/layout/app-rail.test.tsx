@@ -63,29 +63,35 @@ test("dashboard links follow the project in the current dashboard URL", () => {
     "href",
     `/dashboard/${SECOND_REPO_ID}`,
   )
-  expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Scan history" })).toHaveAttribute(
     "href",
     `/dashboard/${SECOND_REPO_ID}/history`,
   )
 })
 
-test("with no project, Dashboard and Scan History open their no-project pages", () => {
+test("with no project, the project group stays hidden until there is one", () => {
   data.repos = []
 
   renderRail()
 
-  expect(screen.getAllByRole("link", { name: "Dashboard" })).toHaveLength(1)
-  expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+  expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull()
+  expect(screen.queryByRole("link", { name: "Scan history" })).toBeNull()
+  expect(screen.getByRole("link", { name: "Projects" })).toHaveAttribute(
     "href",
-    "/dashboard",
-  )
-  expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
-    "href",
-    "/dashboard/history",
+    "/projects",
   )
 })
 
-test("Workspace comes first and Support links directly to the Help Centre", () => {
+test("the project group is labelled with the project it belongs to", () => {
+  nav.pathname = `/dashboard/${SECOND_REPO_ID}`
+
+  renderRail()
+
+  const name = mockRepos.find((repo) => repo.id === SECOND_REPO_ID)?.name ?? ""
+  expect(screen.getByText(`· ${name}`)).toBeInTheDocument()
+})
+
+test("workspace pages come first, then the project's, and Support opens the Help Centre", () => {
   renderRail()
   const nav = screen.getByRole("navigation", { name: "Main navigation" })
   expect(
@@ -93,16 +99,20 @@ test("Workspace comes first and Support links directly to the Help Centre", () =
       .getAllByRole("link")
       .map((link) => link.textContent?.trim()),
   ).toEqual([
-    "Workspace",
+    "Overview",
     "Projects",
+    "Scoring profiles",
+    "Team & settings",
     "Dashboard",
-    "Scan History",
-    "Profiles",
-    "Support",
+    "Scan history",
   ])
-  expect(within(nav).getByRole("link", { name: "Support" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Support" })).toHaveAttribute(
     "href",
     "/help",
+  )
+  expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
+    "href",
+    "/overview",
   )
 })
 
@@ -122,7 +132,7 @@ test("with no workspace every link stays, marked as locked", async () => {
   const projects = within(nav).getByRole("link", { name: /projects/i })
   expect(projects).toHaveAccessibleName(/create a workspace first/i)
   expect(projects).toHaveAttribute("title", "Create a workspace first")
-  expect(
-    within(nav).getByRole("link", { name: "Support" }),
-  ).not.toHaveAttribute("title")
+  expect(screen.getByRole("link", { name: "Support" })).not.toHaveAttribute(
+    "title",
+  )
 })
