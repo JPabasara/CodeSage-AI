@@ -5,6 +5,12 @@ import { check, fail, sleep } from "k6"
 import { Counter } from "k6/metrics"
 
 const MODE = __ENV.MODE || "baseline"
+// "app" reads the dashboard the way the web app does: the summary, then the
+// findings in pages of 500. "full" is the old one-shot payload, for comparison.
+const PAYLOAD = __ENV.PAYLOAD || "app"
+// Send If-None-Match like a returning browser, so unchanged reads cost a 304.
+const REVALIDATE = __ENV.REVALIDATE === "1"
+const FINDINGS_PAGE = 500
 const base = (__ENV.CODESAGE_BASE_URL || "https://api.codesageai.dev/api").replace(/\/$/, "")
 const token = (__ENV.CODESAGE_SESSION_FILE ? open(__ENV.CODESAGE_SESSION_FILE) : __ENV.CODESAGE_SESSION_TOKEN || "").trim()
 const cookies = { codesage_session: token }
@@ -26,6 +32,7 @@ const workloads = {
 }
 
 if (!workloads[MODE]) throw new Error(`MODE must be baseline or load, not ${MODE}`)
+if (!["app", "full"].includes(PAYLOAD)) throw new Error(`PAYLOAD must be app or full, not ${PAYLOAD}`)
 
 export const options = {
   scenarios: { reading: workloads[MODE] },
@@ -44,10 +51,20 @@ export const options = {
   summaryTrendStats: ["min", "avg", "med", "p(90)", "p(95)", "p(99)", "max"],
 }
 
+// Per virtual user, like one browser's HTTP cache.
+const etags = {}
+
 function get(path, endpoint, phase = "measured") {
   const kind = endpoint === "dashboard" ? "dashboard" : "other"
-  return http.get(`${base}${path}`, { cookies, tags: { endpoint, kind, phase } })
+  // A browser always offers compression; the ingress answers with Brotli or gzip.
+  const headers = { "Accept-Encoding": "br, gzip" }
+  if (REVALIDATE && etags[path]) headers["If-None-Match"] = etags[path]
+  const response = http.get(`${base}${path}`, { cookies, headers, tags: { endpoint, kind, phase } })
+  if (REVALIDATE && response.headers.Etag) etags[path] = response.headers.Etag
+  return response
 }
+
+const ok = (res) => res.status === 200 || res.status === 304
 
 // Prepare one scanned project before virtual users start.
 export function setup() {
@@ -79,18 +96,37 @@ export function setup() {
   fail("Dashboard still SCORE_PENDING after 60 s of warm-up.")
 }
 
-export default function ({ repoId, q }) {
-  const pages = [
-    ["session", "/auth/session"],
-    ["projects", "/projects"],
-    ["branches", `/repos/${repoId}/branches`],
-    ["dashboard", `/repos/${repoId}/health?${q}`],
-    ["history", `/repos/${repoId}/scans?${q}`],
-  ]
-  for (const [endpoint, path] of pages) {
-    const r = get(path, endpoint)
-    if (r.status === 503) scorePending.add(1, { endpoint })
-    check(r, { [`${endpoint} 200`]: (res) => res.status === 200 }, { endpoint })
+function read(endpoint, path) {
+  const r = get(path, endpoint)
+  if (r.status === 503) scorePending.add(1, { endpoint })
+  check(r, { [`${endpoint} 200`]: ok }, { endpoint })
+  return r
+}
+
+// The dashboard as the web app loads it: summary, then findings page by page.
+function dashboard(repoId, q) {
+  if (PAYLOAD === "full") {
+    read("dashboard", `/repos/${repoId}/health?${q}`)
+    return
   }
+  read("dashboard", `/repos/${repoId}/health?${q}&include_findings=false`)
+  let offset = 0
+  let total = 1
+  while (offset < total) {
+    const page = read("dashboard", `/repos/${repoId}/health/findings?${q}&limit=${FINDINGS_PAGE}&offset=${offset}`)
+    if (page.status !== 200) return // a 304 or a failure: nothing more to page through
+    const body = page.json()
+    total = body.total
+    if (body.items.length === 0) return
+    offset += body.items.length
+  }
+}
+
+export default function ({ repoId, q }) {
+  read("session", "/auth/session")
+  read("projects", "/projects")
+  read("branches", `/repos/${repoId}/branches`)
+  dashboard(repoId, q)
+  read("history", `/repos/${repoId}/scans?${q}`)
   sleep(MODE === "baseline" ? 1 : 1 + Math.random() * 2)
 }
