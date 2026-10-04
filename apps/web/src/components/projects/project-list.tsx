@@ -24,6 +24,8 @@ export type ProjectListProps = {
   onSelect?: (repo: Repo) => void
   onHistory?: (repo: Repo) => void
   onRemove?: (repo: Repo) => void
+  /** The pointer or focus rests on a link to the dashboard; `undefined` when it leaves. */
+  onIntent?: (repo: Repo | undefined) => void
   removingRepoId?: string
   activeRepoId?: string
   /** What the empty list says under its title; the page names the workspace. */
@@ -83,6 +85,7 @@ export function ProjectList({
   onSelect,
   onHistory,
   onRemove,
+  onIntent,
   removingRepoId,
   activeRepoId,
   emptyDescription = "Connect a public repository to start building a project health history.",
@@ -196,6 +199,10 @@ export function ProjectList({
                     href={`/dashboard/${repo.id}`}
                     aria-label={`Go to dashboard for ${repoLabel}`}
                     onClick={() => onSelect?.(repo)}
+                    onPointerEnter={() => onIntent?.(repo)}
+                    onFocus={() => onIntent?.(repo)}
+                    onPointerLeave={() => onIntent?.(undefined)}
+                    onBlur={() => onIntent?.(undefined)}
                   >
                     <LayoutDashboard aria-hidden="true" />
                     Go to dashboard

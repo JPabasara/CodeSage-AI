@@ -180,14 +180,14 @@ test("the page and AppRail cannot restore a deleted active project", async () =>
       "href",
       `/dashboard/${mockRepos[1].id}`,
     )
-    expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Scan history" })).toHaveAttribute(
       "href",
       `/dashboard/${mockRepos[1].id}/history`,
     )
   })
 })
 
-test("removing the last project clears storage and sends rail links to Projects", async () => {
+test("removing the last project clears storage and hides the rail's project pages", async () => {
   let projects = [mockRepos[0]]
   server.use(
     http.get("*/api/projects", () => HttpResponse.json(projects)),
@@ -214,14 +214,9 @@ test("removing the last project clears storage and sends rail links to Projects"
   ).toBeInTheDocument()
   await waitFor(() => {
     expect(readSelectedProjectId(WORKSPACE_ID)).toBeUndefined()
-    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
-      "href",
-      "/dashboard",
-    )
-    expect(screen.getByRole("link", { name: "Scan History" })).toHaveAttribute(
-      "href",
-      "/dashboard/history",
-    )
+    expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "Scan history" })).toBeNull()
+    expect(screen.getByRole("link", { name: "Projects" })).toBeInTheDocument()
   })
 })
 

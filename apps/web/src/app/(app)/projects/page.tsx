@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { ApiRequestError, connectRepo, removeProject } from "@/lib/api/client"
@@ -37,8 +38,12 @@ import {
 import { useSelectedProject } from "@/hooks/use-selected-project"
 import { useSession } from "@/hooks/use-session"
 import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
+import { cancelProjectPrefetch, prefetchProject } from "@/lib/prefetch-project"
+import { PAGE_CONTAINER } from "@/components/layout/page-container"
+import { cn } from "@/lib/utils"
 
 export default function ProjectsPage() {
+  const router = useRouter()
   const { data: repos, loading, error, refetch } = useProjects()
   const { data: session } = useSession()
   const { data: workspaces } = useWorkspaces()
@@ -119,7 +124,7 @@ export default function ProjectsPage() {
   const workspaceName = activeWorkspace?.name ?? "This workspace"
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-4 sm:p-6">
+    <div className={cn(PAGE_CONTAINER, "gap-8")}>
       <PageHeader
         title="Projects"
         context={
@@ -173,7 +178,7 @@ export default function ProjectsPage() {
 
       <section className="space-y-3" data-tour="project-list">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 className="text-[15px] font-semibold">Connected repositories</h2>
+          <h2 className="text-base font-semibold">Connected repositories</h2>
           {repos?.length !== 0 ? (
             <p className="text-sm text-muted-foreground">
               Open the dashboard or scan history for the repository you want to
@@ -206,6 +211,11 @@ export default function ProjectsPage() {
               selectProject(repo.id)
             }}
             onRemove={canDisconnect ? setPendingRemoval : undefined}
+            onIntent={(repo) =>
+              repo
+                ? prefetchProject(repo, router.prefetch)
+                : cancelProjectPrefetch()
+            }
             removingRepoId={removingRepoId}
           />
         )}
