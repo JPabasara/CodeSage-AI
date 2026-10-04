@@ -4,6 +4,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* A slightly larger type scale: body 15px, captions 13px, page titles 24px. */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.625rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.875rem;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -18,8 +32,19 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-topbar: var(--topbar);
-  --color-topbar-foreground: var(--topbar-foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-trend-up: var(--trend-up);
+  --color-trend-down: var(--trend-down);
+  --color-tb-bg: var(--tb-bg);
+  --color-tb-brand: var(--tb-brand);
+  --color-tb-line: var(--tb-line);
+  --color-tb-fg: var(--tb-fg);
+  --color-tb-muted: var(--tb-muted);
+  --color-tb-label: var(--tb-label);
+  --color-tb-hover: var(--tb-hover);
+  --color-tb-pill: var(--tb-pill);
+  --color-tb-focus: var(--tb-focus);
+  --color-tb-dot: var(--tb-dot);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -58,12 +83,14 @@
 
 :root {
   /* Neutral grey base with a mint accent. */
-  --background: oklch(0.99 0.002 255);
-  --foreground: oklch(0.27 0.012 255);
+  --background: oklch(0.985 0.002 255);
+  --foreground: oklch(0.34 0.012 255);
+  /* Headings and numbers: one step darker than body text. */
+  --foreground-strong: oklch(0.27 0.013 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.27 0.012 255);
+  --card-foreground: oklch(0.34 0.012 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.27 0.012 255);
+  --popover-foreground: oklch(0.34 0.012 255);
   --primary: oklch(0.44 0.13 160);
   --primary-foreground: oklch(0.99 0.006 160);
   --secondary: oklch(0.963 0.004 255);
@@ -83,11 +110,19 @@
   --chart-3: oklch(0.6 0.13 230);
   --chart-4: oklch(0.64 0.16 20);
   --chart-5: oklch(0.6 0.1 200);
-  --radius: 0.375rem;
+  --radius: 0.3125rem;
   --sidebar: oklch(0.984 0.002 255);
-  /* Keep the app bar distinct from health colours. */
-  --topbar: oklch(46.57% 0.08805 166.97);
-  --topbar-foreground: oklch(0.99 0.004 165);
+  /* The app bar: brand mint, a step deeper behind the logo, soft white hairlines. */
+  --tb-bg: oklch(46.57% 0.08805 166.97);
+  --tb-brand: oklch(0.425 0.084 167);
+  --tb-line: rgb(255 255 255 / 0.14);
+  --tb-fg: oklch(0.99 0.004 165);
+  --tb-muted: rgb(255 255 255 / 0.74);
+  --tb-label: rgb(255 255 255 / 0.68);
+  --tb-hover: rgb(255 255 255 / 0.1);
+  --tb-pill: rgb(255 255 255 / 0.1);
+  --tb-focus: rgb(255 255 255 / 0.8);
+  --tb-dot: oklch(0.9 0.14 160);
   --sidebar-foreground: oklch(0.32 0.012 255);
   --sidebar-primary: oklch(0.44 0.13 160);
   --sidebar-primary-foreground: oklch(0.99 0.006 160);
@@ -112,16 +147,20 @@
   --health-bad: 0 72% 51%;
   --health-mid: 38 92% 50%;
   --health-good: 142 71% 45%;
+  /* Text-safe change colours (4.5:1 on cards). */
+  --trend-up: hsl(142 72% 28%);
+  --trend-down: hsl(0 72% 42%);
 }
 
 .dark {
   /* Soft dark surfaces reduce glare. */
   --background: oklch(0.17 0.006 255);
-  --foreground: oklch(0.9 0.006 255);
+  --foreground: oklch(0.85 0.006 255);
+  --foreground-strong: oklch(0.93 0.004 255);
   --card: oklch(0.205 0.006 255);
-  --card-foreground: oklch(0.9 0.006 255);
+  --card-foreground: oklch(0.85 0.006 255);
   --popover: oklch(0.215 0.006 255);
-  --popover-foreground: oklch(0.9 0.006 255);
+  --popover-foreground: oklch(0.85 0.006 255);
   --primary: oklch(0.74 0.14 165);
   --primary-foreground: oklch(0.18 0.02 165);
   --secondary: oklch(0.245 0.006 255);
@@ -141,8 +180,16 @@
   --chart-4: oklch(0.71 0.16 25);
   --chart-5: oklch(0.73 0.1 200);
   --sidebar: oklch(0.16 0.006 255);
-  --topbar: oklch(0.25 0.05 165);
-  --topbar-foreground: oklch(0.97 0.006 165);
+  --tb-bg: oklch(0.25 0.05 165);
+  --tb-brand: oklch(0.225 0.045 166);
+  --tb-line: rgb(255 255 255 / 0.08);
+  --tb-fg: oklch(0.97 0.006 165);
+  --tb-muted: rgb(255 255 255 / 0.68);
+  --tb-label: rgb(255 255 255 / 0.6);
+  --tb-hover: rgb(255 255 255 / 0.07);
+  --tb-pill: rgb(255 255 255 / 0.07);
+  --tb-focus: oklch(0.74 0.14 165);
+  --tb-dot: oklch(0.78 0.15 160);
   --sidebar-foreground: oklch(0.86 0.006 255);
   --sidebar-primary: oklch(0.74 0.14 165);
   --sidebar-primary-foreground: oklch(0.18 0.02 165);
@@ -165,6 +212,8 @@
   --health-bad: 0 91% 71%;
   --health-mid: 43 96% 56%;
   --health-good: 142 69% 58%;
+  --trend-up: hsl(142 69% 58%);
+  --trend-down: hsl(0 91% 71%);
 }
 
 @layer base {
