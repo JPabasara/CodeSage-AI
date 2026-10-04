@@ -117,8 +117,9 @@
   --tb-brand: oklch(0.425 0.084 167);
   --tb-line: rgb(255 255 255 / 0.14);
   --tb-fg: oklch(0.99 0.004 165);
-  --tb-muted: rgb(255 255 255 / 0.74);
-  --tb-label: rgb(255 255 255 / 0.68);
+  /* Small captions on the mint bar must reach 4.5:1: 84% and 80% white do (68% was ~4.0). */
+  --tb-muted: rgb(255 255 255 / 0.84);
+  --tb-label: rgb(255 255 255 / 0.8);
   --tb-hover: rgb(255 255 255 / 0.1);
   --tb-pill: rgb(255 255 255 / 0.1);
   --tb-focus: rgb(255 255 255 / 0.8);
