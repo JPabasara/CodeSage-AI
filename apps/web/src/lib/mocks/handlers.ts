@@ -1258,7 +1258,7 @@ export const handlers = [
       ),
     )
     const limit = Math.min(
-      100,
+      500,
       Math.max(1, Number(url.searchParams.get("limit") ?? 25)),
     )
     const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0))
