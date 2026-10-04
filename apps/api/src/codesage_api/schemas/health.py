@@ -54,6 +54,26 @@ class CategoryBreakdownItemOut(ApiModel):
     debt: float
 
 
+class SeverityCountsOut(ApiModel):
+    critical: int
+    high: int
+    medium: int
+    low: int
+
+
+class FindingSummaryOut(ApiModel):
+    """Finding counts in the Refactor-First list's default view.
+
+    Test findings are left out unless the profile counts them, and `done` is
+    the triage status. `open` is everything else, the split the list shows.
+    """
+
+    total: int
+    open: int
+    done: int
+    open_by_severity: SeverityCountsOut
+
+
 class HealthReportOut(ApiModel):
     """The complete dashboard payload for one branch snapshot."""
 
@@ -79,6 +99,11 @@ class HealthReportOut(ApiModel):
     file_scores: list[FileScoreOut]
     findings: list[FindingOut]
     category_breakdown: list[CategoryBreakdownItemOut]
+
+    # Optional, so a response cached before they existed still validates.
+    finding_summary: FindingSummaryOut | None = None
+    kloc: float | None = None
+    java_file_count: int | None = None
 
 
 class CalibrationCountsOut(ApiModel):
