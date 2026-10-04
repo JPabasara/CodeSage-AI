@@ -164,7 +164,7 @@ function ReadyCard({
     <div
       data-testid="scan-progress-panel"
       data-mode="ready"
-      className="m-4 mb-0 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
+      className="flex flex-wrap items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-3"
     >
       <CircleCheck
         aria-hidden="true"
@@ -305,7 +305,7 @@ function Layout({
         data-mode={mode}
         data-size="compact"
         data-slow={slow || undefined}
-        className="m-4 mb-0 flex items-center gap-4 rounded-lg border bg-card px-4 py-3"
+        className="flex items-center gap-4 rounded-md border bg-card px-4 py-3"
       >
         {icon}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">

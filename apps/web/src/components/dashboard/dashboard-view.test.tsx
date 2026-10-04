@@ -5,11 +5,8 @@ import { toast } from "sonner"
 import { beforeEach, expect, test, vi } from "vitest"
 
 import { DashboardView } from "@/components/dashboard/dashboard-view"
-import { dashboardViewPreferenceKey } from "@/components/dashboard/dashboard-view-mode-bar"
-import {
-  TopBarSlot,
-  TopBarSlotProvider,
-} from "@/components/layout/top-bar-slot"
+import { dashboardViewPreferenceKey } from "@/components/dashboard/dashboard-tabs"
+import { BranchSwitcher } from "@/components/layout/branch-switcher"
 import {
   DEMO_REPO_ID,
   UNSCANNED_REPO_ID,
@@ -67,8 +64,9 @@ vi.mock("sonner", () => ({
 
 const CRITICAL = mockFindings[0] // the hardcoded Stripe key in payment_service.ts
 const UNKNOWN_REPO_ID = "11111111-2222-3333-4444-555555555555"
-const LATEST_POSITION = `${mockScanHistory.length}/${mockScanHistory.length}`
-const ONE_BEFORE_LATEST_POSITION = `${mockScanHistory.length - 1}/${mockScanHistory.length}`
+const LATEST_POSITION = `Scan ${mockScanHistory.length} of ${mockScanHistory.length}`
+const ONE_BEFORE_LATEST_POSITION = `Scan ${mockScanHistory.length - 1} of ${mockScanHistory.length}`
+const OLD_VIEW_KEY = `codesage.dashboard-view.v1:${mockSession.user_id}:${WORKSPACE_ID}`
 
 beforeEach(() => {
   nav.reset()
@@ -79,12 +77,29 @@ beforeEach(() => {
   localStorage.removeItem(
     dashboardViewPreferenceKey(mockSession.user_id, WORKSPACE_ID),
   )
+  localStorage.removeItem(OLD_VIEW_KEY)
+  localStorage.removeItem(
+    `codesage.javaBanner.v1:${mockSession.user_id}:${WORKSPACE_ID}:${DEMO_REPO_ID}`,
+  )
 })
 
 /** Wait for the (mock) health report to land. */
 async function ready() {
   expect(await screen.findByText("Code Health")).toBeInTheDocument()
 }
+
+/** The dashboard with the top bar's branch picker beside it, as the app shell has it. */
+function renderWithBranchPicker() {
+  return render(
+    <>
+      <BranchSwitcher repoId={DEMO_REPO_ID} />
+      <DashboardView repoId={DEMO_REPO_ID} />
+    </>,
+  )
+}
+
+const tab = (name: string) =>
+  screen.getByRole("tab", { name: new RegExp(`^${name}`) })
 
 test("selecting a finding opens the findings and detail view", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
@@ -136,18 +151,24 @@ test("GitHub links use a historical snapshot commit instead of branch head", asy
   )
 })
 
-test("switching to findings and files keeps the selected file highlighted", async () => {
-  nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await screen.findByLabelText("Finding detail")
-
-  await userEvent.click(
-    screen.getByRole("button", { name: "Findings + files" }),
+test("the code map highlights the file named in the URL and shows its findings", async () => {
+  nav.navigate(
+    `/dashboard/${DEMO_REPO_ID}?view=code&file=src/payments/payment_service.ts`,
   )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
 
-  const tree = screen.getByLabelText("File health tree")
+  const tree = await screen.findByLabelText("File health tree")
   const highlighted = within(tree).getByRole("button", { current: true })
   expect(highlighted).toHaveTextContent("payment_service.ts")
+  const detail = screen.getByLabelText("File detail")
+  expect(
+    within(detail).getByRole("heading", { name: "payment_service.ts" }),
+  ).toBeInTheDocument()
+  expect(
+    within(detail).getByRole("button", {
+      name: new RegExp(CRITICAL.reason.slice(0, 20)),
+    }),
+  ).toBeInTheDocument()
 })
 
 test("closing detail expands the findings panel", async () => {
@@ -159,24 +180,26 @@ test("closing detail expands the findings panel", async () => {
     screen.getByRole("button", { name: /close finding detail/i }),
   )
 
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Findings" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    ),
-  )
-  expect(screen.queryByLabelText("Finding detail")).not.toBeInTheDocument()
+  await waitFor(() => expect(nav.read().get("finding")).toBeNull())
+  expect(tab("Findings")).toHaveAttribute("aria-selected", "true")
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
+  expect(screen.getByText("Select a finding")).toBeInTheDocument()
 })
 
-test("clicking a file in the tree opens that file's finding", async () => {
+test("choosing a file in the code map shows it, and its finding opens the detail", async () => {
+  const user = userEvent.setup()
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
-  const tree = screen.getByLabelText("File health tree")
-  await userEvent.click(
+  await user.click(tab("Code map"))
+  const tree = await screen.findByLabelText("File health tree")
+  await user.click(
     within(tree).getByRole("button", { name: /order_controller\.ts/i }),
   )
+  expect(nav.read().get("file")).toBe("src/orders/order_controller.ts")
+
+  const file = screen.getByLabelText("File detail")
+  await user.click(within(file).getAllByRole("button")[0])
 
   const detail = await screen.findByLabelText("Finding detail")
   expect(
@@ -184,57 +207,63 @@ test("clicking a file in the tree opens that file's finding", async () => {
   ).toBeInTheDocument()
 })
 
-test("the bottom bar switches among all four dashboard layouts", async () => {
+test("the tabs at the top switch among overview, findings and the code map", async () => {
   const user = userEvent.setup()
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?finding=${CRITICAL.fingerprint}`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
+  await screen.findByLabelText("Finding detail")
 
-  const toolbar = screen.getByRole("toolbar", { name: "Dashboard view" })
-  expect(
-    within(toolbar).getByRole("button", { name: "Overview" }),
-  ).toHaveAttribute("aria-pressed", "true")
+  const tabs = screen.getByRole("tablist", { name: "Dashboard view" })
+  expect(within(tabs).getAllByRole("tab")).toHaveLength(3)
+  expect(tab("Findings")).toHaveAttribute("aria-selected", "true")
 
-  await user.click(within(toolbar).getByRole("button", { name: "Findings" }))
+  await user.click(tab("Code map"))
+  expect(await screen.findByLabelText("File health tree")).toBeInTheDocument()
   expect(screen.queryByText("Code Health")).not.toBeInTheDocument()
+
+  await user.click(tab("Overview"))
+  expect(await screen.findByText("Code Health")).toBeInTheDocument()
   expect(screen.queryByLabelText("File health tree")).not.toBeInTheDocument()
-
-  await user.click(
-    within(toolbar).getByRole("button", { name: "Findings + files" }),
-  )
-  expect(screen.getByLabelText("File health tree")).toBeInTheDocument()
-
-  await user.click(
-    within(toolbar).getByRole("button", { name: "Findings + detail" }),
-  )
-  expect(await screen.findByLabelText("Finding detail")).toBeInTheDocument()
-
-  await user.click(within(toolbar).getByRole("button", { name: "Overview" }))
-  expect(screen.getByText("Code Health")).toBeInTheDocument()
-  // Switching panels does not discard the selected finding from the URL.
+  // Switching tabs does not discard the selected finding from the URL.
   expect(nav.read().get("finding")).toBeTruthy()
+
+  // Arrow keys move between tabs, as a tablist should.
+  tab("Overview").focus()
+  await user.keyboard("{ArrowRight}")
+  expect(nav.read().get("view")).toBe("findings")
 })
 
 test("the selected view is remembered per user and workspace", async () => {
   const user = userEvent.setup()
   const first = render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
-  await screen.findAllByRole("button", { name: "Mark as done" })
 
-  await user.click(screen.getByRole("button", { name: "Findings + files" }))
+  await user.click(tab("Code map"))
   await waitFor(() =>
     expect(
       localStorage.getItem(
         dashboardViewPreferenceKey(mockSession.user_id, WORKSPACE_ID),
       ),
-    ).toBe("findings-tree"),
+    ).toBe("code"),
   )
   first.unmount()
+  nav.reset()
 
   render(<DashboardView repoId={DEMO_REPO_ID} />)
+  expect(await screen.findByLabelText("File health tree")).toBeInTheDocument()
+  expect(tab("Code map")).toHaveAttribute("aria-selected", "true")
+})
+
+test("an old bottom-bar choice carries over to the matching tab, once", async () => {
+  localStorage.setItem(OLD_VIEW_KEY, "findings-tree")
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+
+  expect(await screen.findByLabelText("File health tree")).toBeInTheDocument()
   expect(
-    await screen.findByRole("button", { name: "Findings + files" }),
-  ).toHaveAttribute("aria-pressed", "true")
-  expect(screen.getByLabelText("File health tree")).toBeInTheDocument()
+    localStorage.getItem(
+      dashboardViewPreferenceKey(mockSession.user_id, WORKSPACE_ID),
+    ),
+  ).toBe("code")
 })
 
 test("marking a finding done hides only that snapshot and does not change health", async () => {
@@ -243,7 +272,11 @@ test("marking a finding done hides only that snapshot and does not change health
   await ready()
 
   const scoreBefore = screen.getByTestId("health-score").textContent
-  const findingCard = screen.getByRole("button", {
+  const openBefore = Number(
+    within(screen.getByTestId("kpi-open")).getByText(/^\d+$/).textContent,
+  )
+  await user.click(tab("Findings"))
+  const findingCard = await screen.findByRole("button", {
     name: /hardcoded stripe api key/i,
   })
   const row = findingCard.closest("li")
@@ -259,12 +292,21 @@ test("marking a finding done hides only that snapshot and does not change health
       screen.queryByRole("button", { name: /hardcoded stripe api key/i }),
     ).not.toBeInTheDocument(),
   )
-  expect(screen.getByTestId("health-score")).toHaveTextContent(
-    scoreBefore ?? "",
-  )
   expect(toast.success).toHaveBeenCalledWith("Finding marked as done.")
 
-  await user.click(screen.getByRole("button", { name: /show done \(1\)/i }))
+  // Health is untouched; only the open count moves.
+  await user.click(tab("Overview"))
+  expect(await screen.findByTestId("health-score")).toHaveTextContent(
+    scoreBefore ?? "",
+  )
+  expect(
+    within(screen.getByTestId("kpi-open")).getByText(String(openBefore - 1)),
+  ).toBeInTheDocument()
+
+  await user.click(tab("Findings"))
+  await user.click(
+    await screen.findByRole("button", { name: /show done \(1\)/i }),
+  )
   const doneCard = screen.getByRole("button", {
     name: /hardcoded stripe api key/i,
   })
@@ -290,10 +332,10 @@ test("a failed mark-done write restores the finding and explains the error", asy
     ),
   )
   const user = userEvent.setup()
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
-  const findingCard = screen.getByRole("button", {
+  const findingCard = await screen.findByRole("button", {
     name: /hardcoded stripe api key/i,
   })
   await user.click(
@@ -312,9 +354,12 @@ test("a viewer can see statuses but has no finding action", async () => {
   server.use(
     http.get("*/api/auth/session", () => HttpResponse.json(mockSessionViewer)),
   )
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
+  expect(
+    await screen.findByRole("list", { name: /ranked refactor findings/i }),
+  ).toBeInTheDocument()
   expect(
     screen.queryByRole("button", { name: "Mark as done" }),
   ).not.toBeInTheDocument()
@@ -332,8 +377,8 @@ test("agreed triage roles see the action before the API adds its new grant", asy
       }),
     ),
   )
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
   expect(
     await screen.findAllByRole("button", { name: "Mark as done" }),
@@ -390,46 +435,56 @@ test("changing branches updates the URL and leaves historical snapshot mode", as
     `/dashboard/${DEMO_REPO_ID}?branch=${older.branch}&snapshot_id=${older.snapshot_id}`,
   )
   const user = userEvent.setup()
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  renderWithBranchPicker()
   await ready()
 
-  await user.click(screen.getByLabelText("Branch"))
-  await user.click(await screen.findByRole("option", { name: "develop" }))
+  await user.click(screen.getByRole("combobox", { name: "Branch" }))
+  await user.click(await screen.findByRole("option", { name: /^develop/ }))
 
   expect(nav.read().get("branch")).toBe("develop")
   expect(nav.read().get("snapshot_id")).toBeNull()
   expect(nav.read().get("finding")).toBeNull()
 })
 
-test("renders the ranked-list label and tree legend", async () => {
+test("the Findings tab carries the ranked-list label, the Code map its legend", async () => {
+  const user = userEvent.setup()
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
-  expect(screen.getByText(/ranked by severity.*risk/i)).toBeInTheDocument()
-  expect(screen.getByLabelText("Heat map legend")).toBeInTheDocument()
+  await user.click(tab("Findings"))
+  expect(
+    await screen.findByText(/ranked by severity.*risk/i),
+  ).toBeInTheDocument()
+  await user.click(tab("Code map"))
+  expect(await screen.findByLabelText("Heat map legend")).toBeInTheDocument()
 })
 
-test("clicking a tree file with no finding shows feedback", async () => {
+test("a file with no findings opens in the code map and says so", async () => {
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=code`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
-  const tree = screen.getByLabelText("File health tree")
+  const tree = await screen.findByLabelText("File health tree")
   await userEvent.click(
     within(tree).getByRole("button", { name: /formatters\.ts/i }),
   )
 
-  const status = await screen.findByRole("status")
-  expect(status).toHaveTextContent(
-    "formatters.ts has no findings in this snapshot.",
-  )
-  expect(toast).toHaveBeenCalledWith(
-    "formatters.ts has no findings in this snapshot.",
-  )
+  const detail = await screen.findByLabelText("File detail")
+  expect(
+    within(detail).getByRole("heading", { name: "formatters.ts" }),
+  ).toBeInTheDocument()
+  expect(
+    within(detail).getByText("No findings in this file in this snapshot."),
+  ).toBeInTheDocument()
   expect(screen.queryByLabelText("Finding detail")).not.toBeInTheDocument()
 })
 
-test("a never-scanned repo still gets the top nav, so a scan can be started", async () => {
-  render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
+test("a never-scanned repo still gets its header, so a scan can be started", async () => {
+  render(
+    <>
+      <BranchSwitcher repoId={UNSCANNED_REPO_ID} />
+      <DashboardView repoId={UNSCANNED_REPO_ID} />
+    </>,
+  )
 
   expect(await screen.findByText(/no scans yet/i)).toBeInTheDocument()
   expect(
@@ -437,8 +492,10 @@ test("a never-scanned repo still gets the top nav, so a scan can be started", as
   ).not.toBeInTheDocument()
 
   // …and the controls that produce the first snapshot are on screen
-  expect(screen.getByRole("button", { name: /^scan$/i })).toBeInTheDocument()
-  expect(screen.getByLabelText("Branch")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^scan/i })).toBeInTheDocument()
+  expect(
+    await screen.findByRole("combobox", { name: "Branch" }),
+  ).toBeInTheDocument()
 })
 
 test("an unavailable project shows project guidance instead of a raw uuid", async () => {
@@ -477,7 +534,7 @@ test("a real failure still reads as an error, not as an empty state", async () =
   ).toBeInTheDocument()
   expect(screen.queryByText(/no scans yet/i)).not.toBeInTheDocument()
   // the nav survives this too — switching branch is the obvious recovery
-  expect(screen.getByRole("button", { name: /^scan$/i })).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: /^scan/i })).toBeInTheDocument()
 })
 
 test("finishing the first scan refetches the report, so the empty state fills in", async () => {
@@ -503,7 +560,7 @@ test("finishing the first scan refetches the report, so the empty state fills in
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
   await screen.findByText(/no scans yet/i)
 
-  await userEvent.click(screen.getByRole("button", { name: /^scan$/i }))
+  await userEvent.click(screen.getByRole("button", { name: /^scan/i }))
 
   expect(
     await screen.findByText("Code Health", {}, { timeout: 4000 }),
@@ -605,10 +662,10 @@ test("a report with an empty file tree displays the named empty tree state", asy
       }),
     ),
   )
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=code`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
-  expect(screen.getByText("No files in this tree")).toBeInTheDocument()
+  expect(await screen.findByText("No files in this tree")).toBeInTheDocument()
   expect(
     screen.getByText(/no files were detected in this snapshot/i),
   ).toBeInTheDocument()
@@ -631,10 +688,12 @@ test("a report with zero findings displays the celebratory empty state in place 
       }),
     ),
   )
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
 
-  expect(screen.getByText("No refactoring issues found")).toBeInTheDocument()
+  expect(
+    await screen.findByText("No refactoring issues found"),
+  ).toBeInTheDocument()
   expect(
     screen.getByText(
       /the scan found no technical debt or refactoring issues on this branch/i,
@@ -642,11 +701,7 @@ test("a report with zero findings displays the celebratory empty state in place 
   ).toBeInTheDocument()
   expect(screen.queryByRole("table")).not.toBeInTheDocument()
 
-  const detailView = screen.getByRole("button", {
-    name: "Findings + detail",
-  })
-  expect(detailView).toBeEnabled()
-  await userEvent.click(detailView)
+  // The detail beside the list says there is nothing to select.
   expect(screen.getByLabelText("Finding detail")).toHaveTextContent(
     /no findings in this snapshot/i,
   )
@@ -670,8 +725,9 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
     ),
   )
   const user = userEvent.setup()
+  nav.navigate(`/dashboard/${DEMO_REPO_ID}?view=findings`)
   render(<DashboardView repoId={DEMO_REPO_ID} />)
-  await ready()
+  await screen.findByRole("list", { name: /ranked refactor findings/i })
 
   // Filter by debt type to a category with 0 items
   await user.click(
@@ -696,30 +752,22 @@ test("filtering to nothing inside the dashboard displays the filter empty state 
   ).toBeInTheDocument()
 })
 
-test("inside the shell, Branch and Scan render up in the app bar", async () => {
-  render(
-    <TopBarSlotProvider>
-      <header data-testid="bar">
-        <TopBarSlot name="context" />
-        <TopBarSlot name="actions" />
-      </header>
-      <DashboardView repoId={DEMO_REPO_ID} />
-    </TopBarSlotProvider>,
-  )
+test("Scan is the page header's main action; the branch picker belongs to the top bar", async () => {
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
 
-  const bar = screen.getByTestId("bar")
+  const header = screen.getByRole("heading", { level: 1 }).closest("header")
+  expect(header).not.toBeNull()
   expect(
-    await within(bar).findByRole("combobox", { name: "Branch" }),
-  ).toBeInTheDocument()
-  expect(within(bar).getByRole("button", { name: /^scan$/i })).toBeVisible()
-  // The project picker is the app bar's own now, not the dashboard's.
-  expect(screen.queryByRole("combobox", { name: "Project" })).toBeNull()
+    within(header as HTMLElement).getByRole("button", { name: "Scan main" }),
+  ).toBeVisible()
+  expect(screen.queryByRole("combobox", { name: "Branch" })).toBeNull()
+  expect(screen.queryByRole("combobox", { name: /^Project/ })).toBeNull()
 })
 
 test("opened without ?branch=, the dashboard returns to the branch last used", async () => {
   writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "develop")
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  renderWithBranchPicker()
   await ready()
 
   await waitFor(() =>
@@ -732,7 +780,7 @@ test("opened without ?branch=, the dashboard returns to the branch last used", a
 test("the URL still wins over the remembered branch", async () => {
   writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "develop")
   nav.navigate(`/dashboard/${DEMO_REPO_ID}?branch=main`)
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  renderWithBranchPicker()
   await ready()
 
   expect(screen.getByRole("combobox", { name: "Branch" })).toHaveTextContent(
@@ -742,7 +790,7 @@ test("the URL still wins over the remembered branch", async () => {
 
 test("a remembered branch that no longer exists falls back to the default", async () => {
   writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "deleted-branch")
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  renderWithBranchPicker()
   await ready()
 
   await waitFor(() =>
@@ -758,11 +806,11 @@ test("a remembered branch that no longer exists falls back to the default", asyn
 
 test("choosing a branch remembers it for this project", async () => {
   const user = userEvent.setup()
-  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  renderWithBranchPicker()
   await ready()
 
   await user.click(await screen.findByRole("combobox", { name: "Branch" }))
-  await user.click(await screen.findByRole("option", { name: "develop" }))
+  await user.click(await screen.findByRole("option", { name: /^develop/ }))
 
   await waitFor(() =>
     expect(readSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID)).toBe("develop"),
@@ -781,14 +829,16 @@ test("a scan keeps the previous results usable, with a compact card above them",
   const user = userEvent.setup()
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
-  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+  await user.click(screen.getByRole("button", { name: /^scan/i }))
 
   const card = await screen.findByTestId("scan-progress-panel")
   expect(card).toHaveAttribute("data-size", "compact")
   // The results stay on screen and stay usable while it runs.
   expect(screen.getByText("Code Health")).toBeInTheDocument()
+  expect(screen.getByRole("list", { name: "Top findings" })).toBeInTheDocument()
+  await user.click(tab("Findings"))
   expect(
-    screen.getByRole("list", { name: /ranked refactor findings/i }),
+    await screen.findByRole("list", { name: /ranked refactor findings/i }),
   ).toBeInTheDocument()
   expect(await screen.findByTestId("scan-status-strip")).toHaveTextContent(
     /acme-payments on main/,
@@ -804,7 +854,7 @@ test("when it is done, 'Show them' — the page never swaps by itself", async ()
   const before = (await screen.findByTitle(/^Last analyzed/)).getAttribute(
     "title",
   )
-  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+  await user.click(screen.getByRole("button", { name: /^scan/i }))
 
   // Scan and score done: the card says so, and the OLD results are still up.
   expect(
@@ -822,7 +872,7 @@ test("leave the dashboard mid-scan, come back: same bar, same line, still runnin
   const user = userEvent.setup()
   const first = render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
-  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+  await user.click(screen.getByRole("button", { name: /^scan/i }))
   await screen.findByTestId("scan-status-strip")
   await waitFor(() => expect(barValue()).toBeGreaterThan(0))
   const leftAt = barValue()
@@ -853,7 +903,7 @@ test("a first scan has nothing to keep: the middle of the page is the job", asyn
   const user = userEvent.setup()
   render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
   await screen.findByText(/no scans yet/i)
-  await user.click(screen.getByRole("button", { name: /^scan$/i }))
+  await user.click(screen.getByRole("button", { name: /^scan/i }))
 
   const panel = await screen.findByTestId("scan-progress-panel")
   expect(panel).toHaveAttribute("data-size", "full")
@@ -863,20 +913,14 @@ test("a first scan has nothing to keep: the middle of the page is the job", asyn
 })
 
 test("the dashboard says which profile its numbers are scored with", async () => {
-  render(
-    <TopBarSlotProvider>
-      <TopBarSlot name="context" />
-      <TopBarSlot name="actions" />
-      <DashboardView repoId={DEMO_REPO_ID} />
-    </TopBarSlotProvider>,
-  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
   const chip = await screen.findByTestId("scored-with")
   expect(chip).toHaveTextContent(`Scored with ${mockHealthReport.profile}`)
   expect(chip).toHaveAttribute("href", "/profiles")
 })
 
-test("the report waits for the branch: no empty-branch ask, and no 'No scans yet' flash", async () => {
+test("the report loads beside the branch list, for the default branch, once and with no flash", async () => {
   const healthAsked: (string | null)[] = []
   const scansAsked: (string | null)[] = []
   let releaseBranches!: () => void
@@ -902,15 +946,54 @@ test("the report waits for the branch: no empty-branch ask, and no 'No scans yet
   const { container } = render(<DashboardView repoId={DEMO_REPO_ID} />)
   await new Promise((resolve) => setTimeout(resolve, 50))
 
-  expect(healthAsked).toEqual([])
-  expect(scansAsked).toEqual([])
+  // Already asked while the branch list is still out, using the project's default.
+  expect(healthAsked).toEqual(["main"])
+  expect(scansAsked).toEqual(["main"])
+  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+
+  releaseBranches()
+  await ready()
+  expect(container.querySelector('[aria-busy="true"]')).toBeNull()
+  expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
+  // The branch list confirmed the guess: still one ask each, never an empty branch.
+  expect(healthAsked).toEqual(["main"])
+  expect(scansAsked).toEqual(["main"])
+})
+
+test("a remembered branch that no longer exists never flashes 'No scans yet'", async () => {
+  writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "deleted-branch")
+  let releaseBranches!: () => void
+  const branchesHeld = new Promise<void>((resolve) => {
+    releaseBranches = resolve
+  })
+  const healthAsked: (string | null)[] = []
+  server.use(
+    http.get("*/api/repos/:repoId/branches", async () => {
+      await branchesHeld
+      return undefined
+    }),
+    http.get("*/api/repos/:repoId/health", ({ request }) => {
+      const branch = new URL(request.url).searchParams.get("branch")
+      healthAsked.push(branch)
+      if (branch === "deleted-branch") {
+        return HttpResponse.json(
+          { detail: "No scans on this branch", code: "NOT_FOUND" },
+          { status: 404 },
+        )
+      }
+      return undefined
+    }),
+  )
+
+  const { container } = render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await waitFor(() => expect(healthAsked).toContain("deleted-branch"))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  // The guess missed, but until the branch list confirms it the page keeps loading.
   expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
   expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
 
   releaseBranches()
   await ready()
   expect(screen.queryByText("No scans yet")).not.toBeInTheDocument()
-  // One ask each, for the real default branch.
-  expect(healthAsked).toEqual(["main"])
-  expect(scansAsked).toEqual(["main"])
+  expect(healthAsked.at(-1)).toBe("main")
 })

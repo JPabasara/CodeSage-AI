@@ -46,7 +46,7 @@ export function ScanStatusStrip({
   return (
     <div
       data-testid="scan-status-strip"
-      className="relative shrink-0 border-b bg-card"
+      className="relative shrink-0 overflow-hidden rounded-md border bg-card"
     >
       <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
         <span
