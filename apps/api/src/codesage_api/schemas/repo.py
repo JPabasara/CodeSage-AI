@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import HttpUrl
+from pydantic import Field, HttpUrl
 
 from codesage_api.schemas.base import ApiModel
+from codesage_api.schemas.health import HealthPointOut
 from codesage_api.scoring.enums import Grade
 
 
@@ -20,6 +21,12 @@ class LatestHealthOut(ApiModel):
     score: float
     grade: Grade
     delta: float
+    kloc: float | None = None
+    finding_count: int | None = None
+    red_issue_count: int | None = None
+    scanned_at: str | None = None
+    # Oldest first, at most 7, only scores already calculated.
+    trend: list[HealthPointOut] = Field(default_factory=list, max_length=7)
 
 
 class SourceScopeConfigOut(ApiModel):

@@ -32,7 +32,6 @@ from codesage_api.integrations.github import (
 from codesage_api.logging import get_logger
 from codesage_api.schemas import BranchOut, LatestHealthOut, RepoOut, SourceScopeConfigOut
 from codesage_api.scoring.cache import profile_payload
-from codesage_api.scoring.enums import Grade
 from codesage_api.scoring.models import Profile
 from codesage_api.services import audit, dashboard, profiles
 from codesage_api.source_scope import DEFAULT_TEST_PATHS
@@ -178,7 +177,7 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
             )
             continue
 
-        health, prepared = dashboard.build_latest_health_hint(
+        latest_health, prepared = dashboard.build_latest_health_hint(
             session,
             workspace_id,
             repository.id,
@@ -186,16 +185,6 @@ def list_projects(session: Session, workspace_id: uuid.UUID) -> list[RepoOut]:
             profile,
         )
         pending.extend((cached, profile) for cached in prepared)
-        latest_health = None
-        if health is not None:
-            cached, delta = health
-            assert cached.health_score is not None
-            assert cached.grade is not None
-            latest_health = LatestHealthOut(
-                score=cached.health_score,
-                grade=Grade(cached.grade),
-                delta=delta,
-            )
         output.append(_to_output(repository, default_branch, latest_health))
     if pending:
         session.commit()

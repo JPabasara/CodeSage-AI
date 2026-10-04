@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -81,6 +81,46 @@ def list_latest_completed_snapshot_refs(
         .limit(limit)
     )
     return list(session.scalars(statement).all())
+
+
+def list_recent_ready_scores(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    branch_name: str,
+    *,
+    profile_fingerprint: str,
+    scoring_engine_version: str,
+    limit: int,
+) -> list[tuple[datetime, str, float]]:
+    """(scan time, commit, score) of the newest ready scores, newest first.
+
+    Ready rows only, read as they are: a snapshot without a score is skipped,
+    never queued, so a list page cannot start scoring work.
+    """
+    statement = (
+        select(Snapshot.scan_time, Snapshot.commit_sha, SnapshotScore.health_score)
+        .join(SnapshotScore, SnapshotScore.snapshot_id == Snapshot.id)
+        .join(AnalysisAttempt, Snapshot.analysis_attempt_id == AnalysisAttempt.id)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(
+            Repository.id == repository_id,
+            Repository.workspace_id == workspace_id,
+            Branch.name == branch_name,
+            AnalysisAttempt.status == AnalysisStatus.DONE,
+            SnapshotScore.profile_fingerprint == profile_fingerprint,
+            SnapshotScore.scoring_engine_version == scoring_engine_version,
+            SnapshotScore.status == "ready",
+            SnapshotScore.health_score.is_not(None),
+        )
+        .order_by(Snapshot.scan_time.desc(), Snapshot.id.desc())
+        .limit(limit)
+    )
+    return [
+        (scan_time, commit_sha, health_score)
+        for scan_time, commit_sha, health_score in session.execute(statement).all()
+    ]
 
 
 def list_completed_snapshot_refs(
