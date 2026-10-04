@@ -243,6 +243,35 @@ function branchInfoFor(name: string | null | undefined) {
 /** A repo id we know about — either seeded or connected during this session. */
 const knownRepo = (repoId: string) => connected.find((r) => r.id === repoId)
 
+/** Plausible Java for any path, long enough for every fixture's line numbers. */
+function mockJavaSource(path: string) {
+  const name = (path.split("/").pop() ?? "Example.java").replace(/\.java$/, "")
+  const lines = [
+    "package com.example;",
+    "",
+    "import java.util.List;",
+    "",
+    `public class ${name} {`,
+  ]
+  for (let method = 1; lines.length < 4000; method++) {
+    lines.push(
+      "",
+      `    /** Step ${method} of the pipeline. */`,
+      `    public int step${method}(List<String> items) {`,
+      "        int total = 0;",
+      "        for (String item : items) {",
+      "            if (item != null && !item.isEmpty()) {",
+      "                total += item.length();",
+      "            }",
+      "        }",
+      "        return total;",
+      "    }",
+    )
+  }
+  lines.push("}")
+  return lines.join("\n")
+}
+
 const SCAN_STEP = 17 // % added per poll → ~6 polls from 0 to done
 
 const SLOW_SCAN_STEP = 4
@@ -283,19 +312,37 @@ const MOCK_JAVA_FILES = 1240
 
 const MOCK_TYPICAL_SECONDS = 5
 
+/** Commits in the demo repository's history, for "340 of 1,212 commits". */
+const MOCK_COMMITS = 1212
+
+/** What the worker reports at this percentage: its stage, sub-step and counts. */
 function withStage(status: ScanStatus): ScanStatus {
   const stage = stageOf({ progress: status.progress })
-  const [start, end] = STAGE_BANDS.reading_code
-  const reading = stage === "reading_code"
+  const step =
+    stage !== "reading_code"
+      ? null
+      : status.progress < 37
+        ? "measuring_code"
+        : status.progress < 52
+          ? "reading_history"
+          : "reading_comments"
+  const [, measureEnd] = STAGE_BANDS.reading_code
+  const share = (from: number, to: number) =>
+    Math.min(1, Math.max(0, (status.progress - from) / (to - from)))
   return {
     ...status,
     stage,
-    files_total: reading ? MOCK_JAVA_FILES : null,
-    files_done: reading
-      ? Math.round(
-          ((status.progress - start) / (end - start)) * MOCK_JAVA_FILES,
-        )
-      : null,
+    step,
+    commits_total: step === "reading_history" ? MOCK_COMMITS : null,
+    commits_done:
+      step === "reading_history"
+        ? Math.round(share(37, 52) * MOCK_COMMITS)
+        : null,
+    files_total: step === "reading_comments" ? MOCK_JAVA_FILES : null,
+    files_done:
+      step === "reading_comments"
+        ? Math.round(share(52, measureEnd) * MOCK_JAVA_FILES)
+        : null,
     typical_seconds: MOCK_TYPICAL_SECONDS,
   }
 }
@@ -335,6 +382,9 @@ function tick(repoId: string): ScanStatus {
     progress: 100,
     finished_at: now,
     stage: null,
+    step: null,
+    commits_done: null,
+    commits_total: null,
     files_done: null,
     files_total: null,
   }
@@ -1627,6 +1677,14 @@ export const handlers = [
   }),
 
   http.get("*/api/healthz", () => HttpResponse.json({ status: "ok" })),
+
+  // The finding detail reads a few lines of the file at the analysed commit.
+  http.get("https://raw.githubusercontent.com/*", ({ request }) => {
+    const path = new URL(request.url).pathname.split("/").slice(4).join("/")
+    return new HttpResponse(mockJavaSource(decodeURIComponent(path)), {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    })
+  }),
 ]
 
 export const authHandlers = [

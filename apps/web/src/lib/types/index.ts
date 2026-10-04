@@ -133,6 +133,7 @@ export type ScanPhase =
 export type ScanErrorCode = components["schemas"]["ScanErrorCode"]
 
 export type ScanStage = components["schemas"]["ScanStage"]
+export type ScanStep = components["schemas"]["ScanStep"]
 
 /** Work in progress in the active workspace (`GET /api/activity`). */
 export type Activity = components["schemas"]["Activity"]
@@ -150,7 +151,11 @@ export interface ScanStatus {
   error?: string | null
   error_code?: ScanErrorCode | null // ditto; the message is chosen by this
   stage?: ScanStage | null
-  files_done?: number | null // Java files read so far (reading_code only)
+  /** The sub-step of reading_code; absent from an older worker. */
+  step?: ScanStep | null
+  commits_done?: number | null // commits read so far (reading_history only)
+  commits_total?: number | null
+  files_done?: number | null // Java files read so far (reading_comments only)
   files_total?: number | null
   typical_seconds?: number | null // this repository's usual scan length
 }

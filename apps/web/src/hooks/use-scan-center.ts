@@ -25,6 +25,7 @@ import {
   SCAN_SHARE,
   scoringTarget,
   stageOf,
+  stepOf,
   toBar,
 } from "@/lib/scan-progress"
 import type { HealthReport, ScanStatus } from "@/lib/types"
@@ -44,7 +45,8 @@ import {
 
 // Every scan the app is following, held ABOVE the pages.
 
-export const POLL_MS = 600
+// Once a second, as the API documents; the glide hides the gap between answers.
+export const POLL_MS = 1000
 const STORAGE_KEY = "codesage.activeScans.v1"
 
 export const LIVE_TICK_MS = 100
@@ -71,7 +73,8 @@ export interface TrackedScan {
 }
 
 export type ScanEvent =
-  | { type: "queued"; scan: TrackedScan }
+  /** `quiet`: the caller already told the user, so no second toast. */
+  | { type: "queued"; scan: TrackedScan; quiet?: boolean }
   | { type: "attached"; scan: TrackedScan }
   /** Scan AND score are done. `report` is absent if the score came too late. */
   | { type: "finished"; scan: TrackedScan; report?: HealthReport }
@@ -272,7 +275,7 @@ export function slowOf(scan: TrackedScan, now = Date.now()) {
 
 function stageKeyOf(scan: TrackedScan) {
   return scan.job === "scanning"
-    ? `${scan.status.scan_id}:${scan.status.phase}:${stageOf(scan.status)}`
+    ? `${scan.status.scan_id}:${scan.status.phase}:${stepOf(scan.status)}`
     : "scoring"
 }
 
@@ -509,7 +512,10 @@ function finishJob(key: string, report: HealthReport | undefined) {
 }
 
 // Start a scan, acknowledged at once.
-export async function startScan(target: ScanTarget) {
+export async function startScan(
+  target: ScanTarget,
+  options: { quiet?: boolean } = {},
+) {
   const key = scanKey(target.workspaceId, target.repoId, target.branch)
   const existing = scans.get(key)
   if (existing && isJobActive(existing)) return
@@ -520,7 +526,7 @@ export async function startScan(target: ScanTarget) {
     progress: 0,
     branch: target.branch,
   })
-  emit({ type: "queued", scan: optimistic })
+  emit({ type: "queued", scan: optimistic, quiet: options.quiet })
 
   try {
     const started = await apiStartScan(target.repoId, target.branch)
@@ -592,15 +598,25 @@ export function pinScanResults(key: string, report: HealthReport) {
   update(key, { pinnedSnapshotId: report.snapshot_id })
 }
 
-export async function discoverScan(target: ScanTarget) {
+/** A page that renders twice in a row asks once: the answer is seconds fresh. */
+export const DISCOVER_FRESH_MS = 5_000
+const discovered = new Map<string, { at: number; done: Promise<void> }>()
+
+export function discoverScan(target: ScanTarget) {
   const key = scanKey(target.workspaceId, target.repoId, target.branch)
-  if (scans.has(key)) return
-  const active = await getActiveScan(target.repoId, target.branch).catch(
-    () => null,
-  )
-  if (!active || !isActivePhase(active.phase) || scans.has(key)) return
-  track(target, active)
-  schedule(key)
+  if (scans.has(key)) return Promise.resolve()
+  const recent = discovered.get(key)
+  if (recent && Date.now() - recent.at < DISCOVER_FRESH_MS) return recent.done
+  const done = (async () => {
+    const active = await getActiveScan(target.repoId, target.branch).catch(
+      () => null,
+    )
+    if (!active || !isActivePhase(active.phase) || scans.has(key)) return
+    track(target, active)
+    schedule(key)
+  })()
+  discovered.set(key, { at: Date.now(), done })
+  return done
 }
 
 export function resumeScans(workspaceId: string) {
@@ -629,6 +645,7 @@ export function resetScanCenter() {
   timers.clear()
   scans.clear()
   live.clear()
+  discovered.clear()
   eventListeners.clear()
   snapshot = []
   if (ticker) clearInterval(ticker)

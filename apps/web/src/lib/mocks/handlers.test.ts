@@ -450,7 +450,7 @@ test("GET /repos/:id/scans returns contract-shaped summaries, newest first", asy
   expect(times, "newest first").toEqual([...times].sort((a, b) => b - a))
 })
 
-/** Every optional ScanStatus key the contract defines, 13H.4's stage included. */
+/** Every optional ScanStatus key the contract defines, stage and sub-step included. */
 const SCAN_STATUS_OPTIONAL = [
   "branch",
   "commit_sha",
@@ -459,6 +459,9 @@ const SCAN_STATUS_OPTIONAL = [
   "error",
   "error_code",
   "stage",
+  "step",
+  "commits_done",
+  "commits_total",
   "files_done",
   "files_total",
   "typical_seconds",
