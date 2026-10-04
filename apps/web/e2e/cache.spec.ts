@@ -18,7 +18,12 @@ const duplicates = (gets: string[]) =>
   gets.filter((get, index) => gets.indexOf(get) !== index)
 
 const PAGES = [
+  { path: "/overview", ready: /workspace health/i },
   { path: `/dashboard/${DEMO_REPO_ID}`, ready: "Code Health" },
+  {
+    path: `/dashboard/${DEMO_REPO_ID}?view=findings`,
+    ready: /ranked by severity/i,
+  },
   { path: `/dashboard/${DEMO_REPO_ID}/history`, ready: /scan history/i },
   { path: "/projects", ready: /projects/i },
   { path: "/profiles", ready: /profiles/i },
@@ -70,3 +75,40 @@ test("Dashboard → Projects → Dashboard shows the report without the skeleton
     ),
   ).toBe(false)
 })
+
+/** Sum of unexpected layout shifts since the page started (CLS, roughly). */
+async function layoutShift(page: Page) {
+  return page.evaluate(() => (window as unknown as { __shift: number }).__shift)
+}
+
+for (const { path, ready } of [
+  { path: "/overview", ready: /workspace health/i },
+  { path: `/dashboard/${DEMO_REPO_ID}`, ready: "Code Health" },
+  {
+    path: `/dashboard/${DEMO_REPO_ID}?view=findings`,
+    ready: /ranked by severity/i,
+  },
+]) {
+  test(`${path} settles without things jumping (layout shift under 0.02)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.addInitScript(() => {
+      const state = window as unknown as { __shift: number }
+      state.__shift = 0
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries() as unknown as {
+          value: number
+          hadRecentInput: boolean
+        }[]) {
+          if (!entry.hadRecentInput) state.__shift += entry.value
+        }
+      }).observe({ type: "layout-shift", buffered: true })
+    })
+    await page.goto(path)
+    await expect(page.getByText(ready).first()).toBeVisible()
+    await page.waitForLoadState("networkidle")
+    await page.waitForTimeout(1000)
+    expect(await layoutShift(page)).toBeLessThan(0.02)
+  })
+}

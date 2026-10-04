@@ -88,7 +88,7 @@ test("the card says the score is being calculated, then waits for 'Show them'", 
   const card = page.getByTestId("scan-progress-panel")
 
   // A wait, not a failure — and the previous results stay on screen.
-  await expect(card).toContainText(/calculating your health score/i, {
+  await expect(card).toContainText(/saving and scoring/i, {
     timeout: 15_000,
   })
   await expect(page.getByText("Code Health")).toBeVisible()
@@ -110,12 +110,15 @@ test("a running scan shows a stage label and a bar that only moves forward", asy
 
   const panel = page.getByTestId("scan-progress-panel")
   await expect(panel).toBeVisible()
-  // This project has results already: the job is a compact card above them.
-  await expect(panel).toHaveAttribute("data-size", "compact")
+  // This project has results already: the job is a card above them.
+  await expect(panel).toHaveAttribute("data-size", "card")
   await expect(panel.getByRole("status")).toHaveText(
-    /Waiting for a free scan slot|Cloning repository|Reading 1,240 Java files|Finding debt|Scoring risk|Saving the results|Almost there|Calculating your health score/,
+    /Queued|Cloning the repository|Measuring code|Reading git history|Reading comments|Finding debt|Predicting risk|Saving and scoring/,
   )
-  await expect(page.getByTestId("scan-panel-line")).not.toBeEmpty()
+  // The stepper names all seven steps.
+  await expect(
+    panel.getByRole("list", { name: "Scan steps" }).getByRole("listitem"),
+  ).toHaveCount(7)
 
   const seen: number[] = []
   for (let i = 0; i < 100; i += 1) {

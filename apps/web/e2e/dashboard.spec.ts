@@ -200,8 +200,9 @@ test("a SATD finding shows its source and category, with no rule evidence", asyn
     .click()
 
   const detail = detailPanel(page)
-  await expect(detail.getByText("satd")).toBeVisible()
-  await expect(detail.getByText("test", { exact: true })).toBeVisible()
+  // Source and type read as words: "SATD" and "Test".
+  await expect(detail.getByText("SATD", { exact: true })).toBeVisible()
+  await expect(detail.getByText("Test", { exact: true })).toBeVisible()
   // Rule-only evidence must not appear on a SATD finding.
   await expect(detail.getByText(/Measured/)).toHaveCount(0)
 })
@@ -222,24 +223,22 @@ test("the category filter narrows the list to one debt type", async ({
   ).toHaveCount(0)
 })
 
-test("at 1280x720 the page never scrolls sideways, and long lists scroll inside", async ({
+test("at 1280x720 the page never scrolls sideways, and the detail stays beside a long list", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto(`/dashboard/${DEMO_REPO_ID}?view=findings`)
-  await expect(findingCards(page).first()).toBeVisible()
+  await findingCards(page).first().click()
+  await expect(detailPanel(page)).toBeVisible()
 
   const hasNoHorizontalScroll = await page.evaluate(
     () => document.documentElement.scrollWidth <= window.innerWidth,
   )
   expect(hasNoHorizontalScroll).toBeTruthy()
 
-  const listScroll = page.getByTestId("refactor-first-scroll")
-  const listScrolledInternally = await listScroll.evaluate((element) => {
-    element.scrollTop = element.scrollHeight
-    return element.scrollTop > 0
-  })
-  expect(listScrolledInternally).toBeTruthy()
+  // The list is part of the page, which scrolls as a whole; the detail is pinned.
+  await findingCards(page).last().scrollIntoViewIfNeeded()
+  await expect(detailPanel(page)).toBeInViewport()
 
   await showCodeMap(page)
   await expect(page.getByTestId("file-tree-scroll")).toHaveCSS(

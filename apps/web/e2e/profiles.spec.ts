@@ -52,7 +52,9 @@ async function createProfile(
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/profiles")
-  await expect(page.getByRole("heading", { name: "Profiles" })).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Scoring profiles" }),
+  ).toBeVisible()
 })
 
 test("the pool opens on the three built-ins, with Balanced the default", async ({

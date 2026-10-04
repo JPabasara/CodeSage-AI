@@ -60,6 +60,20 @@ test("the app bar keeps its place and height on every page, so nothing jumps", a
   for (const box of boxes) expect(box).toEqual(boxes[0])
 })
 
+test("every page's title starts at the same place, so switching pages never jumps", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const xs: number[] = []
+  for (const path of [...PAGES.map(([path]) => path), "/support", "/help"]) {
+    await page.goto(path)
+    const title = page.locator("#main-content h1").first()
+    await expect(title).toBeVisible()
+    xs.push(Math.round((await title.boundingBox())!.x))
+  }
+  expect(new Set(xs).size, `title x per page: ${xs.join(", ")}`).toBe(1)
+})
+
 test("the rail starts below the app bar, not under it", async ({ page }) => {
   await page.goto("/projects")
   const bar = await topBar(page).boundingBox()

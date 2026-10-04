@@ -2,7 +2,12 @@ import AxeBuilder from "@axe-core/playwright"
 import type { Page } from "@playwright/test"
 import { test as signedOut } from "@playwright/test"
 
-import { DEMO_REPO_ID, expect, test as signedIn } from "./session"
+import {
+  DEMO_REPO_ID,
+  UNSCANNED_REPO_ID,
+  expect,
+  test as signedIn,
+} from "./session"
 
 // Rules that belong to other open issues, each named with its owner.
 const OWNED_BY_OTHER_ISSUES = [
@@ -35,12 +40,14 @@ async function checkAxe(page: Page, contextName: string) {
   expect(violations, `Axe violations found in ${contextName}`).toEqual([])
 }
 
+/** Dark through the rail's Theme menu, and proven: a no-op would test light twice. */
 async function setDarkMode(page: Page) {
-  const toggle = page.getByRole("button", { name: /switch to dark mode/i })
-  if (await toggle.isVisible()) {
-    await toggle.click()
-    await expect(page.locator("html")).toHaveClass(/dark/)
-  }
+  await page.getByRole("button", { name: "Theme", exact: true }).click()
+  await page.getByRole("menuitemradio", { name: "Dark" }).click()
+  await expect(page.locator("html")).toHaveClass(/dark/)
+  // The open menu hides the page from screen readers; check only once it is back.
+  await expect(page.getByRole("menu")).toHaveCount(0)
+  await expect(page.locator("[data-aria-hidden]")).toHaveCount(0)
 }
 
 signedOut("0 axe violations on /login in light mode", async ({ page }) => {
@@ -175,6 +182,68 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Scan main", exact: true }).click()
       await expect(page.getByTestId("scan-progress-panel")).toBeVisible()
       await checkAxe(page, `the scan panel (${theme})`)
+    },
+  )
+}
+
+// The screens Phases 3–6 added, each in both themes.
+const NEW_SCREENS: {
+  name: string
+  open: (page: Page) => Promise<void>
+}[] = [
+  {
+    name: "the code map",
+    open: async (page) => {
+      await page.goto(`/dashboard/${DEMO_REPO_ID}?view=code`)
+      await expect(page.getByLabel("File health tree")).toBeVisible()
+    },
+  },
+  {
+    name: "the first-scan card",
+    open: async (page) => {
+      await page.goto(`/dashboard/${UNSCANNED_REPO_ID}`)
+      await expect(page.getByTestId("first-scan-card")).toBeVisible()
+    },
+  },
+  {
+    name: "the Java-only connect dialog",
+    open: async (page) => {
+      await page.goto("/projects")
+      await page
+        .getByLabel("Repository URL")
+        .fill("https://github.com/octocat/hello-world")
+      await page.getByRole("button", { name: "Connect repository" }).click()
+      await expect(page.getByRole("alertdialog")).toBeVisible()
+    },
+  },
+  {
+    name: "Team & settings",
+    open: async (page) => {
+      await page.goto("/workspace")
+      await expect(page.locator("#main-content h1")).toBeVisible()
+    },
+  },
+  {
+    name: "a help article",
+    open: async (page) => {
+      await page.goto("/help/what-is-analysed")
+      await expect(page.locator("#main-content h1")).toBeVisible()
+    },
+  },
+]
+
+for (const screen of NEW_SCREENS) {
+  signedIn(
+    `0 axe violations on ${screen.name} in light and dark mode`,
+    async ({ page }) => {
+      await screen.open(page)
+      await checkAxe(page, `${screen.name} (light)`)
+
+      // The dialog would cover the Theme menu: switch first, then open it again.
+      await page.keyboard.press("Escape")
+      await setDarkMode(page)
+      await screen.open(page)
+      await checkAxe(page, `${screen.name} (dark)`)
     },
   )
 }

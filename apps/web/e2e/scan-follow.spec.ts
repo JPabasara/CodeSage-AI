@@ -4,8 +4,9 @@ import { DEMO_REPO_ID, SESSION_COOKIE, expect, test } from "./session"
 
 const railLink = (page: import("@playwright/test").Page, name: string) =>
   page.locator('[data-slot="sidebar"]').getByRole("link", { name, exact: true })
+/** The dashboard's one progress card: step, count, bar and Stop. */
 const strip = (page: import("@playwright/test").Page) =>
-  page.getByTestId("scan-status-strip")
+  page.getByTestId("scan-progress-panel")
 const activity = (page: import("@playwright/test").Page) =>
   page.getByTestId("activity-trigger")
 

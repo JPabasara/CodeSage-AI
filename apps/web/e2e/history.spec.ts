@@ -7,7 +7,7 @@ test("clicking Scan History in the rail shows real snapshots", async ({
   await page.getByRole("link", { name: "Scan history", exact: true }).click()
 
   await expect(
-    page.getByRole("heading", { name: "Scan History" }),
+    page.getByRole("heading", { name: "Scan history" }),
   ).toBeVisible()
   await expect(page.getByText("Placeholder")).toHaveCount(0)
 
