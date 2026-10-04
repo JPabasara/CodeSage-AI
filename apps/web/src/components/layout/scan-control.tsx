@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { LockedAction } from "@/components/locked-action"
 import type { ScanPhase } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 export type ScanControlProps = {
   phase: ScanPhase
@@ -13,11 +14,14 @@ export type ScanControlProps = {
   /** Stop has been requested but the scan has not reached a terminal phase yet. */
   stopping?: boolean
   scoring?: boolean
-  onBar?: boolean
+  /** Names the button: "Scan main". */
+  branch?: string
+  /** `lg` is the page header's main action. */
+  size?: "default" | "lg"
   onScan?: () => void
   onStop?: () => void
   lockedReason?: string
-  /** False when Stop lives elsewhere (the dashboard's status strip) or the role cannot stop. */
+  /** False when Stop lives elsewhere (the dashboard's progress card) or the role cannot stop. */
   showStop?: boolean
 }
 
@@ -47,17 +51,21 @@ export function ScanControl({
   progress,
   stopping,
   scoring = false,
+  branch,
+  size = "default",
   onScan,
   onStop,
-  onBar = false,
   lockedReason,
   showStop = true,
 }: Readonly<ScanControlProps>) {
-  // On the mint bar the brand-mint button would vanish into its background.
-  const scanClass = onBar ? "bg-white text-topbar hover:bg-white/90" : undefined
-  const stopClass = onBar
-    ? "border-white/30 bg-transparent text-topbar-foreground hover:bg-white/15 hover:text-topbar-foreground dark:bg-transparent"
-    : undefined
+  const large = size === "lg"
+  const buttonSize = large ? "lg" : "sm"
+  // The header's main action keeps its width while its words change.
+  const buttonClass = cn(
+    large &&
+      "h-10.5 min-w-40 gap-2 px-4.5 text-sm font-semibold [&_svg:not([class*='size-'])]:size-4",
+  )
+  const scanLabel = branch ? `Scan ${branch}` : "Scan"
   const queued = phase === "queued"
   const running = phase === "running" || queued
 
@@ -72,9 +80,14 @@ export function ScanControl({
     if (!showStop) {
       return (
         <>
-          <Button size="sm" className={scanClass} disabled>
+          <Button
+            size={buttonSize}
+            // Busy, not unavailable: it keeps its full colour.
+            className={cn(buttonClass, "disabled:opacity-100")}
+            disabled
+          >
             <Loader2
-              className="size-3.5 animate-spin motion-reduce:animate-none"
+              className="animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
             {stopping
@@ -83,7 +96,9 @@ export function ScanControl({
                 ? "Scoring…"
                 : queued
                   ? "Queued…"
-                  : "Scanning…"}
+                  : progress > 0
+                    ? `Scanning ${progress}%`
+                    : "Scanning…"}
           </Button>
           <ScanAnnouncement
             phase={phase}
@@ -99,23 +114,15 @@ export function ScanControl({
       <div className="flex items-center gap-2">
         <span className="text-sm tabular-nums">{label}</span>
         {/* Queued has nothing to fill, and an empty bar reads as 0%, not as "not started". */}
-        {queued || !showStop ? null : (
-          <Progress
-            value={progress}
-            className={onBar ? "w-24 bg-white/25 *:bg-white" : "w-24"}
-          />
-        )}
-        {showStop ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className={stopClass}
-            onClick={onStop}
-            disabled={stopping || !onStop}
-          >
-            <Square className="size-3.5" /> Stop
-          </Button>
-        ) : null}
+        {queued ? null : <Progress value={progress} className="w-24" />}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onStop}
+          disabled={stopping || !onStop}
+        >
+          <Square className="size-3.5" /> Stop
+        </Button>
         <ScanAnnouncement
           phase={phase}
           progress={progress}
@@ -129,15 +136,9 @@ export function ScanControl({
   if (phase === "cancelled") {
     return (
       <div className="flex items-center gap-2">
-        <span
-          className={
-            onBar ? "text-sm opacity-75" : "text-muted-foreground text-sm"
-          }
-        >
-          Cancelled
-        </span>
-        <Button size="sm" className={scanClass} onClick={onScan}>
-          <Play className="size-3.5" /> Scan
+        <span className="text-sm text-muted-foreground">Cancelled</span>
+        <Button size={buttonSize} className={buttonClass} onClick={onScan}>
+          <Play /> {scanLabel}
         </Button>
       </div>
     )
@@ -146,16 +147,21 @@ export function ScanControl({
   if (lockedReason) {
     return (
       <LockedAction reason={lockedReason}>
-        <Button size="sm" className={scanClass} disabled>
-          <Play className="size-3.5" /> Scan
+        <Button size={buttonSize} className={buttonClass} disabled>
+          <Play /> {scanLabel}
         </Button>
       </LockedAction>
     )
   }
 
   return (
-    <Button size="sm" className={scanClass} onClick={onScan} disabled={!onScan}>
-      <Play className="size-3.5" /> Scan
+    <Button
+      size={buttonSize}
+      className={buttonClass}
+      onClick={onScan}
+      disabled={!onScan}
+    >
+      <Play /> {scanLabel}
     </Button>
   )
 }
