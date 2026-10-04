@@ -1862,6 +1862,15 @@ components:
         predicting_risk 70–85, scoring 85–97, finishing 97–100.
       enum: [cloning, reading_code, finding_debt, predicting_risk, scoring, finishing]
 
+    ScanStep:
+      type: string
+      description: |
+        The sub-step of `reading_code`, in order. Each owns a part of that
+        stage's band: measuring_code 25–37, reading_history 37–52,
+        reading_comments 52–60. New members may be added; a client that does
+        not know one falls back to `stage` and `progress`.
+      enum: [measuring_code, reading_history, reading_comments]
+
     ScanErrorCode:
       type: string
       description: |
@@ -2300,14 +2309,34 @@ components:
           oneOf:
             - $ref: '#/components/schemas/ScanStage'
             - type: 'null'
+        step:
+          description: |
+            Which sub-step of `reading_code` a running scan is in. Present only
+            while `stage` is `reading_code`, and null when the worker has not
+            reported one (an older worker reports only `stage`).
+          oneOf:
+            - $ref: '#/components/schemas/ScanStep'
+            - type: 'null'
+        commits_done:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Commits read from the history so far. Only during `reading_history`:
+            0 when the step starts, null when `commits_total` is unknown.
+        commits_total:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Commits in the history up to the scanned commit. Only during
+            `reading_history`; null when the worker could not count them.
         files_done:
           type: [integer, 'null']
           minimum: 0
-          description: Java files read so far. Only during `reading_code`.
+          description: Java files read so far. Only during `reading_comments`.
         files_total:
           type: [integer, 'null']
           minimum: 0
-          description: Java files this scan will read. Only during `reading_code`.
+          description: Java files this scan will read. Only during `reading_comments`.
         typical_seconds:
           type: [integer, 'null']
           minimum: 0

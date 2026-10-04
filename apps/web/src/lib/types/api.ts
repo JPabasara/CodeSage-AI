@@ -1177,6 +1177,14 @@ export interface components {
          */
         ScanStage: "cloning" | "reading_code" | "finding_debt" | "predicting_risk" | "scoring" | "finishing";
         /**
+         * @description The sub-step of `reading_code`, in order. Each owns a part of that
+         *     stage's band: measuring_code 25–37, reading_history 37–52,
+         *     reading_comments 52–60. New members may be added; a client that does
+         *     not know one falls back to `stage` and `progress`.
+         * @enum {string}
+         */
+        ScanStep: "measuring_code" | "reading_history" | "reading_comments";
+        /**
          * @description Why a scan ended in `error` (13H.1). New members may be added; existing
          *     members never change meaning.
          *
@@ -1521,9 +1529,25 @@ export interface components {
              *     Additive: a client that ignores it still has `progress`.
              */
             stage?: components["schemas"]["ScanStage"] | null;
-            /** @description Java files read so far. Only during `reading_code`. */
+            /**
+             * @description Which sub-step of `reading_code` a running scan is in. Present only
+             *     while `stage` is `reading_code`, and null when the worker has not
+             *     reported one (an older worker reports only `stage`).
+             */
+            step?: components["schemas"]["ScanStep"] | null;
+            /**
+             * @description Commits read from the history so far. Only during `reading_history`:
+             *     0 when the step starts, null when `commits_total` is unknown.
+             */
+            commits_done?: number | null;
+            /**
+             * @description Commits in the history up to the scanned commit. Only during
+             *     `reading_history`; null when the worker could not count them.
+             */
+            commits_total?: number | null;
+            /** @description Java files read so far. Only during `reading_comments`. */
             files_done?: number | null;
-            /** @description Java files this scan will read. Only during `reading_code`. */
+            /** @description Java files this scan will read. Only during `reading_comments`. */
             files_total?: number | null;
             /**
              * @description Median duration of this repository's last few finished scans, for
