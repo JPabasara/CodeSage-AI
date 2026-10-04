@@ -233,9 +233,8 @@ jobs:
     name: deploy — Railway staging
     runs-on: ubuntu-latest
     needs: [images]
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    # Railway staging is retired (trial ended); production deploys straight to k3s.
+    if: false
     concurrency:
       group: deploy-staging
       cancel-in-progress: false
@@ -265,9 +264,7 @@ jobs:
     name: smoke — Railway staging
     runs-on: ubuntu-latest
     needs: [deploy-staging]
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: false
     environment: staging
     concurrency:
       group: deploy-staging
@@ -364,11 +361,10 @@ jobs:
       contents: read
       deployments: write
       id-token: write
-    needs: [images, smoke-staging]
+    needs: [images]
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      needs.smoke-staging.outputs.ran == 'true'
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     environment: production
     concurrency:
       group: deploy-production
