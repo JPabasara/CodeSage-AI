@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, ChevronRight, File, Folder } from "lucide-react"
+import { ChevronDown, ChevronRight, FileCode2, Folder } from "lucide-react"
 
 import type { TreeNode } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -37,6 +37,19 @@ function nodeScoreLabel(node: TreeNode, withFindings: boolean) {
     node.health_score,
   )}`
   return withFindings ? `${label}, has findings` : label
+}
+
+/** Java files under a folder, all the way down. */
+function fileCount(node: TreeNode): number {
+  if (node.type === "file") return 1
+  return (node.children ?? []).reduce((sum, child) => sum + fileCount(child), 0)
+}
+
+/** The score as text: red when hot, green when healthy, plain in between. */
+function scoreTone(score: number) {
+  if (score < 40) return "text-trend-down"
+  if (score >= 70) return "text-trend-up"
+  return "text-foreground-strong"
 }
 
 // The heat-map legend: the same three bands as healthColor().
@@ -115,12 +128,11 @@ export function FileTree({
             aria-current={isSelected ? "true" : undefined}
             aria-label={nodeScoreLabel(node, withFindings)}
             className={cn(
-              "group/file relative flex h-8 w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-sm hover:bg-muted",
+              "group/file flex h-[2.125rem] w-full items-center gap-2 rounded-md pr-2.5 text-left text-sm hover:bg-muted",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              isSelected &&
-                "bg-accent font-medium text-accent-foreground ring-1 ring-primary/60 ring-inset hover:bg-accent",
+              isSelected && "bg-accent text-accent-foreground hover:bg-accent",
             )}
-            style={{ paddingLeft: depth * 14 + 12 }}
+            style={{ paddingLeft: depth * 18 + 6 }}
             onMouseEnter={() => onHoverNode?.(node)}
             onMouseLeave={() => onHoverNode?.(null)}
             onClick={() => selectNode(node)}
@@ -128,7 +140,7 @@ export function FileTree({
             <span
               aria-hidden="true"
               data-slot="health-bar"
-              className="absolute inset-y-0 left-0 w-1 rounded-sm"
+              className="my-1.5 w-1 shrink-0 self-stretch rounded-xs"
               style={{ backgroundColor: colorFor(node) }}
             />
             {chevron}
@@ -138,12 +150,26 @@ export function FileTree({
                 aria-hidden="true"
               />
             ) : (
-              <File
+              <FileCode2
                 className="size-4 shrink-0 text-muted-foreground"
                 aria-hidden="true"
               />
             )}
-            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <span
+              className={cn(
+                "min-w-0 truncate",
+                isFolder && "font-semibold text-foreground-strong",
+                isSelected && "font-medium",
+              )}
+            >
+              {node.name}
+            </span>
+            {isFolder ? (
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {fileCount(node)} {fileCount(node) === 1 ? "file" : "files"}
+              </span>
+            ) : null}
+            <span className="flex-1" />
             {withFindings ? (
               // A neutral mark, not a health colour: this file has findings to open.
               <span
@@ -153,13 +179,20 @@ export function FileTree({
               />
             ) : null}
             <span
-              className="ml-1 inline-flex h-5 min-w-11 shrink-0 items-center justify-end gap-1 rounded-sm px-1 text-[0.75rem] text-muted-foreground tabular-nums"
+              className="inline-flex min-w-11 shrink-0 items-baseline justify-end gap-1.5 tabular-nums"
               aria-hidden="true"
             >
-              <span className="font-semibold text-foreground">
+              <span className="text-xs text-muted-foreground">
                 {node.grade}
               </span>
-              {Math.round(node.health_score)}
+              <span
+                className={cn(
+                  "text-[0.8125rem] font-semibold",
+                  scoreTone(node.health_score),
+                )}
+              >
+                {Math.round(node.health_score)}
+              </span>
             </span>
           </button>
 
@@ -174,7 +207,7 @@ export function FileTree({
     return (
       <section
         aria-label="File health tree"
-        className="flex h-full min-h-0 flex-col items-center justify-center space-y-2 rounded-lg border bg-card p-8 text-center"
+        className="flex h-full min-h-0 flex-col items-center justify-center space-y-2 rounded-md border bg-card p-8 text-center"
       >
         <div className="flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
           <Folder className="size-5" aria-hidden="true" />
@@ -195,13 +228,16 @@ export function FileTree({
   return (
     <section
       aria-label="File health tree"
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-card"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-card"
     >
-      <div className="shrink-0 space-y-2 border-b px-4 py-3">
+      <div className="shrink-0 space-y-2.5 border-b px-4 pt-3.5 pb-3">
         <div>
-          <h2 className="text-base font-semibold">File health map</h2>
+          <h2 className="text-base font-semibold text-foreground-strong">
+            Code map
+          </h2>
           <p className="text-xs text-muted-foreground">
-            Scores are shown per file and folded up through folders.
+            Java files only, coloured by file health. Folders show the score of
+            everything inside them.
           </p>
         </div>
 
@@ -244,10 +280,10 @@ export function FileTree({
       </div>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto p-2"
+        className="min-h-0 flex-1 overflow-y-auto p-1.5"
         data-testid="file-tree-scroll"
       >
-        <ul className="space-y-0.5 text-sm">{renderNodes(nodes, 0)}</ul>
+        <ul className="text-sm">{renderNodes(nodes, 0)}</ul>
       </div>
     </section>
   )
