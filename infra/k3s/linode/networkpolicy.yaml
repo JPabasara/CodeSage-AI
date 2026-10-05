@@ -160,6 +160,14 @@ spec:
           podSelector:
             matchLabels:
               app: keda-operator
+        # Grafana Alloy reads the queue lengths (monitoring-values.yaml).
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
+              app.kubernetes.io/instance: grafana-k8s-monitoring-alloy
       ports:
         - protocol: TCP
           port: 6379

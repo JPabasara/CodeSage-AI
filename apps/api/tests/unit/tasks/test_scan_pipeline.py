@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -949,3 +950,88 @@ def test_saved_comment_rules_bypass_ml_without_duplicate_findings(scan: _Run, mo
     else:
         scan["classify"].assert_called_once_with([other])
     assert all(prediction.comment != matched for prediction in result.satd_predictions)
+
+
+def _scan_finished(caplog: pytest.LogCaptureFixture) -> list:
+    return [record for record in caplog.records if record.message == "Scan finished"]
+
+
+def test_a_finished_scan_logs_one_scan_finished_line(
+    scan: _Run, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("INFO", logger=_PIPELINE):
+        scan()
+
+    [record] = _scan_finished(caplog)
+    assert (record.outcome, record.reason) == ("done", "none")
+    assert record.duration_seconds >= 0
+
+
+def test_a_failed_scan_leaves_its_line_to_set_terminal(
+    scan: _Run, caplog: pytest.LogCaptureFixture
+) -> None:
+    scan["clone_at_commit"].side_effect = CloneError("unreachable")
+
+    with caplog.at_level("INFO", logger=_PIPELINE):
+        scan()
+
+    # `_set_terminal` (mocked here) writes the line, so the pipeline adds no "done".
+    scan["_set_terminal"].assert_called_once()
+    assert _scan_finished(caplog) == []
+
+
+@pytest.mark.parametrize(
+    ("status", "failure_code", "outcome", "reason"),
+    [
+        (AnalysisStatus.CANCELLED, None, "cancelled", "none"),
+        (AnalysisStatus.ERROR, ScanErrorCode.REPOSITORY_TOO_LARGE, "error", "REPOSITORY_TOO_LARGE"),
+        (AnalysisStatus.ERROR, "SCAN_FAILED", "error", "SCAN_FAILED"),
+    ],
+)
+def test_every_ending_logs_one_scan_finished_line_with_its_reason(
+    caplog: pytest.LogCaptureFixture,
+    status: AnalysisStatus,
+    failure_code: ScanErrorCode | str | None,
+    outcome: str,
+    reason: str,
+) -> None:
+    attempt = SimpleNamespace(start_time=datetime.now(UTC) - timedelta(seconds=90))
+    with (
+        patch(f"{_PIPELINE}.session_scope", MagicMock()),
+        patch(f"{_PIPELINE}.set_workspace_context"),
+        patch(f"{_PIPELINE}.attempts.get_worker_attempt", return_value=attempt),
+        caplog.at_level("INFO", logger=_PIPELINE),
+    ):
+        scan_pipeline._set_terminal(uuid.uuid4(), uuid.uuid4(), status, None, failure_code)
+
+    [record] = _scan_finished(caplog)
+    assert (record.outcome, record.reason) == (outcome, reason)
+    assert 89 <= record.duration_seconds <= 91
+
+
+def test_a_scan_that_never_started_logs_no_duration(caplog: pytest.LogCaptureFixture) -> None:
+    attempt = SimpleNamespace(start_time=None)
+    with (
+        patch(f"{_PIPELINE}.session_scope", MagicMock()),
+        patch(f"{_PIPELINE}.set_workspace_context"),
+        patch(f"{_PIPELINE}.attempts.get_worker_attempt", return_value=attempt),
+        caplog.at_level("INFO", logger=_PIPELINE),
+    ):
+        scan_pipeline._set_terminal(
+            uuid.uuid4(), uuid.uuid4(), AnalysisStatus.CANCELLED, None
+        )
+
+    [record] = _scan_finished(caplog)
+    assert record.duration_seconds is None
+
+
+def test_a_missing_attempt_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    with (
+        patch(f"{_PIPELINE}.session_scope", MagicMock()),
+        patch(f"{_PIPELINE}.set_workspace_context"),
+        patch(f"{_PIPELINE}.attempts.get_worker_attempt", return_value=None),
+        caplog.at_level("INFO", logger=_PIPELINE),
+    ):
+        scan_pipeline._set_terminal(uuid.uuid4(), uuid.uuid4(), AnalysisStatus.ERROR, None)
+
+    assert _scan_finished(caplog) == []

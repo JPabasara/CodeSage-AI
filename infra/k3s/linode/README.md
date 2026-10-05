@@ -67,10 +67,12 @@ Apply `networkpolicy.yaml` last, after the app works.
 ## Response compression
 
 The ingress compresses responses with Brotli or gzip (`ingress-nginx-values.yaml`).
-Apply it once, and again after any reinstall of the controller:
+The same file sets the access log to one JSON line per request, which the
+Grafana dashboards read (see Monitoring). Apply it once, and again after any
+reinstall of the controller:
 
 ```bash
-helm upgrade ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx   --reuse-values -f infra/k3s/linode/ingress-nginx-values.yaml
+helm upgrade ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --version 4.15.1   --reuse-values -f infra/k3s/linode/ingress-nginx-values.yaml
 ```
 
 Check it with a signed-in cookie. The answer must carry `content-encoding: br`:
@@ -102,3 +104,59 @@ do not leave both.
 The api image runs `tini` as its ENTRYPOINT. The worker, score-worker and
 migrate manifests set `args:` only, because a Kubernetes `command:` would
 replace it.
+
+## Monitoring
+
+Grafana Alloy sends cluster metrics and pod logs to Grafana Cloud
+(`monitoring-values.yaml`, chart `grafana/k8s-monitoring` 4.5.2). It runs four
+pods in the `monitoring` namespace: `alloy` (metrics and logs), the Alloy
+Operator, kube-state-metrics and node-exporter. All of them run at the
+`monitoring-low` priority, below the app, with hard limits.
+
+It collects:
+
+- node CPU, memory and disk; pod CPU and memory; restarts, OOM kills and replica
+  counts (Grafana's default allow lists for Kubernetes Monitoring);
+- logs from the `codesageai` and `ingress-nginx` namespaces;
+- Redis health and queue lengths (`redis_key_size` for `scans`, `scoring` and
+  `codesage:scan-demand`), read with the app's own `redis-auth` Secret. The
+  `allow-app-and-keda-to-redis` NetworkPolicy lets the Alloy pod reach Redis.
+
+First install:
+
+1. In Grafana Cloud, create an access policy with only `metrics:write` and
+   `logs:write`, and a token for it. Note the Prometheus and Loki push URLs and
+   user IDs, and put the URLs in `monitoring-values.yaml`.
+2. Put the two user IDs and the token in `secrets.monitoring.env` (git ignores
+   it; keep it apart from `secrets.prod.env`, which every app pod reads). Then
+   create the namespace, the Secret and the priority class:
+
+   ```powershell
+   kubectl create namespace monitoring
+   kubectl -n monitoring create secret generic grafana-cloud `
+     --from-env-file infra/k3s/linode/secrets.monitoring.env
+   kubectl apply -f infra/k3s/linode/monitoring-priority.yaml
+   ```
+
+3. Render and read before installing. Expect only the four workloads above, two
+   install-hook Jobs, RBAC, ConfigMaps and Services, and no Secret:
+
+   ```powershell
+   helm repo add grafana https://grafana.github.io/helm-charts
+   helm repo update grafana
+   helm template grafana-k8s-monitoring grafana/k8s-monitoring --version 4.5.2 `
+     -n monitoring -f infra/k3s/linode/monitoring-values.yaml | Select-String '^kind:'
+   ```
+
+4. Install, then check:
+
+   ```powershell
+   helm upgrade --install grafana-k8s-monitoring grafana/k8s-monitoring --version 4.5.2 `
+     -n monitoring -f infra/k3s/linode/monitoring-values.yaml
+   kubectl -n monitoring get pods
+   kubectl top pods -n monitoring
+   ```
+
+To change what is collected, edit `monitoring-values.yaml` and run step 4 again.
+To rotate the token, delete and recreate the `grafana-cloud` Secret, then
+restart Alloy: `kubectl -n monitoring rollout restart daemonset grafana-k8s-monitoring-alloy`.
