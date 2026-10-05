@@ -43,6 +43,7 @@ import {
   publishProjectRemoved,
   useProjects,
 } from "@/hooks/use-projects"
+import { useActivity } from "@/hooks/use-activity"
 import { startScan } from "@/hooks/use-scan-center"
 import { useSelectedProject } from "@/hooks/use-selected-project"
 import { useSession } from "@/hooks/use-session"
@@ -67,6 +68,8 @@ export default function ProjectsPage() {
   const canConnect = permissions.includes("repository:connect")
   const canDisconnect = permissions.includes("repository:disconnect")
   const canScan = permissions.includes("scan:start")
+  // Scans anywhere in the workspace, so a row never offers a scan already running.
+  const activity = useActivity()
   const canConfigure = permissions.includes("profile:update")
   const [configureRepo, setConfigureRepo] = useState<Repo>()
   const [scanAfterConfiguration, setScanAfterConfiguration] = useState(false)
@@ -301,6 +304,7 @@ export default function ProjectsPage() {
           <ProjectList
             repos={repos ?? []}
             activeRepoId={selectedProjectId}
+            activity={activity?.scans}
             emptyDescription={
               canConnect
                 ? `${workspaceName} is empty. Connect a public repository above and it becomes this workspace's first project.`
