@@ -8,6 +8,11 @@
 .env.*
 !.env.example
 infra/k3s/linode/secrets.prod.env
+infra/k3s/linode/secrets.monitoring.env
+
+# ── Local notes ─────────────────────────────────────────────────────────────
+/MONITORING.md
+/FINAL_PRESENTATION_PLAN.md
 
 # ── Tool caches and downloads ───────────────────────────────────────────────
 # pnpm's content-addressable store. Hundreds of megabytes, machine-specific, and

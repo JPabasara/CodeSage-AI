@@ -1,0 +1,14 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: monitoring-low
+  labels:
+    app.kubernetes.io/name: codesage-ai
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: codesage-ai
+# Below the app's default of 0: under memory pressure the kubelet evicts
+# monitoring pods first, and they never push an app pod off the node.
+value: -100
+preemptionPolicy: Never
+globalDefault: false
+description: Grafana Alloy and its exporters. Runs below every Code Sage AI workload.
