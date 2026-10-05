@@ -1,5 +1,6 @@
 import type {
   Category,
+  CommentRule,
   CategoryBreakdownItem,
   FileScore,
   Finding,
@@ -12,6 +13,8 @@ import type {
   Source,
   TreeNode,
 } from "@/lib/types"
+
+import { matchingMockCommentRule } from "./comment-rules"
 
 /** Severity → base points. Severity is fixed at detection time. */
 const BASE_POINTS: Record<Severity, number> = {
@@ -339,12 +342,36 @@ export function priorityOf(fact: FindingFact, profile: ScoreProfile): number {
 }
 
 /** Findings scored under `profile`, already sorted by priority descending. */
-export function scoreFindings(profile: ScoreProfile, debtScale = 1): Finding[] {
-  return FINDING_FACTS.map((fact) => ({
-    ...fact,
-    source_scope: fact.source_scope ?? "production",
-    priority: round1(priorityOf(fact, profile) * debtScale),
-  })).sort((a, b) => b.priority - a.priority)
+export function scoreFindings(
+  profile: ScoreProfile,
+  debtScale = 1,
+  commentRules: CommentRule[] = [],
+): Finding[] {
+  const facts = FINDING_FACTS.map((fact) => {
+    const rule =
+      fact.comment_text && fact.source === "satd"
+        ? matchingMockCommentRule(fact.comment_text, commentRules)
+        : undefined
+    return rule
+      ? {
+          ...fact,
+          fingerprint: `comment:${rule.id}:${fact.fingerprint}`,
+          source: "rule" as const,
+          rule_id: "comment-pattern",
+          category: rule.category,
+          severity: rule.severity,
+          confidence: undefined,
+          reason: `Comment rule "${rule.name}" matched this comment.`,
+        }
+      : fact
+  })
+  return facts
+    .map((fact) => ({
+      ...fact,
+      source_scope: fact.source_scope ?? "production",
+      priority: round1(priorityOf(fact, profile) * debtScale),
+    }))
+    .sort((a, b) => b.priority - a.priority)
 }
 
 /** Sum of the priorities of the open findings in each file. */
@@ -482,6 +509,8 @@ export type ReportInput = {
   debtScale: number
   profile: ScoreProfile
   snapshotId?: string
+  disabledRuleIds?: string[]
+  commentRules?: CommentRule[]
 }
 
 export function buildHealthReport(input: ReportInput): HealthReport {
@@ -493,7 +522,15 @@ export function buildHealthReport(input: ReportInput): HealthReport {
   const at = found === -1 ? SNAPSHOTS.length - 1 : found
   const snapshot = SNAPSHOTS[at]
 
-  const findings = scoreFindings(profile, debtScale * snapshot.debt_multiplier)
+  const findings = scoreFindings(
+    profile,
+    debtScale * snapshot.debt_multiplier,
+    input.commentRules,
+  ).filter(
+    (finding) =>
+      finding.source !== "rule" ||
+      !input.disabledRuleIds?.includes(finding.rule_id ?? ""),
+  )
   const fileScores = scoreFiles(findings)
   const totalDebt = findings.reduce((sum, f) => sum + f.priority, 0)
   const health = healthFromDebt(totalDebt)

@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, LargeBinary, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    LargeBinary,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,7 +26,7 @@ if TYPE_CHECKING:
     from codesage_api.db.models.repository import Repository
 
 
-def enum_values(enum: type[Theme] | type[MembershipStatus]) -> list[str]:
+def enum_values(enum: type[Theme | MembershipStatus]) -> list[str]:
     return [item.value for item in enum]
 
 
@@ -55,6 +65,12 @@ class User(UUIDPrimaryKey, Base):
 class Workspace(UUIDPrimaryKey, Base):
     __tablename__ = "workspace"
 
+    comment_rules: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    disabled_rule_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False, server_default="Workspace")
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     website_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)

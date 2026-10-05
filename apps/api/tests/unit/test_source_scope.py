@@ -25,3 +25,8 @@ def test_preserves_other_source_scopes():
     assert classify_source_scope("target/generated/Foo.java") == "generated"
     assert classify_source_scope("examples/Foo.java") == "example"
     assert classify_source_scope("misc/Foo.java") == "unknown"
+
+
+def test_standard_test_patterns_also_match_repository_root():
+    assert classify_source_scope("src/test/java/RootTest.java") == "test"
+    assert classify_source_scope("tests/RootTest.java") == "test"

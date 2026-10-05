@@ -18,10 +18,14 @@ import type {
   Role,
   ScanStatus,
   ScoreProfile,
+  SourceScopeConfig,
   Session,
   UpdateProfileRequest,
   UpdateWorkspaceRequest,
   Workspace,
+  RuleOption,
+  CommentRule,
+  CommentPattern,
 } from "@/lib/types"
 import {
   MAX_CUSTOM_PROFILES,
@@ -49,6 +53,7 @@ import {
   UNSCANNED_REPO_ID,
   WORKSPACE_ID,
 } from "./fixtures"
+import { compileMockCommentPattern } from "./comment-rules"
 import { FINDING_FACTS, SNAPSHOTS, scanHistoryFor } from "./scoring"
 import { STAGE_BANDS, stageOf } from "@/lib/scan-progress"
 
@@ -108,6 +113,34 @@ function withFindingStatuses(report: HealthReport): HealthReport {
   }
 }
 
+const mockRuleOptions: RuleOption[] = [
+  {
+    rule_id: "large-file",
+    category: "code-design",
+    description: "Files exceeding the size threshold.",
+  },
+  {
+    rule_id: "complex-function",
+    category: "code-design",
+    description: "Functions exceeding the complexity threshold.",
+  },
+  {
+    rule_id: "hardcoded-secret",
+    category: "security",
+    description: "Secrets embedded in source code.",
+  },
+  {
+    rule_id: "pmd:EmptyCatchBlock",
+    category: "code-design",
+    description: "Empty catch blocks may swallow errors.",
+  },
+  {
+    rule_id: "pmd:UnitTestShouldIncludeAssert",
+    category: "test",
+    description: "Tests should include assertions.",
+  },
+]
+
 // Everything one workspace owns.
 interface WorkspaceRecord {
   name: string
@@ -123,6 +156,9 @@ interface WorkspaceRecord {
   pool: StoredProfile[]
   defaultProfileId: string
   assignments: Record<string, string>
+  commentRules?: CommentRule[]
+  disabledRuleIds?: string[]
+  sourceScopes?: Record<string, SourceScopeConfig>
 }
 
 function seedWorkspaces(): Record<string, WorkspaceRecord> {
@@ -291,6 +327,15 @@ const cancelRequested = new Set<string>()
 
 // Head SHA of the last successful scan per repo+branch — what skip-if-unchanged compares against.
 const lastSuccessfulSha = new Map<string, string>()
+const lastSuccessfulRules = new Map<string, string>()
+const queuedRuleSelections = new Map<string, string>()
+const currentRuleSelection = () => {
+  const record = workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID]
+  return JSON.stringify({
+    disabled_rule_ids: record.disabledRuleIds ?? [],
+    comment_rules: record.commentRules ?? [],
+  })
+}
 
 const PENDING_ASKS_AFTER_SCAN = 2
 
@@ -388,15 +433,30 @@ function tick(repoId: string): ScanStatus {
     files_done: null,
     files_total: null,
   }
+  if (done.branch)
+    lastSuccessfulRules.set(
+      scanKey(repoId, done.branch),
+      queuedRuleSelections.get(done.scan_id) ?? "{}",
+    )
+  queuedRuleSelections.delete(done.scan_id)
   scans.set(repoId, done)
   if (done.branch) {
     // The snapshot is stored the moment the scan finishes; the score is not.
     pendingScores.set(scanKey(repoId, done.branch), PENDING_ASKS_AFTER_SCAN)
-    newestSnapshot.set(scanKey(repoId, done.branch), {
+    const snapshot = {
       snapshot_id: uuid(),
       scanned_at: now,
       commit_sha: done.commit_sha ?? undefined,
-    })
+      ...(JSON.parse(
+        lastSuccessfulRules.get(scanKey(repoId, done.branch)) ??
+          '{"disabled_rule_ids":[],"comment_rules":[]}',
+      ) as { disabled_rule_ids: string[]; comment_rules: CommentRule[] }),
+    }
+    newestSnapshot.set(scanKey(repoId, done.branch), snapshot)
+    finishedSnapshots.set(
+      `${scanKey(repoId, done.branch)}@${snapshot.snapshot_id}`,
+      snapshot,
+    )
     if (done.commit_sha) {
       lastSuccessfulSha.set(scanKey(repoId, done.branch), done.commit_sha)
     }
@@ -404,10 +464,45 @@ function tick(repoId: string): ScanStatus {
   return done
 }
 
-const newestSnapshot = new Map<
-  string,
-  { snapshot_id: string; scanned_at: string; commit_sha?: string }
->()
+type MockScanSnapshot = {
+  snapshot_id: string
+  scanned_at: string
+  commit_sha?: string
+  disabled_rule_ids: string[]
+  comment_rules: CommentRule[]
+}
+const newestSnapshot = new Map<string, MockScanSnapshot>()
+const finishedSnapshots = new Map<string, MockScanSnapshot>()
+
+function scannedReport(
+  repoId: string,
+  branch: string,
+  requested?: string,
+): HealthReport {
+  const key = scanKey(repoId, branch)
+  const snapshot = requested
+    ? finishedSnapshots.get(`${key}@${requested}`)
+    : newestSnapshot.get(key)
+  const report = reportFor(
+    repoId,
+    branch,
+    branchInfoFor(branch).is_default,
+    effectiveFor(repoId),
+    snapshot ? undefined : requested,
+    snapshot?.disabled_rule_ids,
+    snapshot?.comment_rules,
+  )
+  return withFindingStatuses(
+    snapshot
+      ? {
+          ...report,
+          snapshot_id: snapshot.snapshot_id,
+          scanned_at: snapshot.scanned_at,
+          commit_sha: snapshot.commit_sha ?? report.commit_sha,
+        }
+      : report,
+  )
+}
 
 export const PROFILE_RESCORE_MS = 1_500
 
@@ -427,9 +522,12 @@ const isRescoring = (repoId: string) =>
 export function resetMockBackend() {
   scans.clear()
   newestSnapshot.clear()
+  finishedSnapshots.clear()
   rescoringUntil.clear()
   cancelRequested.clear()
   lastSuccessfulSha.clear()
+  lastSuccessfulRules.clear()
+  queuedRuleSelections.clear()
   pendingScores.clear()
   findingStatuses = {}
   activeWorkspaceId = null
@@ -1103,6 +1201,59 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
+  http.get("*/api/projects/:repoId/source-scope", ({ params }) => {
+    const id = params.repoId as string
+    if (!connected.some((repo) => repo.id === id)) return NOT_FOUND()
+    return HttpResponse.json(
+      workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID].sourceScopes?.[
+        id
+      ] ?? {
+        test_path_patterns: ["**/src/test/**", "**/tests/**"],
+        production_path_overrides: [],
+        scan_excluded_directories: false,
+        hide_excluded_findings: false,
+        file_paths: ["src/main/java/App.java", "src/test/java/AppTest.java"],
+      },
+    )
+  }),
+  http.patch(
+    "*/api/projects/:repoId/source-scope",
+    async ({ params, request }) => {
+      const id = params.repoId as string
+      const repo = connected.find((item) => item.id === id)
+      if (!repo) return NOT_FOUND()
+      if (
+        !PERMISSIONS_BY_ROLE[
+          workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID].role
+        ].includes("profile:update")
+      ) {
+        return fail(
+          403,
+          "FORBIDDEN",
+          "Only Managers and Org Admins can change exclusions.",
+        )
+      }
+      const body = (await request.json()) as SourceScopeConfig
+      const config = {
+        ...body,
+        hide_excluded_findings: Boolean(
+          body.scan_excluded_directories && body.hide_excluded_findings,
+        ),
+        file_paths: ["src/main/java/App.java", "src/test/java/AppTest.java"],
+      }
+      const record = workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID]
+      record.sourceScopes ??= {}
+      record.sourceScopes[id] = config
+      connected = connected.map((item) =>
+        item.id === id
+          ? { ...item, hide_excluded_findings: config.hide_excluded_findings }
+          : item,
+      )
+      persistState()
+      return HttpResponse.json(config)
+    },
+  ),
+
   http.get("*/api/projects", () => HttpResponse.json(connected)),
 
   http.delete("*/api/projects/:repoId", ({ params }) => {
@@ -1265,25 +1416,7 @@ export const handlers = [
     }
 
     const requested = url.searchParams.get("snapshot_id") ?? undefined
-    const newest = newestSnapshot.get(scanKey(repoId, branch))
-    const asksForNewest =
-      newest && (!requested || requested === newest.snapshot_id)
-    const report = reportFor(
-      repoId,
-      branch,
-      branchInfoFor(branch).is_default,
-      effectiveFor(repoId),
-      asksForNewest ? undefined : requested,
-    )
-    const selectedReport = asksForNewest
-      ? {
-          ...report,
-          snapshot_id: newest.snapshot_id,
-          scanned_at: newest.scanned_at,
-          commit_sha: newest.commit_sha ?? report.commit_sha,
-        }
-      : report
-    const response = withFindingStatuses(selectedReport)
+    const response = scannedReport(repoId, branch, requested)
     return HttpResponse.json(
       url.searchParams.get("include_findings") === "false"
         ? { ...response, findings: [] }
@@ -1298,15 +1431,7 @@ export const handlers = [
     const branch = url.searchParams.get("branch") ?? defaultBranch.name
     if (!mockBranches.some((item) => item.name === branch)) return NOT_FOUND()
     const requested = url.searchParams.get("snapshot_id") ?? undefined
-    const report = withFindingStatuses(
-      reportFor(
-        repoId,
-        branch,
-        branchInfoFor(branch).is_default,
-        effectiveFor(repoId),
-        requested,
-      ),
-    )
+    const report = scannedReport(repoId, branch, requested)
     const limit = Math.min(
       500,
       Math.max(1, Number(url.searchParams.get("limit") ?? 25)),
@@ -1447,6 +1572,118 @@ export const handlers = [
       markRescoring(connected.map((r) => r.id).filter((id) => !assignments[id]))
     }
     return HttpResponse.json(out(target))
+  }),
+
+  http.get("*/api/profiles/rules", () =>
+    HttpResponse.json({
+      rules: mockRuleOptions,
+      disabled_rule_ids:
+        workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID].disabledRuleIds ??
+        [],
+      comment_rules:
+        workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID].commentRules ?? [],
+    }),
+  ),
+
+  http.patch("*/api/profiles/rules", async ({ request }) => {
+    const record = workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID]
+    if (record.role !== "org-admin")
+      return fail(403, "FORBIDDEN", "Only Org Admins can change comment rules.")
+    const body = (await request.json().catch(() => null)) as {
+      comment_rules?: CommentRule[]
+    } | null
+    try {
+      if (!Array.isArray(body?.comment_rules) || body.comment_rules.length > 50)
+        throw new Error("Enter at most 50 comment rules.")
+      const ids = new Set<string>()
+      for (const rule of body.comment_rules) {
+        if (
+          typeof rule.id !== "string" ||
+          !/^[0-9a-f-]{36}$/i.test(rule.id) ||
+          ids.has(rule.id) ||
+          typeof rule.name !== "string" ||
+          !rule.name.trim() ||
+          rule.name.length > 100 ||
+          ![
+            "code-design",
+            "security",
+            "documentation",
+            "requirement",
+            "test",
+          ].includes(rule.category) ||
+          !["critical", "high", "medium", "low"].includes(rule.severity)
+        )
+          throw new Error("Enter valid comment rule details.")
+        ids.add(rule.id)
+        compileMockCommentPattern(rule)
+      }
+      record.commentRules = body.comment_rules.map((rule) => ({
+        ...rule,
+        name: rule.name.trim(),
+      }))
+      persistState()
+      return HttpResponse.json({
+        rules: mockRuleOptions,
+        disabled_rule_ids: record.disabledRuleIds ?? [],
+        comment_rules: record.commentRules,
+      })
+    } catch (error) {
+      return fail(
+        422,
+        "VALIDATION_FAILED",
+        error instanceof Error ? error.message : "Invalid comment rules.",
+      )
+    }
+  }),
+
+  http.post("*/api/profiles/rules/test-comment", async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as
+      (CommentPattern & { sample_comment: string }) | null
+    try {
+      if (
+        !body ||
+        typeof body.sample_comment !== "string" ||
+        body.sample_comment.length > 20000
+      )
+        throw new Error("Enter a sample comment.")
+      return HttpResponse.json({
+        matched: compileMockCommentPattern(body).test(body.sample_comment),
+      })
+    } catch (error) {
+      return fail(
+        422,
+        "VALIDATION_FAILED",
+        error instanceof Error ? error.message : "Invalid comment pattern.",
+      )
+    }
+  }),
+
+  http.put("*/api/profiles/rules", async ({ request }) => {
+    const record = workspaceRecords[activeWorkspaceId ?? WORKSPACE_ID]
+    if (record.role !== "org-admin")
+      return fail(403, "FORBIDDEN", "Only Org Admins can change rules.")
+    const body = (await request.json().catch(() => null)) as {
+      disabled_rule_ids?: unknown
+    } | null
+    if (
+      !Array.isArray(body?.disabled_rule_ids) ||
+      body.disabled_rule_ids.some(
+        (id) =>
+          typeof id !== "string" ||
+          !mockRuleOptions.some((rule) => rule.rule_id === id),
+      )
+    ) {
+      return fail(422, "VALIDATION_FAILED", "Unknown or invalid rule IDs.")
+    }
+    record.disabledRuleIds = [
+      ...new Set(body.disabled_rule_ids as string[]),
+    ].sort()
+    persistState()
+    return HttpResponse.json({
+      rules: mockRuleOptions,
+      disabled_rule_ids: record.disabledRuleIds,
+      comment_rules: record.commentRules ?? [],
+    })
   }),
 
   http.get("*/api/profiles/:profileId", ({ params }) => {
@@ -1607,7 +1844,12 @@ export const handlers = [
     const now = new Date().toISOString()
 
     const seen = lastSuccessfulSha.get(scanKey(repoId, info.name))
-    if (head && seen === head) {
+    if (
+      head &&
+      seen === head &&
+      lastSuccessfulRules.get(scanKey(repoId, info.name)) ===
+        currentRuleSelection()
+    ) {
       const skipped: ScanStatus = {
         scan_id: uuid(),
         phase: "done",
@@ -1630,6 +1872,7 @@ export const handlers = [
       stage: "cloning",
       typical_seconds: MOCK_TYPICAL_SECONDS,
     }
+    queuedRuleSelections.set(started.scan_id, currentRuleSelection())
     scans.set(repoId, started)
     return HttpResponse.json(started, { status: 202 })
   }),

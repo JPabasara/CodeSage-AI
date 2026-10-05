@@ -337,3 +337,54 @@ def test_an_already_connected_repository_still_says_so_first(monkeypatch) -> Non
 
     with pytest.raises(RepositoryAlreadyConnected):
         repositories.connect(session, uuid.uuid4(), "https://github.com/a/b", uuid.uuid4())
+
+
+@pytest.mark.parametrize(
+    "scan_excluded, hide_excluded, expected_hide",
+    [(False, True, False), (True, True, True), (True, False, False)],
+)
+def test_exclusion_settings_are_persisted_and_hiding_requires_scanning(
+    scan_excluded, hide_excluded, expected_hide
+):
+    repository = _repository(uuid.uuid4())
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = repository
+    result = repositories.update_source_scope_config(
+        session,
+        repository.workspace_id,
+        repository.id,
+        ["src/test/**"],
+        [],
+        scan_excluded,
+        hide_excluded,
+    )
+    assert repository.scan_excluded_directories is scan_excluded
+    assert repository.hide_excluded_findings is expected_hide
+    assert result.hide_excluded_findings is expected_hide
+
+
+def test_picker_loads_paths_before_any_scan(monkeypatch):
+    repository = _repository(uuid.uuid4())
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = repository
+    fetch_branch = MagicMock(return_value=GitHubBranch("main", "b" * 40))
+    fetch_paths = MagicMock(return_value=["src/main/App.java", "src/test/AppTest.java"])
+    monkeypatch.setattr(repositories, "fetch_branch", fetch_branch)
+    monkeypatch.setattr(repositories, "fetch_file_paths", fetch_paths)
+    result = repositories.get_source_scope_config(
+        session, repository.workspace_id, repository.id, include_paths=True
+    )
+    assert result.file_paths == ["src/main/App.java", "src/test/AppTest.java"]
+    fetch_paths.assert_called_once_with(repository.owner, repository.name, "b" * 40)
+
+
+def test_foreign_picker_does_not_contact_github(monkeypatch):
+    session = MagicMock(spec=Session)
+    session.scalar.return_value = None
+    fetch_paths = MagicMock()
+    monkeypatch.setattr(repositories, "fetch_file_paths", fetch_paths)
+    with pytest.raises(NotFound):
+        repositories.get_source_scope_config(
+            session, uuid.uuid4(), uuid.uuid4(), include_paths=True
+        )
+    fetch_paths.assert_not_called()

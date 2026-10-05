@@ -11,6 +11,7 @@ import {
   isGitHubRepositoryUrl,
 } from "@/lib/guardrail-messages"
 import type { Repo } from "@/lib/types"
+import { SourceScopeSettings } from "@/components/dashboard/source-scope-settings"
 import { ConnectRepo } from "@/components/projects/connect-repo"
 import {
   JavaOnlyDialog,
@@ -66,6 +67,9 @@ export default function ProjectsPage() {
   const canConnect = permissions.includes("repository:connect")
   const canDisconnect = permissions.includes("repository:disconnect")
   const canScan = permissions.includes("scan:start")
+  const canConfigure = permissions.includes("profile:update")
+  const [configureRepo, setConfigureRepo] = useState<Repo>()
+  const [scanAfterConfiguration, setScanAfterConfiguration] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [connectError, setConnectError] = useState<string>()
   // The URL waiting on the Java-only dialog, and the form's promise for it.
@@ -111,6 +115,19 @@ export default function ProjectsPage() {
     openDashboard(repo)
   }
 
+  function finishConfiguration() {
+    if (!configureRepo) return
+    const repo = configureRepo
+    setConfigureRepo(undefined)
+    if (scanAfterConfiguration) {
+      toast.success(
+        `Connected ${repo.owner}/${repo.name} · scan queued on ${repo.default_branch}`,
+      )
+      scanAndOpen(repo, true)
+    }
+    setScanAfterConfiguration(false)
+  }
+
   async function connect(url: string, mode: ConnectMode): Promise<boolean> {
     setConnecting(true)
     setConnectError(undefined)
@@ -119,7 +136,11 @@ export default function ProjectsPage() {
       publishProjectConnected(repo)
       selectProject(repo.id)
       const label = `${repo.owner}/${repo.name}`
-      if (mode === "scan" && workspaceId) {
+      if (canConfigure) {
+        setConfigureRepo(repo)
+        setScanAfterConfiguration(mode === "scan" && Boolean(workspaceId))
+        toast.success(`Connected ${label}`)
+      } else if (mode === "scan" && workspaceId) {
         toast.success(
           `Connected ${label} · scan queued on ${repo.default_branch}`,
         )
@@ -303,6 +324,24 @@ export default function ProjectsPage() {
           />
         )}
       </section>
+
+      {configureRepo ? (
+        <SourceScopeSettings
+          key={configureRepo.id}
+          repoId={configureRepo.id}
+          canEdit={canConfigure}
+          initialOpen
+          saveLabel={
+            scanAfterConfiguration ? "Save and scan" : "Save configuration"
+          }
+          onSaved={finishConfiguration}
+          onSkip={scanAfterConfiguration ? finishConfiguration : undefined}
+          onClose={() => {
+            setConfigureRepo(undefined)
+            setScanAfterConfiguration(false)
+          }}
+        />
+      ) : null}
 
       <JavaOnlyDialog
         repository={pendingUrl ? repositoryLabel(pendingUrl) : undefined}

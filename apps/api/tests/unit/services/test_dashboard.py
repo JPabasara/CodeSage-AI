@@ -925,3 +925,17 @@ def test_missing_scores_are_queued_newest_first(
         str(oldest.id),
     ]
     assert all(call.args == ("codesage.score_snapshot",) for call in send_task.call_args_list)
+
+
+def test_comment_rule_findings_expose_original_comment_with_rule_provenance():
+    snapshot = _snapshot(scanned_at=datetime(2026, 10, 4, tzinfo=UTC), commit_sha="a" * 40, with_finding=True)
+    stored = snapshot.source_files[0].source_locations[0].findings[0]
+    stored.rule_id = "comment-pattern"
+    stored.description = 'Comment rule "Security TODO" matched this comment.'
+    stored.evidence = "// SECURITY-TODO: fix authentication"
+    rows = dashboard._finding_outputs(dashboard._score_snapshot(snapshot, _profile()))
+    assert rows[0].rule_id == "comment-pattern"
+    assert rows[0].source is Source.RULE
+    assert rows[0].comment_text == stored.evidence
+    assert rows[0].reason == stored.description
+    assert rows[0].confidence is None

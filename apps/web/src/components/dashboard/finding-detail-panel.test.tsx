@@ -161,6 +161,20 @@ test.each([
   },
 )
 
+test("comment rule findings show their deterministic source and original comment", () => {
+  const finding = {
+    ...mockFindings[0],
+    source: "rule" as const,
+    rule_id: "comment-pattern",
+    comment_text: "// SECURITY-TODO: fix auth",
+    reason: 'Comment rule "Security markers" matched this comment.',
+  }
+  render(<FindingDetailPanel finding={finding} onClose={vi.fn()} />)
+  expect(screen.getByText("Comment rule")).toBeInTheDocument()
+  expect(screen.getByText("Matched comment")).toBeInTheDocument()
+  expect(screen.getByText(finding.comment_text)).toBeInTheDocument()
+})
+
 test("shows the lines the finding points at, read from the analysed commit", async () => {
   render(
     <FindingDetailPanel

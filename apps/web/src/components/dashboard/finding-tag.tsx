@@ -50,13 +50,16 @@ export function CategoryTag({ category }: Readonly<{ category: Category }>) {
 }
 
 /** The raw value stays the text ("satd", "rule"); CSS only changes its case. */
-export function SourceTag({ source }: Readonly<{ source: Source }>) {
+export function SourceTag({
+  source,
+  commentRule = false,
+}: Readonly<{ source: Source; commentRule?: boolean }>) {
   return (
     <FindingTag
       color="var(--muted-foreground)"
       className={source === "satd" ? "uppercase" : undefined}
     >
-      {source}
+      {commentRule ? "Comment rule" : source}
     </FindingTag>
   )
 }
@@ -70,6 +73,7 @@ export function sentenceCase(value: string) {
 /** Where a finding came from, as people say it: PMD, a CodeSage rule, or SATD. */
 export function sourceLabel(finding: Pick<Finding, "source" | "rule_id">) {
   if (finding.source === "satd") return "SATD"
+  if (finding.rule_id === "comment-pattern") return "Comment rule"
   return finding.rule_id?.startsWith("pmd:") ? "PMD" : "Rule"
 }
 

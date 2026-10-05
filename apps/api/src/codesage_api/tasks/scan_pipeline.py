@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -50,6 +51,7 @@ from codesage_api.db.models import (
 from codesage_api.db.repositories import attempts, rules
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.db.session import session_scope
+from codesage_api.detection.comment_rules import match_comments
 from codesage_api.detection.fingerprint import (
     satd_fingerprint,
     unique_in_file_order,
@@ -74,7 +76,7 @@ from codesage_api.guardrails import (
 )
 from codesage_api.logging import get_logger, scan_context
 from codesage_api.scoring.enums import ScanErrorCode, ScanStage
-from codesage_api.source_scope import classify_source_scope
+from codesage_api.source_scope import classify_source_scope, is_excluded_path
 from codesage_api.tasks import cancel, progress
 from codesage_api.tasks.app import celery_app
 from codesage_api.tasks.repository_clone import (
@@ -170,6 +172,18 @@ def _file_reporter(attempt_id: str) -> Callable[[int, int], None]:
     return report
 
 
+def _apply_source_scope(repository_path: Path, scope: dict[str, Any] | None) -> None:
+    """Apply exclusions only to the worker's disposable checkout, before any detector."""
+    if scope is None or scope["scan_excluded_directories"]:
+        return
+    for path in repository_path.rglob("*.java"):
+        relative = path.relative_to(repository_path)
+        if ".git" in relative.parts:
+            continue
+        if is_excluded_path(relative.as_posix(), scope["test_path_patterns"], scope["production_path_overrides"]):
+            path.unlink()
+
+
 def _run_claimed(
     attempt_id: str,
     attempt_uuid: uuid.UUID,
@@ -199,6 +213,7 @@ def _run_claimed(
             branch=scan_input.branch_name,
         )
         clone_dir = str(cloned.path)
+        _apply_source_scope(cloned.path, scan_input.source_scope_config)
         inventory = check_java_sources(cloned.path)
         logger.info(
             "Java sources are within the scan limits",
@@ -221,6 +236,7 @@ def _run_claimed(
         cancel.check(attempt_id)
 
         stage = "detection"
+        disabled_rule_ids = set((scan_input.source_scope_config or {}).get("disabled_rule_ids", []))
         findings = detect(
             extracted.static_metrics,
             [
@@ -231,16 +247,16 @@ def _run_claimed(
                     threshold=rule.threshold,
                     message_template=rule.message_template,
                 )
-                for rule in stored_rules
+                for rule in stored_rules if rule.rule_id not in disabled_rule_ids
             ],
             cloned.path,
             extracted.method_metrics,
         )
         optional_detection = run_optional_detector(
             cloned.path,
-            ScanContext(attempt_id=attempt_id),
+            ScanContext(attempt_id=attempt_id, disabled_rule_ids=tuple(sorted(disabled_rule_ids))),
         )
-        findings.extend(optional_detection.findings)
+        findings.extend(item for item in optional_detection.findings if item.rule_id not in disabled_rule_ids)
         logger.info(
             "Optional detector completed",
             extra={
@@ -270,16 +286,21 @@ def _run_claimed(
                 extra={"error": str(exc)},
             )
 
-        # ML-1 SATD prediction, over at most `max_satd_comments` comments
+        # Explicit workspace markers are tracked without relying on an ML decision.
+        matched_comments, unmatched_comments = match_comments(
+            extracted.comments, (scan_input.source_scope_config or {}).get("comment_rules", []),
+        )
+        findings.extend(matched_comments)
+        # ML-1 SATD prediction, over at most `max_satd_comments` unmatched comments
         stage = "satd_prediction"
-        comments = cap_satd_comments(extracted.comments)
-        if len(comments) < len(extracted.comments):
+        comments = cap_satd_comments(unmatched_comments)
+        if len(comments) < len(unmatched_comments):
             logger.warning(
                 "SATD comments capped for this scan",
-                extra={"comment_count": len(extracted.comments), "kept": len(comments)},
+                extra={"comment_count": len(unmatched_comments), "kept": len(comments)},
             )
         try:
-            satd_predictions = [result for result in classify(comments) if result.is_debt]
+            satd_predictions = [result for result in classify(comments) if result.is_debt] if comments else []
         except MLServiceUnavailable as exc:
             _reraise_time_limit(exc)
             logger.warning(
@@ -429,6 +450,11 @@ def _finalize(
         if attempt.snapshot is not None:
             raise RuntimeError("Analysis attempt has already been finalized.")
 
+        scope = attempt.source_scope_config or {
+            "test_path_patterns": attempt.branch.repository.test_path_patterns,
+            "production_path_overrides": attempt.branch.repository.production_path_overrides,
+        }
+
         snapshot = Snapshot(
             analysis_attempt=attempt,
             commit_sha=attempt.commit_sha,
@@ -490,8 +516,8 @@ def _finalize(
                 language="java",
                 source_scope=classify_source_scope(
                     metrics.path,
-                    attempt.branch.repository.test_path_patterns,
-                    attempt.branch.repository.production_path_overrides,
+                    scope["test_path_patterns"],
+                    scope["production_path_overrides"],
                 ),
             )
             session.add(source_file)
@@ -577,8 +603,8 @@ def _finalize(
                     language="java",
                     source_scope=classify_source_scope(
                         detected.file_path,
-                        attempt.branch.repository.test_path_patterns,
-                        attempt.branch.repository.production_path_overrides,
+                        scope["test_path_patterns"],
+                        scope["production_path_overrides"],
                     ),
                 )
                 session.add(source_file)
@@ -594,8 +620,8 @@ def _finalize(
                     language="java",
                     source_scope=classify_source_scope(
                         path,
-                        attempt.branch.repository.test_path_patterns,
-                        attempt.branch.repository.production_path_overrides,
+                        scope["test_path_patterns"],
+                        scope["production_path_overrides"],
                     ),
                 )
                 session.add(source_file)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from codesage_api.db.base import Base, UUIDPrimaryKey
@@ -32,6 +33,8 @@ def values(enum: type[AnalysisStatus | AnalysisTriggerType]) -> list[str]:
 
 class AnalysisAttempt(UUIDPrimaryKey, Base):
     __tablename__ = "analysis_attempt"
+
+    source_scope_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     # Nullable for historical attempts; new API scans always record both.
     initiated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

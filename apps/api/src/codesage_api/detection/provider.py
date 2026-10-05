@@ -24,6 +24,7 @@ class DetectorStatus(str, Enum):
 @dataclass(frozen=True, slots=True)
 class ScanContext:
     attempt_id: str | None = None
+    disabled_rule_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

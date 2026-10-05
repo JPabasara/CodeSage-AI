@@ -1,5 +1,6 @@
 "use client"
 
+import { findingSummary } from "@/lib/finding-summary"
 import { FileCode2 } from "lucide-react"
 
 import { FindingMeta } from "@/components/dashboard/finding-tag"
@@ -108,7 +109,7 @@ export function FileDetailPanel({
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-foreground-strong">
-                    {finding.reason}
+                    {findingSummary(finding)}
                   </span>
                   <FindingMeta
                     finding={finding}

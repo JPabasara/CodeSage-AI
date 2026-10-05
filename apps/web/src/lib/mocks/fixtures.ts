@@ -1,3 +1,4 @@
+import type { CommentRule } from "@/lib/types"
 // Sample data, shaped by the contract.
 import type {
   Branch,
@@ -326,6 +327,8 @@ export function reportFor(
   isDefaultBranch: boolean,
   profile: ScoreProfile = balancedProfile,
   snapshotId?: string,
+  disabledRuleIds?: string[],
+  commentRules?: CommentRule[],
 ): HealthReport {
   const branchInfo = mockBranches.find((b) => b.name === branch)
   return buildHealthReport({
@@ -338,6 +341,8 @@ export function reportFor(
       (isDefaultBranch ? 1 : FEATURE_BRANCH_DEBT_SCALE),
     profile,
     snapshotId,
+    disabledRuleIds,
+    commentRules,
   })
 }
 

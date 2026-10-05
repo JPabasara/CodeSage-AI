@@ -73,3 +73,36 @@ def test_the_languages_call_reports_a_github_outage_as_one(monkeypatch) -> None:
 
     with pytest.raises(UpstreamUnavailable):
         github.fetch_repository("https://github.com/acme/widget")
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_directory_picker_reads_only_tree_metadata(monkeypatch, truncated):
+    requested = []
+
+    def handler(request):
+        requested.append(request.url.path)
+        assert request.url.params["recursive"] == "1"
+        return httpx.Response(
+            200,
+            json={
+                "truncated": truncated,
+                "tree": [
+                    {"type": "tree", "path": "src"},
+                    {"type": "blob", "path": "src/App.java"},
+                    {"type": "blob", "path": "README.md"},
+                ],
+            },
+        )
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        github.httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    if truncated:
+        with pytest.raises(UpstreamUnavailable):
+            github.fetch_file_paths("acme", "widget", "a" * 40)
+    else:
+        assert github.fetch_file_paths("acme", "widget", "a" * 40) == ["src/App.java"]
+    assert requested == ["/repos/acme/widget/git/trees/" + "a" * 40]

@@ -44,7 +44,7 @@ export const helpArticles: HelpArticle[] = [
       {
         heading: "If the result is empty",
         paragraphs: [
-          "Confirm the selected branch contains Java. Review test-path classification and whether the active profile excludes test findings. A clean Java project can also legitimately return no findings.",
+          "Confirm the selected branch contains Java. Review Directory exclusions and use Show excluded findings to check scanned test paths. A clean Java project can also legitimately return no findings.",
         ],
       },
     ],
@@ -180,13 +180,13 @@ export const helpArticles: HelpArticle[] = [
       {
         heading: "Why scores change without scanning",
         paragraphs: [
-          "Findings are stored, while scores are derived when read. Changing the workspace default, project override, profile weights, source trust, or test inclusion can re-score current and historical snapshots immediately.",
+          "Findings are stored, while scores are derived when read. Changing the workspace default, project override, profile weights or source trust can re-score current and historical snapshots immediately.",
         ],
       },
       {
         heading: "Choose a dashboard view",
         paragraphs: [
-          "Overview emphasizes health and priorities. Findings focuses the list. Findings + files adds the repository tree. Findings + detail keeps the selected finding open. Your browser remembers the chosen view.",
+          "Overview emphasizes health and priorities. Findings shows ranked cards and a detail panel. Code map shows the repository tree. Open scan history to view past scans.",
         ],
       },
     ],
@@ -204,7 +204,7 @@ export const helpArticles: HelpArticle[] = [
       {
         heading: "Read finding detail",
         paragraphs: [
-          "The panel shows file and line, category, severity, detector source, reason, and—when available—the measured value, threshold, and rule. Severity describes the issue; priority estimates its refactoring value.",
+          "Cards emphasize concise finding text. Use Previous and Next to browse ten findings per page. Select a card to see the source location, rule, metrics, threshold, and code excerpt when available. Severity describes the issue; priority estimates its refactoring value.",
         ],
       },
       {
@@ -214,9 +214,15 @@ export const helpArticles: HelpArticle[] = [
         ],
       },
       {
+        heading: "Disable a rule across the workspace",
+        paragraphs: [
+          "Org admins can choose Disable this rule in a built-in or PMD finding’s detail card. Confirm the workspace-wide change. It affects future scans; existing findings remain visible. Re-enable the rule in Profiles → Rule selection. This is separate from marking an individual finding done.",
+        ],
+      },
+      {
         heading: "Configure source scope",
         paragraphs: [
-          "Test-path settings affect future scans only. Selecting a folder creates a test glob. Unchecking a child within that folder creates a production override. Existing snapshots keep their original classification.",
+          "Open Directory exclusions to choose Exclude from scans or Hide from Refactor first by default. Detected test paths are preselected; untick incorrect matches to treat them as production code. Save and rescan to apply changed classification. Existing snapshots keep their original classification.",
         ],
       },
     ],
@@ -264,7 +270,7 @@ export const helpArticles: HelpArticle[] = [
     category: "Profiles",
     title: "Create and assign scoring profiles",
     description:
-      "Configure weights, trust, test inclusion, defaults, and overrides.",
+      "Configure weights, trust, defaults, overrides, and workspace rules.",
     intro:
       "Profiles express what technical debt matters most to a workspace or project. They change scoring, not detection.",
     sections: [
@@ -277,7 +283,7 @@ export const helpArticles: HelpArticle[] = [
       {
         heading: "Edit profile values",
         paragraphs: [
-          "Category weights change relative importance. Source trust adjusts detector contribution. Include test findings decides whether test-code findings affect health. Saving recalculates existing results without scanning.",
+          "Category weights change relative importance. Source trust adjusts detector contribution. Saving recalculates existing results without scanning. Directory exclusions are configured separately per repository; workspace rules control future detection.",
         ],
       },
       {

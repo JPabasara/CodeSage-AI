@@ -464,6 +464,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{repo_id}/source-scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        /** Read repository directory exclusions and scan options */
+        get: operations["get_source_scope_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Save directory exclusions (Managers and Org Admins only) */
+        patch: operations["update_source_scope_config"];
+        trace?: never;
+    };
     "/api/repos/{repo_id}/branches": {
         parameters: {
             query?: never;
@@ -833,6 +854,42 @@ export interface paths {
          *     returned as stored, the same as everywhere else in this contract.
          */
         post: operations["create_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/profiles/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the workspace rule catalog and selection */
+        get: operations["getWorkspaceRules"];
+        /** Select rules for future workspace scans (Org Admins only) */
+        put: operations["updateWorkspaceRules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set workspace comment rules for future scans (Org Admins only) */
+        patch: operations["updateWorkspaceCommentRules"];
+        trace?: never;
+    };
+    "/api/profiles/rules/test-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test a comment pattern against user-provided sample text */
+        post: operations["testCommentPattern"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1441,12 +1498,31 @@ export interface components {
             default_branch: string;
             /** Format: date-time */
             connected_at: string;
+            /** @default false */
+            hide_excluded_findings: boolean;
             /**
              * @description A derived hint for the projects list. **Absent** until the project has
              *     at least one successful scan — absent means "not yet scanned", which is
              *     a different thing from a health score of zero.
              */
             latest_health?: components["schemas"]["LatestHealth"] | null;
+        };
+        SourceScopeConfig: {
+            test_path_patterns: string[];
+            production_path_overrides: string[];
+            /** @default false */
+            scan_excluded_directories: boolean;
+            /** @default false */
+            hide_excluded_findings: boolean;
+            file_paths?: string[] | null;
+        };
+        UpdateSourceScopeConfig: {
+            test_path_patterns: string[];
+            production_path_overrides: string[];
+            /** @default false */
+            scan_excluded_directories: boolean;
+            /** @default false */
+            hide_excluded_findings: boolean;
         };
         LatestHealth: {
             score: number;
@@ -1975,6 +2051,42 @@ export interface components {
             workspace_default: components["schemas"]["ScoreProfile"];
             /** @description The explicit choice for this project, or null. */
             override?: components["schemas"]["ScoreProfile"] | null;
+        };
+        RuleOption: {
+            rule_id: string;
+            category: components["schemas"]["Category"];
+            description: string;
+        };
+        WorkspaceRules: {
+            rules: components["schemas"]["RuleOption"][];
+            disabled_rule_ids: string[];
+            /** @default [] */
+            comment_rules: components["schemas"]["CommentRule"][];
+        };
+        UpdateWorkspaceRules: {
+            disabled_rule_ids: string[];
+        };
+        CommentPattern: {
+            /** @enum {string} */
+            match_type: "keyword" | "regex";
+            pattern: string;
+            /** @default false */
+            case_sensitive: boolean;
+        };
+        CommentRule: components["schemas"]["CommentPattern"] & {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            category: components["schemas"]["Category"];
+            severity: components["schemas"]["Severity"];
+            /** @default true */
+            enabled: boolean;
+        };
+        UpdateCommentRules: {
+            comment_rules: components["schemas"]["CommentRule"][];
+        };
+        CommentPatternTest: components["schemas"]["CommentPattern"] & {
+            sample_comment: string;
         };
         /** @description A stored profile, as returned after clamping. */
         ScoreProfile: {
@@ -2787,6 +2899,68 @@ export interface operations {
             };
         };
     };
+    get_source_scope_config: {
+        parameters: {
+            query?: {
+                /** @description Include Java file paths from the default branch; no source contents are fetched. */
+                include_paths?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved repository settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceScopeConfig"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["UpstreamUnavailable"];
+        };
+    };
+    update_source_scope_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connected repository's identifier. */
+                repo_id: components["parameters"]["RepoId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSourceScopeConfig"];
+            };
+        };
+        responses: {
+            /** @description Saved settings. Hiding is off whenever excluded-directory scanning is off. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceScopeConfig"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     list_branches: {
         parameters: {
             query?: never;
@@ -3287,6 +3461,111 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getWorkspaceRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All supported rules and the workspace selection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRules"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateWorkspaceRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceRules"];
+            };
+        };
+        responses: {
+            /** @description Saved selection; existing scans remain unchanged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRules"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    updateWorkspaceCommentRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCommentRules"];
+            };
+        };
+        responses: {
+            /** @description Saved comment rules; detector selections remain unchanged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceRules"];
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    testCommentPattern: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentPatternTest"];
+            };
+        };
+        responses: {
+            /** @description Match result; sample text is not persisted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        matched: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["NotAuthenticated"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
         };
     };

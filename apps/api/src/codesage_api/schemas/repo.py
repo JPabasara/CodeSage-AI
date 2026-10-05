@@ -32,11 +32,16 @@ class LatestHealthOut(ApiModel):
 class SourceScopeConfigOut(ApiModel):
     test_path_patterns: list[str]
     production_path_overrides: list[str]
+    scan_excluded_directories: bool = False
+    hide_excluded_findings: bool = False
+    file_paths: list[str] | None = None
 
 
 class UpdateSourceScopeConfigIn(ApiModel):
     test_path_patterns: list[str]
     production_path_overrides: list[str]
+    scan_excluded_directories: bool = False
+    hide_excluded_findings: bool = False
 
 
 class RepoOut(ApiModel):
@@ -49,3 +54,4 @@ class RepoOut(ApiModel):
     connected_at: str
 
     latest_health: LatestHealthOut | None = None
+    hide_excluded_findings: bool = False

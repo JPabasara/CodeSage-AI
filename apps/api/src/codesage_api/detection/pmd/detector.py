@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from xml.etree import ElementTree
 
 from codesage_api.detection.fingerprint import build
 from codesage_api.detection.pmd.classpath import ClasspathProvider, NoTrustedClasspath
@@ -88,7 +90,7 @@ def scan(
     classpath_provider: ClasspathProvider | None = None,
 ) -> DetectorResult:
     """Run the optional PMD stage through its single public boundary."""
-    del scan_context
+    disabled = set(scan_context.disabled_rule_ids if scan_context else ())
     started = time.monotonic()
     configured = config or load_config()
     if not configured.enabled:
@@ -131,7 +133,18 @@ def scan(
         "files_analyzed": files_analyzed,
     }
     try:
-        run_output = run(repository_path, configured)
+        if any(rule_id.startswith("pmd:") for rule_id in disabled):
+            with TemporaryDirectory(prefix="codesage-selected-rules-") as directory:
+                selected_path = Path(directory) / "rules.xml"
+                count = _write_selected_ruleset(configured.ruleset, selected_path, disabled)
+                if count == 0:
+                    return DetectorResult(
+                        DetectorStatus.SKIPPED,
+                        metadata={**base_metadata, "status": "skipped", "findings": 0},
+                    )
+                run_output = run(repository_path, replace(configured, ruleset=selected_path))
+        else:
+            run_output = run(repository_path, configured)
         violations = parse(run_output.report, repository_path)
     except PMDExecutableMissing as exc:
         return DetectorResult(
@@ -166,7 +179,11 @@ def scan(
                 "duration_ms": round((time.monotonic() - started) * 1000),
             },
         )
-    findings = [_normalize(item, mapping[item.rule]) for item in violations]
+    findings = [
+        _normalize(item, mapping[item.rule])
+        for item in violations
+        if f"pmd:{item.rule}" not in disabled
+    ]
     partial = run_output.return_code != 0
     return DetectorResult(
         DetectorStatus.DEGRADED if partial else DetectorStatus.OK,
@@ -201,3 +218,20 @@ def scan(
             "duration_ms": round((time.monotonic() - started) * 1000),
         },
     )
+
+
+def _write_selected_ruleset(profile: Path, output: Path, disabled: set[str]) -> int:
+    """Copy enabled rule references, including their existing properties/priority."""
+    # PMD validates literal tag names, so its ruleset namespace must be unprefixed.
+    ElementTree.register_namespace("", "http://pmd.sourceforge.net/ruleset/2.0.0")
+    namespace = "{http://pmd.sourceforge.net/ruleset/2.0.0}"
+    root = ElementTree.Element(namespace + "ruleset", {"name": "CodeSage workspace selection"})
+    ElementTree.SubElement(root, namespace + "description").text = "Selected workspace rules."
+    for reference in ElementTree.parse(profile).getroot().findall(namespace + "rule"):
+        bundled = profile.parent / reference.attrib["ref"]
+        for rule in ElementTree.parse(bundled).getroot().findall(namespace + "rule"):
+            rule_id = "pmd:" + rule.attrib["ref"].rsplit("/", 1)[-1]
+            if rule_id not in disabled:
+                root.append(rule)
+    ElementTree.ElementTree(root).write(output, encoding="utf-8", xml_declaration=True)
+    return len(root.findall(namespace + "rule"))

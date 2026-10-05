@@ -260,3 +260,42 @@ def fetch_branch(
     return GitHubBranch(
         name=data["name"], head_commit_sha=data["commit"]["sha"]
     )
+
+
+def fetch_file_paths(owner: str, repository_name: str, revision: str) -> list[str]:
+    """Read paths only; never fetch blobs or source contents for the picker."""
+    settings = get_settings()
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "CodeSage-AI",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
+    try:
+        with httpx.Client(
+            base_url="https://api.github.com", timeout=10.0, headers=headers
+        ) as client:
+            response = client.get(
+                f"/repos/{quote(owner, safe='')}/{quote(repository_name, safe='')}/git/trees/{quote(revision, safe='')}",
+                params={"recursive": "1"},
+            )
+            if response.status_code == 429 or (
+                response.status_code == 403 and response.headers.get("x-ratelimit-remaining") == "0"
+            ):
+                raise RateLimited
+            if response.status_code >= 500:
+                raise UpstreamUnavailable
+            response.raise_for_status()
+            data = response.json()
+            if data.get("truncated"):
+                raise UpstreamUnavailable
+    except (httpx.TimeoutException, httpx.NetworkError) as exc:
+        raise UpstreamUnavailable from exc
+    except httpx.HTTPStatusError as exc:
+        raise RepositoryUnreachable from exc
+    return sorted(
+        item["path"]
+        for item in data["tree"]
+        if item["type"] == "blob" and item["path"].endswith(".java")
+    )

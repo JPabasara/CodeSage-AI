@@ -30,6 +30,9 @@ import {
   WEIGHT_ROWS,
   type ProfileValues,
 } from "@/components/profiles/profile-values"
+import { WorkspaceCommentRules } from "@/components/profiles/workspace-comment-rules"
+import { WorkspaceRuleSettings } from "@/components/profiles/workspace-rule-settings"
+import { SourceScopeSettings } from "@/components/dashboard/source-scope-settings"
 import { ScopeRail } from "@/components/profiles/scope-rail"
 import { PAGE_CONTAINER } from "@/components/layout/page-container"
 import {
@@ -628,6 +631,55 @@ function ProfilesView() {
       />
 
       <div className={MAIN_AREA}>
+        {projectId ? (
+          <section
+            className="space-y-2 rounded-lg border p-4"
+            aria-label="Repository rules"
+          >
+            <h2 className="text-sm font-semibold">Uses workspace rules</h2>
+            <p className="text-sm text-muted-foreground">
+              Rule selection applies to every repository in this workspace.
+            </p>
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => selectScope(undefined)}
+            >
+              View workspace rule settings
+            </Button>
+          </section>
+        ) : (
+          <>
+            <WorkspaceRuleSettings
+              key={`rules:${session?.workspace_id}`}
+              canEdit={
+                session?.permissions?.includes("workspace:update") ?? false
+              }
+            />
+            <WorkspaceCommentRules
+              key={`comments:${session?.workspace_id}`}
+              canEdit={
+                session?.permissions?.includes("workspace:update") ?? false
+              }
+            />
+          </>
+        )}
+        {projectId ? (
+          <section
+            className="space-y-2 rounded-lg border p-4"
+            aria-label="Repository exclusions"
+          >
+            <h2 className="text-sm font-semibold">Directory exclusions</h2>
+            <p className="text-sm text-muted-foreground">
+              Directory selections and scan settings for {projectLabel}.
+            </p>
+            <SourceScopeSettings
+              key={projectId}
+              repoId={projectId}
+              canEdit={canManage}
+            />
+          </section>
+        ) : null}
         <section aria-labelledby="pool-heading" className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div className="min-w-0">

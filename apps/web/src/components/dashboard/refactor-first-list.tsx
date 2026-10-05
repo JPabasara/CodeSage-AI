@@ -12,7 +12,12 @@ import {
   Search,
 } from "lucide-react"
 
-import { FindingMeta, SOURCE_LABELS } from "@/components/dashboard/finding-tag"
+import {
+  CategoryTag,
+  SeverityTag,
+  SourceTag,
+  SOURCE_LABELS,
+} from "@/components/dashboard/finding-tag"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,6 +36,7 @@ import type {
   TreeNode,
 } from "@/lib/types"
 import { SourceScopeSettings } from "@/components/dashboard/source-scope-settings"
+import { findingSummary } from "@/lib/finding-summary"
 import { cn, severityColor } from "@/lib/utils"
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -69,14 +75,16 @@ export const ALL_CATEGORIES: Category[] = [
   "security",
 ]
 
-function findingLocation(finding: Finding) {
-  return `${finding.file}:${finding.line}`
-}
-
 /** What a search looks through: the words, the place and the rule. */
 function matchesQuery(finding: Finding, query: string) {
   if (!query) return true
-  return [finding.reason, finding.file, finding.symbol, finding.rule_id]
+  return [
+    findingSummary(finding),
+    finding.reason,
+    finding.file,
+    finding.symbol,
+    finding.rule_id,
+  ]
     .filter(Boolean)
     .some((value) => value!.toLowerCase().includes(query))
 }
@@ -98,10 +106,11 @@ export type RefactorFirstListProps = {
   includeTestFindingsByDefault?: boolean
   repoId?: string
   treeNodes?: TreeNode[]
+  canConfigure?: boolean
 }
 
-/** Rows shown at first, and added by each "Load more". */
-const PAGE_SIZE = 25
+/** Findings shown on each page. */
+const PAGE_SIZE = 10
 
 function ListPanel({
   children,
@@ -196,6 +205,7 @@ export function RefactorFirstList({
   includeTestFindingsByDefault = false,
   repoId,
   treeNodes = [],
+  canConfigure = false,
 }: Readonly<RefactorFirstListProps>) {
   const [source, setSource] = useState<SourceFilter>("all")
   const [severities, setSeverities] = useState<ReadonlySet<Severity>>(
@@ -203,9 +213,9 @@ export function RefactorFirstList({
   )
   const [category, setCategory] = useState<Category | "all">("all")
   const [query, setQuery] = useState("")
-  // The list grows by PAGE_SIZE; a linked finding starts with enough rows to show it.
-  const [visibleCount, setVisibleCount] = useState(() => {
-    if (!selectedFingerprint) return PAGE_SIZE
+  // A linked finding opens on the page containing it.
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (!selectedFingerprint) return 0
     const initiallyVisible = findings
       .filter(
         (finding) =>
@@ -220,14 +230,31 @@ export function RefactorFirstList({
     const selectedIndex = initiallyVisible.findIndex(
       (finding) => finding.fingerprint === selectedFingerprint,
     )
-    return selectedIndex < 0
-      ? PAGE_SIZE
-      : (Math.floor(selectedIndex / PAGE_SIZE) + 1) * PAGE_SIZE
+    return selectedIndex < 0 ? 0 : Math.floor(selectedIndex / PAGE_SIZE)
   })
   const [showDone, setShowDone] = useState(false)
-  const [showTestFindings, setShowTestFindings] = useState(
-    includeTestFindingsByDefault,
-  )
+  const [testVisibility, setTestVisibility] = useState({
+    defaultValue: includeTestFindingsByDefault,
+    shown: includeTestFindingsByDefault,
+  })
+  if (testVisibility.defaultValue !== includeTestFindingsByDefault) {
+    setTestVisibility({
+      defaultValue: includeTestFindingsByDefault,
+      shown: includeTestFindingsByDefault,
+    })
+  }
+  const showTestFindings =
+    testVisibility.defaultValue === includeTestFindingsByDefault
+      ? testVisibility.shown
+      : includeTestFindingsByDefault
+  const setShowTestFindings = (
+    value: boolean | ((current: boolean) => boolean),
+  ) => {
+    setTestVisibility({
+      defaultValue: includeTestFindingsByDefault,
+      shown: typeof value === "function" ? value(showTestFindings) : value,
+    })
+  }
   // The toolbar control that holds the single Tab stop (roving tabindex).
   const [focusIndex, setFocusIndex] = useState(CATEGORY_FILTER_INDEX)
 
@@ -270,14 +297,13 @@ export function RefactorFirstList({
   ).length
   const openCount = findings.length - doneCount
 
-  const visibleRows = useMemo(
-    () => rows.slice(0, visibleCount),
-    [rows, visibleCount],
-  )
-  const remaining = rows.length - visibleRows.length
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, pageCount - 1)
+  const pageStart = safePage * PAGE_SIZE
+  const visibleRows = rows.slice(pageStart, pageStart + PAGE_SIZE)
 
   const toggleSeverity = (severity: Severity) => {
-    setVisibleCount(PAGE_SIZE)
+    setCurrentPage(0)
     setSeverities((current) => {
       const next = new Set(current)
       if (next.has(severity)) next.delete(severity)
@@ -287,7 +313,7 @@ export function RefactorFirstList({
   }
 
   const clearFilters = () => {
-    setVisibleCount(PAGE_SIZE)
+    setCurrentPage(0)
     setSource("all")
     setSeverities(new Set(SEVERITIES))
     setCategory("all")
@@ -321,7 +347,7 @@ export function RefactorFirstList({
             type="search"
             value={query}
             onChange={(event) => {
-              setVisibleCount(PAGE_SIZE)
+              setCurrentPage(0)
               setQuery(event.target.value)
             }}
             placeholder="Search findings or files"
@@ -376,7 +402,7 @@ export function RefactorFirstList({
                 type="button"
                 aria-pressed={pressed}
                 onClick={() => {
-                  setVisibleCount(PAGE_SIZE)
+                  setCurrentPage(0)
                   setSource(option.value)
                 }}
                 className={cn(
@@ -396,7 +422,7 @@ export function RefactorFirstList({
         <Select
           value={category}
           onValueChange={(value) => {
-            setVisibleCount(PAGE_SIZE)
+            setCurrentPage(0)
             setCategory(value as Category | "all")
           }}
         >
@@ -421,7 +447,7 @@ export function RefactorFirstList({
           type="button"
           aria-pressed={showDone}
           onClick={() => {
-            setVisibleCount(PAGE_SIZE)
+            setCurrentPage(0)
             setShowDone((current) => !current)
           }}
           className={cn(chip(showDone), showDone && "bg-accent")}
@@ -433,9 +459,10 @@ export function RefactorFirstList({
 
         <button
           type="button"
+          title="Show or hide findings from scanned excluded directories. Directories excluded from scans produce no findings."
           aria-pressed={showTestFindings}
           onClick={() => {
-            setVisibleCount(PAGE_SIZE)
+            setCurrentPage(0)
             setShowTestFindings((current) => !current)
           }}
           className={cn(
@@ -445,10 +472,14 @@ export function RefactorFirstList({
           {...toolbarItem(TEST_FILTER_INDEX)}
         >
           <FileCode2 className="size-3.5" aria-hidden="true" />
-          Test code
+          Show excluded findings
         </button>
         {repoId ? (
-          <SourceScopeSettings repoId={repoId} nodes={treeNodes} />
+          <SourceScopeSettings
+            repoId={repoId}
+            nodes={treeNodes}
+            canEdit={canConfigure}
+          />
         ) : null}
 
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
@@ -535,9 +566,9 @@ export function RefactorFirstList({
         </div>
       ) : (
         <div className="flex flex-col">
-          <ul aria-label="Ranked refactor findings">
+          <ul className="space-y-2 p-3" aria-label="Ranked refactor findings">
             {visibleRows.map((finding, index) => {
-              const location = findingLocation(finding)
+              const summary = findingSummary(finding)
               const selected = finding.fingerprint === selectedFingerprint
               const done = finding.status === "done"
               const busy = statusBusyFingerprint === finding.fingerprint
@@ -549,8 +580,8 @@ export function RefactorFirstList({
                 <li
                   key={finding.fingerprint}
                   className={cn(
-                    "flex items-center border-t border-l-[3px] border-l-transparent transition-colors first:border-t-0 hover:bg-muted/50",
-                    selected && "border-l-primary bg-accent hover:bg-accent",
+                    "overflow-hidden rounded-md border bg-card transition-colors hover:border-primary/40 hover:bg-accent/30",
+                    selected && "border-primary/70 bg-accent/40",
                   )}
                 >
                   <button
@@ -558,85 +589,110 @@ export function RefactorFirstList({
                     onClick={() => onSelect?.(finding)}
                     aria-current={selected ? "true" : undefined}
                     data-state={selected ? "selected" : undefined}
-                    aria-label={`${finding.severity} priority ${priority} finding: ${finding.reason} at ${location}`}
+                    aria-label={`${finding.severity} priority ${priority} finding: ${summary}`}
                     data-testid="finding-card"
                     className={cn(
-                      "group grid min-w-0 flex-1 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-start gap-x-3 py-2.5 pr-3 pl-2.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
+                      "group block w-full min-w-0 p-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset",
                       done && "opacity-70",
                     )}
                   >
-                    <span
-                      data-slot="rank"
-                      className="pt-0.5 text-center text-xs font-semibold text-muted-foreground tabular-nums"
-                    >
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span
-                        className="block truncate text-[0.90625rem] leading-snug font-medium text-foreground-strong group-hover:underline group-hover:decoration-border"
-                        title={finding.reason}
+                        data-slot="rank"
+                        className="min-w-6 font-mono text-xs text-muted-foreground tabular-nums"
                       >
-                        {finding.reason}
+                        {pageStart + index + 1}
                       </span>
-                      <FindingMeta finding={finding} compact className="mt-1">
-                        {done ? <Badge variant="outline">Done</Badge> : null}
-                      </FindingMeta>
-                    </span>
-                    <span
-                      className="text-right text-sm font-semibold text-foreground-strong tabular-nums"
-                      title="Priority"
+                      <SeverityTag severity={finding.severity} />
+                      <CategoryTag category={finding.category} />
+                      <SourceTag
+                        source={finding.source}
+                        commentRule={finding.rule_id === "comment-pattern"}
+                      />
+                      {done ? <Badge variant="outline">Done</Badge> : null}
+                      <span
+                        className="ml-auto font-mono text-xs text-muted-foreground tabular-nums"
+                        title="Priority"
+                      >
+                        P{priority}
+                      </span>
+                    </div>
+                    <p
+                      className="mt-2 text-base leading-6 font-medium wrap-break-word text-foreground-strong"
+                      title={summary}
                     >
-                      {priority}
-                      <span className="block text-[0.6875rem] font-normal text-muted-foreground">
-                        priority
-                      </span>
-                    </span>
+                      {summary}
+                    </p>
                   </button>
                   {canTriage ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-lg"
-                      className="mr-2 shrink-0 text-muted-foreground hover:text-foreground"
-                      aria-label={done ? "Reopen" : "Mark as done"}
-                      title={done ? "Reopen" : "Mark as done"}
-                      disabled={busy}
-                      onClick={() =>
-                        onStatusChange?.(finding, done ? "open" : "done")
-                      }
-                    >
-                      {busy ? (
-                        <Loader2 className="animate-spin" aria-hidden="true" />
-                      ) : done ? (
-                        <RotateCcw aria-hidden="true" />
-                      ) : (
-                        <CheckCircle2 aria-hidden="true" />
-                      )}
-                    </Button>
+                    <div className="flex justify-end border-t px-3 py-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label={done ? "Reopen" : "Mark as done"}
+                        title={done ? "Reopen" : "Mark as done"}
+                        disabled={busy}
+                        onClick={() =>
+                          onStatusChange?.(finding, done ? "open" : "done")
+                        }
+                      >
+                        {busy ? (
+                          <Loader2
+                            className="animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : done ? (
+                          <RotateCcw aria-hidden="true" />
+                        ) : (
+                          <CheckCircle2 aria-hidden="true" />
+                        )}
+                        {done ? "Reopen" : "Mark as done"}
+                      </Button>
+                    </div>
                   ) : null}
                 </li>
               )
             })}
           </ul>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-            <p
-              className="text-[0.84375rem] text-muted-foreground tabular-nums"
-              aria-live="polite"
+          {pageCount > 1 ? (
+            <nav
+              aria-label="Findings pagination"
+              className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-2.5"
             >
-              Showing 1–{visibleRows.length} of {rows.length}
-            </p>
-            {remaining > 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-8 px-3 text-sm"
-                onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+              <p
+                className="text-xs text-muted-foreground tabular-nums"
+                aria-live="polite"
               >
-                Load {Math.min(PAGE_SIZE, remaining)} more
-              </Button>
-            ) : null}
-          </div>
+                Page {safePage + 1} of {pageCount} · {pageStart + 1}–
+                {Math.min(pageStart + PAGE_SIZE, rows.length)} of {rows.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage === 0}
+                  onClick={() => setCurrentPage(Math.max(0, safePage - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safePage >= pageCount - 1}
+                  onClick={() =>
+                    setCurrentPage(Math.min(pageCount - 1, safePage + 1))
+                  }
+                >
+                  Next
+                </Button>
+              </div>
+            </nav>
+          ) : null}
         </div>
       )}
     </ListPanel>

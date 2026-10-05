@@ -105,6 +105,10 @@ test("Connect only, after the Java-only dialog, adds the repository to the list"
   ).toBeFocused()
   await dialog.getByRole("button", { name: "Connect only" }).click()
   await expect(dialog).toHaveCount(0)
+  await page
+    .getByRole("dialog", { name: "Directory exclusions" })
+    .getByRole("button", { name: "Close", exact: true })
+    .click()
 
   await expect(page.getByText(/connected octocat\/Hello-World/i)).toBeVisible()
   await expect(repoRows(page).filter({ hasText: "Hello-World" })).toBeVisible()
@@ -131,6 +135,11 @@ test("Connect and scan lands on the new project's dashboard with its first scan 
     "https://github.com/octocat/Hello-World",
     "Connect and scan",
   )
+  const configuration = page.getByRole("dialog", {
+    name: "Directory exclusions",
+  })
+  await expect(page).toHaveURL(/\/projects$/)
+  await configuration.getByRole("button", { name: "Save and scan" }).click()
 
   await expect(
     page.getByText("Connected octocat/Hello-World · scan queued on main"),
