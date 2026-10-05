@@ -4,11 +4,13 @@ import uuid
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from codesage_api.config import get_settings
 from codesage_api.db.models import Finding, Snapshot, SnapshotScore, SourceFile
 from codesage_api.db.repositories import dashboard as dashboard_repository
 from codesage_api.detection.fingerprint import unique_in_file_order
@@ -426,9 +428,23 @@ def _result_payload(scored: _ScoredSnapshot, previous: Snapshot | None = None) -
 
 def needs_enqueue(cached: SnapshotScore, created: bool) -> bool:
     """Queue a score calculation once: when it is new or not yet picked up, and
-    only if no earlier request queued it in the last couple of minutes."""
+    only if no earlier request queued it in the last couple of minutes.
+
+    A score still "running" well past the calculation's time limit was dropped
+    by a worker that died; it is queued again rather than left pending forever.
+    """
     waiting = created or (cached.status == "pending" and cached.started_at is None)
-    return waiting and progress.claim_score_enqueue(str(cached.id))
+    return (waiting or _stalled(cached)) and progress.claim_score_enqueue(str(cached.id))
+
+
+def _stalled(cached: SnapshotScore) -> bool:
+    if cached.status != "running" or cached.started_at is None:
+        return False
+    started = cached.started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    limit = timedelta(seconds=2 * get_settings().score_time_limit_seconds)
+    return datetime.now(UTC) - started > limit
 
 
 def _enqueue_pending_score(

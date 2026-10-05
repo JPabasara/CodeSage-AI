@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from codesage_api.config import get_settings
 from codesage_api.db.models import Repository, SnapshotScore
 from codesage_api.db.repositories import dashboard as dashboard_repository
 from codesage_api.db.rls import set_workspace_context
@@ -19,8 +20,14 @@ from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
 
+# A hung calculation would hold the single score worker and every score behind
+# it. The soft limit raises inside the task, which records the score as failed;
+# the hard one ends the process if even that does not come back.
+_LIMIT = get_settings().score_time_limit_seconds
+_LIMITS = {"soft_time_limit": _LIMIT, "time_limit": _LIMIT + 30}
 
-@celery_app.task(name="codesage.score_snapshot")
+
+@celery_app.task(name="codesage.score_snapshot", **_LIMITS)
 def score_snapshot(
     cache_id: str, workspace_id: str, profile_data: dict[str, object]
 ) -> None:
@@ -90,7 +97,7 @@ def _warm(workspace_uuid: uuid.UUID, only: set[uuid.UUID] | None) -> list[tuple[
     return jobs
 
 
-@celery_app.task(name="codesage.warm_workspace_scores")
+@celery_app.task(name="codesage.warm_workspace_scores", **_LIMITS)
 def warm_workspace_scores(workspace_id: str) -> None:
     """Prepare the latest snapshots for every project in the workspace."""
     workspace_uuid = uuid.UUID(workspace_id)
@@ -98,7 +105,7 @@ def warm_workspace_scores(workspace_id: str) -> None:
         score_snapshot.delay(cache_id, workspace_id, payload)
 
 
-@celery_app.task(name="codesage.warm_profile_scores")
+@celery_app.task(name="codesage.warm_profile_scores", **_LIMITS)
 def warm_profile_scores(workspace_id: str, profile_id: str) -> None:
     """Re-warm only the projects whose effective profile is this one.
 
@@ -118,7 +125,7 @@ def warm_profile_scores(workspace_id: str, profile_id: str) -> None:
         score_snapshot.delay(cache_id, workspace_id, payload)
 
 
-@celery_app.task(name="codesage.warm_snapshot_score")
+@celery_app.task(name="codesage.warm_snapshot_score", **_LIMITS)
 def warm_snapshot_score(snapshot_id: str, workspace_id: str) -> None:
     """Prepare and enqueue the effective-profile score after a scan completes."""
     workspace_uuid = uuid.UUID(workspace_id)

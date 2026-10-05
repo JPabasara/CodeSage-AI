@@ -888,12 +888,35 @@ def test_a_pending_score_is_queued_once_however_often_it_is_polled(monkeypatch) 
 
 
 def test_a_score_already_running_or_ready_is_never_queued(monkeypatch) -> None:
+    from datetime import UTC, datetime
+
     monkeypatch.setattr(dashboard.progress, "claim_score_enqueue", lambda _id: True)
-    running = SimpleNamespace(id="c", status="running", started_at=object())
-    ready = SimpleNamespace(id="c", status="ready", started_at=object())
+    running = SimpleNamespace(id="c", status="running", started_at=datetime.now(UTC))
+    ready = SimpleNamespace(id="c", status="ready", started_at=datetime.now(UTC))
 
     assert dashboard.needs_enqueue(running, created=False) is False
     assert dashboard.needs_enqueue(ready, created=False) is False
+
+
+def test_a_score_left_running_by_a_dead_worker_is_queued_again(monkeypatch) -> None:
+    """Its worker marked it running and died; nothing else would ever pick it
+    up, and the dashboard would say "calculating" for good."""
+    from datetime import UTC, datetime, timedelta
+
+    monkeypatch.setattr(dashboard.progress, "claim_score_enqueue", lambda _id: True)
+    limit = dashboard.get_settings().score_time_limit_seconds
+    stuck = SimpleNamespace(
+        id="c", status="running", started_at=datetime.now(UTC) - timedelta(seconds=3 * limit)
+    )
+    # Stored without a time zone, as some rows are: still read as UTC.
+    naive = SimpleNamespace(
+        id="d",
+        status="running",
+        started_at=(datetime.now(UTC) - timedelta(seconds=3 * limit)).replace(tzinfo=None),
+    )
+
+    assert dashboard.needs_enqueue(stuck, created=False) is True
+    assert dashboard.needs_enqueue(naive, created=False) is True
 
 
 @patch("codesage_api.services.dashboard.celery_app.send_task")
