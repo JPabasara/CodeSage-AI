@@ -32,6 +32,7 @@ spec:
           imagePullPolicy: IfNotPresent
           # Two processes per pod: request handling is CPU-bound (JSON), and one
           # process uses one core. `args` keeps tini as the entrypoint.
+          # No access log: ingress-nginx logs every request as JSON already.
           args:
             - uvicorn
             - codesage_api.main:app
@@ -41,6 +42,7 @@ spec:
             - "8000"
             - --workers
             - "2"
+            - --no-access-log
           ports:
             - name: http
               containerPort: 8000
