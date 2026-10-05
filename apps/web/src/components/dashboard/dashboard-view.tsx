@@ -40,6 +40,7 @@ import {
   acknowledgeScan,
   discoverScan,
   isJobActive,
+  isStopping,
   onScanEvent,
   pinScanResults,
   useScanFor,
@@ -563,7 +564,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
                     : "idle",
                 scoring: trackedScan?.job === "scoring",
                 progress: Math.floor(liveScan?.bar ?? 0),
-                stopping: trackedScan?.stopping ?? false,
+                stopping: trackedScan ? isStopping(trackedScan) : false,
                 branch: activeBranch || undefined,
                 onScan: activeBranch ? startTrackedScan : undefined,
                 // Stop lives in the progress card under the header.

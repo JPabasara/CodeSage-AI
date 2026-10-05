@@ -159,6 +159,8 @@ export interface ScanStatus {
   files_done?: number | null // Java files read so far (reading_comments only)
   files_total?: number | null
   typical_seconds?: number | null // this repository's usual scan length
+  /** Stop was pressed on a running scan; it ends when the current step does. */
+  cancel_requested?: boolean | null
 }
 
 // ── ScanSummary: one immutable stored snapshot, row in the Scan-History tab ──

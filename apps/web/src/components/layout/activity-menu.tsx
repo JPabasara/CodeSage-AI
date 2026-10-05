@@ -15,6 +15,7 @@ import { dashboardHrefFor } from "@/components/layout/scan-center"
 import { refreshActivity, useActivity } from "@/hooks/use-activity"
 import {
   acknowledgeScan,
+  isStopping,
   onScanEvent,
   useActiveScans,
   useScanLive,
@@ -203,7 +204,7 @@ function JobRow({
     <Row
       title={title}
       detail={`${
-        scan.stopping
+        isStopping(scan)
           ? "Stopping the scan"
           : scan.job === "scoring"
             ? stepInfo("score").title

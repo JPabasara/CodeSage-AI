@@ -7,6 +7,7 @@ import {
   Clock,
   Hourglass,
   Loader2,
+  OctagonX,
   Square,
 } from "lucide-react"
 
@@ -14,6 +15,7 @@ import { formatElapsed, typicalLabel } from "@/lib/scan-messages"
 import { Button } from "@/components/ui/button"
 import {
   isActivePhase,
+  isStopping,
   slowOf,
   useScanLive,
   type TrackedScan,
@@ -174,11 +176,10 @@ export function ScanProgressCard({
   const where = `${scan.repoName ?? "This project"} on ${scan.branch}`
   const count = step ? countLabel(step, scan.status) : undefined
 
-  const title = scan.stopping
-    ? "Stopping the scan"
-    : queued
-      ? "Queued"
-      : stepInfo(step!).title
+  const stopping = isStopping(scan)
+  const stepTitle = queued ? "Queued" : stepInfo(step!).title
+  // Stopping keeps the step in view: that is what has to finish first.
+  const title = stopping ? `Stopping · ${stepTitle}` : stepTitle
   const sub = queued
     ? `${where} · waiting for a worker`
     : [`Step ${current + 1} of ${STEPS.length}`, count, where]
@@ -230,11 +231,29 @@ export function ScanProgressCard({
       variant="outline"
       className="h-8 px-3 text-sm"
       onClick={onStop}
-      disabled={scan.stopping || !scan.status.scan_id}
+      disabled={stopping || !scan.status.scan_id}
     >
       <Square className="size-3.5" aria-hidden="true" />
-      {scan.stopping ? "Stopping…" : "Stop"}
+      {stopping ? "Stopping…" : "Stop"}
     </Button>
+  ) : null
+
+  // A running scan stops only at the end of its current step; say so, plainly.
+  const stoppingBanner = stopping ? (
+    <div
+      data-testid="scan-stopping-banner"
+      className={cn(
+        "flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive",
+        full ? "mt-4 w-full" : "mt-3",
+      )}
+    >
+      <OctagonX className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p>
+        <span className="font-semibold">Stopping.</span> The scan will stop when
+        the current step finishes{queued ? "" : ` (${stepTitle})`}. Nothing from
+        this scan is saved.
+      </p>
+    </div>
   ) : null
 
   // The step title is the one live region: it changes per step, which is worth hearing.
@@ -273,6 +292,7 @@ export function ScanProgressCard({
         </div>
         {heading}
         <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
+        {stoppingBanner}
         <div className="mt-5 w-full">{progressbar}</div>
         <div className="mt-2 flex w-full justify-between gap-3 text-[0.84375rem] text-muted-foreground tabular-nums">
           <span>
@@ -324,6 +344,7 @@ export function ScanProgressCard({
         </div>
         {stopButton}
       </div>
+      {stoppingBanner}
       <div className="mt-3">{progressbar}</div>
       <div className="mt-3">
         <Stepper current={current} wide />

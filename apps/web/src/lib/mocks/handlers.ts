@@ -404,6 +404,7 @@ function tick(repoId: string): ScanStatus {
     if (current.progress < FINALIZE_AT) {
       const cancelled: ScanStatus = {
         ...current,
+        cancel_requested: null,
         phase: "cancelled",
         finished_at: now,
       }
@@ -416,7 +417,11 @@ function tick(repoId: string): ScanStatus {
 
   const progress = Math.min(100, current.progress + scanStep())
   if (progress < 100) {
-    const next: ScanStatus = withStage({ ...current, progress })
+    const next: ScanStatus = {
+      ...withStage({ ...current, progress }),
+      // Stop pressed past the last checkpoint: still running, and saying so.
+      cancel_requested: Boolean(current.cancel_requested) || undefined,
+    }
     scans.set(repoId, next)
     return next
   }
@@ -428,6 +433,7 @@ function tick(repoId: string): ScanStatus {
     finished_at: now,
     stage: null,
     step: null,
+    cancel_requested: null,
     commits_done: null,
     commits_total: null,
     files_done: null,
@@ -1916,7 +1922,10 @@ export const handlers = [
 
     // 202: the flag is set and the phase comes back UNCHANGED.
     cancelRequested.add(repoId)
-    return HttpResponse.json(current, { status: 202 })
+    // Like the API: running until the current step ends, and saying so meanwhile.
+    const requested: ScanStatus = { ...current, cancel_requested: true }
+    scans.set(repoId, requested)
+    return HttpResponse.json(requested, { status: 202 })
   }),
 
   http.get("*/api/healthz", () => HttpResponse.json({ status: "ok" })),
