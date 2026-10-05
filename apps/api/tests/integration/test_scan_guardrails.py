@@ -160,6 +160,70 @@ def test_expiry_never_reaches_another_workspace(account) -> None:
         assert db.get(AnalysisAttempt, abandoned).status is AnalysisStatus.RUNNING
 
 
+def test_stop_ends_a_queued_scan_at_once_but_never_one_a_worker_claimed(account) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    queued, claimed = _seed(
+        engine,
+        user_id,
+        workspace_id,
+        [(AnalysisStatus.QUEUED, None), (AnalysisStatus.QUEUED, None)],
+    )
+    with _as_app(engine, workspace_id) as db:
+        assert attempts.begin_for_worker(db, workspace_id, claimed) is not None
+        db.commit()
+
+    with _as_app(engine, workspace_id) as db:
+        assert attempts.cancel_queued(db, workspace_id, queued) is True
+        # Running now: it stops at its next step, through the cancel flag.
+        assert attempts.cancel_queued(db, workspace_id, claimed) is False
+        db.commit()
+
+    with Session(engine) as db:
+        stopped = db.get(AnalysisAttempt, queued)
+        assert stopped.status is AnalysisStatus.CANCELLED
+        assert stopped.completion_time is not None
+        assert db.get(AnalysisAttempt, claimed).status is AnalysisStatus.RUNNING
+
+
+def test_only_the_lost_queued_scans_are_ended(account) -> None:
+    engine, _, user_id, workspace_id, _ = account
+    lost, held, running = _seed(
+        engine,
+        user_id,
+        workspace_id,
+        [
+            (AnalysisStatus.QUEUED, None),
+            (AnalysisStatus.QUEUED, None),
+            (AnalysisStatus.RUNNING, datetime.now(UTC)),
+        ],
+    )
+
+    with _as_app(engine, workspace_id) as db:
+        assert sorted(attempts.list_queued_in_workspace(db, workspace_id)) == sorted([lost, held])
+        assert attempts.count_active_in_workspace(db, workspace_id) == 3
+        # A running id in the list is not touched: only QUEUED rows are lost.
+        assert attempts.expire_lost_queued(db, workspace_id, [lost, running]) == 1
+        db.commit()
+
+    with Session(engine) as db:
+        ended = db.get(AnalysisAttempt, lost)
+        assert ended.status is AnalysisStatus.ERROR
+        assert ended.failure_information == attempts.LOST_MESSAGE
+        assert db.get(AnalysisAttempt, held).status is AnalysisStatus.QUEUED
+        assert db.get(AnalysisAttempt, running).status is AnalysisStatus.RUNNING
+
+
+def test_a_status_read_skips_the_tidy_up_while_a_worker_holds_the_slot(account) -> None:
+    """Non-blocking: a poll never queues behind a worker's claim."""
+    engine, _, _, workspace_id, _ = account
+    with _as_app(engine, workspace_id) as worker, _as_app(engine, workspace_id) as poll:
+        attempts.lock_workspace_slot(worker, workspace_id)
+        assert attempts.try_lock_workspace_slot(poll, workspace_id) is False
+        worker.rollback()
+        assert attempts.try_lock_workspace_slot(poll, workspace_id) is True
+        poll.rollback()
+
+
 def test_the_status_endpoint_reads_back_the_stored_code(account) -> None:
     engine, _, user_id, workspace_id, _ = account
     (attempt_id,) = _seed(engine, user_id, workspace_id, [(AnalysisStatus.RUNNING, datetime.now(UTC))])

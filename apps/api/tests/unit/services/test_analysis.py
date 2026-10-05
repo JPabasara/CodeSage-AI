@@ -13,6 +13,28 @@ from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage, Scan
 from codesage_api.services import analysis
 from codesage_api.tasks import progress
 
+# The real tidy-up, kept before the fixture below swaps it out.
+_REAL_HEAL = analysis._heal
+_REAL_SYNC_DEMAND = analysis._sync_demand
+
+
+@pytest.fixture(autouse=True)
+def plain_heal_and_no_redis():
+    """Most tests replace the whole `attempts` module with a Mock, which the full
+    tidy-up cannot iterate. They get its first half, ending stale running
+    scans, which is what they check; the lost-queue half has its own tests."""
+
+    def heal(session, workspace_id):
+        analysis.attempts.expire_stale_running(session, workspace_id)
+
+    with (
+        patch.object(analysis, "_heal", side_effect=heal),
+        patch.object(analysis, "_sync_demand"),
+        patch.object(analysis.progress, "mark_waiting"),
+        patch.object(analysis.progress, "clear"),
+    ):
+        yield
+
 
 @pytest.fixture(autouse=True)
 def rule_selection():
@@ -179,21 +201,129 @@ def test_status_maps_every_database_phase(
     assert result.progress == expected_progress
 
 
-@pytest.mark.parametrize("status", [AnalysisStatus.QUEUED, AnalysisStatus.RUNNING])
 @patch("codesage_api.services.analysis.progress.request_cancel")
 @patch("codesage_api.services.analysis.attempts")
-def test_cancel_requests_cooperative_stop_for_active_attempt(
+def test_stop_on_a_running_scan_asks_the_worker_to_stop_at_its_next_step(
     attempt_repository: Mock,
     request_cancel: Mock,
-    status: AnalysisStatus,
 ) -> None:
-    attempt = _attempt(status)
+    attempt = _attempt(AnalysisStatus.RUNNING)
     attempt_repository.get_for_repository.return_value = attempt
+    attempt_repository.cancel_queued.return_value = False
 
     result = analysis.cancel(Mock(), uuid.uuid4(), uuid.uuid4(), attempt.id)
 
     request_cancel.assert_called_once_with(str(attempt.id))
-    assert result.phase is ScanPhase(status.value)
+    assert result.phase is ScanPhase.RUNNING
+
+
+@patch("codesage_api.services.analysis.progress.request_cancel")
+@patch("codesage_api.services.analysis.attempts")
+def test_stop_on_a_queued_scan_cancels_it_at_once(
+    attempt_repository: Mock,
+    request_cancel: Mock,
+) -> None:
+    """A scan that never started has no step to finish, and may have no worker
+    holding it at all: waiting for one to read a flag could wait forever."""
+    attempt = _attempt(AnalysisStatus.QUEUED)
+    attempt_repository.get_for_repository.return_value = attempt
+
+    def cancel_queued(_session, _workspace, attempt_id):
+        assert attempt_id == attempt.id
+        attempt.status = AnalysisStatus.CANCELLED
+        return True
+
+    attempt_repository.cancel_queued.side_effect = cancel_queued
+    session = Mock()
+    workspace_id = uuid.uuid4()
+
+    result = analysis.cancel(session, workspace_id, uuid.uuid4(), attempt.id)
+
+    assert result.phase is ScanPhase.CANCELLED
+    request_cancel.assert_not_called()
+    analysis.progress.clear.assert_called_once_with(str(attempt.id))
+    analysis._sync_demand.assert_called_once_with(session, workspace_id)
+
+
+@patch(
+    "codesage_api.services.analysis.progress.read_status",
+    return_value=progress.ProgressReading(percent=40, cancel_requested=True),
+)
+@patch("codesage_api.services.analysis.attempts")
+def test_a_stop_pressed_on_a_running_scan_shows_in_its_status(
+    attempt_repository: Mock,
+    _read_status: Mock,
+) -> None:
+    running = _attempt(AnalysisStatus.RUNNING)
+    attempt_repository.get_for_repository.return_value = running
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), running.id)
+
+    assert result.cancel_requested is True
+
+
+@patch("codesage_api.services.analysis.attempts")
+def test_cancel_requested_is_absent_unless_running(attempt_repository: Mock) -> None:
+    queued = _attempt(AnalysisStatus.QUEUED)
+    attempt_repository.get_for_repository.return_value = queued
+
+    result = analysis.get_status(Mock(), uuid.uuid4(), uuid.uuid4(), queued.id)
+
+    assert result.cancel_requested is None
+
+
+# ── the tidy-up: abandoned scans end, and the autoscaler counts true ────────
+
+
+def _heal_with(queued_ids, lost_ids, *, locked=True, active=0, limit=1):
+    attempts = Mock()
+    attempts.try_lock_workspace_slot.return_value = locked
+    attempts.list_queued_in_workspace.return_value = list(queued_ids)
+    attempts.expire_lost_queued.side_effect = lambda _s, _w, ids: len(ids)
+    attempts.count_active_in_workspace.return_value = active
+    settings = Mock(scan_queue_heartbeat_seconds=120, max_running_scans_per_workspace=limit)
+    with (
+        patch.object(analysis, "attempts", attempts),
+        patch.object(analysis, "get_settings", return_value=settings),
+        patch.object(analysis.progress, "is_lost", side_effect=lambda i, _h: i in {str(x) for x in lost_ids}),
+        patch.object(analysis.progress, "sync_scan_demand") as demand,
+        patch.object(analysis, "_sync_demand", _REAL_SYNC_DEMAND),
+    ):
+        _REAL_HEAL(Mock(), WORKSPACE)
+    return attempts, demand
+
+
+WORKSPACE = uuid.uuid4()
+
+
+def test_a_queued_scan_no_worker_holds_is_ended() -> None:
+    held, lost = uuid.uuid4(), uuid.uuid4()
+
+    attempts, _ = _heal_with([held, lost], [lost])
+
+    attempts.expire_stale_running.assert_called_once()
+    attempts.expire_lost_queued.assert_called_once()
+    assert attempts.expire_lost_queued.call_args.args[2] == [lost]
+    analysis.progress.clear.assert_called_once_with(str(lost))
+
+
+def test_nothing_is_ended_while_someone_else_holds_the_slot_lock() -> None:
+    attempts, demand = _heal_with([uuid.uuid4()], [], locked=False)
+
+    attempts.expire_stale_running.assert_not_called()
+    attempts.expire_lost_queued.assert_not_called()
+    demand.assert_not_called()
+
+
+@pytest.mark.parametrize(("active", "limit", "slots"), [(0, 1, 0), (4, 1, 1), (4, 2, 2), (1, 3, 1)])
+def test_a_workspace_asks_the_autoscaler_for_no_more_slots_than_it_may_run(
+    active: int, limit: int, slots: int
+) -> None:
+    """Five scans queued in one workspace still run one at a time: asking for
+    three workers would only bring up two that wait."""
+    _, demand = _heal_with([], [], active=active, limit=limit)
+
+    demand.assert_called_once_with(str(WORKSPACE), slots)
 
 
 @pytest.mark.parametrize(
