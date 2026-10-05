@@ -18,12 +18,19 @@ Workloads:
 | `web` | `ghcr.io/jpabasara/codesage-ai/web` | 1–2 | HPA, CPU 70% |
 | `api` | `ghcr.io/jpabasara/codesage-ai/api` | 1–3, two uvicorn workers each | HPA, CPU 70% |
 | `ml` | `ghcr.io/jpabasara/codesage-ai/ml` | 1 | — |
-| `worker` | `api` image, queue `scans` | 1–3 | KEDA |
+| `worker` | `api` image, queue `scans` | 1–3 | KEDA, one per workspace with a scan to run |
 | `score-worker` | `api` image, queue `scoring` | 1–2 | KEDA |
 | `redis` | `redis:7.4-alpine` | 1 | — |
 
 `web`, `api`, `worker` and `score-worker` have no `replicas` field: the HPA or
 KEDA owns the count. Resource requests and limits are set in each manifest.
+
+The scan workers scale on `codesage:scan-demand`, a Redis list the API and the
+workers keep at one entry per workspace scan slot with work to do. A workspace
+runs one scan at a time, so its queue alone never brings up workers that could
+only wait; three workspaces scanning at once get three workers. After changing
+`keda-worker.yaml`, `worker.yaml` or `score-worker.yaml`, apply them again
+(the commands below); CI only changes image tags.
 
 Normal deploys are done by CI (`.github/workflows/ci.yml`): after the tests and
 the staging smoke test pass, it sets the new `sha-` image tags on the cluster and
