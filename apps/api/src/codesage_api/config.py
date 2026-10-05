@@ -79,6 +79,19 @@ class Settings(BaseSettings):
     max_queued_scans_per_workspace: int = Field(default=5, ge=1)
     # How often a waiting scan checks for a free slot.
     scan_queue_retry_seconds: int = Field(default=15, ge=1)
+    # A queued scan no worker has picked up within this long was lost on the way
+    # to the broker. Generous: a backlog of other workspaces' scans is not a loss.
+    scan_pickup_seconds: int = Field(default=3 * 60 * 60, ge=60)
+    # Once a worker holds a waiting scan it re-marks it on every slot check; a
+    # mark this old means no worker holds it any more.
+    scan_queue_heartbeat_seconds: int = Field(default=120, ge=30)
+    # Database errors while claiming a slot are retried this many times before
+    # the scan is ended with a clear message instead of staying queued.
+    scan_claim_attempts: int = Field(default=5, ge=1)
+    # CK, the code-metrics tool, gets its own limit inside the scan's.
+    ck_timeout_seconds: int = Field(default=15 * 60, ge=60)
+    # Profile scores: one calculation, and preparing a workspace's worth of them.
+    score_time_limit_seconds: int = Field(default=5 * 60, ge=30)
     # Finished dashboard responses kept in each API process; 0 turns it off.
     response_cache_megabytes: int = Field(default=48, ge=0)
 
@@ -90,6 +103,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "CODESAGE_SCAN_SOFT_TIME_LIMIT_SECONDS must be below "
                 "CODESAGE_SCAN_TIME_LIMIT_SECONDS."
+            )
+        if self.scan_queue_heartbeat_seconds <= 2 * self.scan_queue_retry_seconds:
+            raise ValueError(
+                "CODESAGE_SCAN_QUEUE_HEARTBEAT_SECONDS must be more than twice "
+                "CODESAGE_SCAN_QUEUE_RETRY_SECONDS, or a waiting scan looks lost "
+                "between two slot checks."
             )
         return self
 
