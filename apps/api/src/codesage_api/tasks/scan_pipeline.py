@@ -14,6 +14,7 @@ matches the deployment view.
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -264,6 +265,7 @@ def _run_claimed(
     scan_input: attempts.WorkerScanInput,
     stored_rules: list[RuleDefinition],
 ) -> None:
+    started = time.monotonic()
     workspace_id = str(workspace_uuid)
     clone_dir = str(clone_path(attempt_uuid))
     stage = "cloning"
@@ -401,6 +403,7 @@ def _run_claimed(
             )
         except Exception:
             logger.exception("Could not enqueue snapshot score warm-up")
+        _log_scan_finished(AnalysisStatus.DONE, None, time.monotonic() - started)
     except cancel.ScanCancelled:
         _set_terminal(
             attempt_uuid,
@@ -876,3 +879,27 @@ def _set_terminal(
         attempt.failure_code = (
             failure_code.value if isinstance(failure_code, ScanErrorCode) else failure_code
         )
+        reason = attempt.failure_code
+        duration = (
+            (attempt.completion_time - attempt.start_time).total_seconds()
+            if attempt.start_time is not None
+            else None
+        )
+    # Logged once the ending is committed, never for one that was rolled back.
+    _log_scan_finished(status, reason, duration)
+
+
+def _log_scan_finished(
+    status: AnalysisStatus, reason: str | None, duration_seconds: float | None
+) -> None:
+    # Grafana dashboards count this line: keep the message and the field names.
+    logger.info(
+        "Scan finished",
+        extra={
+            "outcome": status.value,
+            "reason": reason or "none",
+            "duration_seconds": (
+                round(duration_seconds, 1) if duration_seconds is not None else None
+            ),
+        },
+    )
