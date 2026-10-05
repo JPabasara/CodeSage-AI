@@ -32,6 +32,7 @@ from codesage_api.db.repositories import attempts
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.integrations.github import GitHubBranch
 from codesage_api.main import create_app
+from codesage_api.routers import profiles as profiles_router
 from codesage_api.services import (
     analysis,
     dashboard,
@@ -39,6 +40,7 @@ from codesage_api.services import (
     member_admin,
     profiles,
     repositories,
+    workspace_rules,
 )
 from codesage_api.services import auth as auth_service
 
@@ -69,6 +71,10 @@ INVENTORY = {
     ("PUT", "/api/snapshots/{snapshot_id}/findings/{fingerprint}/status"): "finding:triage",
     ("GET", "/api/profiles"): "profile:read",
     ("POST", "/api/profiles"): "profile:update",
+    ("GET", "/api/profiles/rules"): "profile:read",
+    ("PUT", "/api/profiles/rules"): "workspace:update",
+    ("PATCH", "/api/profiles/rules"): "workspace:update",
+    ("POST", "/api/profiles/rules/test-comment"): "profile:read",
     ("GET", "/api/profiles/active"): "profile:read",
     ("PUT", "/api/profiles/active"): "profile:update",
     ("GET", "/api/profiles/default"): "profile:read",
@@ -256,6 +262,16 @@ def request_args(method, path):
         return {"json": {"branch": "main"}}
     if method == "POST" and path == "/api/profiles":
         return {"json": {"name": "Release gate", **PROFILE}}
+    if method == "PUT" and path == "/api/profiles/rules":
+        return {"json": {"disabled_rule_ids": []}}
+    if method == "PATCH" and path == "/api/profiles/rules":
+        return {"json": {"comment_rules": []}}
+    if method == "POST" and path == "/api/profiles/rules/test-comment":
+        return {
+            "json": {
+                "match_type": "keyword", "pattern": "TODO", "sample_comment": "// TODO fix"
+            }
+        }
     if method == "PATCH" and path.startswith("/api/profiles/"):
         return {"json": {"name": "Renamed"}}
     if method == "PUT" and path.endswith("/status"):
@@ -299,6 +315,8 @@ def test_every_operation_checks_role_before_business_service(
             ],
         ),
         (finding_triage, ["set_status"]),
+        (workspace_rules, ["get", "update", "update_comments"]),
+        (profiles_router, ["test_pattern"]),
         (
             analysis,
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],
@@ -565,6 +583,8 @@ def test_all_operations_deny_when_role_grants_are_revoked(account, resources, cl
             ],
         ),
         (finding_triage, ["set_status"]),
+        (workspace_rules, ["get", "update", "update_comments"]),
+        (profiles_router, ["test_pattern"]),
         (
             analysis,
             ["start", "get_status", "get_active", "cancel", "get_history", "list_activity"],

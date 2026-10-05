@@ -292,11 +292,15 @@ test("a profile change re-ranks the dashboard with no re-scan", async ({
   /** Where each finding sits in the Refactor-First list. */
   async function rankings() {
     await expect(
-      findingCards(page).filter({ hasText: /940 lines long/ }),
+      findingCards(page).filter({
+        hasText: /Split this large file into smaller files by responsibility/,
+      }),
     ).toBeVisible()
     const cards = await findingCards(page).allInnerTexts()
     return {
-      longFile: cards.findIndex((r) => /940 lines long/.test(r)),
+      longFile: cards.findIndex((r) =>
+        /Split this large file into smaller files by responsibility/.test(r),
+      ),
       sqlInjection: cards.findIndex((r) => /string concatenation/.test(r)),
     }
   }

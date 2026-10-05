@@ -114,10 +114,16 @@ test("moving between findings never closes the detail", async ({ page }) => {
   await findingCards(page).filter({ hasText: "hardcoded" }).click()
   await expect(detailPanel(page)).toBeVisible()
 
-  await findingCards(page).filter({ hasText: "cyclomatic complexity" }).click()
+  await findingCards(page)
+    .filter({ hasText: "Split this method into smaller functions" })
+    .click()
 
   const detail = detailPanel(page)
-  await expect(detail.getByText(/cyclomatic complexity 18/i)).toBeVisible()
+  await expect(
+    detail.getByRole("heading", {
+      name: "Split this method into smaller functions to reduce complexity.",
+    }),
+  ).toBeVisible()
   await expect(page).toHaveURL(/finding=/)
 })
 
@@ -182,7 +188,9 @@ test("the detail shows a rule finding's evidence: measured value versus limit", 
   page,
 }) => {
   await showFindings(page)
-  await findingCards(page).filter({ hasText: "cyclomatic complexity" }).click()
+  await findingCards(page)
+    .filter({ hasText: "Split this method into smaller functions" })
+    .click()
 
   const detail = detailPanel(page)
   await expect(detail.getByText(/Measured/)).toBeVisible()

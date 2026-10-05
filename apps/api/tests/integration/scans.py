@@ -43,7 +43,8 @@ from codesage_api.main import create_app
 from codesage_api.routers import auth as auth_router
 from codesage_api.routers import members as members_router
 from codesage_api.scoring.enums import Category, Severity
-from codesage_api.services import dashboard
+from codesage_api.services import dashboard, workspace_rules
+from codesage_api.source_scope import scan_scope_config
 from codesage_api.tasks import scan_pipeline, score_cache
 from codesage_api.tasks.repository_clone import ClonedRepository
 
@@ -118,7 +119,7 @@ class ScanWorld:
             ],
             class_metrics=[],
             process_metrics=self.process_metrics,
-            comments=[],
+            comments=[prediction.comment for prediction in self.satd_predictions],
         )
 
 
@@ -209,9 +210,17 @@ def stub_outside_world(monkeypatch: pytest.MonkeyPatch, engine: Engine, world: S
 def queue_scan(tenant: Tenant, commit_sha: str) -> uuid.UUID:
     with app_scope(tenant.engine) as db:
         set_workspace_context(db, tenant.workspace_id)
+        scope = scan_scope_config(db.get(Repository, tenant.repository_id))
+        disabled = workspace_rules.disabled_rules(db, tenant.workspace_id)
+        if disabled:
+            scope["disabled_rule_ids"] = disabled
+        comments = workspace_rules.comment_rules(db, tenant.workspace_id)
+        if comments:
+            scope["comment_rules"] = comments
         attempt = attempts.create_queued(
             db, tenant.branch_id, commit_sha,
             actor_user_id=tenant.user_id, workspace_id=tenant.workspace_id,
+            source_scope_config=scope,
         )
         return attempt.id
 
