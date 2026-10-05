@@ -53,7 +53,9 @@ export default function RootLayout({
         <ThemeProvider
           // `class`, because globals.css keys its dark palette off `.dark`.
           attribute="class"
-          defaultTheme="system"
+          // Newcomers start in light. A saved choice (Light, Dark or System
+          // default, from the Theme menu) always wins over this.
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >

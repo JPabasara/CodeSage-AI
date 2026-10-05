@@ -61,8 +61,10 @@ signedOut("0 axe violations on /login in light mode", async ({ page }) => {
 })
 
 signedOut("0 axe violations on /login in dark mode", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" })
+  // Newcomers start in light, so dark has to be a saved choice (next-themes' key).
+  await page.addInitScript(() => localStorage.setItem("theme", "dark"))
   await page.goto("/login")
+  await expect(page.locator("html")).toHaveClass(/dark/)
   await expect(
     page.getByRole("heading", {
       name: /sign in to the codesage ai workspace/i,

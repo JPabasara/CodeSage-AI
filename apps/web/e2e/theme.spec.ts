@@ -59,3 +59,23 @@ test("switching back to light really goes back", async ({ page }) => {
   await chooseTheme(page, "Light")
   await expect(html(page)).not.toHaveClass(/dark/)
 })
+
+test("a newcomer starts in light, even when the device prefers dark", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" })
+  await page.goto("/projects")
+  await expect(html(page)).not.toHaveClass(/dark/)
+  await page.getByRole("button", { name: "Theme", exact: true }).click()
+  await expect(page.getByRole("menuitemradio", { name: "Light" })).toBeChecked()
+})
+
+test("System default still follows the device once chosen", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" })
+  await page.goto("/projects")
+
+  await chooseTheme(page, "System default")
+  await expect(html(page)).toHaveClass(/dark/)
+})
