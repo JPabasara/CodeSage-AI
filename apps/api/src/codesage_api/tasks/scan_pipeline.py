@@ -25,6 +25,7 @@ from typing import Any
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from codesage_api.config import get_settings
 from codesage_api.db.enums import (
@@ -65,6 +66,7 @@ from codesage_api.detection.rules.registry import from_stored
 from codesage_api.detection.satd.client import SATDResult, classify
 from codesage_api.detection.satd.severity_markers import assign_severity
 from codesage_api.errors import MLServiceUnavailable
+from codesage_api.extractors.ck_metrics import CKTimedOut
 from codesage_api.extractors.pipeline import ExtractionResult, extract
 from codesage_api.guardrails import (
     STALE_GRACE_SECONDS,
@@ -106,8 +108,12 @@ _settings = get_settings()
     name="codesage.scan",
     soft_time_limit=_settings.scan_soft_time_limit_seconds,
     time_limit=_settings.scan_time_limit_seconds,
+    # A scan waits for its workspace's slot as long as the queue ahead of it
+    # takes. On `retry()`, max_retries=None means "the task's default", so the
+    # unlimited wait has to be declared here, on the task.
+    max_retries=None,
 )
-def run_scan(self, attempt_id: str, workspace_id: str) -> None:
+def run_scan(self, attempt_id: str, workspace_id: str, claim_failures: int = 0) -> None:
     """Execute one analysis attempt end to end.
 
     Stages, with a cancel check between each:
@@ -125,6 +131,8 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
     workspace_uuid = uuid.UUID(workspace_id)
 
     with scan_context(attempt_id):
+        # This worker holds the attempt: it is not lost, whatever happens next.
+        progress.mark_waiting(attempt_id, _settings.scan_queue_heartbeat_seconds)
         try:
             with session_scope() as session:
                 set_workspace_context(session, workspace_uuid)
@@ -133,8 +141,13 @@ def run_scan(self, attempt_id: str, workspace_id: str) -> None:
         except attempts.WorkspaceScanSlotBusy:
             _wait_for_slot(self, attempt_id, attempt_uuid, workspace_uuid)
             return
+        except (OperationalError, DBAPIError) as exc:
+            _retry_claim(self, attempt_id, attempt_uuid, workspace_uuid, claim_failures, exc)
+            return
         if scan_input is None:
             logger.warning("Scan attempt was not found, or has already ended")
+            progress.clear(attempt_id)
+            _sync_demand(workspace_uuid)
             return
         _run_claimed(attempt_id, attempt_uuid, workspace_uuid, scan_input, stored_rules)
 
@@ -153,9 +166,69 @@ def _wait_for_slot(
     if progress.is_cancel_requested(attempt_id):
         _set_terminal(attempt_uuid, workspace_uuid, AnalysisStatus.CANCELLED, None)
         progress.clear(attempt_id)
+        _sync_demand(workspace_uuid)
         return
     logger.info("Workspace scan slot busy; the attempt stays queued")
-    raise task.retry(countdown=_settings.scan_queue_retry_seconds, max_retries=None)
+    # Unlimited by the task's own max_retries; see `run_scan`.
+    raise task.retry(countdown=_settings.scan_queue_retry_seconds)
+
+
+def _retry_claim(
+    task: Any,
+    attempt_id: str,
+    attempt_uuid: uuid.UUID,
+    workspace_uuid: uuid.UUID,
+    claim_failures: int,
+    error: BaseException,
+) -> None:
+    """The database failed while claiming a slot: a dropped connection, a deadlock.
+
+    Asked again a few times, a little later each time. If it keeps failing the
+    scan ends with a sentence the user can act on, instead of staying queued
+    with nobody left to run it.
+    """
+    failures = claim_failures + 1
+    if failures < _settings.scan_claim_attempts:
+        logger.warning(
+            "Database error while claiming a scan slot; trying again",
+            extra={"failures": failures, "error": type(error).__name__},
+        )
+        raise task.retry(
+            countdown=min(60, 5 * 2**claim_failures),
+            kwargs={"claim_failures": failures},
+        )
+    logger.error(
+        "Could not claim a scan slot; ending the scan",
+        exc_info=(type(error), error, error.__traceback__),
+    )
+    try:
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            attempts.LOST_MESSAGE,
+        )
+    except Exception:
+        # The database is still away: the lost-scan check ends it once it is back.
+        logger.exception("Could not record the failed claim")
+    progress.clear(attempt_id)
+    _sync_demand(workspace_uuid)
+
+
+def _sync_demand(workspace_uuid: uuid.UUID) -> None:
+    """Tell the autoscaler how many slots this workspace still needs. Best effort:
+    the API corrects it on its next read of the workspace's scans."""
+    try:
+        with session_scope() as session:
+            set_workspace_context(session, workspace_uuid)
+            slots = min(
+                attempts.count_active_in_workspace(session, workspace_uuid),
+                _settings.max_running_scans_per_workspace,
+            )
+    except Exception:
+        logger.exception("Could not refresh the scan demand")
+        return
+    progress.sync_scan_demand(str(workspace_uuid), slots)
 
 
 FILE_REPORTS_PER_SCAN = 50
@@ -347,6 +420,15 @@ def _run_claimed(
         )
     except SoftTimeLimitExceeded as exc:
         _record_timeout(attempt_uuid, workspace_uuid, stage, exc)
+    except CKTimedOut:
+        logger.warning("CK reached its time limit")
+        _set_terminal(
+            attempt_uuid,
+            workspace_uuid,
+            AnalysisStatus.ERROR,
+            timed_out_message(_settings.ck_timeout_seconds),
+            ScanErrorCode.SCAN_TIMED_OUT,
+        )
     except CloneTimedOut:
         logger.warning("A git command reached its time limit")
         _set_terminal(
@@ -383,6 +465,7 @@ def _run_claimed(
             cancel.cleanup(attempt_id, clone_dir)
         except Exception:
             logger.exception("Scan cleanup failed", extra={"stage": stage})
+        _sync_demand(workspace_uuid)
 
 
 def _find_time_limit(exc: BaseException) -> SoftTimeLimitExceeded | None:

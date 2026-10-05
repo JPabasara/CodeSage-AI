@@ -71,6 +71,10 @@ class CKExtractionError(RuntimeError):
     """CK was unavailable or returned output that could not be consumed."""
 
 
+class CKTimedOut(CKExtractionError):
+    """CK ran past `ck_timeout_seconds` and was stopped."""
+
+
 def _number(row: dict[str, str], key: str) -> float:
     value = row.get(key, "")
     return float(value) if value else 0.0
@@ -122,7 +126,12 @@ def extract_ck_analysis(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                # Its own limit inside the scan's, so a stuck CK cannot hold the
+                # worker until the scan limit and stops with a precise message.
+                timeout=get_settings().ck_timeout_seconds,
             )
+        except subprocess.TimeoutExpired as exc:
+            raise CKTimedOut("CK did not finish in time.") from exc
         except (OSError, subprocess.CalledProcessError) as exc:
             raise CKExtractionError("CK could not extract Java metrics.") from exc
 

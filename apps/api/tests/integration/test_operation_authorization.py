@@ -387,14 +387,21 @@ def test_every_operation_checks_role_before_business_service(
 @pytest.mark.parametrize("role", ["org-admin", "manager", "developer", "viewer"])
 def test_cancellation_own_other_and_legacy(account, resources, client, monkeypatch, role):
     set_role(account, role)
+    engine = account[0]
     cancel = Mock()
     monkeypatch.setattr(analysis.progress, "request_cancel", cancel)
     for kind in ("own", "other", "legacy"):
-        cancel.reset_mock()
         response = client.post(f"/api/repos/{resources['repo']}/scan/{resources[kind]}/stop")
         allowed = role in {"org-admin", "manager"} or (role == "developer" and kind == "own")
         assert response.status_code == (200 if allowed else 403), response.text
-        assert cancel.call_count == int(allowed)
+        # These scans are still queued: an allowed Stop ends them at once, with
+        # no flag for a worker to read; a refused one leaves them untouched.
+        with Session(engine) as db:
+            stored = db.get(AnalysisAttempt, resources[kind]).status
+        assert stored is (AnalysisStatus.CANCELLED if allowed else AnalysisStatus.QUEUED)
+        if allowed:
+            assert response.json()["phase"] == "cancelled"
+    cancel.assert_not_called()
 
 
 def test_foreign_resources_are_404_before_work(account, resources, client, monkeypatch):

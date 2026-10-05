@@ -7,6 +7,7 @@ import {
   GitBranch,
   History,
   LayoutDashboard,
+  Loader2,
   LockKeyhole,
   MoreHorizontal,
   Play,
@@ -16,6 +17,7 @@ import {
 
 import { DeltaText, GradeBadge } from "@/components/dashboard/kpi-card"
 import { EmptyState } from "@/components/empty-state"
+import { useRunningScan } from "@/components/layout/running-scan"
 import { LockedAction } from "@/components/locked-action"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { LatestHealth, Repo } from "@/lib/types"
+import type { ActiveScan, LatestHealth, Repo } from "@/lib/types"
 import { cn, gradeColor } from "@/lib/utils"
 
 export type ProjectListProps = {
@@ -46,6 +48,8 @@ export type ProjectListProps = {
   onIntent?: (repo: Repo | undefined) => void
   removingRepoId?: string
   activeRepoId?: string
+  /** Scans running in the workspace, so a row started elsewhere shows it too. */
+  activity?: ActiveScan[]
   /** What the empty list says under its title; the page names the workspace. */
   emptyDescription?: React.ReactNode
 }
@@ -86,6 +90,51 @@ function HealthCell({ health }: Readonly<{ health?: LatestHealth | null }>) {
         <DeltaText value={health.delta} />
       </span>
     </span>
+  )
+}
+
+/**
+ * The row's main action: while its scan is queued, running or stopping, a way to
+ * watch it; otherwise what the row offers (Run first scan or Open dashboard).
+ */
+function ScanAwareAction({
+  repo,
+  repoLabel,
+  activity,
+  onSelect,
+  children,
+}: Readonly<{
+  repo: Repo
+  repoLabel: string
+  activity: ActiveScan[] | undefined
+  onSelect?: (repo: Repo) => void
+  children: React.ReactNode
+}>) {
+  const running = useRunningScan(repo, activity)
+  if (!running) return <>{children}</>
+  const percent =
+    running.bar === undefined ? undefined : Math.floor(running.bar)
+  return (
+    <Button
+      asChild
+      variant="outline"
+      size="sm"
+      className={cn(
+        "h-8 gap-1.5 px-3 tabular-nums",
+        running.label === "Stopping" &&
+          "border-destructive/40 text-destructive",
+      )}
+    >
+      <Link
+        href={`/dashboard/${repo.id}`}
+        aria-label={`${running.label} ${repoLabel}: view progress`}
+        onClick={() => onSelect?.(repo)}
+      >
+        <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+        {running.label}
+        {percent !== undefined ? ` ${percent}%` : "…"}
+      </Link>
+    </Button>
   )
 }
 
@@ -171,6 +220,7 @@ export function ProjectList({
   onIntent,
   removingRepoId,
   activeRepoId,
+  activity,
   emptyDescription = "Connect a public repository to start building a project health history.",
 }: Readonly<ProjectListProps>) {
   if (repos.length === 0) {
@@ -308,32 +358,39 @@ export function ProjectList({
                 className="relative flex flex-wrap items-center gap-1.5 @5xl:flex-nowrap @5xl:justify-end"
                 onClick={(event) => event.stopPropagation()}
               >
-                {firstScan ? (
-                  scanLockedReason ? (
-                    <LockedAction reason={scanLockedReason}>
-                      {firstScan}
-                    </LockedAction>
+                <ScanAwareAction
+                  repo={repo}
+                  repoLabel={repoLabel}
+                  activity={activity}
+                  onSelect={onSelect}
+                >
+                  {firstScan ? (
+                    scanLockedReason ? (
+                      <LockedAction reason={scanLockedReason}>
+                        {firstScan}
+                      </LockedAction>
+                    ) : (
+                      firstScan
+                    )
                   ) : (
-                    firstScan
-                  )
-                ) : (
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 px-3"
-                  >
-                    <Link
-                      href={dashboardHref}
-                      aria-label={`Open dashboard for ${repoLabel}`}
-                      onClick={() => onSelect?.(repo)}
-                      {...intent}
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 px-3"
                     >
-                      <LayoutDashboard aria-hidden="true" />
-                      Open dashboard
-                    </Link>
-                  </Button>
-                )}
+                      <Link
+                        href={dashboardHref}
+                        aria-label={`Open dashboard for ${repoLabel}`}
+                        onClick={() => onSelect?.(repo)}
+                        {...intent}
+                      >
+                        <LayoutDashboard aria-hidden="true" />
+                        Open dashboard
+                      </Link>
+                    </Button>
+                  )}
+                </ScanAwareAction>
                 <Button
                   asChild
                   variant="ghost"

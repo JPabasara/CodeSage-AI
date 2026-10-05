@@ -159,8 +159,45 @@ test("Stop asks, then reads Stopping… until the scan ends", async () => {
   rerender(
     <ScanProgressCard scan={job({ stopping: true })} canStop onStop={onStop} />,
   )
-  expect(screen.getByRole("status")).toHaveTextContent("Stopping the scan")
+  // The step stays in view: it is what has to finish before the scan stops.
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Stopping · Reading comments",
+  )
   expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled()
+})
+
+test("a red banner says the scan stops when the current step finishes", () => {
+  render(
+    <ScanProgressCard
+      scan={job({ stopping: true })}
+      canStop
+      onStop={() => {}}
+    />,
+  )
+
+  const banner = screen.getByTestId("scan-stopping-banner")
+  expect(banner).toHaveTextContent(
+    "Stopping. The scan will stop when the current step finishes (Reading comments).",
+  )
+  expect(banner).toHaveTextContent("Nothing from this scan is saved.")
+  expect(banner.className).toMatch(/destructive/)
+})
+
+test("a Stop pressed in another tab shows here too, from the server", () => {
+  render(
+    <ScanProgressCard
+      scan={job({ status: { ...job().status, cancel_requested: true } })}
+      canStop
+      onStop={() => {}}
+    />,
+  )
+  expect(screen.getByTestId("scan-stopping-banner")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Stopping…" })).toBeDisabled()
+})
+
+test("no banner while nobody has pressed Stop", () => {
+  render(<ScanProgressCard scan={job()} canStop onStop={() => {}} />)
+  expect(screen.queryByTestId("scan-stopping-banner")).toBeNull()
 })
 
 test("a role that cannot stop scans sees progress without Stop", () => {

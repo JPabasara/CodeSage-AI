@@ -27,12 +27,16 @@ from codesage_api.db.models import (
     SATDPrediction,
     SourceFile,
 )
-from codesage_api.db.repositories.attempts import WorkerScanInput, WorkspaceScanSlotBusy
+from codesage_api.db.repositories.attempts import (
+    LOST_MESSAGE,
+    WorkerScanInput,
+    WorkspaceScanSlotBusy,
+)
 from codesage_api.detection.risk.client import RiskClientResult
 from codesage_api.detection.rules.engine import DetectedFinding
 from codesage_api.detection.satd.client import SATDResult
 from codesage_api.errors import MLServiceUnavailable
-from codesage_api.extractors.ck_metrics import FileMetrics
+from codesage_api.extractors.ck_metrics import CKTimedOut, FileMetrics
 from codesage_api.extractors.comments import ExtractedComment
 from codesage_api.extractors.pipeline import ExtractionResult
 from codesage_api.guardrails import (
@@ -576,16 +580,18 @@ class _Run:
             "progress.publish_commits_done": Mock(),
             "progress.is_cancel_requested": Mock(return_value=False),
             "progress.clear": Mock(),
+            "progress.mark_waiting": Mock(),
+            "_sync_demand": Mock(),
         }
 
     def __getitem__(self, name: str) -> Mock:
         return self._mocks[name]
 
-    def __call__(self) -> None:
+    def __call__(self, **kwargs: object) -> None:
         with ExitStack() as stack:
             for name, mock in self._mocks.items():
                 stack.enter_context(patch(f"{_PIPELINE}.{name}", mock))
-            run_scan.run(str(self.attempt_id), str(self.workspace_id))
+            run_scan.run(str(self.attempt_id), str(self.workspace_id), **kwargs)
 
     def ended_with(self, status: AnalysisStatus, *details: object) -> None:
         self["_set_terminal"].assert_called_once_with(
@@ -686,7 +692,7 @@ def test_a_busy_workspace_keeps_the_scan_queued_and_asks_again(scan: _Run) -> No
     with patch.object(run_scan, "retry", side_effect=Retry()) as retry, pytest.raises(Retry):
         scan()
 
-    retry.assert_called_once_with(countdown=15, max_retries=None)
+    retry.assert_called_once_with(countdown=15)
     scan["clone_at_commit"].assert_not_called()
     scan["_set_terminal"].assert_not_called()
     # The cancel flag belongs to the still-queued attempt; keep it.
@@ -713,6 +719,73 @@ def test_an_attempt_that_already_ended_is_not_restarted(scan: _Run) -> None:
 
     scan["clone_at_commit"].assert_not_called()
     scan["_set_terminal"].assert_not_called()
+    # Its keys go, and the autoscaler stops counting it.
+    scan["progress.clear"].assert_called_once_with(str(scan.attempt_id))
+    scan["_sync_demand"].assert_called_once_with(scan.workspace_id)
+
+
+def test_a_waiting_scan_never_runs_out_of_retries() -> None:
+    """`retry(max_retries=None)` means "the task's default", which was 3: the
+    fourth slot check raised MaxRetriesExceeded and left the scan queued for
+    good. The unlimited wait is declared on the task itself."""
+    assert run_scan.max_retries is None
+
+
+def test_every_slot_check_marks_the_scan_as_held_by_a_worker(scan: _Run) -> None:
+    scan["attempts.begin_for_worker"].side_effect = WorkspaceScanSlotBusy
+
+    with patch.object(run_scan, "retry", side_effect=Retry()), pytest.raises(Retry):
+        scan()
+
+    scan["progress.mark_waiting"].assert_called_once_with(str(scan.attempt_id), 120)
+
+
+def test_a_database_error_while_claiming_is_asked_again_later(scan: _Run) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    scan["attempts.begin_for_worker"].side_effect = OperationalError("SELECT", {}, Exception("gone"))
+
+    with patch.object(run_scan, "retry", side_effect=Retry()) as retry, pytest.raises(Retry):
+        scan(claim_failures=1)
+
+    # A little later each time, and the count travels with the retry.
+    retry.assert_called_once_with(countdown=10, kwargs={"claim_failures": 2})
+    scan["_set_terminal"].assert_not_called()
+
+
+def test_a_claim_that_keeps_failing_ends_the_scan_instead_of_leaving_it_queued(
+    scan: _Run,
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    scan["attempts.begin_for_worker"].side_effect = OperationalError("SELECT", {}, Exception("gone"))
+
+    with patch.object(run_scan, "retry") as retry:
+        scan(claim_failures=4)
+
+    retry.assert_not_called()
+    scan.ended_with(AnalysisStatus.ERROR, LOST_MESSAGE)
+    scan["progress.clear"].assert_called_once_with(str(scan.attempt_id))
+    scan["_sync_demand"].assert_called_once_with(scan.workspace_id)
+
+
+def test_a_finished_scan_frees_its_autoscaler_slot(scan: _Run) -> None:
+    scan()
+
+    scan["_sync_demand"].assert_called_once_with(scan.workspace_id)
+
+
+def test_ck_running_past_its_own_limit_ends_the_scan_as_timed_out(scan: _Run) -> None:
+    scan["extract"].side_effect = CKTimedOut("CK did not finish in time.")
+
+    scan()
+
+    scan.ended_with(
+        AnalysisStatus.ERROR,
+        timed_out_message(15 * 60),
+        ScanErrorCode.SCAN_TIMED_OUT,
+    )
+    scan["_finalize"].assert_not_called()
 
 
 def test_the_scan_task_carries_both_time_limits() -> None:

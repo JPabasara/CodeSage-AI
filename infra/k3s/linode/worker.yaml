@@ -73,15 +73,18 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 15
             failureThreshold: 3
+          # Restart only a worker that has not answered for ~10 minutes. A busy
+          # scan can starve the ping on a saturated node; a stricter probe killed
+          # scans mid-run, and a scan has its own time limits anyway.
           livenessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
-                - celery -A codesage_api.worker inspect ping -d scan-worker@$HOSTNAME -t 10 | grep -q pong
+                - celery -A codesage_api.worker inspect ping -d scan-worker@$HOSTNAME -t 20 | grep -q pong
             periodSeconds: 60
-            timeoutSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 30
+            failureThreshold: 10
           resources:
             requests:
               cpu: 500m

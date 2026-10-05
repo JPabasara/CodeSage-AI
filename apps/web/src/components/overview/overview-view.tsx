@@ -32,12 +32,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  RunningScanCell,
+  useRunningScan,
+} from "@/components/layout/running-scan"
 import { useActivity } from "@/hooks/use-activity"
 import { useProjects } from "@/hooks/use-projects"
 import {
   startScan,
   useActiveScans,
-  useScanLive,
   type TrackedScan,
 } from "@/hooks/use-scan-center"
 import { useSelectedProject } from "@/hooks/use-selected-project"
@@ -45,7 +48,6 @@ import { useSession } from "@/hooks/use-session"
 import { useActiveWorkspace, useWorkspaces } from "@/hooks/use-workspace"
 import { useActiveWorkspaceId } from "@/hooks/use-workspace-scope"
 import { cancelProjectPrefetch, prefetchProject } from "@/lib/prefetch-project"
-import { reportedProgress, toBar } from "@/lib/scan-progress"
 import type { ActiveScan, Grade, Repo } from "@/lib/types"
 import {
   GRADES,
@@ -71,63 +73,6 @@ const GRADE_FILL: Record<Grade, string> = {
 }
 
 const dashboardHref = (repo: Repo) => `/dashboard/${repo.id}`
-
-/** A project's scan right now, from the scan this tab follows or the workspace's activity. */
-function useRunningScan(repo: Repo, activity: ActiveScan[] | undefined) {
-  const tracked = useActiveScans().find(
-    (scan) =>
-      scan.repoId === repo.id &&
-      scan.branch === repo.default_branch &&
-      scan.job !== "ready",
-  )
-  const live = useScanLive(tracked?.key)
-  const elsewhere = activity?.find((item) => item.repo_id === repo.id)
-  if (tracked) {
-    return {
-      label: tracked.status.phase === "queued" ? "Queued" : "Scanning",
-      bar: live?.bar,
-    }
-  }
-  if (elsewhere) {
-    const queued = elsewhere.status.phase === "queued"
-    return {
-      label: queued ? "Queued" : "Scanning",
-      bar: queued ? undefined : toBar(reportedProgress(elsewhere.status)),
-    }
-  }
-  return undefined
-}
-
-function RunningCell({
-  running,
-}: Readonly<{ running: { label: string; bar: number | undefined } }>) {
-  const value = running.bar === undefined ? undefined : Math.floor(running.bar)
-  return (
-    <div className="flex min-w-36 flex-col gap-1.5">
-      <span className="text-xs font-medium text-foreground-strong tabular-nums">
-        {running.label}
-        {value !== undefined ? ` · ${value}%` : "…"}
-      </span>
-      <span
-        role="progressbar"
-        aria-label="Scan progress"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={value}
-        className="relative block h-1.5 overflow-hidden rounded-full bg-primary/15"
-      >
-        {value !== undefined ? (
-          <span
-            className="block h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
-            style={{ width: `${value}%` }}
-          />
-        ) : (
-          <span className="block h-full w-1/3 rounded-full bg-primary motion-safe:animate-[scan-sweep_1.4s_ease-in-out_infinite]" />
-        )}
-      </span>
-    </div>
-  )
-}
 
 function ProjectRow({
   repo,
@@ -221,7 +166,7 @@ function ProjectRow({
           </td>
           <td className="hidden px-4 py-3 align-middle text-sm text-muted-foreground md:table-cell">
             {running ? (
-              <RunningCell running={running} />
+              <RunningScanCell running={running} />
             ) : (
               <span title={health.scanned_at ?? undefined}>
                 {relativeTime(health.scanned_at) ?? "—"}
@@ -235,7 +180,7 @@ function ProjectRow({
           className="px-4 py-3 align-middle text-sm text-muted-foreground"
         >
           {running ? (
-            <RunningCell running={running} />
+            <RunningScanCell running={running} />
           ) : (
             "Not scanned yet — run the first scan to see its health"
           )}

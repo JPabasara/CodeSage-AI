@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest"
 
 import { ProjectList } from "@/components/projects/project-list"
 import { mockRepos } from "@/lib/mocks/fixtures"
+import type { ActiveScan } from "@/lib/types"
 
 // mockRepos: acme-payments and web-store are scanned, octo-cli never was.
 const rowOf = (name: string) => screen.getByText(name).closest("li")!
@@ -236,4 +237,92 @@ test("each row names its default branch", () => {
   expect(
     within(rowOf("octo-cli")).getByTestId("project-health-branch"),
   ).toHaveTextContent("trunk")
+})
+
+// ── a scan already running: the row says so instead of offering another ─────
+
+const activityFor = (
+  repoId: string,
+  status: Partial<ActiveScan["status"]>,
+): ActiveScan[] => [
+  {
+    repo_id: repoId,
+    repo_name: "acme/octo-cli",
+    status: { scan_id: "s1", phase: "running", progress: 40, ...status },
+  },
+]
+
+test("a running first scan shows its progress, not Run first scan", () => {
+  const octo = mockRepos[2]
+  render(
+    <ProjectList
+      repos={mockRepos}
+      onFirstScan={vi.fn()}
+      activity={activityFor(octo.id, { stage: "reading_code", progress: 40 })}
+    />,
+  )
+
+  const row = rowOf("octo-cli")
+  expect(
+    within(row).queryByRole("button", { name: /run first scan/i }),
+  ).not.toBeInTheDocument()
+  const watch = within(row).getByRole("link", {
+    name: "Scanning acme/octo-cli: view progress",
+  })
+  expect(watch).toHaveAttribute("href", `/dashboard/${octo.id}`)
+  expect(watch).toHaveTextContent("Scanning 40%")
+})
+
+test("a queued scan says Queued, and a stopping one says Stopping", () => {
+  const octo = mockRepos[2]
+  const { rerender } = render(
+    <ProjectList
+      repos={mockRepos}
+      onFirstScan={vi.fn()}
+      activity={activityFor(octo.id, { phase: "queued", progress: 0 })}
+    />,
+  )
+  expect(
+    within(rowOf("octo-cli")).getByRole("link", {
+      name: "Queued acme/octo-cli: view progress",
+    }),
+  ).toHaveTextContent("Queued…")
+
+  rerender(
+    <ProjectList
+      repos={mockRepos}
+      onFirstScan={vi.fn()}
+      activity={activityFor(octo.id, { cancel_requested: true })}
+    />,
+  )
+  expect(
+    within(rowOf("octo-cli")).getByRole("link", {
+      name: "Stopping acme/octo-cli: view progress",
+    }),
+  ).toBeInTheDocument()
+})
+
+test("a scanned project with a scan running offers to watch it, not Open dashboard", () => {
+  const payments = mockRepos[0]
+  render(
+    <ProjectList
+      repos={mockRepos}
+      activity={activityFor(payments.id, {
+        progress: 60,
+        stage: "finding_debt",
+      })}
+    />,
+  )
+
+  const row = rowOf("acme-payments")
+  expect(
+    within(row).queryByRole("link", { name: /open dashboard/i }),
+  ).not.toBeInTheDocument()
+  expect(
+    within(row).getByRole("link", { name: /^Scanning .*: view progress$/ }),
+  ).toBeInTheDocument()
+  // Other rows are unaffected.
+  expect(
+    within(rowOf("web-store")).getByRole("link", { name: /open dashboard/i }),
+  ).toBeInTheDocument()
 })

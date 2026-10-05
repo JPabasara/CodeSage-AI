@@ -801,8 +801,11 @@ export interface paths {
          *
          *     Consequences worth knowing:
          *
-         *     - The response is `202`, and `phase` is usually still `running`. The client
-         *       learns the scan really stopped from the **next poll**, not from this call.
+         *     - The response is `202`, and `phase` is usually still `running`, with
+         *       `cancel_requested: true`. The client learns the scan really stopped from
+         *       the **next poll**, not from this call.
+         *     - A scan still **queued** has no stage to finish: it is cancelled at once,
+         *       and this response already says `phase: "cancelled"`.
          *     - A user who presses Stop waits until the current stage ends. That is the
          *       price of never leaving a half-written snapshot.
          *     - Once finalization begins the scan completes. The previous
@@ -1630,6 +1633,13 @@ export interface components {
              *     "Usually about 2 min". Null before its first finished scan.
              */
             typical_seconds?: number | null;
+            /**
+             * @description True when Stop was pressed on this running scan. The worker stops at
+             *     the end of its current step, so the scan stays `running` until then;
+             *     every client can say "stopping" meanwhile. Null unless running. A
+             *     queued scan is never in this state: Stop ends it at once.
+             */
+            cancel_requested?: boolean | null;
         };
         /** @description Work in progress in the active workspace (`GET /api/activity`). */
         Activity: {

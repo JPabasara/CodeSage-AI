@@ -127,6 +127,13 @@ export const isActivePhase = (phase: ScanStatus["phase"]) =>
 export const isJobActive = (scan: Pick<TrackedScan, "job">) =>
   scan.job !== "ready"
 
+/**
+ * Stop was pressed and the scan has not ended yet. This tab knows from its own
+ * click; every other tab, and this one after a refresh, from the server.
+ */
+export const isStopping = (scan: Pick<TrackedScan, "stopping" | "status">) =>
+  scan.stopping || Boolean(scan.status.cancel_requested)
+
 function changed() {
   snapshot = [...scans.values()]
   persist()
@@ -569,12 +576,22 @@ export async function stopScan(key: string) {
   const scan = scans.get(key)
   if (!scan?.status.scan_id || scan.job !== "scanning") return
   update(key, { stopping: true })
+  let status: ScanStatus
   try {
-    await apiStopScan(scan.repoId, scan.status.scan_id)
+    status = await apiStopScan(scan.repoId, scan.status.scan_id)
   } catch {
     const current = update(key, { stopping: false })
     if (current) emit({ type: "stop-failed", scan: current })
+    return
   }
+  // A scan that never started is cancelled by the call itself: no step to wait for.
+  if (status.phase === "cancelled") {
+    const current = update(key, { status })
+    forget(key)
+    if (current) emit({ type: "cancelled", scan: current })
+    return
+  }
+  update(key, { status })
 }
 
 // "Show them": the user has seen that new results are ready.

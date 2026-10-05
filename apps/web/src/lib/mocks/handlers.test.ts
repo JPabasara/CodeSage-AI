@@ -465,6 +465,7 @@ const SCAN_STATUS_OPTIONAL = [
   "files_done",
   "files_total",
   "typical_seconds",
+  "cancel_requested",
 ]
 
 test("the scan lifecycle is contract-shaped, and answers 202 at both writes", async () => {

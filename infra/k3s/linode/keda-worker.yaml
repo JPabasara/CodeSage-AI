@@ -38,15 +38,16 @@ spec:
       behavior:
         scaleDown:
           stabilizationWindowSeconds: 600
-    scalingModifiers:
-      formula: "scans > 0 ? 3 : 1"
-      target: "1"
-      metricType: "AverageValue"
+  # One worker per workspace with a scan to run, up to 3. The API and the
+  # workers keep `codesage:scan-demand` at one entry per runnable scan slot, so
+  # one workspace's queue, which runs one scan at a time, never brings up
+  # workers that could only wait. A workspace holds at most
+  # `max_running_scans_per_workspace` entries.
   triggers:
     - type: redis
-      name: scans
+      name: demand
       metadata:
-        listName: scans
+        listName: "codesage:scan-demand"
         listLength: "1"
         activationListLength: "0"
         enableTLS: "false"

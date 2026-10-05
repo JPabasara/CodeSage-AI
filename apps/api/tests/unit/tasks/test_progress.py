@@ -1,6 +1,6 @@
 from unittest.mock import Mock, patch
 
-from redis.exceptions import ConnectionError
+from redis.exceptions import ConnectionError, RedisError
 
 from codesage_api.tasks import progress
 
@@ -40,6 +40,8 @@ def test_cancel_flag_is_written_read_and_cleared(client: Mock) -> None:
         "codesage:scan:scan-id:progress",
         "codesage:scan:scan-id:cancel",
         "codesage:scan:scan-id:stage",
+        "codesage:scan:scan-id:waiting",
+        "codesage:scan:scan-id:grace",
     )
 
 
@@ -49,6 +51,7 @@ def test_read_status_reads_percent_and_stage_in_one_round_trip(client: Mock) -> 
     pipe.execute.return_value = [
         "31",
         {"stage": "reading_code", "files_done": "120", "files_total": "1240", "typical_seconds": "130"},
+        None,  # no Stop pressed
     ]
 
     reading = progress.read_status("scan-id")
@@ -76,6 +79,7 @@ def test_read_status_ignores_garbage_values(client: Mock) -> None:
     client.return_value.pipeline.return_value.execute.return_value = [
         "not-a-number",
         {"stage": "cloning", "files_done": "x"},
+        "garbage",
     ]
 
     reading = progress.read_status("scan-id")
@@ -83,6 +87,7 @@ def test_read_status_ignores_garbage_values(client: Mock) -> None:
     assert reading.percent == 0
     assert reading.stage == "cloning"
     assert reading.files_done is None
+    assert reading.cancel_requested is False
 
 
 @patch("codesage_api.tasks.progress._client")
@@ -189,6 +194,7 @@ class _FakeRedis:
     def __init__(self) -> None:
         self.strings: dict[str, str] = {}
         self.hashes: dict[str, dict[str, str]] = {}
+        self.lists: dict[str, list[str]] = {}
 
     def pipeline(self, transaction: bool = True) -> "_FakePipeline":
         return _FakePipeline(self)
@@ -196,9 +202,33 @@ class _FakeRedis:
     def get(self, key: str) -> str | None:
         return self.strings.get(key)
 
-    def set(self, key: str, value: object, ex: int | None = None) -> bool:
+    def set(
+        self, key: str, value: object, ex: int | None = None, nx: bool = False
+    ) -> bool | None:
+        if nx and key in self.strings:
+            return None
         self.strings[key] = str(value)
         return True
+
+    def exists(self, *keys: str) -> int:
+        return sum(key in self.strings for key in keys)
+
+    def delete(self, *keys: str) -> int:
+        gone = 0
+        for key in keys:
+            gone += self.strings.pop(key, None) is not None
+            gone += self.hashes.pop(key, None) is not None
+        return gone
+
+    def lrem(self, key: str, count: int, value: str) -> int:
+        items = self.lists.get(key, [])
+        kept = [item for item in items if item != value]
+        self.lists[key] = kept
+        return len(items) - len(kept)
+
+    def rpush(self, key: str, *values: str) -> int:
+        self.lists.setdefault(key, []).extend(values)
+        return len(self.lists[key])
 
     def hset(
         self,
@@ -313,3 +343,81 @@ def test_without_redis_a_score_is_still_queued(client: Mock) -> None:
     client.return_value.set.side_effect = ConnectionError
 
     assert progress.claim_score_enqueue("cache-1") is True
+
+
+# ── queued scans: the waiting mark, the grace, and the scan demand ──────────
+
+
+def test_a_marked_scan_is_waiting_and_an_unmarked_one_is_not() -> None:
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        progress.mark_waiting("held", 120)
+
+        assert progress.is_waiting("held") is True
+        assert progress.is_waiting("dropped") is False
+
+
+@patch("codesage_api.tasks.progress._client")
+def test_unknown_is_never_read_as_lost(client: Mock) -> None:
+    """Redis down must not end every queued scan in the workspace."""
+    client.return_value.exists.side_effect = RedisError("down")
+
+    assert progress.is_waiting("scan") is None
+    assert progress.is_lost("scan", 120) is False
+
+
+def test_a_missing_mark_gets_one_heartbeat_of_grace_before_the_scan_is_lost() -> None:
+    """A deploy or a Redis restart drops marks while workers still hold their
+    scans; the first sighting re-marks it, and only a second one ends it."""
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        assert progress.is_lost("scan", 120) is False
+        # The grace put the mark back: a worker has a heartbeat to renew it.
+        assert progress.is_waiting("scan") is True
+
+        fake.strings.pop(progress.WAITING_KEY.format(attempt_id="scan"))
+        assert progress.is_lost("scan", 120) is True
+
+
+def test_a_scan_a_worker_keeps_marking_is_never_lost() -> None:
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        for _ in range(5):
+            progress.mark_waiting("scan", 120)
+            assert progress.is_lost("scan", 120) is False
+
+
+def test_clearing_an_attempt_drops_its_waiting_mark_and_grace() -> None:
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        progress.mark_waiting("scan", 120)
+        progress.is_lost("scan", 120)
+        progress.clear("scan")
+
+    assert fake.strings == {}
+
+
+def test_the_scan_demand_holds_each_workspace_as_many_times_as_it_has_slots() -> None:
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        progress.sync_scan_demand("ws-a", 1)
+        progress.sync_scan_demand("ws-b", 2)
+        progress.sync_scan_demand("ws-a", 1)  # again: replaced, not added
+
+        assert sorted(fake.lists[progress.SCAN_DEMAND_KEY]) == ["ws-a", "ws-b", "ws-b"]
+
+        progress.sync_scan_demand("ws-b", 0)
+
+    assert fake.lists[progress.SCAN_DEMAND_KEY] == ["ws-a"]
+
+
+def test_a_stop_flag_reads_back_with_the_status() -> None:
+    fake = _FakeRedis()
+    with patch("codesage_api.tasks.progress._client", return_value=fake):
+        progress.publish_stage("scan", "reading_code", 25)
+        before = progress.read_status("scan")
+        progress.request_cancel("scan")
+        after = progress.read_status("scan")
+
+    assert before.cancel_requested is False
+    assert after.cancel_requested is True

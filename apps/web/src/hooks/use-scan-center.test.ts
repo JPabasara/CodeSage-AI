@@ -12,6 +12,7 @@ import {
   resumeScans,
   scanKey,
   startScan,
+  isStopping,
   stopScan,
   useScanFor,
   useScanLive,
@@ -134,13 +135,63 @@ test("stop only requests cancellation; the next poll reports cancelled", async (
   await act(() => startScan(target))
 
   await act(() => stopScan(key))
-  // Cooperative: still running, and marked as stopping.
+  // Cooperative: still running, and marked as stopping, by the server too.
   expect(result.current.scan?.status.phase).toBe("running")
   expect(result.current.scan?.stopping).toBe(true)
+  expect(result.current.scan?.status.cancel_requested).toBe(true)
 
   await polls(1)
   expect(events).toContain("cancelled")
   expect(result.current.scan).toBeUndefined()
+})
+
+test("Stop on a scan that never started ends it from the stop answer itself", async () => {
+  const { result } = renderHook(() => useScanFor(DEMO_REPO_ID, "main"))
+  const events = recordEvents()
+  await act(() => startScan(target))
+  // The API cancels a queued scan at once and says so in its answer.
+  server.use(
+    http.post("*/api/repos/:repoId/scan/:scanId/stop", ({ params }) =>
+      HttpResponse.json(
+        {
+          scan_id: params.scanId as string,
+          phase: "cancelled",
+          progress: 0,
+          branch: "main",
+        } satisfies ScanStatus,
+        { status: 202 },
+      ),
+    ),
+  )
+
+  await act(() => stopScan(key))
+
+  // No poll needed, and no step to wait for.
+  expect(events).toContain("cancelled")
+  expect(result.current.scan).toBeUndefined()
+})
+
+test("another tab's Stop shows here too: the server says it is stopping", () => {
+  const scan = {
+    stopping: false,
+    status: {
+      scan_id: "s",
+      phase: "running" as const,
+      progress: 40,
+      cancel_requested: true,
+    },
+  }
+  expect(isStopping(scan)).toBe(true)
+  expect(
+    isStopping({ ...scan, status: { ...scan.status, cancel_requested: null } }),
+  ).toBe(false)
+  expect(
+    isStopping({
+      ...scan,
+      stopping: true,
+      status: { ...scan.status, cancel_requested: null },
+    }),
+  ).toBe(true)
 })
 
 test("Stop pressed during finalization is too late: the scan still completes", async () => {

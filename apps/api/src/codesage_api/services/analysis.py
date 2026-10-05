@@ -62,6 +62,7 @@ def _status_out(
         files_done=reading.files_done if files_shown else None,
         files_total=reading.files_total if files_shown else None,
         typical_seconds=reading.typical_seconds,
+        cancel_requested=(reading.cancel_requested if phase is ScanPhase.RUNNING else None),
     )
 
 
@@ -91,6 +92,42 @@ def _error_code(stored: str | None) -> ScanErrorCode | None:
 
 
 
+def _heal(session: Session, workspace_id: uuid.UUID) -> None:
+    """End the scans that can no longer finish, and keep the scan demand true.
+
+    Called wherever "is a scan active?" is asked, so the answer heals itself:
+    a RUNNING attempt older than any live scan could be, and a QUEUED attempt no
+    worker holds any more, would otherwise block their branch for good, fill the
+    workspace queue, and keep a worker up for nothing.
+
+    Under the workspace slot lock, without waiting for it: when a worker or
+    another request holds it, they are already at this, and a poll goes on.
+    """
+    if not attempts.try_lock_workspace_slot(session, workspace_id):
+        return
+    attempts.expire_stale_running(session, workspace_id)
+    heartbeat = get_settings().scan_queue_heartbeat_seconds
+    lost = [
+        attempt_id
+        for attempt_id in attempts.list_queued_in_workspace(session, workspace_id)
+        if progress.is_lost(str(attempt_id), heartbeat)
+    ]
+    if attempts.expire_lost_queued(session, workspace_id, lost):
+        for attempt_id in lost:
+            progress.clear(str(attempt_id))
+    _sync_demand(session, workspace_id)
+
+
+def _sync_demand(session: Session, workspace_id: uuid.UUID) -> None:
+    """One autoscaler slot per scan this workspace could run now, never more
+    than it is allowed to run at once."""
+    slots = min(
+        attempts.count_active_in_workspace(session, workspace_id),
+        get_settings().max_running_scans_per_workspace,
+    )
+    progress.sync_scan_demand(str(workspace_id), slots)
+
+
 def start(
     session: Session,
     workspace_id: uuid.UUID,
@@ -107,7 +144,7 @@ def start(
     if stored_branch is None:
         raise NotFound
 
-    attempts.expire_stale_running(session, workspace_id)
+    _heal(session, workspace_id)
     if attempts.find_active_for_branch(session, stored_branch.id) is not None:
         raise ScanAlreadyRunning
 
@@ -146,6 +183,8 @@ def start(
         workspace_id=workspace_id,
         source_scope_config=scope,
     )
+    # Before the commit, so a concurrent tidy-up never sees it unmarked.
+    progress.mark_waiting(str(attempt.id), get_settings().scan_pickup_seconds)
 
     audit.record(
         session, event_type="scan_started", outcome="success",
@@ -164,7 +203,9 @@ def start(
     except Exception as exc:
         attempts.mark_error(session, attempt, "The scan could not be queued.")
         session.commit()
+        progress.clear(str(attempt.id))
         raise RuntimeError("The scan could not be queued.") from exc
+    _sync_demand(session, workspace_id)
 
     return _status_out(attempt, stored_branch.name)
 
@@ -176,7 +217,7 @@ def get_status(
     attempt_id: uuid.UUID,
 ) -> ScanStatusOut:
 
-    attempts.expire_stale_running(session, workspace_id)
+    _heal(session, workspace_id)
     attempt = attempts.get_for_repository(session, workspace_id, repository_id, attempt_id)
     if attempt is None:
         raise NotFound
@@ -197,7 +238,7 @@ def get_active(
     it again and resumes polling. With a branch, only that branch; without one,
     the newest active scan on any branch of the repository.
     """
-    attempts.expire_stale_running(session, workspace_id)
+    _heal(session, workspace_id)
     if branch is None:
         attempt = attempts.find_active_for_repository(session, workspace_id, repository_id)
     else:
@@ -218,7 +259,7 @@ def list_activity(session: Session, workspace_id: uuid.UUID) -> ActivityOut:
     built the same way `GET …/scan/{scan_id}` builds it, so a client can switch
     to polling that endpoint without the shape changing under it.
     """
-    attempts.expire_stale_running(session, workspace_id)
+    _heal(session, workspace_id)
     scans = [
         ActiveScanOut(
             repo_id=str(attempt.branch.repository_id),
@@ -269,11 +310,19 @@ def cancel(
     )
     if attempt is None:
         raise NotFound
-    if attempt.status in {AnalysisStatus.QUEUED, AnalysisStatus.RUNNING}:
+    if attempt.status not in {AnalysisStatus.QUEUED, AnalysisStatus.RUNNING}:
+        return _status_out(attempt, attempt.branch.name)
+
+    if attempts.cancel_queued(session, workspace_id, attempt.id):
+        # It never started, so nothing has to wait for a step to finish.
+        progress.clear(str(attempt.id))
+        _sync_demand(session, workspace_id)
+    else:
+        # Running (or claimed a moment ago): the worker stops at its next step.
         progress.request_cancel(str(attempt.id))
-        audit.record(
-            session, event_type="scan_cancelled", outcome="success",
-            workspace_id=workspace_id, actor_user_id=actor_user_id,
-            resource_type="analysis_attempt", resource_id=str(attempt.id),
-        )
+    audit.record(
+        session, event_type="scan_cancelled", outcome="success",
+        workspace_id=workspace_id, actor_user_id=actor_user_id,
+        resource_type="analysis_attempt", resource_id=str(attempt.id),
+    )
     return _status_out(attempt, attempt.branch.name)

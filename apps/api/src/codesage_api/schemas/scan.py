@@ -31,6 +31,8 @@ class ScanStatusOut(ApiModel):
     files_done: int | None = Field(default=None, ge=0)
     files_total: int | None = Field(default=None, ge=0)
     typical_seconds: int | None = Field(default=None, ge=0)
+    # Stop was pressed on a running scan; it ends when the current step does.
+    cancel_requested: bool | None = None
 
 
 class ActiveScanOut(ApiModel):

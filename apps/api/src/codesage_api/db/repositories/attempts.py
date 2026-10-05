@@ -299,6 +299,136 @@ def expire_stale_running(session: Session, workspace_id: uuid.UUID) -> int:
     return int(getattr(result, "rowcount", 0) or 0)
 
 
+#: Lost on the way to a worker, or dropped by one: nothing will ever run it.
+LOST_MESSAGE = "This scan could not be started. Start it again."
+
+
+def _slot_key(workspace_id: uuid.UUID) -> str:
+    return f"codesage:scan-slot:{workspace_id}"
+
+
+def lock_workspace_slot(session: Session, workspace_id: uuid.UUID) -> None:
+    """The one lock every change to a workspace's queued or running scans takes.
+
+    Claiming a slot, cancelling a queued scan and ending abandoned scans all go
+    through it, so they never interleave and never lock the same attempt rows in
+    a different order (which is how two of them could deadlock).
+    Transaction-scoped: released by the commit or rollback.
+    """
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": _slot_key(workspace_id)},
+    )
+
+
+def try_lock_workspace_slot(session: Session, workspace_id: uuid.UUID) -> bool:
+    """`lock_workspace_slot` without waiting: False when someone holds it now.
+
+    For the reads that tidy up as they go: when a worker or another request is
+    already at it, a status poll skips the tidying instead of queueing behind it.
+    """
+    return bool(
+        session.scalar(
+            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": _slot_key(workspace_id)},
+        )
+    )
+
+
+def list_queued_in_workspace(session: Session, workspace_id: uuid.UUID) -> list[uuid.UUID]:
+    """Ids of the attempts in this workspace still waiting for a slot."""
+    return list(
+        session.scalars(
+            select(AnalysisAttempt.id)
+            .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+            .join(Repository, Branch.repository_id == Repository.id)
+            .where(
+                Repository.workspace_id == workspace_id,
+                AnalysisAttempt.status == AnalysisStatus.QUEUED,
+            )
+        ).all()
+    )
+
+
+def expire_lost_queued(
+    session: Session,
+    workspace_id: uuid.UUID,
+    attempt_ids: list[uuid.UUID],
+) -> int:
+    """End queued attempts no worker holds, so they stop blocking their branch
+    and the workspace queue. Only rows still QUEUED are touched."""
+    if not attempt_ids:
+        return 0
+    workspace_branches = (
+        select(Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(Repository.workspace_id == workspace_id)
+    )
+    result = session.execute(
+        update(AnalysisAttempt)
+        .where(
+            AnalysisAttempt.id.in_(attempt_ids),
+            AnalysisAttempt.branch_id.in_(workspace_branches),
+            AnalysisAttempt.status == AnalysisStatus.QUEUED,
+        )
+        .values(
+            status=AnalysisStatus.ERROR,
+            completion_time=datetime.now(UTC),
+            failure_information=LOST_MESSAGE,
+            failure_code=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+def cancel_queued(
+    session: Session,
+    workspace_id: uuid.UUID,
+    attempt_id: uuid.UUID,
+) -> bool:
+    """End a scan that has not started yet, here and now.
+
+    Under the slot lock, so it cannot interleave with a worker claiming the
+    same attempt: whichever goes first wins, and a claimed scan is left to stop
+    at its next step. True when this call cancelled it.
+    """
+    lock_workspace_slot(session, workspace_id)
+    attempt = session.scalar(
+        select(AnalysisAttempt)
+        .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+        .join(Repository, Branch.repository_id == Repository.id)
+        .where(
+            AnalysisAttempt.id == attempt_id,
+            Repository.workspace_id == workspace_id,
+        )
+        .with_for_update(of=AnalysisAttempt)
+        .execution_options(populate_existing=True)
+    )
+    if attempt is None or attempt.status != AnalysisStatus.QUEUED:
+        return False
+    attempt.status = AnalysisStatus.CANCELLED
+    attempt.completion_time = datetime.now(UTC)
+    session.flush()
+    return True
+
+
+def count_active_in_workspace(session: Session, workspace_id: uuid.UUID) -> int:
+    """Queued and running attempts in this workspace."""
+    return int(
+        session.scalar(
+            select(func.count(AnalysisAttempt.id))
+            .join(Branch, AnalysisAttempt.branch_id == Branch.id)
+            .join(Repository, Branch.repository_id == Repository.id)
+            .where(
+                Repository.workspace_id == workspace_id,
+                AnalysisAttempt.status.in_(_ACTIVE),
+            )
+        )
+        or 0
+    )
+
+
 def lock_workspace_queue(session: Session, workspace_id: uuid.UUID) -> None:
     """Serialise "count the queue, then add to it" per workspace.
 
@@ -359,10 +489,7 @@ def begin_for_worker(
     None when the attempt is gone or has already ended; a redelivered message
     must not restart a scan that finished, failed or was expired.
     """
-    session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-        {"key": f"codesage:scan-slot:{workspace_id}"},
-    )
+    lock_workspace_slot(session, workspace_id)
     attempt = session.scalar(
         select(AnalysisAttempt)
         .join(Branch, AnalysisAttempt.branch_id == Branch.id)

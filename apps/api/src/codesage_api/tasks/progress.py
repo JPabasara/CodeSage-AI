@@ -6,6 +6,8 @@
     Redis       progress %     losing it costs nothing; the next poll recomputes
     Redis       stage details  the same: stage, step, commits/files read, typical duration
     Redis       cancel flag    transient by nature; a restart cancels nothing
+    Redis       waiting mark   "a worker still holds this queued scan"
+    Redis       scan demand    one entry per workspace slot with work; KEDA reads it
 
 Losing a percentage on a broker restart is harmless. Losing the fact that a scan
 failed would break diagnosis, which needs the final phase and its error message to
@@ -30,6 +32,14 @@ from codesage_api.config import get_settings
 PROGRESS_KEY = "codesage:scan:{attempt_id}:progress"
 STAGE_KEY = "codesage:scan:{attempt_id}:stage"
 CANCEL_KEY = "codesage:scan:{attempt_id}:cancel"
+#: Present while a queued attempt is on its way to a worker or held by one.
+WAITING_KEY = "codesage:scan:{attempt_id}:waiting"
+#: Set the first time a queued attempt is found without its waiting mark.
+GRACE_KEY = "codesage:scan:{attempt_id}:grace"
+#: One entry per workspace scan slot with work to do. The scan workers scale on
+#: its length, so one workspace's queue, which runs one scan at a time, never
+#: brings up workers that could only wait.
+SCAN_DEMAND_KEY = "codesage:scan-demand"
 #: Set when a score calculation is queued, so polls do not queue it again.
 SCORE_QUEUED_KEY = "codesage:score:{cache_id}:queued"
 SCORE_QUEUED_TTL_SECONDS = 120
@@ -73,6 +83,8 @@ class ProgressReading:
     files_done: int | None = None
     files_total: int | None = None
     typical_seconds: int | None = None
+    #: Stop was pressed; the worker ends the scan when the current step finishes.
+    cancel_requested: bool = False
 
 
 #: Fields that belong to one sub-step of `reading_code` and must not outlive it.
@@ -190,7 +202,8 @@ def read_status(attempt_id: str) -> ProgressReading:
         pipe = _client().pipeline(transaction=False)
         pipe.get(PROGRESS_KEY.format(attempt_id=attempt_id))
         pipe.hgetall(STAGE_KEY.format(attempt_id=attempt_id))
-        raw_percent, details = pipe.execute()
+        pipe.get(CANCEL_KEY.format(attempt_id=attempt_id))
+        raw_percent, details, cancel_flag = pipe.execute()
     except RedisError:
         return ProgressReading()
     details = details if isinstance(details, dict) else {}
@@ -204,6 +217,7 @@ def read_status(attempt_id: str) -> ProgressReading:
         files_done=_count(details.get("files_done")),
         files_total=_count(details.get("files_total")),
         typical_seconds=_count(details.get("typical_seconds")),
+        cancel_requested=cancel_flag == "1",
     )
 
 
@@ -262,6 +276,74 @@ def clear(attempt_id: str) -> None:
             PROGRESS_KEY.format(attempt_id=attempt_id),
             CANCEL_KEY.format(attempt_id=attempt_id),
             STAGE_KEY.format(attempt_id=attempt_id),
+            WAITING_KEY.format(attempt_id=attempt_id),
+            GRACE_KEY.format(attempt_id=attempt_id),
         )
+    except RedisError:
+        return
+
+
+def mark_waiting(attempt_id: str, seconds: int) -> None:
+    """Note that a queued attempt is still wanted by someone, for `seconds`.
+
+    The API sets it with a long life when it queues the scan, and the worker
+    renews it on every slot check. When it runs out while the attempt is still
+    queued, no worker holds the scan and none ever will. Never raises.
+    """
+    try:
+        _client().set(WAITING_KEY.format(attempt_id=attempt_id), "1", ex=max(1, int(seconds)))
+    except RedisError:
+        return
+
+
+def is_waiting(attempt_id: str) -> bool | None:
+    """True while the attempt is marked as waiting, False once the mark is gone,
+    None when Redis cannot be asked: unknown is never read as lost."""
+    try:
+        return bool(_client().exists(WAITING_KEY.format(attempt_id=attempt_id)))
+    except RedisError:
+        return None
+
+
+def is_lost(attempt_id: str, heartbeat_seconds: int) -> bool:
+    """Whether a queued attempt has nobody left to run it.
+
+    A missing waiting mark is not proof on its own: a deploy or a Redis restart
+    drops marks while workers still hold their scans. So the first time one is
+    found missing it is given one heartbeat of grace and marked again; only when
+    it is missing once more, with the grace still on record, is it lost. Never
+    raises, and says False whenever Redis cannot be asked.
+    """
+    waiting = is_waiting(attempt_id)
+    if waiting is not False:
+        return False
+    try:
+        first_sighting = _client().set(
+            GRACE_KEY.format(attempt_id=attempt_id),
+            "1",
+            nx=True,
+            ex=max(1, 3 * int(heartbeat_seconds)),
+        )
+    except RedisError:
+        return False
+    if first_sighting:
+        mark_waiting(attempt_id, heartbeat_seconds)
+        return False
+    return True
+
+
+def sync_scan_demand(workspace_id: str, slots: int) -> None:
+    """Set how many scan slots this workspace needs: one per scan it could run now.
+
+    The list holds the workspace id `slots` times; the scan workers' autoscaler
+    reads its length. Replacing all of a workspace's entries in one transaction
+    keeps the count right however often it is called. Never raises.
+    """
+    try:
+        pipe = _client().pipeline(transaction=True)
+        pipe.lrem(SCAN_DEMAND_KEY, 0, workspace_id)
+        if slots > 0:
+            pipe.rpush(SCAN_DEMAND_KEY, *([workspace_id] * slots))
+        pipe.execute()
     except RedisError:
         return
