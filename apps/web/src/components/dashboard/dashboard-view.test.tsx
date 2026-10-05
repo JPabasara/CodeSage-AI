@@ -925,6 +925,31 @@ test("a first scan has nothing to keep: the middle of the page is the job", asyn
   ).toBeInTheDocument()
 })
 
+test("a first scan started elsewhere never flashes the card meant for kept results", async () => {
+  const { startScan: apiStartScan } = await import("@/lib/api/client")
+  await apiStartScan(UNSCANNED_REPO_ID, "trunk")
+  let releaseHealth!: () => void
+  const healthHeld = new Promise<void>((resolve) => {
+    releaseHealth = resolve
+  })
+  server.use(
+    http.get("*/api/repos/:repoId/health", async () => {
+      await healthHeld
+      return undefined
+    }),
+  )
+
+  render(<DashboardView repoId={UNSCANNED_REPO_ID} />)
+  // The scan is found while the report is still out: nothing to keep is known yet.
+  await screen.findByRole("button", { name: /queued|scanning/i })
+  expect(screen.queryByTestId("scan-progress-panel")).not.toBeInTheDocument()
+
+  releaseHealth()
+  const panel = await screen.findByTestId("scan-progress-panel")
+  expect(panel).toHaveAttribute("data-size", "full")
+  expect(screen.getAllByTestId("scan-progress-panel")).toHaveLength(1)
+})
+
 test("the dashboard says which profile its numbers are scored with", async () => {
   render(<DashboardView repoId={DEMO_REPO_ID} />)
   await ready()
