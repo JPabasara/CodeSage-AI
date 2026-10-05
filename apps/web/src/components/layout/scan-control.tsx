@@ -5,6 +5,7 @@ import { Loader2, Play, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { LockedAction } from "@/components/locked-action"
+import { ScanButtonLabel } from "@/components/layout/scan-button-label"
 import type { ScanPhase } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -60,12 +61,14 @@ export function ScanControl({
 }: Readonly<ScanControlProps>) {
   const large = size === "lg"
   const buttonSize = large ? "lg" : "sm"
-  // The header's main action keeps its width while its words change.
+  // The header's main action keeps its width while its words change, and a
+  // long branch name never pushes it past `max-w-64` (ScanButtonLabel clips it).
   const buttonClass = cn(
+    "max-w-64",
     large &&
       "h-10.5 min-w-40 gap-2 px-4.5 text-sm font-semibold [&_svg:not([class*='size-'])]:size-4",
   )
-  const scanLabel = branch ? `Scan ${branch}` : "Scan"
+  const scanTitle = branch ? `Scan ${branch}` : undefined
   const queued = phase === "queued"
   const running = phase === "running" || queued
 
@@ -137,8 +140,13 @@ export function ScanControl({
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">Cancelled</span>
-        <Button size={buttonSize} className={buttonClass} onClick={onScan}>
-          <Play /> {scanLabel}
+        <Button
+          size={buttonSize}
+          className={buttonClass}
+          title={scanTitle}
+          onClick={onScan}
+        >
+          <Play /> <ScanButtonLabel branch={branch} />
         </Button>
       </div>
     )
@@ -148,7 +156,7 @@ export function ScanControl({
     return (
       <LockedAction reason={lockedReason}>
         <Button size={buttonSize} className={buttonClass} disabled>
-          <Play /> {scanLabel}
+          <Play /> <ScanButtonLabel branch={branch} />
         </Button>
       </LockedAction>
     )
@@ -158,10 +166,11 @@ export function ScanControl({
     <Button
       size={buttonSize}
       className={buttonClass}
+      title={scanTitle}
       onClick={onScan}
       disabled={!onScan}
     >
-      <Play /> {scanLabel}
+      <Play /> <ScanButtonLabel branch={branch} />
     </Button>
   )
 }
