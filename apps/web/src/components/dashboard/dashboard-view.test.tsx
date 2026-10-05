@@ -85,7 +85,9 @@ beforeEach(() => {
 
 /** Wait for the (mock) health report to land. */
 async function ready() {
-  expect(await screen.findByText("Code Health")).toBeInTheDocument()
+  expect(
+    await screen.findByText("Code Health", {}, { timeout: 5_000 }),
+  ).toBeInTheDocument()
 }
 
 /** The dashboard with the top bar's branch picker beside it, as the app shell has it. */
@@ -632,7 +634,9 @@ test("the error state's Retry actually re-runs the read", async () => {
   broken = false
   await userEvent.click(screen.getByRole("button", { name: /retry/i }))
 
-  expect(await screen.findByText("Code Health")).toBeInTheDocument()
+  expect(
+    await screen.findByText("Code Health", {}, { timeout: 5_000 }),
+  ).toBeInTheDocument()
   expect(
     screen.queryByText(/couldn’t load this dashboard/i),
   ).not.toBeInTheDocument()
@@ -969,6 +973,41 @@ test("the report loads beside the branch list, for the default branch, once and 
   expect(scansAsked).toEqual(["main"])
 })
 
+test.each([false, true])(
+  "repository settings control excluded finding visibility (hidden: %s)",
+  async (hidden) => {
+    const excluded = {
+      ...CRITICAL,
+      fingerprint: "excluded-directory",
+      source_scope: "test",
+      reason: "Excluded directory finding",
+    }
+    server.use(
+      http.get("*/api/projects", () =>
+        HttpResponse.json(
+          mockRepos.map((repo) => ({
+            ...repo,
+            hide_excluded_findings: hidden,
+          })),
+        ),
+      ),
+      http.get("*/api/repos/:repoId/health/findings", () =>
+        HttpResponse.json({
+          items: [excluded],
+          total: 1,
+          limit: 100,
+          offset: 0,
+        }),
+      ),
+    )
+    render(<DashboardView repoId={DEMO_REPO_ID} />)
+    await ready()
+    await userEvent.click(tab("Findings"))
+    if (hidden)
+      expect(screen.queryByText(excluded.reason)).not.toBeInTheDocument()
+    else expect(screen.getByText(excluded.reason)).toBeInTheDocument()
+  },
+)
 test("a remembered branch that no longer exists never flashes the first-scan card", async () => {
   writeSelectedBranch(WORKSPACE_ID, DEMO_REPO_ID, "deleted-branch")
   let releaseBranches!: () => void
@@ -1005,4 +1044,61 @@ test("a remembered branch that no longer exists never flashes the first-scan car
   await ready()
   expect(screen.queryByTestId("first-scan-card")).not.toBeInTheDocument()
   expect(healthAsked.at(-1)).toBe("main")
+})
+
+test("saving exclusion visibility refreshes the mounted dashboard and preserves the temporary Show excluded findings toggle", async () => {
+  let hidden = false
+  const excluded = {
+    ...CRITICAL,
+    fingerprint: "excluded-directory",
+    source_scope: "test",
+    reason: "Excluded directory finding",
+  }
+  server.use(
+    http.get("*/api/projects", () =>
+      HttpResponse.json(
+        mockRepos.map((repo) => ({ ...repo, hide_excluded_findings: hidden })),
+      ),
+    ),
+    http.get("*/api/repos/:repoId/health/findings", () =>
+      HttpResponse.json({ items: [excluded], total: 1, limit: 500, offset: 0 }),
+    ),
+    http.patch("*/api/projects/:repoId/source-scope", async ({ request }) => {
+      const config = (await request.json()) as {
+        hide_excluded_findings: boolean
+      }
+      hidden = config.hide_excluded_findings
+      return HttpResponse.json(config)
+    }),
+  )
+  render(<DashboardView repoId={DEMO_REPO_ID} />)
+  await ready()
+  await userEvent.click(tab("Findings"))
+  expect(await screen.findByText(excluded.reason)).toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Directory exclusions" }),
+  )
+  const settings = await screen.findByRole("dialog", {
+    name: "Directory exclusions",
+  })
+  const save = within(settings).getByRole("button", {
+    name: "Save configuration",
+  })
+  await waitFor(() => expect(save).toBeEnabled())
+  await userEvent.click(
+    within(settings).getByRole("radio", {
+      name: "Hide from Refactor first by default",
+    }),
+  )
+  await userEvent.click(save)
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  )
+  await waitFor(() =>
+    expect(screen.queryByText(excluded.reason)).not.toBeInTheDocument(),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: "Show excluded findings" }),
+  )
+  expect(screen.getByText(excluded.reason)).toBeInTheDocument()
 })

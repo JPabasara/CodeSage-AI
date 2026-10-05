@@ -269,7 +269,7 @@ export const extraHelpArticles: HelpArticle[] = [
       {
         heading: "Analysed",
         paragraphs: [
-          "Only .java files are parsed, measured and scored. Every .java file on the branch you scan is measured, checked against the rules and PMD, and read for self-admitted technical debt in its comments. Test code is analysed too, and tagged so the findings list can show or hide it.",
+          "Only .java files are parsed, measured and scored. Files selected for Exclude from scans are skipped. With Hide from Refactor first by default, selected files are analysed and their findings can be revealed using Show excluded findings.",
           "The git history of those files is read for change frequency, which feeds the bug-risk model.",
         ],
       },
@@ -446,30 +446,33 @@ export const extraHelpArticles: HelpArticle[] = [
     slug: "test-exclusions",
     parent: "filters",
     category: "Help",
-    title: "Test exclusions: show or hide test-code findings",
+    title: "Directory and test exclusions: show or hide findings",
     description:
-      "There are three separate controls: what the list shows, which findings count toward health, and how files are classified during scans.",
+      "Choose whether selected paths are skipped during scans or analysed with their findings hidden by default.",
     intro:
-      "There are three separate controls: what the list shows, which findings count toward health, and how files are classified during scans.",
+      "Choose whether selected paths are skipped during scans or analysed with their findings hidden by default.",
     sections: [
       {
         heading: "Steps",
         paragraphs: [],
         steps: [
-          "Use Test code in the findings toolbar to show or hide findings already classified as test code.",
-          "To change scoring, open Profiles and change Include test findings on an editable profile.",
-          "To correct a file’s classification, open Configure test paths and save the path rules.",
-          "Run a new scan after changing classification rules.",
+          "Open Directory exclusions from the findings list or the project settings in Profiles.",
+          "Detected test files and directories are ticked automatically. Untick any path you want to include as production code.",
+          "Choose Exclude from scans or Hide from Refactor first by default, then save.",
+          "Run a new scan after changing directory scope.",
+          "Use Show excluded findings in Refactor first to reveal findings from scanned excluded paths.",
         ],
       },
       {
         heading: "What to expect",
         paragraphs: [
-          "The Test code toolbar toggle is a display filter; it does not save a profile or rewrite a snapshot. Its initial value follows the supplied profile setting. Clear filter restores that test-display default.",
+          "Exclude from scans generates no findings for selected paths. The toolbar cannot reveal findings that were never generated.",
+          "Hide from Refactor first by default scans selected paths and tags their findings separately. Show excluded findings changes visibility only; it does not change health scores.",
+          "Clear filter restores the saved visibility default. Existing snapshots retain their original source classification.",
         ],
       },
     ],
-    related: ["test-paths"],
+    related: ["test-paths", "profile-test-inclusion"],
   },
   {
     slug: "done-filter",
@@ -487,7 +490,7 @@ export const extraHelpArticles: HelpArticle[] = [
         steps: [
           "Enable Show done to include completed findings.",
           "Open a completed finding and choose Reopen if work remains.",
-          "If the list is empty, review source, severity, debt type, and Test code.",
+          "If the list is empty, review source, severity, debt type, and Show excluded findings.",
           "Use Clear filter to reset source, severity, debt type, and test visibility.",
         ],
       },
@@ -504,27 +507,29 @@ export const extraHelpArticles: HelpArticle[] = [
     slug: "test-paths",
     parent: "filters",
     category: "Help",
-    title: "Configure test paths and production overrides",
+    title: "Select directories and correct detected test paths",
     description:
-      "Path classification is saved per project and used by future scans. You need profile-update permission to save it.",
+      "Managers and org admins can configure directory exclusions per repository.",
     intro:
-      "Path classification is saved per project and used by future scans. You need profile-update permission to save it.",
+      "Managers and org admins can configure directory exclusions per repository.",
     sections: [
       {
         heading: "Steps",
         paragraphs: [],
         steps: [
-          "Run a scan so the file tree is available.",
-          "Open Configure test paths beside the Test code filter.",
-          "Check test files or folders.",
-          "Uncheck incorrect matches to record production overrides.",
-          "Choose Save configuration, then scan again.",
+          "Open Directory exclusions and wait for Loading directories… to finish.",
+          "The left column contains the directory tree; the right contains the two exclusion options. Folders start collapsed. Expand a folder or search to find a path.",
+          "Detected test paths and saved selections are ticked. Untick incorrect matches to record production overrides.",
+          "Choose Exclude from scans to skip selected paths, or Hide from Refactor first by default to scan them while hiding their findings initially.",
+          "Save configuration, then run a new scan.",
         ],
       },
       {
         heading: "What to expect",
         paragraphs: [
-          "A folder selection covers descendants. For example, mark a test folder as test code and uncheck a production helper beneath it when necessary. Saved snapshots retain their earlier classification.",
+          "The fixed-size dialog scrolls when content is long. On smaller screens its columns stack.",
+          "Selecting a folder covers all descendants. Search temporarily expands matching paths without changing your expansion choices.",
+          "Directory settings are also offered when connecting a repository. Save and scan applies them before scanning; Scan with current settings uses the saved configuration.",
         ],
       },
     ],
@@ -563,30 +568,32 @@ export const extraHelpArticles: HelpArticle[] = [
     slug: "profile-test-inclusion",
     parent: "profile-settings",
     category: "Help",
-    title: "Include test findings in scoring",
+    title: "Excluded findings and health scores",
     description:
-      "Include test findings determines whether test-classified findings contribute under a profile.",
+      "Directory exclusions control scanning and finding visibility; showing hidden findings does not change the health score.",
     intro:
-      "Include test findings determines whether test-classified findings contribute under a profile.",
+      "Directory exclusions control scanning and finding visibility; showing hidden findings does not change the health score.",
     sections: [
       {
         heading: "Steps",
         paragraphs: [],
         steps: [
-          "Open Profiles and choose a custom profile.",
-          "Change Include test findings.",
-          "Save the profile.",
-          "Confirm it is the workspace default or assigned to the project you are reviewing.",
+          "Open Directory exclusions to choose how selected paths are handled.",
+          "Use Exclude from scans when selected paths should generate no findings.",
+          "Use Hide from Refactor first by default when selected paths should be analysed but hidden initially.",
+          "Save and rescan to apply changed directory scope.",
         ],
       },
       {
         heading: "What to expect",
         paragraphs: [
-          "This can change the health calculation from stored facts without scanning. Correcting the classification itself requires updated test-path rules and a new scan.",
+          "The Include test-code findings control has been removed from Profiles. Existing profile scoring settings are preserved.",
+          "Show excluded findings is a display filter, not a scoring setting. Revealing findings does not recalculate the score.",
+          "Adjust category weights and source trust in Profiles to change scoring. Untick a misclassified production path and rescan to correct its classification.",
         ],
       },
     ],
-    related: ["test-exclusions"],
+    related: ["test-exclusions", "source-trust"],
   },
   {
     slug: "profile-lifecycle",
@@ -645,5 +652,69 @@ export const extraHelpArticles: HelpArticle[] = [
       },
     ],
     related: ["sign-out"],
+  },
+  {
+    slug: "workspace-rule-selection",
+    parent: "profile-settings",
+    category: "Help",
+    title: "Enable or disable workspace rules",
+    description:
+      "Org admins control which built-in and PMD rules run in future scans across the workspace.",
+    intro:
+      "Org admins control which built-in and PMD rules run in future scans across the workspace.",
+    sections: [
+      {
+        heading: "Steps",
+        paragraphs: [],
+        steps: [
+          "Open Profiles → Rule selection → View workspace rules.",
+          "Search or browse rules, untick rules you want to disable, and choose Save rules.",
+          "Alternatively, open a finding detail card, choose Disable this rule, and confirm its workspace-wide effect.",
+          "Run a new scan to apply the new selection, even without a new commit.",
+          "Re-enable rules by ticking them in Rule selection and saving.",
+        ],
+      },
+      {
+        heading: "What to expect",
+        paragraphs: [
+          "The rule-selection dialog has a fixed size with a scrolling list. Other roles can inspect rules but cannot change them.",
+          "Existing findings and scores remain unchanged until a new scan is produced. Disabling a rule differs from Mark as done, which applies to one finding.",
+          "AI-based comment findings are unaffected by deterministic rule selection.",
+        ],
+      },
+    ],
+    related: ["workspace-comment-rules", "review-findings"],
+  },
+  {
+    slug: "workspace-comment-rules",
+    parent: "profile-settings",
+    category: "Help",
+    title: "Add and manage comment rules",
+    description:
+      "Comment rules match explicit team markers before unmatched comments are sent to ML.",
+    intro:
+      "Comment rules match explicit team markers before unmatched comments are sent to ML.",
+    sections: [
+      {
+        heading: "Steps",
+        paragraphs: [],
+        steps: [
+          "Open Profiles → Comment rules → View comment rules.",
+          "Added rules lists the configured rules. Org admins can Edit or Remove a rule.",
+          "Switch to Add rule and enter a name, keyword or regex pattern, category, and severity.",
+          "Enter a sample comment and choose Test pattern. Choose Add rule after the pattern is valid.",
+          "Adding or updating returns to Added rules. Choose Save comment rules to persist the list, then rescan.",
+        ],
+      },
+      {
+        heading: "What to expect",
+        paragraphs: [
+          "Both tabs share a fixed-size dialog with scrolling content. Drafts survive tab switches.",
+          "The first enabled matching rule sets category and severity. Existing rule order is preserved; the list has no reorder or enable controls.",
+          "Other roles can inspect rules and test patterns, but cannot edit, remove, or save them. Changes affect future scans across the workspace.",
+        ],
+      },
+    ],
+    related: ["workspace-rule-selection", "review-findings"],
   },
 ]

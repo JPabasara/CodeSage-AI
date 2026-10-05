@@ -10,6 +10,7 @@ const PROJECTS_CHANGED_EVENT = "codesage:projects-changed"
 
 type ProjectsChanged =
   | { type: "connected"; repo: Repo }
+  | { type: "settings"; repoId: string }
   | { type: "removed"; repoId: string; remaining: Repo[] }
 
 function publishProjectsChanged(detail: ProjectsChanged) {
@@ -17,6 +18,10 @@ function publishProjectsChanged(detail: ProjectsChanged) {
   window.dispatchEvent(
     new CustomEvent<ProjectsChanged>(PROJECTS_CHANGED_EVENT, { detail }),
   )
+}
+
+export function publishProjectSettingsChanged(repoId: string) {
+  publishProjectsChanged({ type: "settings", repoId })
 }
 
 export function publishProjectConnected(repo: Repo) {
@@ -39,7 +44,7 @@ export function useProjects(): MutableQueryState<Repo[]> {
         update(() =>
           change.remaining.filter((repo) => repo.id !== change.repoId),
         )
-      } else {
+      } else if (change.type === "connected") {
         update((current) => [
           change.repo,
           ...(current ?? []).filter((repo) => repo.id !== change.repo.id),

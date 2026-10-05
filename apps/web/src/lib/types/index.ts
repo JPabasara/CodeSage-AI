@@ -103,6 +103,7 @@ export interface Repo {
   url: string
   default_branch: string
   connected_at: string // ISO
+  hide_excluded_findings?: boolean
   latest_health?: LatestHealth | null // Projects-list hint
 }
 
@@ -244,6 +245,9 @@ export interface ProjectProfile {
 export interface SourceScopeConfig {
   test_path_patterns: string[]
   production_path_overrides: string[]
+  scan_excluded_directories?: boolean
+  hide_excluded_findings?: boolean
+  file_paths?: string[] | null
 }
 
 export interface FindingPage {
@@ -315,3 +319,28 @@ export type CreateInvitationRequest =
 export type CreatedInvitation = components["schemas"]["CreatedInvitation"]
 
 export type AcceptedInvitation = components["schemas"]["AcceptedInvitation"]
+
+export type RuleOption = {
+  rule_id: string
+  category: Category
+  description: string
+}
+
+export type WorkspaceRules = {
+  rules: RuleOption[]
+  disabled_rule_ids: string[]
+  comment_rules?: CommentRule[]
+}
+
+export type CommentPattern = {
+  match_type: "keyword" | "regex"
+  pattern: string
+  case_sensitive: boolean
+}
+export type CommentRule = CommentPattern & {
+  id: string
+  name: string
+  category: Category
+  severity: Severity
+  enabled: boolean
+}

@@ -96,13 +96,14 @@ test("renders count badge and explanatory ranking subtitle", () => {
   expect(within(heading.parentElement!).getByText("3")).toBeInTheDocument()
 })
 
-test("cards include source, category and compact location", () => {
+test("cards include source and category without file paths", () => {
   render(<RefactorFirstList findings={findings} />)
 
   const critical = screen.getByRole("button", { name: /critical one/i })
   expect(critical).toHaveTextContent(/security/i)
   expect(critical).toHaveTextContent(/rule/i)
-  expect(critical).toHaveTextContent("b.ts:2")
+  expect(critical).not.toHaveTextContent("b.ts")
+  expect(critical).not.toHaveAccessibleName(/b\.ts/)
 })
 
 test("renders full reason in title attribute for hover accessibility", () => {
@@ -126,25 +127,31 @@ const manyFindings = (count: number): Finding[] =>
     pinned_by_floor: false,
   }))
 
-test("shows 25 at first and loads 25 more at a time, with stable ranks", async () => {
+test("pages ten findings at a time with stable ranks and bounded navigation", async () => {
   const user = userEvent.setup()
-  render(<RefactorFirstList findings={manyFindings(60)} />)
+  render(<RefactorFirstList findings={manyFindings(23)} />)
+  expect(findingCards()).toHaveLength(10)
+  expect(screen.getByText("Page 1 of 3 · 1–10 of 23")).toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled()
+  expect(
+    screen.queryByRole("button", { name: /^Load/ }),
+  ).not.toBeInTheDocument()
 
-  expect(findingCards()).toHaveLength(25)
-  expect(screen.getByText("Showing 1–25 of 60")).toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "Next" }))
+  expect(findingCards()).toHaveLength(10)
+  expect(rankOf(findingCards()[0])).toBe("11")
+  expect(screen.queryByText("Finding number 1")).not.toBeInTheDocument()
+  expect(screen.getByText("Page 2 of 3 · 11–20 of 23")).toBeInTheDocument()
 
-  await user.click(screen.getByRole("button", { name: "Load 25 more" }))
-  expect(findingCards()).toHaveLength(50)
-  // The list grows; nothing is renumbered.
-  expect(rankOf(findingCards()[25])).toBe("26")
-
-  await user.click(screen.getByRole("button", { name: "Load 10 more" }))
-  expect(findingCards()).toHaveLength(60)
-  expect(screen.getByText("Showing 1–60 of 60")).toBeInTheDocument()
-  expect(screen.queryByRole("button", { name: /^load/i })).toBeNull()
+  await user.click(screen.getByRole("button", { name: "Next" }))
+  expect(findingCards()).toHaveLength(3)
+  expect(rankOf(findingCards()[0])).toBe("21")
+  expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: "Previous" }))
+  expect(screen.getByText("Page 2 of 3 · 11–20 of 23")).toBeInTheDocument()
 })
 
-test("a linked finding further down starts with enough rows to show it", () => {
+test("a linked finding opens on its page", () => {
   const list = manyFindings(60)
   render(
     <RefactorFirstList
@@ -152,20 +159,34 @@ test("a linked finding further down starts with enough rows to show it", () => {
       selectedFingerprint={list[40].fingerprint}
     />,
   )
-  expect(findingCards()).toHaveLength(50)
+  expect(findingCards()).toHaveLength(10)
+  expect(screen.getByText("Page 5 of 6 · 41–50 of 60")).toBeInTheDocument()
   expect(
-    screen.getByRole("button", { name: /Finding number 41 /, current: true }),
+    screen.getByRole("button", { name: /Finding number 41$/, current: true }),
   ).toBeInTheDocument()
 })
 
-test("changing a filter starts the list at 25 again", async () => {
+test("search resets pagination to the first page", async () => {
   const user = userEvent.setup()
   render(<RefactorFirstList findings={manyFindings(60)} />)
-  await user.click(screen.getByRole("button", { name: "Load 25 more" }))
-  expect(findingCards()).toHaveLength(50)
-
+  await user.click(screen.getByRole("button", { name: "Next" }))
+  expect(rankOf(findingCards()[0])).toBe("11")
   await user.type(screen.getByRole("searchbox"), "Finding")
-  expect(findingCards()).toHaveLength(25)
+  expect(findingCards()).toHaveLength(10)
+  expect(rankOf(findingCards()[0])).toBe("1")
+})
+
+test("shrinking the result set clamps the active page", async () => {
+  const user = userEvent.setup()
+  const list = manyFindings(23)
+  const view = render(<RefactorFirstList findings={list} />)
+  await user.click(screen.getByRole("button", { name: "Next" }))
+  await user.click(screen.getByRole("button", { name: "Next" }))
+  view.rerender(<RefactorFirstList findings={list.slice(0, 12)} />)
+  expect(screen.getByText("Page 2 of 2 · 11–12 of 12")).toBeInTheDocument()
+  expect(findingCards()).toHaveLength(2)
+  await user.click(screen.getByRole("button", { name: "Previous" }))
+  expect(rankOf(findingCards()[0])).toBe("1")
 })
 
 test("clicking a finding card fires onSelect with that finding", async () => {
@@ -456,8 +477,7 @@ test("Clear filter resets source, severity and type together", async () => {
   expect(within(countBadge()).getByText("5")).toBeInTheDocument()
 })
 
-test("hides test-code findings by default and allows a temporary override", async () => {
-  const user = userEvent.setup()
+test("uses configured test visibility while preserving the Show excluded findings toggle", async () => {
   const scoped = [
     {
       ...findings[0],
@@ -472,9 +492,59 @@ test("hides test-code findings by default and allows a temporary override", asyn
       source_scope: "test" as const,
     },
   ]
-  render(<RefactorFirstList findings={scoped} />)
+  const view = render(<RefactorFirstList findings={scoped} />)
   expect(screen.getByText("production finding")).toBeInTheDocument()
   expect(screen.queryByText("test finding")).not.toBeInTheDocument()
-  await user.click(screen.getByRole("button", { name: "Test code" }))
+  const toggle = screen.getByRole("button", { name: "Show excluded findings" })
+  expect(toggle).toHaveAttribute("aria-pressed", "false")
+  await userEvent.click(toggle)
   expect(screen.getByText("test finding")).toBeInTheDocument()
+  await userEvent.click(toggle)
+  expect(screen.queryByText("test finding")).not.toBeInTheDocument()
+  view.rerender(
+    <RefactorFirstList findings={scoped} includeTestFindingsByDefault />,
+  )
+  expect(screen.getByText("test finding")).toBeInTheDocument()
+})
+
+test("summarizes method signatures while preserving the selected finding", async () => {
+  const user = userEvent.setup()
+  const onSelect = vi.fn()
+  const symbol =
+    "org.joda.time.format.PeriodFormatterBuilder$FieldFormatter.parseInto/4[org.joda.time.ReadWritablePeriod,java.lang.String,int,java.util.Locale]"
+  const finding: Finding = {
+    ...findings[0],
+    symbol,
+    rule_id: "long-method",
+    reason: `${symbol}() is 123 lines long, over the limit of 80 - extract cohesive blocks into helpers.`,
+  }
+  render(<RefactorFirstList findings={[finding]} onSelect={onSelect} />)
+  const card = findingCards()[0]
+  expect(card).toHaveTextContent(
+    "Extract smaller helper methods from this long method.",
+  )
+  expect(card).not.toHaveTextContent("org.joda")
+  expect(card).not.toHaveAccessibleName(/org\.joda/)
+  expect(card).not.toHaveTextContent(finding.file)
+  await user.click(card)
+  expect(onSelect).toHaveBeenCalledWith(finding)
+})
+
+test("removes the file path embedded in large-file summaries", () => {
+  render(
+    <RefactorFirstList
+      findings={[
+        {
+          ...findings[0],
+          rule_id: "large-file",
+          reason:
+            "a.ts is 900 lines long, over the limit of 800 - consider splitting it by responsibility.",
+        },
+      ]}
+    />,
+  )
+  expect(findingCards()[0]).toHaveTextContent(
+    "Split this large file into smaller files by responsibility.",
+  )
+  expect(findingCards()[0]).not.toHaveTextContent("a.ts")
 })

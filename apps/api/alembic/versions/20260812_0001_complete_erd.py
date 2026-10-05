@@ -4,8 +4,8 @@ Revision ID: 20260812_0001
 Revises:
 """
 
-from collections.abc import Sequence
 import uuid
+from collections.abc import Sequence
 
 from alembic import op
 from sqlalchemy import (
@@ -16,13 +16,12 @@ from sqlalchemy import (
     MetaData,
     Table,
     UniqueConstraint,
-    insert,
     text,
 )
 from sqlalchemy.schema import CreateIndex, CreateTable, DropTable
 
-from codesage_api.db.base import Base
 import codesage_api.db.models  # noqa: F401
+from codesage_api.db.base import Base
 
 revision: str = "20260812_0001"
 down_revision: str | None = None
@@ -81,15 +80,21 @@ LATER_COLUMNS = {
         "website_url",
         "created_at",
         "updated_at",
+        "disabled_rule_ids",  # 0027
+        "comment_rules",  # 0028
     ),
     "membership": ("role_id",),  # 0010
-    "repository": ("test_path_patterns", "production_path_overrides"),  # 0024
+    "repository": (
+        "test_path_patterns", "production_path_overrides",  # 0024
+        "scan_excluded_directories", "hide_excluded_findings",  # 0026
+    ),
     "source_file": ("source_scope",),  # 0024
     "app_user": ("email_verified", "product_tour_completed_at"),  # 0013, 0019
     "analysis_attempt": (  # 0011; failure_code 0018
         "initiated_by_user_id",
         "initiating_workspace_id",
         "failure_code",
+        "source_scope_config",  # 0026
     ),
     "finding": ("class_name", "method_name", "snapshot_id"),  # 0017; snapshot_id 0020
     "session": ("token_hash",),  # 0019

@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session, joinedload
@@ -35,6 +36,7 @@ class WorkerScanInput:
     branch_name: str
     #: How long this repository's recent scans took, for "Usually about 2 min".
     typical_seconds: int | None = None
+    source_scope_config: dict[str, Any] | None = None
 
 
 #: How many recent finished scans the typical duration is taken over.
@@ -219,10 +221,12 @@ def create_queued(
     *,
     actor_user_id: uuid.UUID,
     workspace_id: uuid.UUID,
+    source_scope_config: dict[str, Any] | None = None,
 ) -> AnalysisAttempt:
     version = get_or_create_engine_version(session)
     attempt = AnalysisAttempt(
         branch_id=branch_id,
+        source_scope_config=source_scope_config,
         initiated_by_user_id=actor_user_id,
         initiating_workspace_id=workspace_id,
         analysis_engine_version_id=version.id,
@@ -388,6 +392,7 @@ def begin_for_worker(
         attempt.commit_sha,
         attempt.branch.name,
         typical_duration_seconds(session, attempt.branch.repository_id),
+        attempt.source_scope_config,
     )
 
 

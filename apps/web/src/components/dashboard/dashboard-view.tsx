@@ -409,7 +409,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
 
     if (!report) return null
 
-    const summary = findingSummary(report, displayedFindings)
+    const includeExcluded = !(repo?.hide_excluded_findings ?? false)
+    const summary = findingSummary(
+      { ...report, include_test_findings: includeExcluded },
+      displayedFindings,
+    )
     const files = leafFiles(report.tree)
     const fileCount = report.java_file_count ?? files.length
     const findingFiles = new Set(
@@ -454,6 +458,7 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               "overview",
               <DashboardOverview
                 report={report}
+                includeTestFindingsByDefault={includeExcluded}
                 findings={displayedFindings}
                 onOpenFinding={openFinding}
                 onOpenFile={openFile}
@@ -470,21 +475,24 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
               <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
                 <div className="min-w-0">
                   <RefactorFirstList
+                    key={repoId}
                     findings={displayedFindings}
                     onSelect={openFinding}
                     selectedFingerprint={selectedFinding?.fingerprint}
                     canTriage={canTriage}
                     statusBusyFingerprint={statusBusyFingerprint}
                     onStatusChange={changeFindingStatus}
-                    includeTestFindingsByDefault={
-                      report.include_test_findings ?? false
-                    }
+                    includeTestFindingsByDefault={includeExcluded}
                     repoId={repoId}
+                    canConfigure={
+                      session?.permissions?.includes("profile:update") ?? false
+                    }
                     treeNodes={report.tree}
                   />
                 </div>
                 <div className="min-h-64 lg:sticky lg:top-4 lg:self-start">
                   <FindingDetailPanel
+                    canDisableRules={session?.role === "org-admin"}
                     finding={selectedFinding}
                     repositoryUrl={repo?.url}
                     commitSha={report.commit_sha}

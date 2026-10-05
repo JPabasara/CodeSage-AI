@@ -89,7 +89,7 @@ test("GET /projects returns contract-shaped repos", async () => {
         "default_branch",
         "connected_at",
       ],
-      ["latest_health"],
+      ["latest_health", "hide_excluded_findings"],
       "Repo",
     )
     expect(repo.id, "Repo.id is format: uuid in the contract").toMatch(UUID)
@@ -132,7 +132,7 @@ test("POST /projects returns 201 and a contract-shaped Repo", async () => {
       "default_branch",
       "connected_at",
     ],
-    ["latest_health"],
+    ["latest_health", "hide_excluded_findings"],
     "Repo (connected)",
   )
   expect(repo.id).toMatch(UUID)
@@ -1157,4 +1157,185 @@ test("a finished scan is a new snapshot; the old one still answers by its id", a
     `/repos/${DEMO_REPO_ID}/health?branch=main&snapshot_id=${before.snapshot_id}`,
   )
   expect(old.snapshot_id).toBe(before.snapshot_id)
+})
+
+test("workspace rule changes allow a new scan of the same commit", async () => {
+  const first = (await (
+    await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+  ).json()) as ScanStatus
+  let phase = first.phase
+  for (let i = 0; i < 10 && phase === "running"; i++) {
+    phase = (
+      await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${first.scan_id}`)
+    ).phase
+  }
+  expect(phase).toBe("done")
+  expect(
+    (
+      (await (
+        await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+      ).json()) as ScanStatus
+    ).phase,
+  ).toBe("done")
+  const saved = await put("/profiles/rules", {
+    disabled_rule_ids: ["large-file"],
+  })
+  expect(saved.status).toBe(200)
+  const second = (await (
+    await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+  ).json()) as ScanStatus
+  expect(second.phase).toBe("running")
+  expect(second.commit_sha).toBe(first.commit_sha)
+})
+
+test("workspace selections affect new findings and scores while existing results remain unchanged", async () => {
+  const before = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  expect(
+    before.findings.some((finding) => finding.rule_id === "large-file"),
+  ).toBe(true)
+  await put("/profiles/rules", { disabled_rule_ids: ["large-file"] })
+  expect(
+    (await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`))
+      .findings,
+  ).toEqual(before.findings)
+  const scan = (await (
+    await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+  ).json()) as ScanStatus
+  let phase = scan.phase
+  for (let i = 0; i < 10 && phase === "running"; i++) {
+    phase = (
+      await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)
+    ).phase
+  }
+  expect(phase).toBe("done")
+  // The mock asynchronously prepares the score after the snapshot is finalized.
+  await fetch(`${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`)
+  await fetch(`${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const after = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  expect(
+    after.findings.some((finding) => finding.rule_id === "large-file"),
+  ).toBe(false)
+  const page = await get<{ items: HealthReport["findings"]; total: number }>(
+    `/repos/${DEMO_REPO_ID}/health/findings?branch=main&limit=100`,
+  )
+  expect(page.items).toEqual(after.findings)
+  expect(page.total).toBe(after.findings.length)
+
+  expect(after.health_score).toBeGreaterThanOrEqual(before.health_score)
+  expect(after.findings.filter((finding) => finding.source === "satd")).toEqual(
+    before.findings.filter((finding) => finding.source === "satd"),
+  )
+  await put("/profiles/rules", { disabled_rule_ids: [] })
+  expect(
+    (await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`))
+      .findings,
+  ).toEqual(after.findings)
+  expect(
+    (
+      await get<HealthReport>(
+        `/repos/${DEMO_REPO_ID}/health?branch=main&snapshot_id=${before.snapshot_id}`,
+      )
+    ).findings,
+  ).toEqual(before.findings)
+})
+
+test("later scans preserve earlier scan rule selections in historical findings", async () => {
+  await put("/profiles/rules", { disabled_rule_ids: ["large-file"] })
+  async function finishScan() {
+    const scan = (await (
+      await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+    ).json()) as ScanStatus
+    let phase = scan.phase
+    for (let i = 0; i < 10 && phase === "running"; i++)
+      phase = (
+        await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)
+      ).phase
+    await fetch(`${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`)
+    await fetch(`${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`)
+    return get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`)
+  }
+  const first = await finishScan()
+  expect(
+    first.findings.some((finding) => finding.rule_id === "large-file"),
+  ).toBe(false)
+  await put("/profiles/rules", { disabled_rule_ids: [] })
+  const next = await finishScan()
+  expect(
+    next.findings.some((finding) => finding.rule_id === "large-file"),
+  ).toBe(true)
+  expect(
+    (
+      await get<HealthReport>(
+        `/repos/${DEMO_REPO_ID}/health?branch=main&snapshot_id=${first.snapshot_id}`,
+      )
+    ).findings,
+  ).toEqual(first.findings)
+})
+
+test("comment patterns are tested without saving and matched comments become frozen rule findings", async () => {
+  const initial = await get<{ comment_rules: unknown[] }>("/profiles/rules")
+  const sample = await post("/profiles/rules/test-comment", {
+    match_type: "keyword",
+    pattern: "TODO",
+    case_sensitive: false,
+    sample_comment: "// todo: fix this",
+  })
+  expect(await sample.json()).toEqual({ matched: true })
+  expect(await get("/profiles/rules")).toEqual(initial)
+  const before = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  const rule = {
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Tracked TODO",
+    match_type: "keyword",
+    pattern: "TODO",
+    case_sensitive: false,
+    category: "documentation",
+    severity: "low",
+    enabled: true,
+  }
+  const saved = await patch("/profiles/rules", { comment_rules: [rule] })
+  expect(saved.status).toBe(200)
+  expect((await saved.json()).comment_rules).toEqual([rule])
+  expect(
+    (await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`))
+      .findings,
+  ).toEqual(before.findings)
+  const scan = (await (
+    await post(`/repos/${DEMO_REPO_ID}/scan`, { branch: "main" })
+  ).json()) as ScanStatus
+  let phase = scan.phase
+  for (let i = 0; i < 10 && phase === "running"; i++)
+    phase = (
+      await get<ScanStatus>(`/repos/${DEMO_REPO_ID}/scan/${scan.scan_id}`)
+    ).phase
+  await fetch(`${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`)
+  await fetch(`${BASE}/repos/${DEMO_REPO_ID}/health?branch=main`)
+  const after = await get<HealthReport>(
+    `/repos/${DEMO_REPO_ID}/health?branch=main`,
+  )
+  const matched = after.findings.filter(
+    (finding) => finding.rule_id === "comment-pattern",
+  )
+  expect(matched.length).toBeGreaterThan(0)
+  expect(
+    matched.every(
+      (finding) =>
+        finding.source === "rule" &&
+        finding.category === "documentation" &&
+        finding.severity === "low" &&
+        finding.comment_text?.includes("TODO"),
+    ),
+  ).toBe(true)
+  expect(after.findings.length).toBe(before.findings.length)
+  await patch("/profiles/rules", { comment_rules: [] })
+  expect(
+    (await get<HealthReport>(`/repos/${DEMO_REPO_ID}/health?branch=main`))
+      .findings,
+  ).toEqual(after.findings)
 })

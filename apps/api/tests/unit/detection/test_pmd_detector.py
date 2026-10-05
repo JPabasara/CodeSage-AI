@@ -170,3 +170,75 @@ def test_missing_pmd_class_remains_null(tmp_path: Path) -> None:
 
     assert finding.class_name is None
     assert finding.method_name is None
+
+
+def test_workspace_ruleset_preserves_properties_and_excludes_disabled_rules(tmp_path: Path):
+    from xml.etree import ElementTree
+
+    from codesage_api.detection.pmd.detector import _write_selected_ruleset
+
+    output = tmp_path / "selected.xml"
+    count = _write_selected_ruleset(
+        PMD_DIR / "rulesets/codesage-core-profile.xml", output, {"pmd:EmptyCatchBlock"}
+    )
+    xml = output.read_text(encoding="utf-8")
+    assert '<ruleset xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"' in xml
+    assert "<rule ref=" in xml
+    assert "<ns0:" not in xml
+    ns = {"pmd": "http://pmd.sourceforge.net/ruleset/2.0.0"}
+    rules = ElementTree.parse(output).getroot().findall("pmd:rule", ns)
+    assert count == len(rules) > 0
+    assert not any(rule.attrib["ref"].endswith("/EmptyCatchBlock") for rule in rules)
+    assert not any(
+        rule.attrib["ref"].endswith("/CloseResource") for rule in rules
+    )  # semantic-only rule
+    assert (
+        next(rule for rule in rules if rule.attrib["ref"].endswith("/PreserveStackTrace"))
+        .find("pmd:priority", ns)
+        .text
+        == "2"
+    )
+
+
+def test_disabled_pmd_rule_is_absent_at_runner_boundary_and_file_is_cleaned(tmp_path: Path):
+    from xml.etree import ElementTree
+
+    from codesage_api.detection.pmd.runner import PMDRunOutput
+    from codesage_api.detection.provider import ScanContext
+
+    seen = []
+
+    def execute(repository, configured):
+        seen.append(configured.ruleset)
+        refs = [
+            rule.attrib["ref"]
+            for rule in ElementTree.parse(configured.ruleset).getroot()
+            if "ref" in rule.attrib
+        ]
+        assert not any(ref.endswith("/EmptyCatchBlock") for ref in refs)
+        return PMDRunOutput('<pmd version="7.27.0"></pmd>', "")
+
+    with patch("codesage_api.detection.pmd.detector.run", side_effect=execute):
+        result = scan(
+            java_repository(tmp_path),
+            ScanContext(disabled_rule_ids=("pmd:EmptyCatchBlock",)),
+            config=config(tmp_path),
+        )
+    assert result.status is DetectorStatus.OK
+    assert len(seen) == 1
+    assert not seen[0].exists()
+
+
+def test_all_pmd_rules_deselected_skips_runner(tmp_path: Path):
+    from codesage_api.detection.pmd.mapping import enabled_rules
+    from codesage_api.detection.provider import ScanContext
+
+    disabled = tuple(f"pmd:{rule}" for rule in enabled_rules(PMD_DIR / "rulesets"))
+    with patch("codesage_api.detection.pmd.detector.run") as execute:
+        result = scan(
+            java_repository(tmp_path),
+            ScanContext(disabled_rule_ids=disabled),
+            config=config(tmp_path),
+        )
+    assert result.status is DetectorStatus.SKIPPED
+    execute.assert_not_called()

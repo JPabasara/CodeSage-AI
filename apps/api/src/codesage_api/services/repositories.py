@@ -26,7 +26,9 @@ from codesage_api.errors import (
 )
 from codesage_api.integrations.github import (
     GitHubRepository,
+    fetch_branch,
     fetch_branches,
+    fetch_file_paths,
     fetch_repository,
 )
 from codesage_api.logging import get_logger
@@ -263,20 +265,70 @@ def list_branches(
     return output
 
 
-def get_source_scope_config(session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID) -> SourceScopeConfigOut:
-    repository = session.scalar(select(Repository).where(Repository.id == repository_id, Repository.workspace_id == workspace_id))
-    if repository is None:
-        raise NotFound
-    return SourceScopeConfigOut(test_path_patterns=repository.test_path_patterns or list(DEFAULT_TEST_PATHS), production_path_overrides=repository.production_path_overrides)
+def _scope_output(repository: Repository) -> SourceScopeConfigOut:
+    return SourceScopeConfigOut(
+        test_path_patterns=repository.test_path_patterns or list(DEFAULT_TEST_PATHS),
+        production_path_overrides=repository.production_path_overrides or [],
+        scan_excluded_directories=bool(repository.scan_excluded_directories),
+        hide_excluded_findings=bool(
+            repository.scan_excluded_directories and repository.hide_excluded_findings
+        ),
+    )
 
-def update_source_scope_config(session: Session, workspace_id: uuid.UUID, repository_id: uuid.UUID, test_path_patterns: list[str], production_path_overrides: list[str]) -> SourceScopeConfigOut:
-    repository = session.scalar(select(Repository).where(Repository.id == repository_id, Repository.workspace_id == workspace_id).with_for_update())
+
+def get_source_scope_config(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    *,
+    include_paths: bool = False,
+) -> SourceScopeConfigOut:
+    repository = session.scalar(
+        select(Repository).where(
+            Repository.id == repository_id, Repository.workspace_id == workspace_id
+        )
+    )
     if repository is None:
         raise NotFound
-    repository.test_path_patterns = list(dict.fromkeys(item.strip() for item in test_path_patterns if item.strip()))
-    repository.production_path_overrides = list(dict.fromkeys(item.strip() for item in production_path_overrides if item.strip()))
+    result = _scope_output(repository)
+    if include_paths:
+        default_branch = next((branch for branch in repository.branches if branch.is_default), None)
+        if default_branch is None:
+            raise NotFound
+        revision = fetch_branch(
+            repository.owner, repository.name, default_branch.name
+        ).head_commit_sha
+        result.file_paths = fetch_file_paths(repository.owner, repository.name, revision)
+    return result
+
+
+def update_source_scope_config(
+    session: Session,
+    workspace_id: uuid.UUID,
+    repository_id: uuid.UUID,
+    test_path_patterns: list[str],
+    production_path_overrides: list[str],
+    scan_excluded_directories: bool = False,
+    hide_excluded_findings: bool = False,
+) -> SourceScopeConfigOut:
+    repository = session.scalar(
+        select(Repository)
+        .where(Repository.id == repository_id, Repository.workspace_id == workspace_id)
+        .with_for_update()
+    )
+    if repository is None:
+        raise NotFound
+    repository.test_path_patterns = list(
+        dict.fromkeys(item.strip() for item in test_path_patterns if item.strip())
+    )
+    repository.production_path_overrides = list(
+        dict.fromkeys(item.strip() for item in production_path_overrides if item.strip())
+    )
+    repository.scan_excluded_directories = scan_excluded_directories
+    repository.hide_excluded_findings = scan_excluded_directories and hide_excluded_findings
     session.flush()
-    return SourceScopeConfigOut(test_path_patterns=repository.test_path_patterns or list(DEFAULT_TEST_PATHS), production_path_overrides=repository.production_path_overrides)
+    return _scope_output(repository)
+
 
 def _to_output(
     repository: Repository,
@@ -292,4 +344,7 @@ def _to_output(
         default_branch=default_branch,
         connected_at=repository.created_at.isoformat(),
         latest_health=latest_health,
+        hide_excluded_findings=bool(
+            repository.scan_excluded_directories and repository.hide_excluded_findings
+        ),
     )

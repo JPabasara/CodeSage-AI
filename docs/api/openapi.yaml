@@ -683,6 +683,50 @@ paths:
                 code: REPOSITORY_SCAN_RUNNING
 
 
+  /api/projects/{repo_id}/source-scope:
+    parameters:
+      - $ref: '#/components/parameters/RepoId'
+    get:
+      tags: [projects]
+      operationId: get_source_scope_config
+      summary: Read repository directory exclusions and scan options
+      parameters:
+        - name: include_paths
+          in: query
+          schema: { type: boolean, default: false }
+          description: Include Java file paths from the default branch; no source contents are fetched.
+      responses:
+        '200':
+          description: Saved repository settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceScopeConfig' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/UpstreamUnavailable' }
+    patch:
+      tags: [projects]
+      operationId: update_source_scope_config
+      summary: Save directory exclusions (Managers and Org Admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSourceScopeConfig' }
+      responses:
+        '200':
+          description: Saved settings. Hiding is off whenever excluded-directory scanning is off.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SourceScopeConfig' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+
   /api/repos/{repo_id}/branches:
     parameters:
       - $ref: '#/components/parameters/RepoId'
@@ -1213,6 +1257,89 @@ paths:
                   value:
                     detail: Another profile in this workspace already uses that name.
                     code: PROFILE_NAME_CONFLICT
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/profiles/rules:
+    get:
+      operationId: getWorkspaceRules
+      tags: [profiles]
+      summary: Read the workspace rule catalog and selection
+      responses:
+        "200":
+          description: All supported rules and the workspace selection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRules"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      operationId: updateWorkspaceRules
+      tags: [profiles]
+      summary: Select rules for future workspace scans (Org Admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceRules"
+      responses:
+        "200":
+          description: Saved selection; existing scans remain unchanged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRules"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+    patch:
+      operationId: updateWorkspaceCommentRules
+      tags: [profiles]
+      summary: Set workspace comment rules for future scans (Org Admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCommentRules' }
+      responses:
+        '200':
+          description: Saved comment rules; detector selections remain unchanged
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceRules' }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /api/profiles/rules/test-comment:
+    post:
+      operationId: testCommentPattern
+      tags: [profiles]
+      summary: Test a comment pattern against user-provided sample text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentPatternTest' }
+      responses:
+        '200':
+          description: Match result; sample text is not persisted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [matched]
+                properties:
+                  matched: { type: boolean }
+        '401': { $ref: '#/components/responses/NotAuthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
 
   /api/profiles/default:
@@ -2193,6 +2320,7 @@ components:
         url: { type: string, format: uri }
         default_branch: { type: string, example: main }
         connected_at: { type: string, format: date-time }
+        hide_excluded_findings: { type: boolean, default: false }
         latest_health:
           description: |
             A derived hint for the projects list. **Absent** until the project has
@@ -2201,6 +2329,29 @@ components:
           oneOf:
             - $ref: '#/components/schemas/LatestHealth'
             - type: 'null'
+
+    SourceScopeConfig:
+      type: object
+      additionalProperties: false
+      required: [test_path_patterns, production_path_overrides]
+      properties:
+        test_path_patterns: { type: array, items: { type: string } }
+        production_path_overrides: { type: array, items: { type: string } }
+        scan_excluded_directories: { type: boolean, default: false }
+        hide_excluded_findings: { type: boolean, default: false }
+        file_paths:
+          type: [array, 'null']
+          items: { type: string }
+
+    UpdateSourceScopeConfig:
+      type: object
+      additionalProperties: false
+      required: [test_path_patterns, production_path_overrides]
+      properties:
+        test_path_patterns: { type: array, items: { type: string } }
+        production_path_overrides: { type: array, items: { type: string } }
+        scan_excluded_directories: { type: boolean, default: false }
+        hide_excluded_findings: { type: boolean, default: false }
 
     LatestHealth:
       type: object
@@ -2853,6 +3004,77 @@ components:
             - { $ref: '#/components/schemas/ScoreProfile' }
             - { type: 'null' }
           description: The explicit choice for this project, or null.
+
+    RuleOption:
+      type: object
+      required: [rule_id, category, description]
+      properties:
+        rule_id:
+          type: string
+        category:
+          $ref: "#/components/schemas/Category"
+        description:
+          type: string
+    WorkspaceRules:
+      type: object
+      required: [rules, disabled_rule_ids]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleOption"
+        disabled_rule_ids:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        comment_rules:
+          type: array
+          default: []
+          items: { $ref: '#/components/schemas/CommentRule' }
+    UpdateWorkspaceRules:
+      type: object
+      required: [disabled_rule_ids]
+      properties:
+        disabled_rule_ids:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+
+    CommentPattern:
+      type: object
+      required: [match_type, pattern]
+      properties:
+        match_type: { type: string, enum: [keyword, regex] }
+        pattern: { type: string, minLength: 1, maxLength: 500 }
+        case_sensitive: { type: boolean, default: false }
+    CommentRule:
+      allOf:
+        - $ref: '#/components/schemas/CommentPattern'
+        - type: object
+          required: [id, name, category, severity]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string, minLength: 1, maxLength: 100 }
+            category: { $ref: '#/components/schemas/Category' }
+            severity: { $ref: '#/components/schemas/Severity' }
+            enabled: { type: boolean, default: true }
+    UpdateCommentRules:
+      type: object
+      required: [comment_rules]
+      properties:
+        comment_rules:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CommentRule' }
+    CommentPatternTest:
+      allOf:
+        - $ref: '#/components/schemas/CommentPattern'
+        - type: object
+          required: [sample_comment]
+          properties:
+            sample_comment: { type: string, maxLength: 20000 }
 
     ScoreProfile:
       type: object

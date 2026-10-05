@@ -100,6 +100,10 @@ async function askToRemove(repoLabel: string) {
   )
 }
 
+async function closeExclusionDialog() {
+  const dialog = await screen.findByRole("dialog")
+  await userEvent.click(within(dialog).getByRole("button", { name: "Close" }))
+}
 const ackKey = () => javaOnlyAckKey(mockSession.user_id, WORKSPACE_ID)
 
 function renderWithAppRail() {
@@ -125,6 +129,21 @@ test("connecting a public URL adds it to the list", async () => {
   expect(screen.queryByText("hello-world")).not.toBeInTheDocument()
 
   await connect("https://github.com/octocat/hello-world")
+
+  const dialog = await screen.findByRole("dialog")
+  expect(dialog).toHaveTextContent("Directory exclusions")
+  await userEvent.type(
+    screen.getByRole("searchbox", { name: "Search files and directories" }),
+    "AppTest.java",
+  )
+  await screen.findByRole("checkbox", { name: "AppTest.java" })
+  expect(
+    screen.getByRole("radio", { name: "Exclude from scans" }),
+  ).toBeChecked()
+  expect(
+    screen.getByRole("radio", { name: "Hide from Refactor first by default" }),
+  ).not.toBeChecked()
+  await closeExclusionDialog()
 
   const list = await screen.findByRole("list", {
     name: /connected repositories/i,
@@ -340,6 +359,7 @@ test("the form is locked while a connect is in flight", async () => {
   await ready()
 
   await connect("https://github.com/octocat/hello-world")
+  await closeExclusionDialog()
 
   await waitFor(() =>
     expect(
@@ -441,6 +461,7 @@ test("connecting a repository refreshes the list without blanking it", async () 
   await ready()
 
   await connect("https://github.com/octocat/hello-world")
+  await closeExclusionDialog()
   await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
 
   // The refresh has not answered yet, and the list the user was reading is still on screen.
@@ -560,6 +581,7 @@ test("editing the URL clears the inline refusal, and a success leaves none", asy
   expect(within(connectForm()).queryByRole("alert")).not.toBeInTheDocument()
 
   await connect("https://github.com/octocat/hello-world")
+  await closeExclusionDialog()
   await waitFor(() =>
     expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world"),
   )
@@ -617,6 +639,7 @@ test("Connect only adds the row and stays on the page, without a scan", async ()
   const list = await ready()
 
   await connect("https://github.com/octocat/hello-world", "Connect only")
+  await closeExclusionDialog()
 
   expect(await within(list).findByText("hello-world")).toBeInTheDocument()
   expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world")
@@ -635,6 +658,18 @@ test("Connect and scan selects the project, queues its first scan and opens its 
   await ready()
 
   await connect("https://github.com/octocat/hello-world", "Connect and scan")
+  expect(startScanMock).not.toHaveBeenCalled()
+  const configuration = await screen.findByRole("dialog", {
+    name: "Directory exclusions",
+  })
+  await waitFor(() =>
+    expect(
+      within(configuration).getByRole("button", { name: "Save and scan" }),
+    ).toBeEnabled(),
+  )
+  await userEvent.click(
+    within(configuration).getByRole("button", { name: "Save and scan" }),
+  )
 
   await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1))
   const repoId = readSelectedProjectId(WORKSPACE_ID)
@@ -676,6 +711,21 @@ test("a remembered choice skips the dialog in this workspace", async () => {
   await ready()
 
   await connect("https://github.com/octocat/hello-world", null)
+  const configuration = await screen.findByRole("dialog", {
+    name: "Directory exclusions",
+  })
+  await waitFor(() =>
+    expect(
+      within(configuration).getByRole("button", {
+        name: "Scan with current settings",
+      }),
+    ).toBeEnabled(),
+  )
+  await userEvent.click(
+    within(configuration).getByRole("button", {
+      name: "Scan with current settings",
+    }),
+  )
 
   await waitFor(() => expect(startScanMock).toHaveBeenCalledTimes(1))
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
@@ -704,6 +754,7 @@ test("ticking Don't show this again is what the next connect remembers", async (
     expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/hello-world"),
   )
 
+  await closeExclusionDialog()
   await connect("https://github.com/octocat/another", null)
   await waitFor(() =>
     expect(toastSuccess).toHaveBeenCalledWith("Connected octocat/another"),
@@ -757,4 +808,44 @@ test("Run first scan on an unscanned row scans its default branch and opens the 
   )
   expect(readSelectedProjectId(WORKSPACE_ID)).toBe(mockRepos[2].id)
   expect(pushMock).toHaveBeenCalledWith(`/dashboard/${mockRepos[2].id}`)
+})
+
+test("closing exclusions after Connect and scan leaves the repository connected without queuing a scan", async () => {
+  render(<ProjectsPage />)
+  await ready()
+  await connect("https://github.com/octocat/hello-world", "Connect and scan")
+  await closeExclusionDialog()
+  expect(screen.getByText("hello-world")).toBeInTheDocument()
+  expect(startScanMock).not.toHaveBeenCalled()
+  expect(pushMock).not.toHaveBeenCalled()
+})
+
+test("failed exclusion saves keep the requested first scan pending", async () => {
+  server.use(
+    http.patch("*/api/projects/:repoId/source-scope", () =>
+      HttpResponse.json(
+        { detail: "Could not save", code: "UNAVAILABLE" },
+        { status: 503 },
+      ),
+    ),
+  )
+  render(<ProjectsPage />)
+  await ready()
+  await connect("https://github.com/octocat/hello-world", "Connect and scan")
+  const configuration = await screen.findByRole("dialog", {
+    name: "Directory exclusions",
+  })
+  await waitFor(() =>
+    expect(
+      within(configuration).getByRole("button", { name: "Save and scan" }),
+    ).toBeEnabled(),
+  )
+  await userEvent.click(
+    within(configuration).getByRole("button", { name: "Save and scan" }),
+  )
+  expect(await within(configuration).findByRole("alert")).toHaveTextContent(
+    "Could not save source classification.",
+  )
+  expect(startScanMock).not.toHaveBeenCalled()
+  expect(pushMock).not.toHaveBeenCalled()
 })

@@ -379,3 +379,58 @@ test("a read-only role sees the pool and no way to change it", async ({
     page.getByRole("slider", { name: "Security weight" }),
   ).toHaveAttribute("aria-disabled", "true")
 })
+
+test("workspace rules can be changed without changing scoring profiles", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "View workspace rules" }).click()
+  const rules = page.getByRole("dialog", { name: "Workspace rule selection" })
+  await rules
+    .getByRole("checkbox", { name: "large file", exact: true })
+    .uncheck()
+  await rules.getByRole("button", { name: "Save rules" }).click()
+  await expect(
+    rules.getByText("Saved. Run a new scan to apply these rules."),
+  ).toBeVisible()
+  await rules.getByRole("button", { name: "Close", exact: true }).click()
+  await expect(page.getByTestId("workspace-default-name")).toHaveText(
+    "Balanced",
+  )
+  await page.getByRole("button", { name: "View workspace rules" }).click()
+  await expect(
+    rules.getByRole("checkbox", { name: "large file", exact: true }),
+  ).not.toBeChecked()
+})
+
+test("custom comment rules can be tested and saved in the redesigned profiles page", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "View comment rules" }).click()
+  const rules = page.getByRole("dialog", { name: "Workspace comment rules" })
+  await rules.getByRole("tab", { name: "Add rule", exact: true }).click()
+  await rules
+    .getByRole("textbox", { name: "Comment rule name" })
+    .fill("Security markers")
+  await rules
+    .getByRole("textbox", { name: "Comment pattern" })
+    .fill("SECURITY-TODO")
+  await rules
+    .getByRole("combobox", { name: "Comment category" })
+    .selectOption("security")
+  await rules
+    .getByRole("combobox", { name: "Comment severity" })
+    .selectOption("high")
+  await rules
+    .getByRole("textbox", { name: "Sample comment" })
+    .fill("// SECURITY-TODO: fix auth")
+  await rules.getByRole("button", { name: "Test pattern" }).click()
+  await expect(rules.getByText("Pattern matches this sample.")).toBeVisible()
+  await rules.getByRole("button", { name: "Add rule" }).click()
+  await expect(
+    rules.getByRole("button", { name: "Edit Security markers" }),
+  ).toBeVisible()
+  await rules.getByRole("button", { name: "Save comment rules" }).click()
+  await expect(
+    rules.getByText("Saved. Run a new scan to apply these comment rules."),
+  ).toBeVisible()
+})

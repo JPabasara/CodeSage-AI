@@ -18,9 +18,9 @@ from codesage_api.db.enums import (
 )
 from codesage_api.db.models import (
     AnalysisAttempt,
+    Branch,
     BugRiskPrediction,
     ClassRiskPrediction,
-    Branch,
     Finding,
     MLModelVersion,
     Repository,
@@ -132,7 +132,7 @@ def test_finalize_records_trained_risk_provenance(
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
 @pytest.mark.parametrize(
     ("rule_id", "occurrences"),
-    [("long-method", 1), ("sql-concat", 2), ("pmd:ExceptionAsFlowControl", 2)],
+    [("long-method", 1), ("sql-concat", 2), ("pmd:ExceptionAsFlowControl", 2), ("comment-pattern", 2)],
 )
 def test_finalize_persists_file_and_class_risk_and_finding_context(
     session_scope: Mock,
@@ -311,6 +311,7 @@ def test_finalize_persists_satd_when_ck_omits_source_file(
 @patch("codesage_api.tasks.scan_pipeline.rules.list_definitions")
 @patch("codesage_api.tasks.scan_pipeline.attempts.begin_for_worker")
 @patch("codesage_api.tasks.scan_pipeline.session_scope")
+@pytest.mark.parametrize("disabled", [[], ["large-file"]])
 def test_task_runs_clone_extract_detect_and_finalize_in_order(
     session_scope: Mock,
     begin: Mock,
@@ -324,11 +325,12 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     _check: Mock,
     predict: Mock,
     tmp_path: Path,
+    disabled: list[str],
 ) -> None:
     attempt_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
     session_scope.return_value.__enter__.return_value = Mock()
-    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main")
+    begin.return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main", source_scope_config={"scan_excluded_directories": True, "disabled_rule_ids": disabled})
     stored_rule = SimpleNamespace(
         rule_id="large-file",
         category_id="code-design",
@@ -376,9 +378,12 @@ def test_task_runs_clone_extract_detect_and_finalize_in_order(
     predict.assert_called_once()
     classify.assert_called_once_with([comment])
     detector_rules = detect.call_args.args[1]
-    assert len(detector_rules) == 1
-    assert detector_rules[0].rule_id == "large-file"
-    assert detector_rules[0].threshold == 800.0
+    if disabled:
+        assert detector_rules == []
+    else:
+        assert len(detector_rules) == 1
+        assert detector_rules[0].rule_id == "large-file"
+        assert detector_rules[0].threshold == 800.0
     finalize.assert_called_once_with(
         attempt_id,
         workspace_id,
@@ -631,6 +636,7 @@ def test_a_time_limit_inside_an_ml_call_is_not_mistaken_for_degraded_mode(
     on into the hard kill, which skips `finally`."""
     wrapped = MLServiceUnavailable("Failed to communicate with ML service")
     wrapped.__cause__ = SoftTimeLimitExceeded()
+    scan["extract"].return_value.comments.append(ExtractedComment("A.java", 1, "// TODO: fix this"))
     scan["classify"].side_effect = wrapped
 
     scan()
@@ -818,3 +824,55 @@ def test_persistence_timeout_survives_rollback_and_cleanup_errors(
     assert timeout_record.exc_info[1] is timeout
     assert "Scan pipeline failed" not in caplog.text
     assert "Scan cleanup failed" in caplog.text
+
+
+@pytest.mark.parametrize("scan_excluded", [False, True])
+def test_exclusions_are_applied_before_detectors_and_keep_production_overrides(
+    tmp_path, scan_excluded
+):
+    for name in [
+        "src/main/App.java",
+        "src/test/AppTest.java",
+        "src/test/Fixture.java",
+        ".git/saved.java",
+    ]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("class Example {}")
+    scan_pipeline._apply_source_scope(
+        tmp_path,
+        {
+            "test_path_patterns": ["**/src/test/**", ".git/**"],
+            "production_path_overrides": ["src/test/Fixture.java"],
+            "scan_excluded_directories": scan_excluded,
+        },
+    )
+    assert (tmp_path / "src/main/App.java").exists()
+    assert (tmp_path / "src/test/Fixture.java").exists()
+    assert (tmp_path / ".git/saved.java").exists()
+    assert (tmp_path / "src/test/AppTest.java").exists() is scan_excluded
+
+
+@pytest.mark.parametrize("mode", ["normal", "ml_unavailable", "all_matched"])
+def test_saved_comment_rules_bypass_ml_without_duplicate_findings(scan: _Run, mode: str):
+    matched = ExtractedComment("A.java", 1, "// SECURITY-TODO: fix auth")
+    other = ExtractedComment("A.java", 2, "// This workaround is fragile")
+    config = {"id": str(uuid.uuid4()), "name": "Security TODO", "match_type": "keyword", "pattern": "SECURITY-TODO", "category": "security", "severity": "high", "enabled": True, "case_sensitive": False}
+    scan["attempts.begin_for_worker"].return_value = WorkerScanInput("https://github.com/example/repo.git", "a" * 40, "main", source_scope_config={"scan_excluded_directories": True, "comment_rules": [config]})
+    scan["extract"].return_value.comments.extend([matched] if mode == "all_matched" else [matched, other])
+    if mode == "ml_unavailable":
+        scan["classify"].side_effect = MLServiceUnavailable("offline")
+    else:
+        scan["classify"].return_value = [SATDResult(comment=other, is_debt=True, category=Category.CODE_DESIGN, confidence=0.9, model_version="satd-v1")]
+    scan()
+    result = scan["_finalize"].call_args.args[2]
+    assert len(result.findings) == 1
+    assert result.findings[0].evidence == matched.text
+    assert result.findings[0].rule_id == "comment-pattern"
+    assert result.findings[0].category is Category.SECURITY
+    assert result.findings[0].severity.value == "high"
+    if mode == "all_matched":
+        scan["classify"].assert_not_called()
+    else:
+        scan["classify"].assert_called_once_with([other])
+    assert all(prediction.comment != matched for prediction in result.satd_predictions)

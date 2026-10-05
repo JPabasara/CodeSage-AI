@@ -8,6 +8,7 @@ import ProfilesPage from "./page"
 import * as client from "@/lib/api/client"
 import {
   DEMO_REPO_ID,
+  PERMISSIONS_BY_ROLE,
   mockSession,
   mockSessionViewer,
 } from "@/lib/mocks/fixtures"
@@ -569,3 +570,176 @@ test("switching scope with unsaved edits asks first", async () => {
     await screen.findByText(/discard unsaved changes\?/i),
   ).toBeInTheDocument()
 })
+
+test.each(["org-admin", "manager", "developer", "viewer"] as const)(
+  "repository exclusion settings are visible to %s with role-based editing",
+  async (role) => {
+    session.current = {
+      ...mockSession,
+      role,
+      permissions: PERMISSIONS_BY_ROLE[role],
+    }
+    nav.search = `project=${DEMO_REPO_ID}`
+    render(<ProfilesPage />)
+    await ready()
+    await userEvent.click(
+      screen.getByRole("button", { name: "Directory exclusions" }),
+    )
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search files and directories" }),
+      "AppTest.java",
+    )
+    await screen.findByRole("checkbox", { name: "AppTest.java" })
+    const scan = screen.getByRole("radio", {
+      name: "Exclude from scans",
+    })
+    const hide = screen.getByRole("radio", {
+      name: "Hide from Refactor first by default",
+    })
+    expect(hide).toBeInTheDocument()
+    if (role === "manager" || role === "org-admin") {
+      expect(scan).toBeEnabled()
+      expect(
+        screen.getByRole("button", { name: "Save configuration" }),
+      ).toBeInTheDocument()
+    } else {
+      expect(scan).toBeDisabled()
+      expect(
+        screen.queryByRole("button", { name: "Save configuration" }),
+      ).not.toBeInTheDocument()
+    }
+  },
+)
+
+test("repository exclusion choices reload their saved values on Profiles", async () => {
+  nav.search = `project=${DEMO_REPO_ID}`
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    screen.getByRole("button", { name: "Directory exclusions" }),
+  )
+  await userEvent.type(
+    screen.getByRole("searchbox", { name: "Search files and directories" }),
+    "AppTest.java",
+  )
+  await screen.findByRole("checkbox", { name: "AppTest.java" })
+  await userEvent.click(
+    screen.getByRole("radio", { name: "Hide from Refactor first by default" }),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save configuration" }),
+  )
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  )
+  await userEvent.click(
+    screen.getByRole("button", { name: "Directory exclusions" }),
+  )
+  await waitFor(() =>
+    expect(
+      screen.getByRole("radio", {
+        name: "Hide from Refactor first by default",
+      }),
+    ).toBeChecked(),
+  )
+  expect(
+    screen.getByRole("radio", { name: "Exclude from scans" }),
+  ).not.toBeChecked()
+})
+
+test.each(["org-admin", "manager", "developer", "viewer"] as const)(
+  "workspace rules can be inspected by %s with admin-only editing",
+  async (role) => {
+    session.current = {
+      ...mockSession,
+      role,
+      permissions: PERMISSIONS_BY_ROLE[role],
+    }
+    render(<ProfilesPage />)
+    await ready()
+    await userEvent.click(
+      screen.getByRole("button", { name: "View workspace rules" }),
+    )
+    const rule = await screen.findByRole("checkbox", { name: "large file" })
+    if (role === "org-admin") expect(rule).toBeEnabled()
+    else expect(rule).toBeDisabled()
+    expect(Boolean(screen.queryByRole("button", { name: "Save rules" }))).toBe(
+      role === "org-admin",
+    )
+  },
+)
+
+test("repository scope links to its inherited workspace rules", async () => {
+  nav.search = `project=${DEMO_REPO_ID}`
+  render(<ProfilesPage />)
+  await ready()
+  expect(
+    screen.getByRole("heading", { name: "Uses workspace rules" }),
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole("button", { name: "View workspace rules" }),
+  ).not.toBeInTheDocument()
+  await userEvent.click(
+    screen.getByRole("button", { name: "View workspace rule settings" }),
+  )
+  expect(nav.replace).toHaveBeenCalledWith("/profiles", { scroll: false })
+  await userEvent.click(
+    screen.getByRole("button", { name: "View workspace rules" }),
+  )
+  expect(
+    await screen.findByRole("checkbox", { name: "large file" }),
+  ).toBeChecked()
+})
+
+test("workspace rule selections persist when the dialog is reopened", async () => {
+  render(<ProfilesPage />)
+  await ready()
+  await userEvent.click(
+    screen.getByRole("button", { name: "View workspace rules" }),
+  )
+  await userEvent.click(
+    await screen.findByRole("checkbox", { name: "large file" }),
+  )
+  await userEvent.click(screen.getByRole("button", { name: "Save rules" }))
+  await screen.findByText("Saved. Run a new scan to apply these rules.")
+  await userEvent.click(screen.getByRole("button", { name: "Close" }))
+  await userEvent.click(
+    screen.getByRole("button", { name: "View workspace rules" }),
+  )
+  expect(
+    await screen.findByRole("checkbox", { name: "large file" }),
+  ).not.toBeChecked()
+})
+
+test.each(["org-admin", "manager", "developer", "viewer"] as const)(
+  "workspace comment rule editing is restricted for %s",
+  async (role) => {
+    session.current = {
+      ...mockSession,
+      role,
+      permissions: PERMISSIONS_BY_ROLE[role],
+    }
+    render(<ProfilesPage />)
+    await ready()
+    await userEvent.click(
+      screen.getByRole("button", { name: "View comment rules" }),
+    )
+    await screen.findByText("No comment rules yet. Unmatched comments use ML.")
+    const addTab = screen.getByRole("tab", { name: "Add rule" })
+    if (role === "org-admin") {
+      expect(addTab).toBeEnabled()
+      await userEvent.click(addTab)
+      expect(
+        screen.getByRole("button", { name: "Add rule" }),
+      ).toBeInTheDocument()
+    } else {
+      expect(addTab).toBeDisabled()
+      expect(
+        screen.queryByRole("button", { name: "Add rule" }),
+      ).not.toBeInTheDocument()
+    }
+    expect(
+      Boolean(screen.queryByRole("button", { name: "Save comment rules" })),
+    ).toBe(role === "org-admin")
+  },
+)

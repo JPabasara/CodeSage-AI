@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from codesage_api.authorization.routes import require_profile_permission
 from codesage_api.db.rls import set_workspace_context
 from codesage_api.deps import get_current_user_id, get_db, get_workspace_id, require_permission
+from codesage_api.detection.comment_rules import test_pattern
 from codesage_api.logging import get_logger
 from codesage_api.schemas import (
     CreateProfileIn,
@@ -17,7 +18,14 @@ from codesage_api.schemas import (
     SelectProfileIn,
     UpdateProfileIn,
 )
-from codesage_api.services import profiles
+from codesage_api.schemas.rules import (
+    CommentPatternTestIn,
+    CommentPatternTestOut,
+    UpdateCommentRulesIn,
+    UpdateWorkspaceRulesIn,
+    WorkspaceRulesOut,
+)
+from codesage_api.services import profiles, workspace_rules
 from codesage_api.tasks.app import celery_app
 
 logger = get_logger(__name__)
@@ -74,6 +82,45 @@ def create_profile(
 
 
 # Declared before /profiles/{profile_id} so the literal paths win the match.
+@router.get(
+    "/profiles/rules",
+    response_model=WorkspaceRulesOut,
+    dependencies=[Depends(require_permission("profile:read"))],
+)
+def get_workspace_rules(
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> WorkspaceRulesOut:
+    return workspace_rules.get(db, workspace_id)
+
+
+@router.put(
+    "/profiles/rules",
+    response_model=WorkspaceRulesOut,
+    dependencies=[Depends(require_permission("workspace:update"))],
+)
+def update_workspace_rules(
+    body: UpdateWorkspaceRulesIn,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> WorkspaceRulesOut:
+    return workspace_rules.update(db, workspace_id, body.disabled_rule_ids)
+
+
+@router.patch("/profiles/rules", response_model=WorkspaceRulesOut, dependencies=[Depends(require_permission("workspace:update"))])
+def update_comment_rules(
+    body: UpdateCommentRulesIn,
+    db: Annotated[Session, Depends(get_db)],
+    workspace_id: Annotated[uuid.UUID, Depends(get_workspace_id)],
+) -> WorkspaceRulesOut:
+    return workspace_rules.update_comments(db, workspace_id, body.comment_rules)
+
+
+@router.post("/profiles/rules/test-comment", response_model=CommentPatternTestOut, dependencies=[Depends(require_permission("profile:read"))])
+def test_comment_pattern(body: CommentPatternTestIn) -> CommentPatternTestOut:
+    return CommentPatternTestOut(matched=test_pattern(body, body.sample_comment))
+
+
 @router.get(
     "/profiles/active",
     response_model=ScoreProfileOut,

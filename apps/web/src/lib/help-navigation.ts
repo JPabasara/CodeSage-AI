@@ -75,8 +75,8 @@ export const helpTopics: HelpTopic[] = [
   {
     slug: "profile-settings",
     parent: "profiles",
-    title: "Weights and test inclusion",
-    description: "Control category weights, source trust, and test scoring.",
+    title: "Weights and rule settings",
+    description: "Control category weights, source trust, workspace rules, and comment rules.",
   },
   {
     slug: "account",

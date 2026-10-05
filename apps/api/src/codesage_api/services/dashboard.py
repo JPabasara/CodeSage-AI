@@ -299,7 +299,7 @@ def _finding_outputs(scored: _ScoredSnapshot, previous: Snapshot | None = None) 
                 rule_id=stored.rule_id,
                 metric_value=stored.measured_value,
                 threshold=stored.threshold,
-                comment_text=stored.evidence if is_satd else None,
+                comment_text=stored.evidence if is_satd or stored.rule_id == "comment-pattern" else None,
                 confidence=stored.confidence if is_satd else None,
             )
         )

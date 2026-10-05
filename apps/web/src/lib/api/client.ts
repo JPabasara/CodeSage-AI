@@ -28,8 +28,11 @@ import type {
   UpdateProfileRequest,
   UpdateWorkspaceRequest,
   Workspace,
+  WorkspaceRules,
+  CommentRule,
+  CommentPattern,
 } from "@/lib/types"
-import { forgetScores } from "@/lib/query-cache"
+import { forgetQueries, forgetScores } from "@/lib/query-cache"
 
 // Empty in dev, so the request is same-origin and MSW's service worker sees it.
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? ""
@@ -185,10 +188,14 @@ export function getProjects(): Promise<Repo[]> {
 
 export function getSourceScopeConfig(
   repoId: string,
+  includePaths = false,
 ): Promise<SourceScopeConfig> {
-  return fetch(`${API_BASE}/api/projects/${repoId}/source-scope`, {
-    credentials: "include",
-  }).then(json<SourceScopeConfig>)
+  return fetch(
+    `${API_BASE}/api/projects/${repoId}/source-scope${includePaths ? "?include_paths=true" : ""}`,
+    {
+      credentials: "include",
+    },
+  ).then(json<SourceScopeConfig>)
 }
 
 export function updateSourceScopeConfig(
@@ -200,7 +207,12 @@ export function updateSourceScopeConfig(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  }).then(json<SourceScopeConfig>)
+  })
+    .then(json<SourceScopeConfig>)
+    .then((config) => {
+      forgetQueries((key) => key === "projects")
+      return config
+    })
 }
 
 export function getBranches(repoId: string): Promise<Branch[]> {
@@ -464,4 +476,49 @@ export function removeMemberFromWorkspace(membershipId: string): Promise<void> {
     method: "DELETE",
     credentials: "include",
   }).then(empty)
+}
+
+export function getWorkspaceRules(): Promise<WorkspaceRules> {
+  return fetch(`${API_BASE}/api/profiles/rules`, {
+    credentials: "include",
+  }).then(json<WorkspaceRules>)
+}
+
+export function updateWorkspaceRules(
+  disabledRuleIds: string[],
+): Promise<WorkspaceRules> {
+  return fetch(`${API_BASE}/api/profiles/rules`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ disabled_rule_ids: disabledRuleIds }),
+  }).then(json<WorkspaceRules>)
+}
+
+export function updateWorkspaceCommentRules(
+  commentRules: CommentRule[],
+): Promise<WorkspaceRules> {
+  return fetch(`${API_BASE}/api/profiles/rules`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ comment_rules: commentRules }),
+  }).then(json<WorkspaceRules>)
+}
+
+export function testCommentPattern(
+  pattern: CommentPattern,
+  sampleComment: string,
+): Promise<{ matched: boolean }> {
+  return fetch(`${API_BASE}/api/profiles/rules/test-comment`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      match_type: pattern.match_type,
+      pattern: pattern.pattern,
+      case_sensitive: pattern.case_sensitive,
+      sample_comment: sampleComment,
+    }),
+  }).then(json<{ matched: boolean }>)
 }

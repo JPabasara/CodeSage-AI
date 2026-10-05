@@ -1,5 +1,6 @@
 "use client"
 
+import { findingSummary as findingText } from "@/lib/finding-summary"
 import { ArrowRight } from "lucide-react"
 
 import { DebtByTypeCard } from "@/components/dashboard/debt-by-type-card"
@@ -79,6 +80,7 @@ function CardLink({
 export function DashboardOverview({
   report,
   findings,
+  includeTestFindingsByDefault,
   onOpenFinding,
   onOpenFile,
   onShowFindings,
@@ -86,13 +88,18 @@ export function DashboardOverview({
 }: Readonly<{
   report: HealthReport
   findings: Finding[]
+  includeTestFindingsByDefault?: boolean
   onOpenFinding: (finding: Finding) => void
   onOpenFile: (node: TreeNode) => void
   onShowFindings: () => void
   onShowCodeMap: () => void
 }>) {
-  const includeTests = report.include_test_findings ?? false
-  const summary = findingSummary(report, findings)
+  const includeTests =
+    includeTestFindingsByDefault ?? report.include_test_findings ?? false
+  const summary = findingSummary(
+    { ...report, include_test_findings: includeTests },
+    findings,
+  )
   const bySeverity = summary?.open_by_severity
   const criticalAndHigh = bySeverity
     ? bySeverity.critical + bySeverity.high
@@ -210,7 +217,7 @@ export function DashboardOverview({
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-foreground-strong">
-                        {finding.reason}
+                        {findingText(finding)}
                       </span>
                       <FindingMeta finding={finding} className="mt-1" />
                     </span>

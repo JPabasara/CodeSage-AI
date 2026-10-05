@@ -20,7 +20,8 @@ from codesage_api.schemas import (
     ScanSummaryOut,
 )
 from codesage_api.scoring.enums import ScanErrorCode, ScanPhase, ScanStage, ScanStep
-from codesage_api.services import audit, dashboard
+from codesage_api.services import audit, dashboard, workspace_rules
+from codesage_api.source_scope import scan_scope_config
 from codesage_api.tasks import progress
 
 
@@ -89,6 +90,7 @@ def _error_code(stored: str | None) -> ScanErrorCode | None:
         return None
 
 
+
 def start(
     session: Session,
     workspace_id: uuid.UUID,
@@ -118,8 +120,17 @@ def start(
 
     completed = attempts.find_latest_completed(session, stored_branch.id)
 
-    # check if there is new commit
-    if completed is not None and completed.commit_sha == remote_branch.head_commit_sha:
+    scope = scan_scope_config(stored_branch.repository)
+    disabled = workspace_rules.disabled_rules(session, workspace_id)
+    if disabled:
+        scope["disabled_rule_ids"] = disabled
+    comments = workspace_rules.comment_rules(session, workspace_id)
+    if comments:
+        scope["comment_rules"] = comments
+    previous_scope = getattr(completed, "source_scope_config", None)
+    # Legacy scans have no recorded scope and must be scanned once with these settings.
+    if (completed is not None and completed.commit_sha == remote_branch.head_commit_sha
+            and previous_scope == scope):
         return _status_out(completed, stored_branch.name)
 
     attempts.lock_workspace_queue(session, workspace_id)
@@ -133,6 +144,7 @@ def start(
         remote_branch.head_commit_sha,
         actor_user_id=actor_user_id,
         workspace_id=workspace_id,
+        source_scope_config=scope,
     )
 
     audit.record(

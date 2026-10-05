@@ -14,6 +14,14 @@ from codesage_api.services import analysis
 from codesage_api.tasks import progress
 
 
+@pytest.fixture(autouse=True)
+def rule_selection():
+    with patch(
+        "codesage_api.services.analysis.workspace_rules.disabled_rules", return_value=[]
+    ) as selected, patch("codesage_api.services.analysis.workspace_rules.comment_rules", return_value=[]):
+        yield selected
+
+
 def _branch() -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
@@ -33,6 +41,7 @@ def _attempt(
     return SimpleNamespace(
         id=uuid.uuid4(),
         status=status,
+        source_scope_config=analysis.scan_scope_config(_branch().repository),
         commit_sha=commit_sha,
         start_time=None,
         completion_time=None,
@@ -81,6 +90,7 @@ def test_start_skips_when_latest_successful_sha_matches(
     session = Mock()
     branch = _branch()
     completed = _attempt(AnalysisStatus.DONE, commit_sha="same-sha")
+    completed.source_scope_config = analysis.scan_scope_config(branch.repository)
     attempt_repository.lock_repository_for_scan.return_value = SimpleNamespace()
     attempt_repository.get_branch.return_value = branch
     attempt_repository.find_active_for_branch.return_value = None
@@ -572,3 +582,97 @@ def test_nothing_new_to_scan_never_counts_against_the_queue(
 
     assert result.phase is ScanPhase.DONE
     attempt_repository.count_queued_in_workspace.assert_not_called()
+
+
+@patch("codesage_api.tasks.scan_pipeline.run_scan.delay")
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+@pytest.mark.parametrize(
+    "previous_scope",
+    [
+        None,
+        {
+            "test_path_patterns": ["old/**"],
+            "production_path_overrides": [],
+            "scan_excluded_directories": False,
+        },
+    ],
+)
+def test_same_commit_is_rescanned_after_exclusion_changes(
+    attempt_repository, github_fetch, enqueue, previous_scope
+):
+    branch = _branch()
+    completed = _attempt(AnalysisStatus.DONE, "same-sha")
+    completed.source_scope_config = previous_scope
+    queued = _attempt(AnalysisStatus.QUEUED, "same-sha")
+    attempt_repository.lock_repository_for_scan.return_value = SimpleNamespace()
+    attempt_repository.get_branch.return_value = branch
+    attempt_repository.find_active_for_branch.return_value = None
+    attempt_repository.find_latest_completed.return_value = completed
+    attempt_repository.count_queued_in_workspace.return_value = 0
+    attempt_repository.create_queued.return_value = queued
+    github_fetch.return_value = GitHubBranch("main", "same-sha")
+    result = analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+    assert result.phase is ScanPhase.QUEUED
+    assert attempt_repository.create_queued.call_args.kwargs[
+        "source_scope_config"
+    ] == analysis.scan_scope_config(branch.repository)
+
+
+@patch("codesage_api.tasks.scan_pipeline.run_scan.delay")
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+@pytest.mark.parametrize(("old", "new"), [([], ["large-file"]), (["large-file"], [])])
+def test_rule_selection_change_allows_same_commit_rescan(
+    attempt_repository, github_fetch, enqueue, rule_selection, old, new
+):
+    session = Mock()
+    branch = _branch()
+    completed = _attempt(AnalysisStatus.DONE, commit_sha="new-sha")
+    if old:
+        completed.source_scope_config["disabled_rule_ids"] = old
+    previous = completed.source_scope_config.copy()
+    rule_selection.return_value = new
+    _ready_to_queue(attempt_repository, github_fetch, waiting=0)
+    attempt_repository.get_branch.return_value = branch
+    attempt_repository.find_latest_completed.return_value = completed
+    result = analysis.start(session, uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+    assert result.phase is ScanPhase.QUEUED
+    stamped = attempt_repository.create_queued.call_args.kwargs["source_scope_config"]
+    assert stamped.get("disabled_rule_ids", []) == new
+    assert completed.source_scope_config == previous
+    enqueue.assert_called_once()
+
+
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_unchanged_rule_selection_reuses_same_commit(
+    attempt_repository, github_fetch, rule_selection
+):
+    _ready_to_queue(attempt_repository, github_fetch, waiting=99)
+    completed = _attempt(AnalysisStatus.DONE, commit_sha="new-sha")
+    completed.source_scope_config["disabled_rule_ids"] = ["large-file"]
+    attempt_repository.find_latest_completed.return_value = completed
+    rule_selection.return_value = ["large-file"]
+    assert (
+        analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4()).phase
+        is ScanPhase.DONE
+    )
+    attempt_repository.create_queued.assert_not_called()
+
+
+@patch("codesage_api.tasks.scan_pipeline.run_scan.delay")
+@patch("codesage_api.services.analysis.fetch_branch")
+@patch("codesage_api.services.analysis.attempts")
+def test_comment_rule_changes_freeze_settings_and_allow_same_commit_rescan(attempt_repository, github_fetch, enqueue):
+    config = {"id": str(uuid.uuid4()), "name": "TODO marker", "match_type": "keyword", "pattern": "TODO", "case_sensitive": False, "category": "code-design", "severity": "medium", "enabled": True}
+    _ready_to_queue(attempt_repository, github_fetch, waiting=0)
+    completed = _attempt(AnalysisStatus.DONE, commit_sha="new-sha")
+    attempt_repository.find_latest_completed.return_value = completed
+    with patch("codesage_api.services.analysis.workspace_rules.comment_rules", return_value=[config]):
+        result = analysis.start(Mock(), uuid.uuid4(), uuid.uuid4(), "main", actor_user_id=uuid.uuid4())
+    assert result.phase is ScanPhase.QUEUED
+    stamped = attempt_repository.create_queued.call_args.kwargs["source_scope_config"]
+    assert stamped["comment_rules"] == [config]
+    assert "comment_rules" not in completed.source_scope_config
+    enqueue.assert_called_once()

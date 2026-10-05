@@ -1,5 +1,6 @@
 "use client"
 
+import { findingSummary } from "@/lib/finding-summary"
 import { LearnMore } from "@/components/support/learn-more"
 
 import {
@@ -12,6 +13,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { DisableRuleButton } from "@/components/dashboard/disable-rule-button"
 import { CodeExcerpt } from "@/components/dashboard/code-excerpt"
 import { FindingMeta } from "@/components/dashboard/finding-tag"
 import { Button } from "@/components/ui/button"
@@ -25,6 +27,7 @@ export type FindingDetailPanelProps = {
   commitSha?: string
   hasFindings?: boolean
   onClose: () => void
+  canDisableRules?: boolean
   canTriage?: boolean
   statusBusy?: boolean
   onStatusChange?: (finding: Finding, status: FindingStatus) => void
@@ -104,6 +107,7 @@ export function FindingDetailPanel({
   commitSha,
   hasFindings = false,
   onClose,
+  canDisableRules = false,
   canTriage = false,
   statusBusy = false,
   onStatusChange,
@@ -165,7 +169,7 @@ export function FindingDetailPanel({
             {done ? <Badge variant="outline">Done</Badge> : null}
           </FindingMeta>
           <h2 className="mt-2 text-[1.0625rem] leading-snug font-semibold wrap-break-word text-foreground-strong">
-            {finding.reason}
+            {findingSummary(finding)}
           </h2>
         </div>
         {closeButton}
@@ -245,7 +249,11 @@ export function FindingDetailPanel({
           <>
             {finding.comment_text ? (
               <section>
-                <SectionTitle>What the comment says</SectionTitle>
+                <SectionTitle>
+                  {finding.rule_id === "comment-pattern"
+                    ? "Matched comment"
+                    : "What the comment says"}
+                </SectionTitle>
                 <blockquote className="border-l-2 pl-3 text-foreground italic">
                   {finding.comment_text}
                 </blockquote>
@@ -283,6 +291,20 @@ export function FindingDetailPanel({
         />
 
         <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+          {canDisableRules &&
+          finding.source === "rule" &&
+          finding.rule_id &&
+          (finding.rule_id.startsWith("pmd:") ||
+            [
+              "large-file",
+              "complex-function",
+              "long-method",
+              "deep-nesting",
+              "hardcoded-secret",
+              "sql-concat",
+            ].includes(finding.rule_id)) ? (
+            <DisableRuleButton key={finding.rule_id} ruleId={finding.rule_id} />
+          ) : null}
           {canTriage ? (
             <Button
               type="button"
