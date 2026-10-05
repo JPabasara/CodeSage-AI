@@ -1,0 +1,160 @@
+# Helm values for Grafana's k8s-monitoring chart: cluster metrics and pod logs
+# sent to Grafana Cloud by one Grafana Alloy collector.
+#
+# Chart: grafana/k8s-monitoring, version 4.5.2 (pinned; read UPGRADING.md before
+# changing it). Install, from a machine whose kubectl reaches the cluster:
+#
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm upgrade --install grafana-k8s-monitoring grafana/k8s-monitoring `
+#     --version 4.5.2 -n monitoring -f infra/k3s/linode/monitoring-values.yaml
+#
+# Credentials come from the `grafana-cloud` Secret in `monitoring`, created by
+# hand (see README "Monitoring"). Never put the token in this file.
+#
+# Pods (one node): alloy (DaemonSet: metrics and logs), alloy-operator,
+# kube-state-metrics, node-exporter. All run at `monitoring-low` priority.
+cluster:
+  name: codesage-linode
+
+global:
+  scrapeInterval: 60s
+
+destinations:
+  grafanaCloudMetrics:
+    type: prometheus
+    url: https://prometheus-prod-37-prod-ap-southeast-1.grafana.net/api/prom/push
+    auth:
+      type: basic
+      usernameKey: prometheus-user
+      passwordKey: codesage-monitoring-token
+    secret:
+      create: false
+      name: grafana-cloud
+      namespace: monitoring
+  grafanaCloudLogs:
+    type: loki
+    url: https://logs-prod-020.grafana.net/loki/api/v1/push
+    auth:
+      type: basic
+      usernameKey: loki-user
+      passwordKey: codesage-monitoring-token
+    secret:
+      create: false
+      name: grafana-cloud
+      namespace: monitoring
+
+# Node, pod and container CPU and memory, restarts, OOM kills, replica counts.
+# The default allow lists are Grafana's minimal set for Kubernetes Monitoring.
+clusterMetrics:
+  enabled: true
+  controlPlane:
+    enabled: false
+  kubelet:
+    enabled: true
+  kubeletResource:
+    enabled: true
+  cadvisor:
+    enabled: true
+  kube-state-metrics:
+    enabled: true
+
+# Node CPU, memory and disk.
+hostMetrics:
+  enabled: true
+  linuxHosts:
+    enabled: true
+
+# Pod logs from the app and the ingress only.
+podLogsViaLoki:
+  enabled: true
+  namespaces:
+    - codesageai
+    - ingress-nginx
+
+# Off: cluster events, cost, energy, traces, profiles, OTLP receivers and
+# annotation autodiscovery (the app serves no metrics endpoint).
+
+collectors:
+  # One node, so one Alloy pod does both jobs. The chart requires a DaemonSet
+  # with /var/log mounted for pod logs, and clustering for cluster metrics on a
+  # DaemonSet (a single peer here).
+  alloy:
+    presets: [daemonset, clustered, filesystem-log-reader]
+    alloy:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 192Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    controller:
+      priorityClassName: monitoring-low
+    # Queue depth and Redis health, from Alloy's built-in Redis exporter (no
+    # extra pod). It reads the app's own `redis-auth` Secret, so a password
+    # rotation needs only an Alloy restart. NetworkPolicy
+    # `allow-app-and-keda-to-redis` lets this pod reach Redis.
+    #   scans, scoring        Celery queues: tasks not yet picked up by a worker
+    #   codesage:scan-demand  one entry per scan that could run now (KEDA scales
+    #                         the scan workers on it)
+    # An empty queue reports 0. The exporter emits ~1,150 series; the relabel
+    # below keeps 6.
+    extraConfig: |
+      remote.kubernetes.secret "redis" {
+        name      = "redis-auth"
+        namespace = "codesageai"
+      }
+
+      prometheus.exporter.redis "codesage" {
+        redis_addr        = "redis.codesageai.svc.cluster.local:6379"
+        redis_password    = remote.kubernetes.secret.redis.data["password"]
+        check_single_keys = ["db0=scans", "db0=scoring", "db0=codesage:scan-demand"]
+      }
+
+      prometheus.scrape "redis" {
+        job_name        = "integrations/redis_exporter"
+        targets         = prometheus.exporter.redis.codesage.targets
+        scrape_interval = "60s"
+        forward_to      = [prometheus.relabel.redis.receiver]
+      }
+
+      prometheus.relabel "redis" {
+        rule {
+          source_labels = ["__name__"]
+          regex         = "redis_up|redis_key_size|redis_memory_used_bytes|redis_memory_max_bytes"
+          action        = "keep"
+        }
+        forward_to = [prometheus.remote_write.grafanacloudmetrics.receiver]
+      }
+
+telemetryServices:
+  kube-state-metrics:
+    deploy: true
+    priorityClassName: monitoring-low
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 96Mi
+  node-exporter:
+    deploy: true
+    priorityClassName: monitoring-low
+    resources:
+      requests:
+        cpu: 10m
+        memory: 24Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+alloy-operator:
+  priorityClassName: monitoring-low
+  resources:
+    requests:
+      cpu: 10m
+      memory: 48Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
