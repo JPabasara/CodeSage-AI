@@ -158,7 +158,7 @@ function JavaOnlyBody({
         </Link>
       </section>
 
-      {/* Step 2 (Chamodh's folders to skip) slots in here; the footer below stays the same. */}
+      {/* Step 2 (folders to skip) slots in here; the footer below stays the same. */}
 
       <label className="flex w-fit items-center gap-2 text-sm text-muted-foreground">
         <input

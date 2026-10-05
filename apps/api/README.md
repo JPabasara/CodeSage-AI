@@ -129,8 +129,8 @@ lint-imports               # the architecture contracts
 
 **Testing Celery tasks: set `task_always_eager=True`** and the task runs inline, in
 the calling process, with no broker and no worker — so a pipeline test is an ordinary
-unit test. This came from Nathasha's work on `feature/setup-celery-redis` and is the
-right pattern to reuse here.
+unit test. This pattern came from `feature/setup-celery-redis` and is the right one
+to reuse here.
 
 The database suite follows a red-green-refactor workflow:
 
