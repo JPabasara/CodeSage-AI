@@ -285,6 +285,18 @@
   }
 }
 
+/* A Scan button's long branch name slides to its end and back (ScanButtonLabel). */
+@keyframes branch-slide {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  85%,
+  100% {
+    transform: translateX(calc(-1 * var(--branch-shift, 0px)));
+  }
+}
+
 @keyframes panel-fade {
   from {
     transform: translateY(4px);

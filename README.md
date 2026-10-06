@@ -6,7 +6,7 @@ result on a dashboard with a trend chart and a file-level heat map.
 
 **Live:** <https://codesageai.dev> · API <https://api.codesageai.dev>
 
-CS3203 Software Engineering Project · Group 16 · Project ID 7
+A university software engineering project (CS3203).
 
 ---
 
@@ -62,6 +62,7 @@ failed or stopped scan never leaves partial results.
 | Database | Neon PostgreSQL |
 | Staging | Railway |
 | Images | GitHub Container Registry |
+| Monitoring | Grafana Alloy in the cluster sends metrics and logs to Grafana Cloud |
 
 Every push to `main` runs the CI pipeline in `.github/workflows/ci.yml`: web, API and ML tests,
 image builds, a staging deploy with a smoke test, then a production deploy with a smoke test.
@@ -196,6 +197,7 @@ on a pilot corpus of open-source Java repositories; the method is recorded in
 | Data | PostgreSQL 16 with Row-Level Security |
 | Identity | Asgardeo |
 | Infrastructure | k3s, KEDA, Docker, GitHub Actions, Neon, Railway |
+| Monitoring | Grafana Alloy, Grafana Cloud (Prometheus, Loki) |
 
 ---
 
@@ -217,12 +219,10 @@ docs/Deliverables/  Proposal, Feasibility Report, SRS and SAD (all versions), Ma
 
 ---
 
-## Team
+## Contributing
 
-| Index | Name |
-|---|---|
-| 230432G | Nethmini R.M.N. |
-| 230435T | Nethsara U.D.K.C. |
-| 230451M | Pabasara H.H.J. |
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Mentor: Mr. Anju Chamantha
+## License
+
+[MIT](LICENSE)

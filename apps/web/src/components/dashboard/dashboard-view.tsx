@@ -179,9 +179,11 @@ export function DashboardView({ repoId }: Readonly<{ repoId: string }>) {
     })
   }, [workspaceId, repoId, activeBranch, repo?.name])
 
+  // Above results only. While the report loads, a never-scanned branch is still
+  // possible, and that one gets the full-page card instead; showing this one
+  // first would flash it.
   const showJobCard = Boolean(
-    trackedScan &&
-    (trackedScan.job === "ready" || (jobActive && (loading || report))),
+    trackedScan && (trackedScan.job === "ready" || (jobActive && report)),
   )
 
   useEffect(

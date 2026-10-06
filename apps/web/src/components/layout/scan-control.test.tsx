@@ -150,3 +150,44 @@ test("after the scan, the busy button says Scoring… while the score is calcula
     "Scan finished, calculating the health score",
   )
 })
+
+const LONG_BRANCH = "feature/a-very-long-branch-name-for-the-payments-refactor"
+
+test("a long branch name stays the button's name and its tooltip, at a capped width", () => {
+  render(
+    <ScanControl phase="idle" progress={0} branch={LONG_BRANCH} size="lg" />,
+  )
+  const button = screen.getByRole("button", { name: `Scan ${LONG_BRANCH}` })
+  expect(button).toHaveAttribute("title", `Scan ${LONG_BRANCH}`)
+  expect(button).toHaveClass("max-w-64")
+})
+
+test("a branch name wider than the button is clipped and set up to slide", () => {
+  // jsdom has no layout: give the name more width than its clip.
+  const scrollWidth = vi
+    .spyOn(HTMLElement.prototype, "scrollWidth", "get")
+    .mockReturnValue(400)
+  const clientWidth = vi
+    .spyOn(HTMLElement.prototype, "clientWidth", "get")
+    .mockReturnValue(150)
+  try {
+    render(
+      <ScanControl phase="idle" progress={0} branch={LONG_BRANCH} size="lg" />,
+    )
+    const name = screen.getByText(LONG_BRANCH)
+    expect(name.parentElement).toHaveAttribute("data-overflows", "true")
+    expect(name.style.getPropertyValue("--branch-shift")).toBe("250px")
+    // The slide runs only on hover or focus, and never under reduced motion.
+    expect(name.className).toMatch(/motion-safe:group-hover\/button:animate-/)
+  } finally {
+    scrollWidth.mockRestore()
+    clientWidth.mockRestore()
+  }
+})
+
+test("a short branch name is neither clipped nor animated", () => {
+  render(<ScanControl phase="idle" progress={0} branch="main" size="lg" />)
+  const name = screen.getByText("main")
+  expect(name.parentElement).not.toHaveAttribute("data-overflows")
+  expect(name.className).not.toMatch(/animate-/)
+})

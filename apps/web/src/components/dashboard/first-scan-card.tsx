@@ -5,6 +5,7 @@ import { Info, Play, ScanSearch } from "lucide-react"
 
 import { LockedAction } from "@/components/locked-action"
 import { Button } from "@/components/ui/button"
+import { ScanButtonLabel } from "@/components/layout/scan-button-label"
 
 /** The branch picker in the top bar, opened for the user. */
 function openBranchPicker() {
@@ -35,12 +36,14 @@ export function FirstScanCard({
 }>) {
   const scanButton = (
     <Button
-      className="h-10.5 min-w-40 gap-2 px-4.5 text-sm font-semibold"
+      // Stays inside the card: a long branch name is clipped, not the card.
+      className="h-10.5 max-w-full min-w-40 gap-2 px-4.5 text-sm font-semibold sm:max-w-72"
+      title={branch ? `Scan ${branch}` : undefined}
       onClick={onScan}
       disabled={Boolean(lockedReason) || !onScan}
     >
       <Play className="size-4" aria-hidden="true" />
-      {branch ? `Scan ${branch}` : "Scan"}
+      <ScanButtonLabel branch={branch} />
     </Button>
   )
 
@@ -62,14 +65,15 @@ export function FirstScanCard({
       <p className="mt-2 max-w-md text-sm text-balance text-muted-foreground">
         CodeSage will read the Java code on{" "}
         {branch ? (
-          <span className="font-mono text-foreground">{branch}</span>
+          <span className="font-mono break-all text-foreground">{branch}</span>
         ) : (
           "this branch"
         )}
         , rank the debt worth fixing first, and give the project a health score.
         It usually takes a couple of minutes.
       </p>
-      <div className="mt-5 flex flex-wrap justify-center gap-2">
+      {/* Full width, so the Scan button's max-w-full is measured against the card. */}
+      <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
         {lockedReason ? (
           <LockedAction reason={lockedReason}>{scanButton}</LockedAction>
         ) : (
