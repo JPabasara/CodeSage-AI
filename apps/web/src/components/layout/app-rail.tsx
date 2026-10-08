@@ -221,7 +221,7 @@ export function AppRail() {
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton tooltip="Theme" className="h-9 text-sm">
                   <ThemeIcon />
-                  <span className="group-data-[collapsible=icon]:hidden">
+                  <span className="group-data-[collapsible=icon]:sr-only">
                     Theme
                   </span>
                 </SidebarMenuButton>
@@ -245,7 +245,7 @@ export function AppRail() {
               }}
             >
               <LogOut />
-              <span className="group-data-[collapsible=icon]:hidden">
+              <span className="group-data-[collapsible=icon]:sr-only">
                 Sign out…
               </span>
             </SidebarMenuButton>
@@ -300,7 +300,7 @@ function RailItem({
           title={itemLocked ? "Create a workspace first" : undefined}
         >
           <Icon />
-          <span className="group-data-[collapsible=icon]:hidden">
+          <span className="group-data-[collapsible=icon]:sr-only">
             {item.label}
           </span>
           {itemLocked ? (

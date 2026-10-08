@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import { expect, test, vi } from "vitest"
 
 import ProductGuidePage from "./page"
@@ -22,4 +22,31 @@ test("the public product guide explains scores, profiles and repository limits",
     "href",
     "/login",
   )
+})
+
+test("every jump link lands on a section of the guide", () => {
+  const { container } = render(<ProductGuidePage />)
+
+  const jumps = within(
+    screen.getByRole("navigation", { name: "On this page" }),
+  ).getAllByRole("link")
+  expect(jumps.length).toBeGreaterThan(0)
+  for (const link of jumps) {
+    const target = link.getAttribute("href")?.slice(1) ?? ""
+    expect(container.querySelector(`section#${target}`)).not.toBeNull()
+  }
+})
+
+test("roles and common questions are answered without signing in", () => {
+  render(<ProductGuidePage />)
+
+  const roles = screen.getByRole("table", { name: "Workspace roles" })
+  expect(
+    within(roles)
+      .getAllByRole("rowheader")
+      .map((cell) => cell.textContent),
+  ).toEqual(["Org admin", "Manager", "Developer", "Viewer"])
+  expect(
+    screen.getByText("Why did my score change without a new scan?"),
+  ).toBeInTheDocument()
 })
