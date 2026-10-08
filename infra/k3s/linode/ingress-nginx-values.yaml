@@ -3,16 +3,6 @@
 # Compress responses at the edge: the dashboard's JSON shrinks about 8–10x, and
 # the work happens in nginx instead of the single-threaded API workers. Next.js
 # already compresses its own responses, and nginx leaves those untouched.
-#
-# The access log is one JSON line per request. Grafana Cloud counts and times
-# these lines for the per-endpoint API numbers (requests, p95, errors, scans
-# started), so keep the field names. `$uri` has no query string, so no token or
-# ID from a query parameter is logged, and no client IP is logged.
-#
-# Apply on the node (keeps every other value the release already has; the
-# release runs chart 4.15.1, pin it so the upgrade changes only these values):
-#   helm upgrade ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx \
-#     --version 4.15.1 --reuse-values -f infra/k3s/linode/ingress-nginx-values.yaml
 controller:
   config:
     log-format-escape-json: "true"
