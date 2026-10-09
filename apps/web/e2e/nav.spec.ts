@@ -95,6 +95,37 @@ test("the desktop rail can be collapsed and expanded visibly", async ({
   ).toBeVisible()
 })
 
+test("every collapsed rail icon names itself on hover and stays clickable", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Collapse sidebar" }).click()
+  await expect(
+    page.getByRole("button", { name: "Expand sidebar" }),
+  ).toBeVisible()
+
+  // A hidden group label once sat over the last icon of the group above it.
+  for (const label of [
+    "Overview",
+    "Projects",
+    "Scoring profiles",
+    "Team & settings",
+    "Dashboard",
+    "Scan history",
+  ]) {
+    const link = railLink(page, label)
+    // Fails if anything sits on top of the icon.
+    await link.hover()
+    // Radix ignores the first moves after leaving another tooltip; a real
+    // mouse sends many, so send a few.
+    const box = (await link.boundingBox())!
+    await page.mouse.move(box.x + 8, box.y + 8, { steps: 4 })
+    await expect(page.getByRole("tooltip", { name: label })).toBeVisible()
+  }
+
+  await railLink(page, "Team & settings").click()
+  await expect(page).toHaveURL(/\/workspace$/)
+})
+
 test("the dashboard rows follow the project you are looking at", async ({
   page,
 }) => {

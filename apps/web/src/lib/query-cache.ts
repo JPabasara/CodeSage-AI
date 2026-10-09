@@ -1,4 +1,4 @@
-// The app-wide memory behind every read hook (13G, 13H.3).
+// The app-wide memory behind every read hook.
 
 const MAX_ANSWERS = 100
 
