@@ -1,0 +1,134 @@
+name: Coverage (one-off)
+
+# Runs only when this throwaway branch is pushed. Delete the branch afterwards.
+on:
+  push:
+    branches: [ci/coverage-once]
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "11.15.1"
+  PYTHON_VERSION: "3.12"
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: api — coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install PMD 7.27.0
+        run: |
+          mkdir -p ../../.tmp/pmd-smoke
+          curl --fail --location --retry 3 \
+            --output /tmp/pmd-dist-7.27.0-bin.zip \
+            https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.27.0/pmd-dist-7.27.0-bin.zip
+          echo "4ae396ffaf2b0d3ef0b73a10b2925e77066f73d57a4ce9078c60e7302bcddec9  /tmp/pmd-dist-7.27.0-bin.zip" | sha256sum --check
+          unzip -q /tmp/pmd-dist-7.27.0-bin.zip -d ../../.tmp/pmd-smoke
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Tests with coverage
+        run: |
+          pytest -q -rs --cov=codesage_api --cov-report=term --cov-report=html --cov-report=xml
+          coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-coverage
+          path: |
+            apps/api/htmlcov
+            apps/api/coverage.xml
+
+  ml:
+    name: ml — coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/ml
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: apps/ml/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev,training]" pytest-cov
+
+      - name: Tests with coverage
+        run: |
+          pytest -q -rs --cov=codesage_ml --cov-report=term --cov-report=html --cov-report=xml
+          coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ml-coverage
+          path: |
+            apps/ml/htmlcov
+            apps/ml/coverage.xml
+
+  web:
+    name: web — coverage
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Add coverage provider (CI only, not committed)
+        run: |
+          VITEST_VERSION="$(node -p "require('vitest/package.json').version")"
+          pnpm add -D "@vitest/coverage-v8@${VITEST_VERSION}"
+
+      - name: Tests with coverage
+        run: |
+          pnpm exec vitest run --coverage --coverage.reporter=text --coverage.reporter=html --coverage.reporter=json-summary
+          node -e '
+            const t = require("./coverage/coverage-summary.json").total;
+            const row = k => `| ${k} | ${t[k].covered}/${t[k].total} | ${t[k].pct}% |`;
+            console.log(["### web coverage", "| Metric | Covered | % |", "|---|---|---|",
+              row("lines"), row("statements"), row("functions"), row("branches")].join("\n"));
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-coverage
+          path: apps/web/coverage
