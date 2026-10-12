@@ -148,31 +148,28 @@ tests use PostgreSQL 16 through Testcontainers and skip if Docker is unavailable
 
 ## Things that are deliberately not here
 
-No suppression or finding-action tables — v1.0 is view-only. No webhook
-endpoint — scans are user-initiated only. No RBAC beyond `Membership.role`
-— roles are v2. No private-repository support — that needs a GitHub App
-installation.
+No webhook endpoint — scans are user-initiated only. No private-repository
+support — `integrations/github.py` rejects anything that is not public, and
+private repositories would need a GitHub App installation.
 
-## Open items
+## Settled since v1.0
 
-- **`k` is a placeholder.** It must be calibrated against reference
-  repositories before release, with the value and method recorded.
-  No grade is meaningful until that is done.
-- ~~**RLS policies are not written yet.**~~ **Done** — the migration enables row-level
-  security and writes the policies. `session` is deliberately excluded: it is the
-  table that *tells us* which workspace the caller is in, so it cannot be filtered by
-  the workspace it has not yet reported. `app_workspace_for_user()` is the one
-  `SECURITY DEFINER` function in the system, and it exists for the same reason.
-- **Preset weights are not normative.** The three presets are named but their weight table
-  is not published — see the note in `scoring/config/presets.yaml`.
-- **The CK jar version is unpinned.** Pin it and record it on
-  `AnalysisEngineVersion.ck_version`, or the consistency claim is unverifiable.
-- **The frontend's hand-written types are stale.** `docs/api/openapi.yaml` is the
-  contract and `apps/web/src/lib/types/api.ts` is generated from it
-  (`pnpm gen:types`) — both agree with `scoring/enums.py`. But the components still
-  import the hand-written `apps/web/src/lib/types/index.ts`, which has the
-  older enums and camelCase field names. Phase 10.6 switches them over.
-- **Nothing checks the API against the contract.** `pnpm gen:types:check` keeps the
-  *frontend* honest, but no job yet diffs FastAPI's generated `/openapi.json`
-  against `docs/api/openapi.yaml`. That only becomes meaningful once the handlers
-  have bodies — and there is no CI pipeline to run it in yet.
+- **`k` is calibrated.** It is set to 100 in `scoring/config/calibration.yaml`,
+  calibrated on a pilot corpus of open-source Java repositories, with the method
+  recorded beside the value.
+- **RLS is in place.** The migrations enable row-level security and write the
+  policies. `session` is deliberately excluded: it is the table that *tells us*
+  which workspace the caller is in, so it cannot be filtered by the workspace it
+  has not yet reported. `app_workspace_for_user()` is the one `SECURITY DEFINER`
+  function in the system, and it exists for the same reason.
+- **Roles are enforced.** Org Admin, Manager, Developer and Viewer are checked on
+  every operation against `authorization/policy.json`.
+- **Findings can be acted on.** Findings can be marked done and reopened
+  (`finding:triage`), repositories can exclude directories from scoring, and the
+  workspace chooses its analysis rules and comment rules.
+- **Preset weights are published** in `scoring/config/presets.yaml`.
+- **The CK version is pinned.** The Dockerfile fetches CK 0.7.0 and every analysis
+  records it in `AnalysisEngineVersion.tool_versions`.
+- **The API is checked against the contract.** `tests/unit/schemas/test_contract.py`
+  compares the response models with `docs/api/openapi.yaml`, and CI runs it with the
+  rest of the API suite.

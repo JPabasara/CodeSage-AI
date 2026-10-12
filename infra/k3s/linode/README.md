@@ -32,8 +32,8 @@ only wait; three workspaces scanning at once get three workers. After changing
 `keda-worker.yaml`, `worker.yaml` or `score-worker.yaml`, apply them again
 (the commands below); CI only changes image tags.
 
-Normal deploys are done by CI (`.github/workflows/ci.yml`): after the tests and
-the staging smoke test pass, it sets the new `sha-` image tags on the cluster and
+Normal deploys are done by CI (`.github/workflows/ci.yml`): after the tests
+and image builds pass, it sets the new `sha-` image tags on the cluster and
 runs a smoke test against the public site. The steps below are for a first
 install or a manual change.
 

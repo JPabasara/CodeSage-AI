@@ -60,12 +60,17 @@ failed or stopped scan never leaves partial results.
 |---|---|
 | Production | Single-node k3s cluster on Linode; KEDA scales the scan workers on queue length (1 to 3) |
 | Database | Neon PostgreSQL |
-| Staging | Railway |
+| Staging | Railway (retired, see note below) |
 | Images | GitHub Container Registry |
 | Monitoring | Grafana Alloy in the cluster sends metrics and logs to Grafana Cloud |
 
 Every push to `main` runs the CI pipeline in `.github/workflows/ci.yml`: web, API and ML tests,
-image builds, a staging deploy with a smoke test, then a production deploy with a smoke test.
+image builds, then a production deploy with a smoke test.
+
+> **Note:** The Railway staging environment was retired.
+> The staging jobs are switched off in CI, so the failed `staging` deployment shown on GitHub is
+> its last run from before it was retired. Production on k3s is unaffected and deploys on every push to `main`.
+
 Deployment details: [infra/README.md](infra/README.md) and
 [infra/k3s/linode/README.md](infra/k3s/linode/README.md).
 
@@ -144,9 +149,9 @@ produce no findings.
 
 | Suite | Command | Size |
 |---|---|---|
-| Web components and hooks (Vitest) | `cd apps/web; pnpm test:run` | 519 tests |
-| End-to-end and accessibility (Playwright, axe-core) | `cd apps/web; pnpm test:e2e` | 146 tests |
-| API unit and integration (pytest, PostgreSQL via Testcontainers) | `cd apps/api; pytest` | 686 tests |
+| Web components and hooks (Vitest) | `cd apps/web; pnpm test:run` | 671 tests |
+| End-to-end and accessibility (Playwright, axe-core) | `cd apps/web; pnpm test:e2e` | 172 tests |
+| API unit and integration (pytest, PostgreSQL via Testcontainers) | `cd apps/api; pytest` | 803 tests |
 | ML service (pytest) | `cd apps/ml; pytest` | 24 tests |
 | Load test (k6) | `k6 run -e MODE=load tests/load/dashboard.js` | 50 virtual users |
 
@@ -196,7 +201,7 @@ on a pilot corpus of open-source Java repositories; the method is recorded in
 | ML | scikit-learn: TF-IDF with Linear SVM (SATD), Random Forest (bug risk) |
 | Data | PostgreSQL 16 with Row-Level Security |
 | Identity | Asgardeo |
-| Infrastructure | k3s, KEDA, Docker, GitHub Actions, Neon, Railway |
+| Infrastructure | k3s, KEDA, Docker, GitHub Actions, Neon |
 | Monitoring | Grafana Alloy, Grafana Cloud (Prometheus, Loki) |
 
 ---
@@ -210,7 +215,7 @@ apps/ml/         ML inference service and offline training
 infra/           Docker Compose stack and k3s manifests
 tests/load/      k6 load test
 docs/api/        openapi.yaml, the API contract; frontend types are generated from it
-docs/Deliverables/  Proposal, Feasibility Report, SRS and SAD (all versions), Master Test Plan,
+docs/Deliverables/  Proposal, Feasibility Report, SRS and SAD (v1.0 and v1.1), Master Test Plan,
                     usability study, User Manual, Gantt charts
 ```
 
